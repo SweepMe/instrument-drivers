@@ -1,0 +1,1 @@
+The import of the tkinter package has been removed in the dobot_api.py as tkinter is not shipped with SweepMe!
