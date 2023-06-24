@@ -2,7 +2,7 @@
 
 # We must define a specific line ending, otherwise uploads to devzone (which does not have lf normalization)
 # versions would have varying line endings
-*          text eol=lf
+*          text=auto eol=lf
 
 #
 # The above will handle all files NOT found below
