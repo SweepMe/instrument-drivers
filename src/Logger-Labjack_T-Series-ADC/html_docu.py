@@ -15,19 +15,19 @@ errors_url = (
 )
 
 # HTML hyper links
-ljm_hyperlink = f'<a href="{url}">LJM software</a>'
+ljm_hyperlink = f'<a href="{ljm_url}">LJM software</a>'
 pin_names_hyperlink = f'<a href="{pins_dio_url}">docu table 13</a>'
 hardware_hyperlink = f'<a href="{hardware_url}">pin functions</a'
 error_hyperlink = f'<a href="{errors_url}">error codes</a>'
 
 # HTML Driver text
 html_driver_descript = f"""
-    <h3>Driver to read labjack T4/T7's AIN and DIO pin inputs</h3>
+    <h3>Driver to read Labjack T4/T7's AIN and DIO pin inputs</h3>
     <p>The driver supports basic DIO read, basic AIN read and AIN extended functions (EF).<br>
     Instrument connections are based on serial numbers (use find ports).<br>
     EF settings will apply to all pins in the read list. To measure 2 different EFs from the same
-    labjack make a second logger instance in the sequencer with the same SN but different read names
-    and functions./p>
+    Labjack device make a second logger instance in the sequencer with the same SN but different read names
+    and functions.</p>
     <p>Requirements:</p>
     <ul>
     <li>Please install the {ljm_hyperlink} (before first run)</li>
