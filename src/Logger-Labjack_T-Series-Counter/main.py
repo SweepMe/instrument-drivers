@@ -40,10 +40,10 @@ driver_name = os.path.basename(main_path)
 
 # We assign a module name that depends on the driver name to make sure each driver imports its own version
 # of the Base class as this reduces friction when SweepMe! labjack drivers use different versions of the base class.
-Labjack_T_Series_BaseClass = imp.load_source("Labjack_T_Series_BaseClass_" + driver_name,
+Labjack_T_Series_BaseClass = imp.load_source(driver_name + ".BaseClass",
                                              main_path + os.sep + "Labjack_T_Series_BaseClass.py")
 
-html_docu = imp.load_source("html_docu" + driver_name, main_path + os.sep + "html_docu.py")
+html_docu = imp.load_source(driver_name + ".html_docu", main_path + os.sep + "html_docu.py")
 
 
 class Device(Labjack_T_Series_BaseClass.LabjackBaseClass):
