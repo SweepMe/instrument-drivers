@@ -1,0 +1,8 @@
+1. Copy this link to your browser
+www.aimtti.com/product-category/function-generators/aim-tgp3100
+
+2. Scroll down and click on Tab "Resources"
+
+3. Download "USB Driver V2.07 - (ZIP / English)" and follow the instructions
+
+4. Now your AimTTi device should be listed as a COM port in the device manager

@@ -1,0 +1,1 @@
+system.atr and system.cfg are special files that only describe the chopper but not other parts like a monochromator or filter wheels. Therefore, it is possible to control the chopper independent from other Bentham equipment.

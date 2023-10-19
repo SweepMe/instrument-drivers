@@ -1,0 +1,251 @@
+//-----------------------------------------------------------------------------
+
+//  dlltoken.pas: created from dlltoken.txt on 08/10/1998 at 16:52
+
+//  Copyright (c) 1998 by Bentham Instruments Ltd
+//  All Rights Reserved
+
+//-----------------------------------------------------------------------------
+
+const
+
+//-----------------------------------------------------------------------------
+// Bentham Instruments Spectroradiometer Control DLL
+//Attribute token definition file
+//-----------------------------------------------------------------------------
+
+
+//-----------------------------------------------------------------------------
+// Monochromator attributes
+//-----------------------------------------------------------------------------
+  MonochromatorScanDirection = 10
+  MonochromatorCurrentWL = 11
+  MonochromatorCurrentDialReading = 12
+  MonochromatorParkDialReading = 13
+  MonochromatorCurrentGrating = 14
+  MonochromatorPark = 15
+  MonochromatorSelfPark = 16
+  MonochromatorModeSwitchNum = 17
+  MonochromatorModeSwitchState = 18
+  MonochromatorCanModeSwitch = 19
+
+  Gratingd = 20
+  GratingZ = 21
+  GratingA = 22
+  GratingWLMin = 23
+  GratingWLMax = 24
+  GratingX2 = 25
+  GratingX1 = 26
+  GratingX = 27
+
+  ChangerZ = 50
+
+//-----------------------------------------------------------------------------
+// Filter wheel attributes
+//-----------------------------------------------------------------------------
+  FWheelFilter = 100
+  FWheelPositions = 101
+  FWheelCurrentPosition = 102
+
+//-----------------------------------------------------------------------------
+// TLS attributes
+//-----------------------------------------------------------------------------
+  TLSCurrentPosition = 150
+  TLSWL = 151
+  TLSPOS = 152
+  TLSSelectWavelength = 153
+  TLSPositionsCommand = 154
+
+//-----------------------------------------------------------------------------
+// Switch-over box attributes
+//-----------------------------------------------------------------------------
+  SOBInitialState = 200
+  SOBState = 202
+
+//-----------------------------------------------------------------------------
+// SAM attributes
+//-----------------------------------------------------------------------------
+  SAMInitialState = 300
+  SAMSwitchWL = 301
+  SAMState = 302
+  SAMCurrentState = 303
+  SAMDeflectName = 304
+  SAMNoDeflectName = 305
+
+//-----------------------------------------------------------------------------
+// Stepper SAM attributes
+//-----------------------------------------------------------------------------
+  SSEnergisedSteps  = 320
+  SSRelaxedSteps    = 321
+  SSMaxSteps        = 322
+  SSSpeed           = 323
+  SSMoveCurrent     = 324
+  SSIdleCurrent     = 325
+
+//-----------------------------------------------------------------------------
+// 262
+//-----------------------------------------------------------------------------
+  biRelay = 350
+  biCurrentRelay = 351
+
+//-----------------------------------------------------------------------------
+// MVSS attributes
+//-----------------------------------------------------------------------------
+  MVSSSwitchWL = 401
+  MVSSWidth = 402
+  MVSSCurrentWidth = 403
+  MVSSSetWidth = 404
+  MVSSConstantBandwidth = 405
+  MVSSConstantwidth = 406
+  MVSSSlitMode = 407
+  MVSSPosition = 408
+
+//-----------------------------------------------------------------------------
+// ADC attributes
+//-----------------------------------------------------------------------------
+  ADCSamplesPerReading = 500
+  ADCAdaptiveIntegration = 501
+  ADCSamplePeriod = 502
+  ADCVolts = 504
+  ADCAuxVolts = 507
+  ADCAuxOffset = 508
+  ADCAuxInput = 509
+
+//-----------------------------------------------------------------------------
+// SR810 ADC attributes
+//-----------------------------------------------------------------------------
+  ADCTimeConstant = 505
+  ADCXYThetaReading = 506
+
+//-----------------------------------------------------------------------------
+// ADC CHOPPER attributes
+//-----------------------------------------------------------------------------
+  ADCChoppedAverages = 503
+
+//-----------------------------------------------------------------------------
+// General amplifier attributes
+//-----------------------------------------------------------------------------
+  AmpGain = 600
+  AmpChannel = 601
+  AmpMinRange = 602
+  AmpMaxRange = 603
+  AmpStartRange = 604
+  AmpUseSetup = 605
+  AmpCurrentRange = 606
+  AmpCurrentChannel = 607
+  AmpOverload = 608
+  AmpOverrideWl = 609
+  AmpCurrentSetup = 610
+
+//-----------------------------------------------------------------------------
+// 225 attributes
+//-----------------------------------------------------------------------------
+  A225TargetRange = 700
+  A225PhaseVariable = 701
+  A225PhaseQuadrant = 702
+  A225TimeConstant = 703
+  A225fMode = 704
+
+//-----------------------------------------------------------------------------
+// Camera attributes
+//-----------------------------------------------------------------------------
+  CameraIntegrationTime = 800
+  CameraWidthInPixels = 801
+  CameraWidthInMM = 802
+  CameraSAMState = 803
+  CameraAutoRange = 804
+  CameraMVSSWidth = 805
+  CameraAverages = 806
+  CameraMinITime = 807
+  CameraMaxITime = 808
+  CameraUnitMaxITime = 809
+  CameraDataLToR = 810
+  CameraBeta = 811
+  CameraPhi = 812
+
+//-----------------------------------------------------------------------------
+// Motorised Stage attributes
+//-----------------------------------------------------------------------------
+  MotorPosition = 900
+  MotorStop = 901
+  
+//-----------------------------------------------------------------------------
+// EBox Monitor attributes
+//-----------------------------------------------------------------------------
+  EboxReadHv = 910
+  EboxReadTemp = 911
+  EboxReadHvRaw = 912
+  EboxReadTempRaw = 913
+  EboxWait = 914
+  EboxRepeats = 915
+  EboxCountsAtTargetTemp = 916
+  EboxGradientTemp = 917
+  EboxTargetTemp = 918
+  EboxCountsAtTargetHv = 919
+  EboxGradientHv = 920
+  EboxTargetHv = 921
+  // New attributes
+
+//-----------------------------------------------------------------------------
+// Keithley 2400 SourceMeter Attributes
+//-----------------------------------------------------------------------------
+  ExternalADCAutoRange = 930
+  ExternalADCCurrentRange = 931
+  ExternalADCComms = 932
+  ExternalADCFourWireMode = 933
+  ExternalADCCurrentCompliance = 934
+  ExternalADCVoltageBias = 935
+  ExternalADCMode = 936
+
+//-----------------------------------------------------------------------------
+// Chopper418
+//-----------------------------------------------------------------------------
+  ChopperFrequency = 940;
+  ChopperDACValue = 941;
+  ChopperState = 942;
+  ChopperDACFromADC = 943;  
+  
+//-----------------------------------------------------------------------------
+// Miscellaneous attributes
+//-----------------------------------------------------------------------------
+  biSettleDelay = 1000
+  biMin = 1001
+  biMax = 1002
+  biParkPos = 1003
+  biInput = 1004
+  biCurrentInput = 1005
+  biMoveWithWavelength = 1006
+  biHasSetupWindow = 1007
+  biHasAdvancedWindow = 1008 
+  biDescriptor = 1009
+  biParkOffset = 1010
+  biProductName = 1011
+
+//-----------------------------------------------------------------------------
+// System attributes
+//-----------------------------------------------------------------------------
+  SysStopCount = 9000
+  SysDarkIIntegrationTime = 9001
+  Sys225_277Input = 9002
+
+//-----------------------------------------------------------------------------
+// Bentham Hardware Types
+//-----------------------------------------------------------------------------
+  BenInterface          = 10000
+  BenSAM                = 10001
+  BenSlit               = 10002
+  BenFilterWheel        = 10003
+  BenADC                = 10004
+  BenPREAMP             = 10005
+  BenACAMP              = 10006
+  BenDCAMP              = 10007
+  BenPOSTAMP            = 10012
+  BenRelayUnit          = 10008
+  BenMono               = 10009
+  BenAnonDevice         = 10010
+  BenCamera             = 10020
+  BenDiodeArray         = 10021
+  BenORM                = 10022
+  BenEBox_Monitor       = 10023
+
+  BenUnknown            = 10011

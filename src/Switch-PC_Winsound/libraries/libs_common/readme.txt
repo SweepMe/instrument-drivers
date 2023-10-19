@@ -1,0 +1,1 @@
+SweepMe! 1.5.6 does not need any libraries, but this folder must not be deleted to prevent SweepMe! from using the libs folder as fallback which contains an incompatible library for Python 3.6

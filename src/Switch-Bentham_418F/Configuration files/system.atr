@@ -1,0 +1,20 @@
+#------------------------------------------------------------------------------
+# Bentham Instruments system model attributes file
+# Created 21/09/2022 14:23:09
+# This file should NOT be edited by hand
+#------------------------------------------------------------------------------
+
+chopper
+  DAC value = 10349
+end
+
+~System
+  dispersion multiplier = 1.500
+  stop count = 1.000
+  dark I integration time = 5.000
+  dark I delay = 5.000
+  225 277 input = 1
+  allow negative = 0
+  virtual instruments dll = 
+  group = ,,,,,chopper,,,,,,
+end
