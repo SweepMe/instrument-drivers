@@ -59,6 +59,9 @@ class Device(EmptyDevice):
                     <li>Using a "0" all channels will remain open. This command is not part of the communication
                     protocol but was implemented in the SweepMe! driver for reasons of convenience.</li>
                     <li>TCPIP/LAN communication is possible by registering a raw socket with port 10001.</li>
+                    <li>In case of using the resistance box mode, the digital output pin 1 is set to High and a
+                     resistance of 300 kOhm is used. After the processing the branch, the digital output pin 1 is
+                      set to Low leading to a resistace of 0 Ohm (short)</li>
                     </ul>
                 """
 
@@ -86,7 +89,7 @@ class Device(EmptyDevice):
             "SweepMode": ["Channels"],
             "Discharge": True,
             "Discharge time in s": "1.0",
-            "Series resistor": False,
+            "Use resistance box": False,
         }
         
         return gui_parameter
@@ -97,7 +100,7 @@ class Device(EmptyDevice):
         self.sweepmode = parameter["SweepMode"]
         self.use_discharge = parameter["Discharge"]
         self.discharge_time = parameter["Discharge time in s"]
-        self.use_series_resistor = parameter["Series resistor"]
+        self.use_resistance_box = parameter["Use resistance box"]
 
     def connect(self):
 
@@ -128,10 +131,8 @@ class Device(EmptyDevice):
 
         self.set_connection_rule_free(rule=True)  # multiple connections are possible
 
-        self.set_digital_output(1)
-
-        if self.use_series_resistor:
-            self.set_series_resistor(1, True)
+        if self.use_resistance_box:
+            self.enable_resistance_box(True)
             self.get_operation_complete()
             time.sleep(1)  # TODO: Is this still needed if we use operation complete in the line above
 
@@ -139,12 +140,14 @@ class Device(EmptyDevice):
         if self.use_discharge:
             self.set_discharge_mode(True)
             self.get_operation_complete()
+
             time.sleep(float(self.discharge_time))
+
             self.set_discharge_mode(False)
             self.get_operation_complete()
 
-        if self.use_series_resistor:
-            self.set_series_resistor(1, False)
+        if self.use_resistance_box:
+            self.enable_resistance_box(False)
             self.get_operation_complete()
             time.sleep(1)  # TODO: Is this still needed if we use operation complete in the line above
 
@@ -406,15 +409,25 @@ class Device(EmptyDevice):
         self.port.write("ROUT:DIS?")
         answer = int(self.port.read())
         return answer
-    
-    def set_series_resistor(self, pin, mode):
-        """Set a resistor of a digital line
+
+    def enable_resistance_box(self, state=True) -> None:
+        """Enable the resistance in an add-on resistance box that is controlled via output pin 1
 
         Args:
-            pin: int, number of the digital IO line
-            mode:
-                False(0): short the resistor (0OHM)
-                True(1): set the resistor (300kOHM)
+            state: bool or int
+                False or 0: short the resistor (0 Ohm)
+                True or 1: set the resistor (300 kOhm)
+
+        """
+        self.set_digital_output(1)
+        self.digital_output_value(1, int(state))
+
+    def set_digital_output_value(self, pin, mode):
+        """Set a output pin of the IO line to high (True) or low (False)
+
+        Args:
+            pin: int -> number of the digital IO line
+            mode: int, bool -> High (1 or True), Low (0 or False
         """
         self.port.write("DIG %i,%i" % (int(pin), int(mode)))
         if not self.port_string.startswith("GPIB"):
