@@ -70,7 +70,7 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter):
         """ parse and store GUI options"""
         self.port_string = parameter["Port"]
-        self.analog_input_mode = parameter["Analog_input mode"]
+        self.analog_input_mode = parameter["Analog input mode"]
         self.analog_inputs_list = parameter["Analog inputs"].split(",")
         self.analog_inputs = [int(s.strip()) for s in self.analog_inputs_list]
 
