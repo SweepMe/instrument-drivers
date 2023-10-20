@@ -25,8 +25,13 @@ identifier = mb.get_identification()
 print("Identifier:", identifier)
 
 mb.reset()
-mb.open_all_channels()
+mb.get_operation_complete()
+
 mb.close_channel(["A1", "B2"])
+mb.get_operation_complete()
 
 closed_channels = mb.get_closed_channels()
 print("Closed channels:", closed_channels)
+
+mb.reset()
+mb.get_operation_complete()
