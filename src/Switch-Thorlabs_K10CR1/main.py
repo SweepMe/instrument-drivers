@@ -26,7 +26,7 @@
 # SOFTWARE.
 
 # SweepMe! device class
-# Type: Switch
+# Module: Switch
 # Device: Thorlabs Kinesis K10CR1
 
 import sys
@@ -36,7 +36,7 @@ import clr
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 clr.AddReference("System")
-from System import Action, Decimal, Int32, UInt64
+from System import Decimal, Int32, UInt64
 
 bitness = 64 if sys.maxsize > 2**32 else 32
 if bitness == 64:
@@ -50,16 +50,16 @@ DEBUG = False
 
 
 def add_dotnet_references():
-    """ time intensive imports performed only as needed"""
-    # print("Loading Thorlabs .net library")
+    """Importing Kinesis .NET dll"""
+
     clr.AddReference("Thorlabs.MotionControl.DeviceManagerCLI")
+    clr.AddReference("Thorlabs.MotionControl.GenericMotorCLI")
     clr.AddReference("Thorlabs.MotionControl.IntegratedStepperMotorsCLI")
 
     import Thorlabs.MotionControl.DeviceManagerCLI as DeviceManagerCLI
     import Thorlabs.MotionControl.GenericMotorCLI as GenericMotorCLI
     import Thorlabs.MotionControl.IntegratedStepperMotorsCLI as IntegratedStepperMotorsCLI
 
-    # print("Success")
     return DeviceManagerCLI, IntegratedStepperMotorsCLI, GenericMotorCLI
 
 
@@ -107,7 +107,6 @@ class Device(EmptyDevice):
 
         self.kinesis_device = None
         self.shortname = "K10CR1"
-        self.device_list = None
         self.is_simulation = False
 
     def find_ports(self):
@@ -121,11 +120,18 @@ class Device(EmptyDevice):
             self.DeviceManagerCLI, self.IntegratedStepperMotorsCLI, self.GenericMotorCLI = add_dotnet_references(
             )
 
-        self.DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
-        device_list = self.DeviceManagerCLI.DeviceManagerCLI.GetDeviceList()
-        self.device_list = [str(ser_n) for ser_n in device_list] if device_list else None
+        device_list = self.list_devices()
 
-        return device_list  # serial numbers
+        # Searching for simulated devices if there are no real devices found
+        if len(device_list) == 0:
+            self.DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
+            device_list = self.list_devices()
+            self.DeviceManagerCLI.SimulationManager.Instance.UninitializeSimulations()
+
+        if len(device_list) == 0:
+            device_list = ["No devices found!"]
+
+        return device_list
 
     def set_GUIparameter(self):
 
@@ -167,9 +173,13 @@ class Device(EmptyDevice):
     # semantic standard functions called during a measurement start here #
 
     def connect(self):
+
+        if self.serial_num == "No devices found!":
+            msg = "No device was found. Please use 'Find ports' and select a serial number."
+            raise ValueError(msg)
     
         if DEBUG:
-            print("connecting to K10CR")
+            print("connecting to K10CR1")
         if not self.dotnet_added:
             self.DeviceManagerCLI, self.IntegratedStepperMotorsCLI, self.GenericMotorCLI = add_dotnet_references(
             )
@@ -177,16 +187,23 @@ class Device(EmptyDevice):
         if self.is_simulation:
             self.DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
 
-        if not self.device_list:
-            self.DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
-            device_list = self.DeviceManagerCLI.DeviceManagerCLI.GetDeviceList()
-            self.device_list = [str(ser_n) for ser_n in device_list]
+        device_list = self.list_devices()
 
-        if self.serial_num not in self.device_list:
-            raise ValueError(f"Device {self.serial_num} not found in SN l {self.device_list}")
+        if self.serial_num not in device_list:
+            msg = f"Device {self.serial_num} not found in SN l {device_list}"
+            raise ValueError(msg)
 
-        self.kinesis_device = self.IntegratedStepperMotorsCLI.CageRotator.CreateDevice(
-            self.serial_num)
+        # we need to check the pythonnet/clr version because there was a breaking change with 3.0.0 that leads
+        # to a different interface handling. A fix for now is to add __implementation__ to the CreateDevice method
+        # Because of the clr version dependent handling, the driver still works with SweepMe! 1.5.5 or python
+        # environments where clr<3.0.0 is used.
+        clr_version = tuple(map(int, clr.__version__.split(".")))
+        if clr_version < (3, 0, 0):
+            self.kinesis_device = self.IntegratedStepperMotorsCLI.CageRotator.CreateDevice(self.serial_num)
+        else:
+            self.kinesis_device = (self.IntegratedStepperMotorsCLI.CageRotator.CreateDevice(self.serial_num).
+                                   __implementation__)
+
         self.kinesis_device.ClearDeviceExceptions()
 
         start_time = time.time()
@@ -196,7 +213,7 @@ class Device(EmptyDevice):
                 time.sleep(0.2)
             except self.DeviceManagerCLI.DeviceNotReadyException:
                 pass
-            if time.time() - start_time > 30:
+            if time.time() - start_time > 5:
                 raise TimeoutError(f"Could not connect to {self.serial_num}")
 
         self.kinesis_device_info = self.kinesis_device.GetDeviceInfo()
@@ -324,3 +341,19 @@ class Device(EmptyDevice):
                 raise TimeoutError(f"{command} timed out after {timeout_ms/1000}s")
 
         return None
+
+    def list_devices(self):
+        """
+        Lists all devices
+
+        Bug: Once Simulation mode is switched on GetDeviceList will also find simulated devices even though simulation
+        mode is uninitialized.
+
+        Returns: list[str]
+        """
+
+
+        self.DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
+        device_list = self.DeviceManagerCLI.DeviceManagerCLI.GetDeviceList()
+        device_list = [str(ser_n) for ser_n in device_list]
+        return device_list
