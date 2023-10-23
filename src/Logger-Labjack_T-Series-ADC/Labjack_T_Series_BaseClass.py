@@ -9,6 +9,7 @@ from labjack import ljm
 
 import numpy as np
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import debug
 
 DEBUG = False
 
@@ -98,9 +99,10 @@ class LabjackBaseClass(EmptyDevice):
 
         if self.serial_number in self.device_communication:
             self.device_communication.pop(self.serial_number)
-            ljm.close(self.handle)
-
-            # print(f"disconnected Labjack device SN {self.serial_number}")
+            try:
+                ljm.close(self.handle)
+            except ljm.ljm.LJMError:
+                debug("Unable to close Labjack device because it is already closed")
 
         self.parameters = {}
         self.handle = None
