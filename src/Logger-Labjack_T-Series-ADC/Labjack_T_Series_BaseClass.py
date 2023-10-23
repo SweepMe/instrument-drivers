@@ -381,10 +381,10 @@ class LabjackBaseClass(EmptyDevice):
         values = ljm.eReadNames(self.handle, len(names_list), names_list)
         return np.array(values).astype(float)
 
-    def __repr__(self):
+    def get_device_status(self):
 
         if not self.handle:
-            return "Disconnect Labjack device"
+            return "Labjack device unconnected and not information available."
         else:
             return (f"Connected Labjack device {self.dev_type} with SN{self.infos['SN']} "
                     f"connected over {self.infos['CNXN']} at {self.infos['address']}")
