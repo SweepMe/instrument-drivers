@@ -9,6 +9,7 @@ from labjack import ljm
 
 import numpy as np
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import debug
 
 DEBUG = False
 
@@ -98,9 +99,10 @@ class LabjackBaseClass(EmptyDevice):
 
         if self.serial_number in self.device_communication:
             self.device_communication.pop(self.serial_number)
-            ljm.close(self.handle)
-
-            # print(f"disconnected Labjack device SN {self.serial_number}")
+            try:
+                ljm.close(self.handle)
+            except ljm.ljm.LJMError:
+                debug("Unable to close Labjack device because it is already closed")
 
         self.parameters = {}
         self.handle = None
@@ -219,7 +221,7 @@ class LabjackBaseClass(EmptyDevice):
                     f"Pin {non_unique_pins} have several states requested under different "
                     "aliases (eg DIOx<-->EIOy")
 
-        # IF there are flex pins need to set them to DIGITAL in case they were analogue
+        # If there are flex pins need to set them to DIGITAL in case they were analogue
         if self.dev_type == "T4":
             all_pin_names = pin_names_high + pin_names_low + pin_names_low
             flex = [
@@ -228,7 +230,7 @@ class LabjackBaseClass(EmptyDevice):
             if flex:
                 self.set_flex_pins_to_analog(flex, set_digital=True)
 
-        # set dio to IN/OUT
+        # set DIO to IN/OUT
         # first block dio commands to all channels except inputs/outputs (in/out = 1, others =0)
         ignore_bit_mask = gen_bit_mask(inputs + outputs, len(settable_pins), invert_mask=True)
         ljm.eWriteName(self.handle, "DIO_INHIBIT", ignore_bit_mask)
@@ -381,10 +383,10 @@ class LabjackBaseClass(EmptyDevice):
         values = ljm.eReadNames(self.handle, len(names_list), names_list)
         return np.array(values).astype(float)
 
-    def __repr__(self):
+    def get_device_status(self):
 
         if not self.handle:
-            return "Disconnect Labjack device"
+            return "Labjack device unconnected and no information available."
         else:
             return (f"Connected Labjack device {self.dev_type} with SN{self.infos['SN']} "
                     f"connected over {self.infos['CNXN']} at {self.infos['address']}")
