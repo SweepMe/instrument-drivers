@@ -30,6 +30,9 @@ function Import-Driver {
 if ($ChangedDrivers) {
     Write-Host "Following drivers were modified:"
     Write-Host $ChangedDrivers -Separator "`n"
+    Write-Host "Installing python requirements"
+    python -m pip install --upgrade pip
+    pip install --upgrade -r .\requirements.txt
     $ChangedDrivers | % { Import-Driver -DriverName $_ }
 }
 else {
