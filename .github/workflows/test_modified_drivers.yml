@@ -1,0 +1,19 @@
+name: Test Modified Drivers
+
+on:
+  pull_request:
+    branches: main
+
+permissions:
+  contents: read
+
+jobs:
+  test_modified_drivers:
+    name: Test Modified Drivers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Test Modified Drivers
+        shell: pwsh
+        run: |
+          .\.github\Test-ModifiedDrivers.ps1 -TargetBranch ${{ github.base_ref }}
