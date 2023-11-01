@@ -1,6 +1,6 @@
 # MIT License
 # 
-# Copyright (c) 2023 SweepMe! GmbH (sweepm-me.net)
+# Copyright (c) 2023 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -35,7 +35,6 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 from FolderManager import addFolderToPATH
 addFolderToPATH()
 
-# import edcon.edrive
 from edcon.edrive.com_modbus import ComModbus
 from edcon.edrive.motion_handler import MotionHandler
 from edcon.utils.logging import Logging
@@ -73,7 +72,7 @@ class Device(EmptyDevice):
     def set_GUIparameter(self):
         
         gui_parameter = {
-                        "SweepMode": ["Absolute position"],
+                        "SweepMode": ["Absolute position in µm"],
                         "Velocity in µm/s": "5000",
                         "Reach position": True,
                         "Go home after run": True,
@@ -85,7 +84,7 @@ class Device(EmptyDevice):
     
         self.driver_name = parameter["Device"]
         self.port_string = parameter["Port"]
-        self.velocity = parameter["Velocity"]
+        self.velocity = parameter["Velocity in µm/s"]
         self.go_home_after_run = parameter["Go home after run"]
         self.do_reach_position = parameter["Reach position"]        
         
@@ -97,7 +96,7 @@ class Device(EmptyDevice):
           
     def disconnect(self):
     
-        self.edrive.close()
+        del self.edrive
         
     def initialize(self):
     
@@ -116,11 +115,9 @@ class Device(EmptyDevice):
         self.edrive.shutdown()
          
     def configure(self):
-
         pass
         
     def unconfigure(self):
-
         pass
 
     def apply(self):
@@ -133,9 +130,11 @@ class Device(EmptyDevice):
         if self.do_reach_position:
             if not self.edrive.target_position_reached():
                 self.edrive.wait_for_target_position()
-        
+
     def call(self):
-    
-        set_pos, curr_pos = map(float, self.edrive.position_info_string())
+
+        position_string = self.edrive.position_info_string()
+        values = position_string.split(": ")[1].replace("[","").replace("]", "").split(",")
+        set_pos, curr_pos = map(float, values)
         
         return [curr_pos, set_pos]
