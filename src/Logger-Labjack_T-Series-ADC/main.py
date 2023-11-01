@@ -70,7 +70,7 @@ class Device(Labjack_T_Series_BaseClass.LabjackBaseClass):
 
     def set_GUIparameter(self):
 
-        GUIparameter = {
+        gui_parameter = {
             "Digital": None,
             "Digital read pins": "EIO0, FIO4",
             "": None,
@@ -79,8 +79,9 @@ class Device(Labjack_T_Series_BaseClass.LabjackBaseClass):
             "Extended AIN mode": list(Labjack_T_Series_BaseClass.ljm_constants.ADC_EF_FUNCTIONS.keys()),
             "EF config string": ""
         }
+
         # "Prevent overwrite of Output by read/analogue"
-        return GUIparameter
+        return gui_parameter
 
     def get_GUIparameter(self, parameter):
         """ parse and store GUI options"""
@@ -139,8 +140,10 @@ class Device(Labjack_T_Series_BaseClass.LabjackBaseClass):
                     self.ef_config = {}
                 else:
                     raise exc
+
             allowed = ["A", 'B', 'C', 'D', 'E', 'F', 'G']
             keys = list(self.ef_config.keys())
+            
             if any(key not in allowed for key in keys):
                 raise ValueError(f"EF config keys must be in {allowed}")
             values = [float(x) if x else None for x in self.ef_config.values()]
@@ -172,7 +175,7 @@ class Device(Labjack_T_Series_BaseClass.LabjackBaseClass):
                 f"pin {k} (index {v})" for k, v in dig_pin_names_to_numbers.items()
                 if v in non_unique
             ]
-            raise ValueError(f"Following pins set to both digital and analogue: {pin_names}")
+            raise ValueError(f"Following pins set to both dig and analogue: {pin_names}")
 
     def configure(self):
 

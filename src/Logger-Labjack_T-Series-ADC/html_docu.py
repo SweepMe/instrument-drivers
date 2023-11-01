@@ -39,12 +39,14 @@ html_driver_descript = f"""
     <li>Extended AIN mode: applies an EF mode to all selected AIN read pins.
      Config via Kippling or config string.</li>
     <li>EF config string: a string to be parsed to a dictionary with EF config options.
-     See <a href="{url_ef}">AIN EF functions</a>
+     See <a href="{url_ef}">AIN EF modes</a>
        examples are within quotes. Please do not copy the quotes.
        EXAMPLE 1: 'A: 100, B:3, C: , D:, E:, F:, G:'
        EXAMPLE 2: 'A: 100, B:4' </li>
-    <li>Note invalid EF parameters (possibly including empty) will lead to errors during measure's
-     readnames(). See  {error_hyperlink} <br></li>
+    <li>Note invalid EF parameters will lead to errors during measure's
+     readnames(). See  {error_hyperlink}</li>
+    <li>Thermocouple modes are only available for the Labjack T7 series.</li>
+    <li>The EF config string applies to all selected analog pins.<br></li>
     <li>T4 flex pins can also be set to analog in</li>
     <li>Pin name and functions can be found at {pin_names_hyperlink} and {hardware_hyperlink}
     </ul>

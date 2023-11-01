@@ -386,7 +386,7 @@ class LabjackBaseClass(EmptyDevice):
     def get_device_status(self):
 
         if not self.handle:
-            return "Labjack device unconnected and not information available."
+            return "Labjack device unconnected and no information available."
         else:
             return (f"Connected Labjack device {self.dev_type} with SN{self.infos['SN']} "
                     f"connected over {self.infos['CNXN']} at {self.infos['address']}")
