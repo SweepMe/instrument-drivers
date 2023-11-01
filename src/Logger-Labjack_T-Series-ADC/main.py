@@ -119,7 +119,8 @@ class Device(Labjack_T_Series_BaseClass.LabjackBaseClass):
 
         # validation
         if self.ef_mode.startswith("Thermocouple type") and not t_series_model.find("T7") >= 0:
-            raise ValueError("Thermocouple measurements are only available with T7 models")
+            msg = "Thermocouple measurements are only available with T7 models"
+            raise ValueError(msg)
 
         # apply EF settings to returns
         variables, units = self.adc_ef_mode.return_names, self.adc_ef_mode.units
@@ -145,7 +146,8 @@ class Device(Labjack_T_Series_BaseClass.LabjackBaseClass):
             keys = list(self.ef_config.keys())
             
             if any(key not in allowed for key in keys):
-                raise ValueError(f"EF config keys must be in {allowed}")
+                msg = f"EF config keys must be in {allowed}"
+                raise ValueError(msg)
             values = [float(x) if x else None for x in self.ef_config.values()]
             self.ef_config = dict(zip(keys, values))
         else:
@@ -175,7 +177,8 @@ class Device(Labjack_T_Series_BaseClass.LabjackBaseClass):
                 f"pin {k} (index {v})" for k, v in digital_pin_names_to_numbers.items()
                 if v in non_unique
             ]
-            raise ValueError(f"Following pins set to both dig and analogue: {pin_names}")
+            msg = f"Following pins set to both digital and analog: {pin_names}"
+            raise ValueError(msg)
 
     def configure(self):
 
