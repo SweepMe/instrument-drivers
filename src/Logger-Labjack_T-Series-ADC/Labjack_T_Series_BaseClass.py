@@ -221,7 +221,7 @@ class LabjackBaseClass(EmptyDevice):
                     f"Pin {non_unique_pins} have several states requested under different "
                     "aliases (eg DIOx<-->EIOy")
 
-        # IF there are flex pins need to set them to DIGITAL in case they were analogue
+        # If there are flex pins need to set them to DIGITAL in case they were analogue
         if self.dev_type == "T4":
             all_pin_names = pin_names_high + pin_names_low + pin_names_low
             flex = [
@@ -230,7 +230,7 @@ class LabjackBaseClass(EmptyDevice):
             if flex:
                 self.set_flex_pins_to_analog(flex, set_digital=True)
 
-        # set dio to IN/OUT
+        # set DIO to IN/OUT
         # first block dio commands to all channels except inputs/outputs (in/out = 1, others =0)
         ignore_bit_mask = gen_bit_mask(inputs + outputs, len(settable_pins), invert_mask=True)
         ljm.eWriteName(self.handle, "DIO_INHIBIT", ignore_bit_mask)
