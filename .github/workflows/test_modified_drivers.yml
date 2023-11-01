@@ -1,0 +1,23 @@
+name: Test Modified Drivers
+
+on:
+  pull_request:
+    branches: main
+
+permissions:
+  contents: read
+
+jobs:
+  test_modified_drivers:
+    name: Test Modified Drivers
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.9"
+      - name: Test Modified Drivers
+        shell: pwsh
+        run: |
+          .\.github\Test-ModifiedDrivers.ps1 -TargetBranch ${{ github.base_ref }}
