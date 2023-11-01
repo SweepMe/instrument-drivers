@@ -109,6 +109,8 @@ class Device(EmptyDevice):
         self.shortname = "K10CR1"
         self.is_simulation = False
 
+        self.homing_timeout_s = 40.0  # in seconds
+
     def find_ports(self):
         """
         This function returns the serial number of all connected devices in a list, 
@@ -140,7 +142,7 @@ class Device(EmptyDevice):
             "Go home at start": True,
             "Go home at end": False,
             " ": None,
-            "Timeout in s": 30.0,
+            "Timeout in s": 40.0,
             "Acceleration": 20.0,
             "Max velocity": 10.0,
             "Backlash correction": 0.1,
@@ -252,8 +254,8 @@ class Device(EmptyDevice):
 
         if needs_homing or self.home_on_start:
             self.kinesis_device.Home(Int32(0))
-            self.wait(timeout_ms=30e3, command="home")
-            
+            self.wait(timeout_ms=self.homing_timeout_s * 1000, command="home")
+
             if DEBUG:
                 print("K10CR1 homed")
 
@@ -262,12 +264,13 @@ class Device(EmptyDevice):
             # self.move(0)
 
     def configure(self):
+
         # the xml config file from Thorlabs motion is wrong and will not reject bad values
         # this leads to erratic movements/skipping movements
         if self.max_velocity > 10:
-            raise ValueError("max velocity cannot not exceed 10d/s")
+            raise ValueError("max velocity cannot not exceed 10 degree/s")
         if self.acceleration > 20:
-            raise ValueError("max acceleration cannot not exceed 20d/s/s")
+            raise ValueError("max acceleration cannot not exceed 20 degree/s/s")
 
         max_v = Decimal(self.max_velocity)
         accel = Decimal(self.acceleration)
@@ -277,7 +280,7 @@ class Device(EmptyDevice):
     def unconfigure(self):
         if self.home_on_end:
             self.kinesis_device.Home(Int32(0))
-            self.wait(timeout_ms=30e3, command="home")
+            self.wait(timeout_ms=self.homing_timeout_s * 1000, command="home")
 
     # the following functions are called for each measurement point #
 
