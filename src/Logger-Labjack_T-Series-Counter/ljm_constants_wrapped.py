@@ -104,7 +104,8 @@ DIO_PINS = {
         'EIO3': 11,
         'EIO4': 12,
         'EIO5': 13,
-        'EIO6': 15,
+        'EIO6': 14,
+        'EIO7': 15,
         'CIO0': 16,
         'CIO1': 17,
         'CIO2': 18,
@@ -124,7 +125,7 @@ DIO_PINS = {
         'DIO16': 16,
         'DIO17': 17,
         'DIO18': 18,
-        'DIO19': 19
+        'DIO19': 19,
     },
     "T7": {
         'DIO0': 0,
@@ -157,21 +158,22 @@ DIO_PINS = {
         'FIO4': 4,
         'FIO5': 5,
         'FIO6': 6,
-        'EIO0': 0,
-        'EIO1': 1,
-        'EIO2': 2,
-        'EIO3': 3,
-        'EIO4': 4,
-        'EIO5': 5,
-        'EIO6': 6,
-        'EIO7': 7,
-        'MIO0': 0,
-        'MIO1': 1,
-        'MIO2': 2,
-        'CIO0': 0,
-        'CIO1': 1,
-        'CIO2': 2,
-        'CIO3': 3
+        'FIO7': 7,
+        'EIO0': 8,
+        'EIO1': 9,
+        'EIO2': 10,
+        'EIO3': 11,
+        'EIO4': 12,
+        'EIO5': 13,
+        'EIO6': 14,
+        'EIO7': 15,
+        'CIO0': 16,
+        'CIO1': 17,
+        'CIO2': 18,
+        'CIO3': 19,
+        'MIO0': 20,
+        'MIO1': 21,
+        'MIO2': 22,
     }
 }
 # pins that can act as both analog inputs and digital IOs
@@ -191,7 +193,7 @@ FLEX_PINS_T4 = {
     'DIO8': 8,
     'DIO9': 9,
     'DIO10': 10,
-    'DIO11': 11
+    'DIO11': 11,
 }
 # {f"DIO{i}":i for i in range(4, 12)} # alternate
 
