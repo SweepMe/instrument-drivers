@@ -22,7 +22,7 @@
 
 
 # SweepMe! device class
-# Type: Switch
+# Module: Switch
 # Device: Festo edrive controller
 
 import time
@@ -47,7 +47,8 @@ class Device(EmptyDevice):
     
     Communication via TCPIP/Modbus
     If communication fails, please check whether the controller has a valid parameter set, is configured for Modbus
-    protocol, correct IP address, 
+    protocol, has correct IP address. Also try to restart the controller if a different interface has been used 
+    beforehand. 
     """
 
     def __init__(self):
@@ -60,13 +61,13 @@ class Device(EmptyDevice):
         self.plottype = [True, True] 
         self.savetype = [True, True] 
          
-        self.port_manager = False  # we handle the communication in the driver
-           
-        self.port_types = ["SOCKET"]  # Still, we let the port manager find some TCPIP ports for us
+        self.port_manager = False  # we handle the communication in the driver on our own
+        self.port_types = ["SOCKET"]  # Still, we let the port manager find some possible TCPIP ports for us
         
         self._verbose_mode = False
 
         if self._verbose_mode:
+            # once switched on it cannot be stopped.
             Logging()
 
     def set_GUIparameter(self):
@@ -81,8 +82,7 @@ class Device(EmptyDevice):
         return gui_parameter
 
     def get_GUIparameter(self, parameter):
-    
-        self.driver_name = parameter["Device"]
+
         self.port_string = parameter["Port"]
         self.velocity = parameter["Velocity in µm/s"]
         self.go_home_after_run = parameter["Go home after run"]
@@ -90,13 +90,18 @@ class Device(EmptyDevice):
         
     def connect(self):
     
-        com = ComModbus(self.port_string)
-        self.edrive = MotionHandler(com)
+        self.com = ComModbus(self.port_string)
+        # self.com.set_timeout(10)  # not needed right now, but can be used later
+        self.edrive = MotionHandler(self.com)
         self.edrive.acknowledge_faults()
           
     def disconnect(self):
-    
+
+        self.com.shutdown()
+
+        # probably not needed, but helps to clean-up
         del self.edrive
+        del self.com
         
     def initialize(self):
     
@@ -136,5 +141,9 @@ class Device(EmptyDevice):
         position_string = self.edrive.position_info_string()
         values = position_string.split(": ")[1].replace("[","").replace("]", "").split(",")
         set_pos, curr_pos = map(float, values)
+
+        # We need to overwrite the current position because the real position from position_info_string() is not
+        # always up to date
+        curr_pos = self.edrive.current_position()
         
         return [curr_pos, set_pos]
