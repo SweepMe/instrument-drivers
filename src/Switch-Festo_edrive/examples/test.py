@@ -32,7 +32,9 @@ for i in range(0, 100000, 20000):
     stage.edrive.position_task(i, 1000, absolute=True, nonblocking=True)
     if not stage.edrive.target_position_reached():
         stage.edrive.wait_for_target_position()
-    print(stage.edrive.current_position())
+    print("Current position:", stage.edrive.current_position())
+    
+stage.edrive.stop_motion_task()
 
 stage.deinitialize()  # semantic function to shutdown powerstage and move back to 0
 stage.disconnect()  # semantic function to shutdown Modbus communication

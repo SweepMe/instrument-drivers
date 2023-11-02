@@ -74,7 +74,7 @@ class Device(EmptyDevice):
         
         gui_parameter = {
                         "SweepMode": ["Absolute position in µm"],
-                        "Velocity in µm/s": "5000",
+                        "Velocity": "5000",
                         "Reach position": True,
                         "Go home after run": True,
                         }
@@ -84,7 +84,7 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter):
 
         self.port_string = parameter["Port"]
-        self.velocity = parameter["Velocity in µm/s"]
+        self.velocity = parameter["Velocity"]
         self.go_home_after_run = parameter["Go home after run"]
         self.do_reach_position = parameter["Reach position"]        
         
@@ -123,7 +123,8 @@ class Device(EmptyDevice):
         pass
         
     def unconfigure(self):
-        pass
+
+        self.edrive.stop_motion_task()
 
     def apply(self):
     
