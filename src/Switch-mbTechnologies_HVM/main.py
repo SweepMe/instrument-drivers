@@ -134,7 +134,6 @@ class Device(EmptyDevice):
         if self.use_resistance_box:
             self.enable_resistance_box(True)
             self.get_operation_complete()
-            time.sleep(1)  # TODO: Is this still needed if we use operation complete in the line above
 
     def unconfigure(self):
         if self.use_discharge:
@@ -149,7 +148,6 @@ class Device(EmptyDevice):
         if self.use_resistance_box:
             self.enable_resistance_box(False)
             self.get_operation_complete()
-            time.sleep(1)  # TODO: Is this still needed if we use operation complete in the line above
 
         self.open_all_channels()
         self.get_operation_complete()
@@ -489,3 +487,4 @@ if __name__ == "__main__":
     print(cmd, device.check_connections(cmd))
     cmd = "10101", "10201", "20101"  # triggers exception
     print(cmd, device.check_connections(cmd))
+    
