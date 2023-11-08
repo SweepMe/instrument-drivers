@@ -30,8 +30,10 @@ import FolderManager
 FolderManager.addFolderToPATH()
 
 import os
+import sys
+if sys.version_info[0:2] == (3,6):
+    import pyd_importer  # needed to correctly import pyd files from libs folder in Python 3.6
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
-import pyd_importer
 import pygame
   
 from EmptyDeviceClass import EmptyDevice
