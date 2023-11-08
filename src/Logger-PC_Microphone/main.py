@@ -71,7 +71,8 @@ class Device(EmptyDevice):
     def set_GUIparameter(self):
     
         GUIparameter = {
-                        "Duration" : 0.5,
+                        "Channels": 2,
+                        "Duration": 0.5,
                         }
                         
         return GUIparameter
@@ -83,6 +84,8 @@ class Device(EmptyDevice):
         
         if "Duration" in parameter:
             self.RECORD_SECONDS = float(parameter["Duration"])
+
+        self.CHANNELS = int(parameter.get("Channels", 2))
          
     def find_Ports(self):
         mics = []
