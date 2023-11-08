@@ -49,7 +49,10 @@ from EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
 
     description = """
-                  Note must be an integer between 0 and 127
+                  <p>Note must be an integer between 0 and 127</p>
+                  
+                  <p>You might not hear a sound when testing using the Apply-Button, as the Test mode disconnects
+                  from the device immediately after applying the value.</p> 
     
                   """
 
