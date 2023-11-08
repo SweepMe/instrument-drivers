@@ -49,7 +49,6 @@ import os
 accretech_uf = imp.load_source("accretech_uf", os.path.dirname(os.path.abspath(__file__)) +
                                os.sep + r"libs\accretech_uf.py")
 
-
 # this is needed as a fallback solutions as pysweepme.UserInterface is not available for all 1.5.5 update versions
 try:
     from pysweepme.UserInterface import message_box
@@ -400,8 +399,8 @@ class Device(EmptyDevice):
         self.die_x, self.die_y = self.prober.request_die_coordinate()
 
         # We always get in contact if not done already
-        # if not self.prober.is_chuck_contacted():
-        #     self.prober.z_up()
+        if not self.prober.is_chuck_contacted():
+            self.prober.z_up()
 
         # Check whether dies are correct
         self.print_die_info()
