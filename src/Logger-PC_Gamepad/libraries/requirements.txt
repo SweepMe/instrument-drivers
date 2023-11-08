@@ -1,0 +1,1 @@
+XInput-Python==0.4.0
