@@ -38,7 +38,8 @@ import numpy as np
 from FolderManager import addFolderToPATH
 addFolderToPATH()
 
-import pyd_importer  # needed to correctly import pyd files from libs folder
+if sys.version_info[0:2] == (3,6):
+    import pyd_importer  # needed to correctly import pyd files from libs folder in Python 3.6
 import mido
 import mido.backends.rtmidi
 mido.set_backend('mido.backends.rtmidi')
@@ -48,7 +49,10 @@ from EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
 
     description = """
-                  Note must be an integer between 0 and 127
+                  <p>Note must be an integer between 0 and 127</p>
+                  
+                  <p>You might not hear a sound when testing using the Apply-Button, as the Test mode disconnects
+                  from the device immediately after applying the value.</p> 
     
                   """
 
