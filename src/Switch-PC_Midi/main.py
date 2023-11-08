@@ -38,7 +38,8 @@ import numpy as np
 from FolderManager import addFolderToPATH
 addFolderToPATH()
 
-import pyd_importer  # needed to correctly import pyd files from libs folder
+if sys.version_info[0:2] == (3,6):
+    import pyd_importer  # needed to correctly import pyd files from libs folder in Python 3.6
 import mido
 import mido.backends.rtmidi
 mido.set_backend('mido.backends.rtmidi')
