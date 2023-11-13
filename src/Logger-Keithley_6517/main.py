@@ -48,7 +48,6 @@ class Device(EmptyDevice):
                     <p><strong>Communication:</strong></p>
                     <ul>
                     <li>In order to use GPIB or RS-232, you need to enable the protocol using the instruments menu.</li>
-                    <li>GPIB factory default address: 14</li>
                     </ul>
                     <p>&nbsp;</p>
                     <p><strong>Usage:</strong></p>
@@ -58,7 +57,9 @@ class Device(EmptyDevice):
                     <li>'Average' can be used to set the number of values the instrument takes before returning the averaged value.</li>
                     <li>'Source voltage in V' can be used to set the value of your voltage for SVMI. Can be set between 0 V and 1000 V\n 
                     Resolution for voltages lower than 100 V is 5 mV for voltages greater than 100 V it's 50 mV.</li>
-                    <li> "Source voltage limit in V" manually sets the upper limit for the source voltage.</li>
+                    <li>'Source voltage limit in V' manually sets the upper limit for the source voltage.</li>
+                    <li>'Source voltage connection' sets how your source voltage is connected, either as independent source (Hi and Lo)\n
+                    or as Source Voltage Measure Current (Hi and Hi).<\li>
                     <li>Adjust the option 'Line sync' to enable/disable the line sync to your countries power line frequency.</li>
                     </ul>
                     <p>&nbsp;</p>
@@ -119,7 +120,7 @@ class Device(EmptyDevice):
         self.rate = parameter['Rate']
         self.average_count = int(parameter['Average'])
         
-        if parameter['Source Voltage in V'] == "":
+        if parameter['Source voltage in V'] == "":
             self.source_voltage = 0.0
         else:
             self.source_voltage = float(parameter['Source voltage in V'])
@@ -225,9 +226,7 @@ class Device(EmptyDevice):
             self.port.write(":OUTP:STAT ON")
 
     def poweron(self):
-        # Maybe always ON here
-        if self.source_voltage != 0:
-            self.port.write(":OUTP:STAT ON")
+        self.port.write(":OUTP:STAT ON")
 
     def poweroff(self):
         self.port.write(":OUTP:STAT OFF")
@@ -241,7 +240,11 @@ class Device(EmptyDevice):
         # print("Result:", result)
         # Reading, Timestamp, Status
         
-        self.measured_value = float(result.split(",")[0].rstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+        # Slicing of the last 4 characters of the result e.g. NADC
+        self.measured_value = float(result.split(",")[0][:-4])
+        
+        # In case slicing of the last 4 characters creates errors:
+        # self.measured_value = float(result.split(",")[0].rstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
 
     def call(self):
         return [self.measured_value]
