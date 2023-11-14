@@ -418,7 +418,7 @@ class Device(EmptyDevice):
 
         """
         self.set_digital_output(1)
-        self.digital_output_value(1, int(state))
+        self.set_digital_output_value(1, int(state))
 
     def set_digital_output_value(self, pin, mode):
         """Set a output pin of the IO line to high (True) or low (False)
