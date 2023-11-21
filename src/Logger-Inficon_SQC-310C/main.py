@@ -5,7 +5,7 @@
 
 # MIT License
 
-# Copyright (c) 2020 Axel Fischer (sweep-me.net)
+# Copyright (c) 2020-2023 SweepMe! GmbH (sweep-me.net)
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -95,20 +95,19 @@ class Device(EmptyDevice):
         self.sync_character = "!"
         
         self.response_characters = {
-                                    "A": "Command understood, normal response",
-                                    "C": "Invalid command",
-                                    "D": "Problem with data in command",
-                                    "E": "SQC-310 in wrong mode for this command",
-                                    "F": "Invalid CRC",
-                                    "G": "Response length exceeds 221 characters",
-                                }
+            "A": "Command understood, normal response",
+            "C": "Invalid command",
+            "D": "Problem with data in command",
+            "E": "SQC-310 in wrong mode for this command",
+            "F": "Invalid CRC",
+            "G": "Response length exceeds 221 characters",
+        }
                                 
         self.reading_timeout = 2
-                                
     
     def set_GUIparameter(self):
     
-        GUIparameter = {
+        gui_parameter = {
                         # "Channel": ["1", "2", "3", "4"],
                         
                         "Reset thickness": False,
@@ -152,7 +151,7 @@ class Device(EmptyDevice):
                         # "Tooling4 in %" : "100.0",
                         }
         
-        return GUIparameter
+        return gui_parameter
         
     def get_GUIparameter(self, parameter={}):
     
@@ -165,7 +164,7 @@ class Device(EmptyDevice):
         self.plottype = []
         self.savetype = []
         
-        for i in range(1,5,1):
+        for i in range(1, 5, 1):
             if self.parameter["Sensor%i" % i]:
             
                 self.variables += ["Thickness%i" % i, "Rate%i" % i, "Xtal%i life" % i]
@@ -173,19 +172,18 @@ class Device(EmptyDevice):
                 self.plottype += [True, True, True]
                 self.savetype += [True, True, True]
 
-
     def initialize(self):
         
         # Request version
         self.send_message("@")
         answer = self.receive_message()
-        print("Version:", answer)
+        # print("Version:", answer)
         
         # check whether it is a SQC-310 (2 channels) or a SQC-310C (4 channels)
         number_channels = self.get_number_channels()
-        
-        
-        # if sensor 3 or 4 is used, but only two sensors are available (it is then a SQC-310), we have to stop the measurement
+
+        # if sensor 3 or 4 is used, but only two sensors are available (it is then a SQC-310),
+        # we have to stop the measurement
         if number_channels == 2:
             for i in [3,4]:
                 if self.parameter["Sensor%i" % i]:
@@ -196,7 +194,8 @@ class Device(EmptyDevice):
     
         if self.parameter["Reset thickness"]:
             self.reset_thickness()
-                 
+
+        """
         # 1. empty process or delete and create process
         self.delete_all_layer_in_process(100)
         
@@ -235,12 +234,13 @@ class Device(EmptyDevice):
         # 50 Films
         # 1000 Layers
         # 100 Processes
+        """
 
     def measure(self):
     
         self.return_values = []
         
-        for i in range(1,5,1):
+        for i in range(1 ,5, 1):
             if self.parameter["Sensor%i" % i]:
 
                 # Empty line to separate all channels
@@ -251,54 +251,48 @@ class Device(EmptyDevice):
                 #Get thickness
                 answer = self.receive_message()
                 thickness = float(answer) * 100 # in nm
-                print("Thickness%i:" % i, thickness)
+                # print("Thickness%i:" % i, thickness)
                 
                 #Request rate
                 self.send_message("L%i" % i)            
                 #Get rate
                 answer = self.receive_message()
                 rate = float(answer)
-                print("Rate%i:" % i, rate)
+                # print("Rate%i:" % i, rate)
                 
 
                 # Request crystal live
-                status, frequency, xtal_life = self.get_crystal_life()
+                status, frequency, xtal_life = self.get_crystal_life(i)
 
                 # adding the values for each sensor
                 self.return_values += [thickness, rate, xtal_life]
 
-
-    
     def read_result(self):
         pass
-        
         
     def call(self):
         return self.return_values
 
+    # commands that are introduced by the device class #
 
-    ### commands that are introduced by the device class ###
-    
-    
     def get_number_channels(self):
         
-        #Request number_channels
+        # Request number_channels
         self.send_message("J")
-        #Get number_channels
+        # Get number_channels
         answer = self.receive_message()
         number_channels = int(answer)
-        print("Number channels:", number_channels)
+        # print("Number channels:", number_channels)
         
         return number_channels
-    
-    
+
     def reset_thickness(self):
-        #reset thickness
+        # reset thickness
         self.send_message("U32")
         answer = self.receive_message()
        
     def reset_time(self):
-        #reset time
+        # reset time
         self.send_message("U33")
         answer = self.receive_message()
     
@@ -309,12 +303,12 @@ class Device(EmptyDevice):
         
     def get_sensor_tooling(self, sensor):
         
-        #Request tooling
+        # Request tooling
         self.send_message("HA%s? 1" % str(sensor))
-        #Gettooling
+        # Get tooling
         answer = self.receive_message()
         tooling = float(answer)
-        print("Tooling%s:" % str(sensor), tooling)
+        # print("Tooling%s:" % str(sensor), tooling)
         
         return tooling
         
@@ -358,15 +352,13 @@ class Device(EmptyDevice):
     
         self.send_message("A2 %i 4 %i" % (int(film), int(material)))
         answer = self.receive_message()
-     
-    
+
     def set_material_name(self, material_number, name):
         """ set a name for a given material number, maximum 16 characters """
     
         self.send_message("F%i 1 %s" % (int(material_number), str(name)[0:16] ))
         answer = self.receive_message()
-        
-        
+
     def get_material_name(self, material_number):
         """ get the name for a given material number """
         
@@ -375,7 +367,6 @@ class Device(EmptyDevice):
         name = str(answer)
         
         return name
-        
 
     def set_material_density(self, material_number, density):
         """ set a density for a given material number """
@@ -391,8 +382,7 @@ class Device(EmptyDevice):
         density = float(answer)
         
         return density
-        
-        
+
     def set_material_zfactor(self, material_number, zfactor):
         """ set a z-factor for a given material number """
         
@@ -408,8 +398,7 @@ class Device(EmptyDevice):
         zfactor = float(answer)
         
         return zfactor
-        
-    
+
     def set_active_process(self, process_number):
         """ set the active process number """
         
@@ -420,8 +409,7 @@ class Device(EmptyDevice):
     
         self.send_message("U1")
         answer = self.receive_message()
-    
-    
+
     def delete_process(self, process_number):
         
         self.send_message("CA%i? 2" % (int(process_number)))
@@ -436,16 +424,15 @@ class Device(EmptyDevice):
         
         self.send_message("CC%i %i %i? %i" % (int(process_number), int(layer_number), int(film_number), int(codep)+1))
         answer = self.receive_message()
-        
 
-    ### additional convenience functions ###
+    # additional convenience functions #
    
     def send_message(self, cmd):
     
-        print()    
-        print("Command sent", cmd)
+        # print()
+        # print("Command sent", cmd)
     
-        cmd = cmd.replace(".", "").replace(",","") # decimal points are removed
+        cmd = cmd.replace(".", "").replace(",", "")  # decimal points are removed
         length_character = self.get_lengthcharacter(cmd)
         
         crc = self.calculate_crc(length_character + cmd)
@@ -453,8 +440,7 @@ class Device(EmptyDevice):
         b = bytearray()
         b.extend(command.encode('latin1'))
         self.port.write(b)
-        
-        
+
         # self.port.write(command.encode())
         # self.port.write(command)
         
@@ -482,7 +468,7 @@ class Device(EmptyDevice):
         # 4. read message completely
         message = self.port.read(length_message)
         
-        print("Message:", message)
+        # print("Message:", message)
         
         # 5. read response character
         response_character = chr(message[0])
@@ -494,7 +480,7 @@ class Device(EmptyDevice):
         crc1_read = self.port.read(1)
         crc2_read = self.port.read(1)
         
-        # 8. evaluate responce character
+        # 8. evaluate response character
         if response_character in self.response_characters:
             if response_character != "A":
                 print()
@@ -511,10 +497,10 @@ class Device(EmptyDevice):
 
         # 9. convert reply
         reply = reply.decode()
-        print("Reply:", reply)
+        # print("Reply:", reply)
 
         # 10. check crc 
-        length_character = self.get_lengthcharacter(reply, write_or_read = "read")
+        length_character = self.get_lengthcharacter(reply, write_or_read="read")
         
         #crc1_calc, crc2_calc = self.calculate_crc(length_character + reply)
         #if crc1_read == crc1_calc and crc2_read == crc2_calc:
@@ -526,14 +512,13 @@ class Device(EmptyDevice):
             
         return reply
         
-    def get_lengthcharacter(self, cmd, write_or_read = "write"):
+    def get_lengthcharacter(self, cmd, write_or_read="write"):
     
         if write_or_read == "write":
             return chr(len(cmd) + 34) # 34 is always added to be not accidentally the sync character "!"
         else:
             return chr(len(cmd) + 35) # 35 is added to returning messages
-        
-                      
+
     def calculate_crc(self, cmd): 
     
         # return "00" # can be used for testing, the SQC-310C will ignore checksums in this case
