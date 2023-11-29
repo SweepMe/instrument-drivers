@@ -283,5 +283,5 @@ class Device(EmptyDevice):
         """
         Waits for the operation queue to be completed
         """
-        self.port.write("*OPC")
+        self.port.write("*OPC?")
         return self.port.read()
