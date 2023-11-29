@@ -111,7 +111,11 @@ class Device(EmptyDevice):
         identifier = self.get_identification()
 
         vendor, model, sn_version, fw_version = identifier.split(",")
-        fw_version_year = int(fw_version.split()[3])
+
+        try:
+            fw_version_year = int(fw_version.split()[3])
+        except ValueError:
+            fw_version_year = -1  # unknown version
 
         # The Keithley 2400 supports two protocols: 488.1 and SCPI
         # The SCPI protocol is better as it works more stable. If several devices are connected at the same time,
