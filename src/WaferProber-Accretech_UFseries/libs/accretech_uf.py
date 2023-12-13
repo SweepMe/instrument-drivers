@@ -63,7 +63,8 @@ class AccretechProber:
                 "No connection established with Accretech UF prober. "
                 "Please check port address / instrument is connected"
             )
-        self.port.port.enable_event(self.event_type, self.event_mech)
+
+        self.register_srq_event()
 
         # not used at the moment as the default is set in acquire_status_byte()
         # self.service_request_timeout = 5  # in seconds
@@ -181,7 +182,12 @@ class AccretechProber:
         }
 
     def __del__(self):
+        self.unregister_srq_event()
 
+    def register_srq_event(self):
+        self.port.port.enable_event(self.event_type, self.event_mech)
+
+    def unregister_srq_event(self):
         self.port.port.disable_event(self.event_type, self.event_mech)
 
     def set_verbose(self, state=True):

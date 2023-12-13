@@ -184,6 +184,10 @@ class Device(EmptyDevice):
 
     def initialize(self):
 
+        # workaround to register again for the SRQ event because the connect phase of other drivers seems to
+        # remove the event registration if other devices are connected to the same GPIB controller
+        self.prober.register_srq_event()
+
         self.print_info()
 
         self.print_status()
