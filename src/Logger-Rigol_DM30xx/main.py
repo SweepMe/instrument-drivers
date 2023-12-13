@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2021 Axel Fischer (sweep-me.net)
+# Copyright (c) 2021-2023 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -57,66 +57,66 @@ class Device(EmptyDevice):
         self.port_types = ["GPIB", "USB", "COM", "TCPIP"]
         
         self.port_properties = { 
-                                    "timeout": 4.0,
-                                    "EOLwrite": "\r\n", # for COM port       
-                                    "EOLread": "\n",    # for COM port    
-                                    "baudrate": 9600,   # factory default
-                                    "bytesize": 8,      # factory default
-                                    "parity": "N",      # factory default
-                                    "Exception": True,
-                                    "delay": 0.05,
-                                }   
+            "timeout": 4.0,
+            "EOLwrite": "\r\n",  # for COM port
+            "EOLread": "\n",     # for COM port
+            "baudrate": 9600,    # factory default
+            "bytesize": 8,       # factory default
+            "parity": "N",       # factory default
+            "Exception": True,
+            "delay": 0.05,
+        }
                                  
         
         # this dictionary connects modes to commands. The modes will be displayed to the user in the field 'Mode'
         self.modes = {
-                        "Voltage DC":    ":VOLT:DC",   
-                        "Voltage AC":    ":VOLT:AC",
-                        "Current DC":    ":CURR:DC",
-                        "Current AC":    ":CURR:AC",
-                        "Resistance":    ":RES",                         
-                        "4W Resistance": ":FRES",
-                        "Capacitance":   ":CAP",
-                        "Diode":         ":DIOD",
-                        "Continuity":    ":CONT",
-                        "Periode":       ":PER",
-                        "Frequency":     ":FREQ",
-                        }
+            "Voltage DC":    ":VOLT:DC",
+            "Voltage AC":    ":VOLT:AC",
+            "Current DC":    ":CURR:DC",
+            "Current AC":    ":CURR:AC",
+            "Resistance":    ":RES",
+            "4W Resistance": ":FRES",
+            "Capacitance":   ":CAP",
+            "Diode":         ":DIOD",
+            "Continuity":    ":CONT",
+            "Periode":       ":PER",
+            "Frequency":     ":FREQ",
+        }
                         
         self.return_modes = {
-                            "DCV"  : "Voltage DC",
-                            "ACV"  : "Voltage AC",
-                            "DCI"  : "Current DC",
-                            "ACI"  : "Current AC",
-                            "2WR"  : "Resistance",
-                            "4WR"  : "4W Resistance",
-                            "CAP"  : "Capacitance",
-                            "DIODE": "Diode",
-                            "CONT" : "Continuity",
-                            "PERI" : "Periode",
-                            "FREQ" : "Frequency",
-                            }
+            "DCV"  : "Voltage DC",
+            "ACV"  : "Voltage AC",
+            "DCI"  : "Current DC",
+            "ACI"  : "Current AC",
+            "2WR"  : "Resistance",
+            "4WR"  : "4W Resistance",
+            "CAP"  : "Capacitance",
+            "DIODE": "Diode",
+            "CONT" : "Continuity",
+            "PERI" : "Periode",
+            "FREQ" : "Frequency",
+        }
                      
         # this dictionary sets the unit of each mode
         self.mode_units = {
-                            "Voltage DC":     "V", 
-                            "Voltage AC":     "V",
-                            "Current DC":     "A",
-                            "Current AC":     "A",
-                            "Resistance":     "Ohm", 
-                            "4W Resistance":  "Ohm", 
-                            "Capacitance":    "F",
-                            "Diode":          "V",
-                            "Continuity":     "Ohm",
-                            "Periode":        "s",
-                            "Frequency":      "Hz",
-                        }
+            "Voltage DC":     "V",
+            "Voltage AC":     "V",
+            "Current DC":     "A",
+            "Current AC":     "A",
+            "Resistance":     "Ohm",
+            "4W Resistance":  "Ohm",
+            "Capacitance":    "F",
+            "Diode":          "V",
+            "Continuity":     "Ohm",
+            "Periode":        "s",
+            "Frequency":      "Hz",
+        }
           
         self.rates = {
-                        "Fast":   "F",
-                        "Medium": "M",
-                        "Slow":   "S",
-                        }
+            "Fast":   "F",
+            "Medium": "M",
+            "Slow":   "S",
+        }
             
         # section below is maybe needed later
         """  
@@ -141,8 +141,7 @@ class Device(EmptyDevice):
   
                             }   
         """                    
-                                
-                                                                 
+
     def set_GUIparameter(self):
         
         GUIparameter = {
@@ -152,7 +151,7 @@ class Device(EmptyDevice):
                         
         return GUIparameter
                                  
-    def get_GUIparameter(self, parameter = {}):
+    def get_GUIparameter(self, parameter={}):
     
         # these two lines will be commented later. Just printing all GUI parameters here
         # print()
@@ -200,23 +199,22 @@ class Device(EmptyDevice):
 
     def configure(self):
         
-        
-        ## Mode
+        # Mode
         self.port.write(":FUNC?")
         current_mode = self.port.read()
         
         if self.return_modes[current_mode] != self.mode:
             self.port.write(":FUNC" + self.modes[self.mode])
             
-        ## Speed
+        # Speed
         self.port.write(":RATE" + self.modes[self.mode] + " " + self.rates[self.rate])
         
-        ## Range
+        # Range
         # if not self.mode in ["Temperature", "Continuity", "Diode"]:
             # self.port.write(":SENS:%s:RANG:AUTO ON" % (self.modes[self.mode]))
 
             
-        ## Trigger
+        # Trigger
         #print("Configuring trigger")
         # self.port.write("INIT:CONT OFF")  # needed to use "READ?" command
         #self.port.write("TRIG:SOUR %s" % self.trigger_types[self.trigger_type])
@@ -235,16 +233,58 @@ class Device(EmptyDevice):
         # print("Response to MEAS? command:", answer)
 
         return [float(answer)] 
-        
-    
-    """ here, setter/getter functions are listed """
-    
+
+    # here, setter/getter functions are listed #
     
     def get_identification(self):
         
         self.port.write("*IDN?")
         return self.port.read()
-    
+
+    def reset(self):
+        self.port.write("*RST")
+
+    def clear(self):
+
+        self.port.write("*CLS")
+
+    def set_opration_complete(self, status):
+
+        self.port.write("*OPC %i" % int(status))
+
+    def get_operation_complete(self):
+
+        self.port.write("*OPC?")
+        return self.port.read()
+
+    def get_status_byte(self):
+
+        self.port.write("*STB?")
+        return self.port.read()
+
+    def set_event_status_register(self, status:int):
+
+        self.port.write("*ESE %i" % int(status))
+
+    def get_event_status_register(self):
+
+        self.port.write("*ESE?")
+        return int(self.port.read())
+
+    def get_event_status_register_value(self):
+
+        self.port.write("*ESR?")
+        return int(self.port.read())
+
+    def set_status_byte_enable_value(self, value):
+
+        self.port.write("*SRE %i" % int(value))
+
+    def get_status_byte_enable_value(self):
+
+        self.port.write("*SRE?")
+        return self.port.read()
+
     def get_serial_number(self):
         
         self.port.write(":SYST:SERI?")
@@ -262,7 +302,7 @@ class Device(EmptyDevice):
         else:
             raise Exception("Command set '%s' for 'set_command_set' is not a valid key." % cmd_set) 
 
-        
-        
-    """
-    """
+    def get_error(self):
+
+        self.port.write("SYST:ERR?")
+        return self.port.read()
