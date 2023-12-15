@@ -36,6 +36,9 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 addFolderToPATH()
 
+from mcculw import ul
+from mcculw.ul import ULError
+from mcculw.device_info import DaqDeviceInfo
 from mcculw.enums import ScanOptions, FunctionType, Status, AnalogInputMode, InterfaceType
 
 
@@ -80,8 +83,6 @@ class Device(EmptyDevice):
 
     def find_ports(self):
 
-        self.import_mcculw()
-
         ul.ignore_instacal()
         ul.release_daq_device(self.board_num)
 
@@ -93,8 +94,6 @@ class Device(EmptyDevice):
             return ["No device was found"]
 
     def connect(self):
-
-        self.import_mcculw()
 
         ul.ignore_instacal()
 
@@ -154,16 +153,6 @@ class Device(EmptyDevice):
 
     def call(self):
         return self.data
-
-    def import_mcculw(self):
-
-        try:
-            from mcculw import ul
-            from mcculw.ul import ULError
-            from mcculw.device_info import DaqDeviceInfo
-        except:
-            error("Unable to import mcculw library for MCC DAQ driver. Make sure the MCC DAQ Software, "
-                  "including Universal Library™ is installed.")
 
     def create_device_list(self):
 
