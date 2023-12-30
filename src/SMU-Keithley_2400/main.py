@@ -33,7 +33,7 @@
 # Device: Keithley 2400
 
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 import numpy as np
 import time
 
@@ -69,21 +69,23 @@ class Device(EmptyDevice):
 			"SweepMode": ["Voltage in V", "Current in A"],
 			"RouteOut": ["Front", "Rear"],
 			"Speed": ["Fast", "Medium", "Slow"],
-			"Range": ["Auto",
-					  "10 nA",
-					  "100 nA",
-					  "1 µA",
-					  "10 µA",
-					  "100 µA",
-					  "1 mA",
-					  "10 mA",
-					  "100 mA",
-					  "1 A", ],
+			"Range": [
+				"Auto",
+				"10 nA",
+				"100 nA",
+				"1 µA",
+				"10 µA",
+				"100 µA",
+				"1 mA",
+				"10 mA",
+				"100 mA",
+				"1 A",
+			],
 			"Compliance": 100e-6,
 			"Average": 1,
 			"4wire": False,
 			
-									
+			# List sweep feature
 			"ListSweepCheck": True,
 			"ListSweepStart": 0.5,
 			"ListSweepEnd": 1.0,
@@ -118,7 +120,7 @@ class Device(EmptyDevice):
 		self.average = self.average_gui
 		if self.average_gui < 1:
 			self.average = 1
-		if self.average_gui > 100:
+		elif self.average_gui > 100:
 			self.average = 100
 
 		self.listsweep_start = float(parameter["ListSweepStart"])
@@ -141,7 +143,8 @@ class Device(EmptyDevice):
 		except:
 			self.listsweep_delay = None
 			
-		#in case of a list sweep, the time stamp of each measurement point must be saved additionally to every (V,I) tupel
+		# in case of a list sweep, the time stamp of each measurement point must be saved additionally
+		# to every (V,I) tuple
 		if self.sweepvalue == "List sweep":
 			self.variables = ["Voltage", "Current", "Timestamp"]
 			self.units = ["V", "A", "s"]
@@ -153,8 +156,6 @@ class Device(EmptyDevice):
 			self.units = ["V", "A"]
 			self.plottype = [True, True]  # True to plot data
 			self.savetype = [True, True]  # True to save data
-			
-		
 
 	def initialize(self):
 
@@ -190,7 +191,7 @@ class Device(EmptyDevice):
 		
 		# once at the beginning of the measurement
 		self.reset()
-		# time.sleep(0.05) # maybe needed to prevent random "Undefined Header error -113"
+		# time.sleep(0.05)  # maybe needed to prevent random "Undefined Header error -113"
 		self.clear()
 		
 		self.port.write("SYST:BEEP:STAT OFF")  # control-beep off
@@ -281,7 +282,8 @@ class Device(EmptyDevice):
 					else:
 						raise ValueError("Start and end value must be equal if step width is zero.")     
 				else:
-					listsweep_points = round(abs(self.listsweep_end - self.listsweep_start) / abs(self.listsweep_steppoints_value) + 1)
+					listsweep_points = round(abs(self.listsweep_end - self.listsweep_start) /
+											 abs(self.listsweep_steppoints_value) + 1)
 
 			elif self.listsweep_steppoints_type.startswith("Points (lin.)"):
 				listsweepmode = 1
@@ -296,90 +298,16 @@ class Device(EmptyDevice):
 				# thus 2 larger than the modes without dual sweep/double sweep
 				listsweepmode += 2
 				
-			self.set_sweep(self.source, listsweepmode, self.listsweep_start, self.listsweep_end, listsweep_points, self.listsweep_delay, self.listsweep_hold)
+			self.set_sweep(self.source,
+						   listsweepmode,
+						   self.listsweep_start,
+						   self.listsweep_end,
+						   listsweep_points,
+						   self.listsweep_delay,
+						   self.listsweep_hold)
 
 		# let's ensure all parameters are set before we continue
 		self.wait_for_complete()
-		
-	def set_sweep(self, source, listsweepmode, start, stop, points, delay, hold):
-			"""
-			Only applies to listsweep mode and sets a staircase sweep for voltage or current.
-			The sweep is only read out after the measurement is completed, which reduces the sweep time.
-			
-			Arguments Pcomp and Rmode are not set and use default values
-			
-			Arguments:
-				source (str): "Voltage [V]" or "Current [A]" (for voltage or current)
-				listsweepmode (int): 
-					1 -> Linear sweep (single stair)
-					2 -> Logarithmic sweep (single stair)
-					3 -> Linear sweep (double stair)
-					4 -> Log sweep (double stair)
-				start (float): Start value in V or A
-				stop (float): End value in V or A
-				points (int): Number of steps
-				delay (float): Trigger latency between trigger and source output
-				hold (float): Source delay, time between setting a source value and measurement
-			"""
-			
-			source = str(source)
-			mode = int(listsweepmode)
-			start = float(start)
-			stop = float(stop)
-			points = int(points)
-			
-			if mode == 1:
-				#source values run up a linear staircase
-				sweep_list = np.linspace(start,stop,points)
-				
-			if mode == 2:
-				#source values run up a logarithmic staircase
-				sweep_list = np.geomspace(start,stop,points)
-			
-			if mode == 3:
-				#source values run up and down a linear staircase, stop value executed only once
-				sweep_list_up = np.linspace(start,stop,points)
-				sweep_list = np.append(sweep_list_up,np.flipud(sweep_list_up[:-1]))     
-				points = len(sweep_list)
-				
-			if mode == 4:
-				#source values run up and down a logarithmic staircase, stop value executed only once
-				sweep_list_up = np.geomspace(start,stop,points)
-				sweep_list = np.append(sweep_list_up,np.flipud(sweep_list_up))
-				points = len(sweep_list)
-			
-			# Keithley 2400 can take up to 100 list values
-			if points < 1:
-				raise ValueError("Number of steps must be larger than 0.")
-			elif points > 100:
-				raise ValueError("Number of steps must be smaller than 101.")
-			
-			# Keithley 2400 expects sweep list as a string separated by commas
-			list_string = ','.join(format(value, ".6e") for value in sweep_list)
-			
-			if "Voltage" in source:
-				self.port.write(":SOURce:VOLTage:MODE LIST")
-				self.port.write(":SOURce:LIST:VOLTage %s" % list_string)
-			elif "Current" in source:
-				self.port.write(":SOURce:CURRent:MODE LIST")
-				self.port.write(":SOURce:LIST:CURRent %s" % list_string)
-			else:
-				raise ValueError("No source mode identified.")
-			
-			# set trigger count to measurement points 
-			self.port.write(":TRIG:COUN %d" % points) 
-			
-			# set trigger latency, AUTO if no value given
-			if type(delay) == float:
-				self.port.write(":TRIGger:DELay %.6f" % delay)
-			else:
-				self.port.write(":TRIGger:DELay AUTO")
-			
-			# set hold time between source value and measurement, AUTO if no value given
-			if type(hold) == float:
-				self.port.write(":SOURce:DELay %.6f" % hold) 
-			else:
-				self.port.write(":SOURce:DELay AUTO")
 
 	def deinitialize(self):
 		self.port.write("SYST:RSEN OFF")
@@ -418,7 +346,7 @@ class Device(EmptyDevice):
 		if answer == [""]:
 			answer = self.port.read().split(',')      
 
-		#answer comes as a string separated by commas, 5 values per source point
+		# answer comes as a string separated by commas, 5 values per source point
 		data = np.asarray(answer)
 		data = data.reshape((data.shape[0] // 5, 5))
 		
@@ -431,9 +359,96 @@ class Device(EmptyDevice):
 			return [self.v, self.i, self.t]
 		else:
 			return [self.v, self.i]
-			
+
+	def set_sweep(self, source, listsweepmode, start, stop, points, delay, hold):
+		"""
+        Only applies to listsweep mode and sets a staircase sweep for voltage or current.
+        The sweep is only read out after the measurement is completed, which reduces the sweep time.
+
+        Arguments Pcomp and Rmode are not set and use default values
+
+        Arguments:
+            source (str): "Voltage [V]" or "Current [A]" (for voltage or current)
+            listsweepmode (int):
+                1 -> Linear sweep (single stair)
+                2 -> Logarithmic sweep (single stair)
+                3 -> Linear sweep (double stair)
+                4 -> Log sweep (double stair)
+            start (float): Start value in V or A
+            stop (float): End value in V or A
+            points (int): Number of steps
+            delay (float): Trigger latency between trigger and source output
+            hold (float): Source delay, time between setting a source value and measurement
+        """
+
+		source = str(source)
+		mode = int(listsweepmode)
+		start = float(start)
+		stop = float(stop)
+		points = int(points)
+
+		if mode == 1:
+			# source values run up a linear staircase
+			sweep_list = np.linspace(start, stop, points)
+
+		elif mode == 2:
+			# source values run up a logarithmic staircase
+			sweep_list = np.geomspace(start, stop, points)
+
+		elif mode == 3:
+			# source values run up and down a linear staircase, stop value executed only once
+			sweep_list_up = np.linspace(start, stop, points)
+			sweep_list = np.append(sweep_list_up, np.flipud(sweep_list_up[:-1]))
+			points = len(sweep_list)
+
+		elif mode == 4:
+			# source values run up and down a logarithmic staircase, stop value executed only once
+			sweep_list_up = np.geomspace(start, stop, points)
+			sweep_list = np.append(sweep_list_up, np.flipud(sweep_list_up))
+			points = len(sweep_list)
+
+		else:
+			raise ValueError(f"Mode '{mode}' is not supported.")
+
+		# Keithley 2400 can take up to 100 list values
+		if points < 1:
+			raise ValueError("Number of steps must be larger than 0.")
+		elif points > 100:
+			raise ValueError("Number of steps must be smaller than 101.")
+
+		# Keithley 2400 expects sweep list as a string separated by commas
+		list_string = ','.join(format(value, ".6e") for value in sweep_list)
+
+		if "Voltage" in source:
+			self.port.write(":SOURce:VOLTage:MODE LIST")
+			self.port.write(":SOURce:LIST:VOLTage %s" % list_string)
+		elif "Current" in source:
+			self.port.write(":SOURce:CURRent:MODE LIST")
+			self.port.write(":SOURce:LIST:CURRent %s" % list_string)
+		else:
+			raise ValueError("No source mode identified.")
+
+		# set trigger count to measurement points
+		self.port.write(":TRIG:COUN %d" % points)
+
+		# set trigger latency, AUTO if no value given
+		if type(delay) == float:
+			self.port.write(":TRIGger:DELay %.6f" % delay)
+		else:
+			self.port.write(":TRIGger:DELay AUTO")
+
+		# set hold time between source value and measurement, AUTO if no value given
+		if type(hold) == float:
+			self.port.write(":SOURce:DELay %.6f" % hold)
+		else:
+			self.port.write(":SOURce:DELay AUTO")
+
+	# Wrapped communication commands start here #
+
 	def get_identification(self):
-		#Retrieves the identification string
+		"""
+		Retrieves the identification string
+		"""
 		self.port.write("*IDN?")
 		return self.port.read()
 
