@@ -39,7 +39,7 @@ addFolderToPATH()
 from mcculw import ul
 from mcculw.ul import ULError
 from mcculw.device_info import DaqDeviceInfo
-from mcculw.enums import ScanOptions, FunctionType, Status, AnalogInputMode, InterfaceType
+from mcculw.enums import ScanOptions, FunctionType, Status, AnalogInputMode, InterfaceType, ULRange
 
 
 class Device(EmptyDevice):
@@ -62,24 +62,41 @@ class Device(EmptyDevice):
 
         self.data = []  # object to store results before they are returned in 'call'
 
+        self.measurement_modes = {
+            "Single-Ended" : "SINGLE_ENDED",
+            "Differential" : "DIFFERENTIAL",
+        }
+
+        self.available_ai_ranges = {
+            "10 V" : ULRange.BIP10VOLTS,
+            "5 V"  : ULRange.BIP5VOLTS,
+            "2 V"  : ULRange.BIP2VOLTS,
+            "1 V"  : ULRange.BIP1VOLTS
+        }
+
+
     def set_GUIparameter(self):
 
         gui_parameter = {
-            "Analog input mode": AnalogInputMode._member_names_,
-            "Analog inputs": "1, 2",
+            "Analog input mode": list(self.measurement_modes.keys()),
+            "Analog input channels": "1, 2",
+            "Analog input range": list(self.available_ai_ranges.keys())
         }
+
         return gui_parameter
 
     def get_GUIparameter(self, parameter):
         """ parse and store GUI options"""
         self.port_string = parameter["Port"]
-        self.analog_input_mode = parameter["Analog input mode"]
-        self.analog_inputs_list = parameter["Analog inputs"].split(",")
+        self.analog_input_mode = self.measurement_modes[parameter["Analog input mode"]]
+        self.analog_inputs_list = parameter["Analog input channels"].split(",")
         self.analog_inputs = [int(s.strip()) for s in self.analog_inputs_list]
 
         for i in range(len(self.analog_inputs)):
             self.variables.append("AI%d" % self.analog_inputs[i])
             self.units.append("V")
+
+        self.ai_range = self.available_ai_ranges[parameter["Analog input range"]]
 
     def find_ports(self):
 
@@ -127,9 +144,12 @@ class Device(EmptyDevice):
 
         # print("Number of analog inputs:", self.ai_info.num_chans)
 
-    def measure(self):
+        if not self.ai_range in self.ai_info.supported_ranges:
+            msg = "The DAQ device does not support this AI range."
+            raise Exception(msg)
 
-        ai_range = self.ai_info.supported_ranges[0]  # fixed range so far
+
+    def measure(self):
 
         self.data = []
 
@@ -138,15 +158,15 @@ class Device(EmptyDevice):
             # Get a value from the device
             if self.ai_info.resolution <= 16:
                 # Use the a_in method for devices with a resolution <= 16
-                value = ul.a_in(self.board_num, ai, ai_range)
+                value = ul.a_in(self.board_num, ai, self.ai_range)
                 # Convert the raw value to engineering units
-                eng_units_value = ul.to_eng_units(self.board_num, ai_range, value)
+                eng_units_value = ul.to_eng_units(self.board_num, self.ai_range, value)
             else:
                 # Use the a_in_32 method for devices with a resolution > 16
                 # (optional parameter omitted)
-                value = ul.a_in_32(self.board_num, ai, ai_range)
+                value = ul.a_in_32(self.board_num, ai, self.ai_range)
                 # Convert the raw value to engineering units
-                eng_units_value = ul.to_eng_units_32(self.board_num, ai_range, value)
+                eng_units_value = ul.to_eng_units_32(self.board_num, self.ai_range, value)
 
             # print("value for input %d:" % i, eng_units_value)
             self.data.append(eng_units_value)
