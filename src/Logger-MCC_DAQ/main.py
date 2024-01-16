@@ -43,11 +43,16 @@ from mcculw.enums import ScanOptions, FunctionType, Status, AnalogInputMode, Int
 
 
 class Device(EmptyDevice):
-
     description = """
+                  MCC High-Speed Multifunction DAQ
+                  
                   To use this driver, installation of MCC DAQ Software, including Universal Library™ is needed. 
                   Please download it here: https://www.mccdaq.com/Software-Downloads
+                  
+                  If your device supports additional AI ranges, they can be added by extending the available_ai_ranges 
+                  dictionary.
                   """
+
     def __init__(self):
 
         EmptyDevice.__init__(self)
@@ -63,17 +68,18 @@ class Device(EmptyDevice):
         self.data = []  # object to store results before they are returned in 'call'
 
         self.measurement_modes = {
-            "Single-Ended" : "SINGLE_ENDED",
-            "Differential" : "DIFFERENTIAL",
+            "Single-Ended": "SINGLE_ENDED",
+            "Differential": "DIFFERENTIAL",
         }
 
+        # AI Range
         self.available_ai_ranges = {
-            "10 V" : ULRange.BIP10VOLTS,
-            "5 V"  : ULRange.BIP5VOLTS,
-            "2 V"  : ULRange.BIP2VOLTS,
-            "1 V"  : ULRange.BIP1VOLTS
+            "10 V": ULRange.BIP10VOLTS,
+            "5 V": ULRange.BIP5VOLTS,
+            "2 V": ULRange.BIP2VOLTS,
+            "1 V": ULRange.BIP1VOLTS
         }
-
+        self.ai_range = None
 
     def set_GUIparameter(self):
 
@@ -133,7 +139,7 @@ class Device(EmptyDevice):
         ul.release_daq_device(self.board_num)
 
     def initialize(self):
-        # Set input mode
+        # Input mode
         ul.a_input_mode(self.board_num, AnalogInputMode[self.analog_input_mode])
 
         daq_dev_info = DaqDeviceInfo(self.board_num)
@@ -144,10 +150,10 @@ class Device(EmptyDevice):
 
         # print("Number of analog inputs:", self.ai_info.num_chans)
 
+        # AI Range
         if not self.ai_range in self.ai_info.supported_ranges:
             msg = "The DAQ device does not support this AI range."
             raise Exception(msg)
-
 
     def measure(self):
 
