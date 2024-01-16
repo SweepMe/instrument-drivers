@@ -49,6 +49,26 @@ def is_compatible(driver_name: str) -> bool:
     return False
 
 
+# Driver name and reason for skipping
+SKIPPED_DRIVERS = {
+    "Logger-MCC_DAQ" : "Driver requires installed manufacturer software",
+}
+
+def should_skip_driver(driver_name: str) -> bool:
+    """Check if the driver can be tested on a virtual machine.
+
+        Args:
+            driver_name: Name (folder) of the driver to import.
+        """
+    if SKIPPED_DRIVERS.get(driver_name) is not None:
+        logging.debug(
+            f"Skipped importing {driver_name}. Reason: {SKIPPED_DRIVERS[driver_name]}",
+        )
+        return True
+
+    return False
+
+
 def import_driver(driver_name: str) -> None:
     """Let pysweepme import a driver from the src directory.
 
@@ -90,9 +110,14 @@ except IndexError as e:
     msg = "This script must be called with the driver name as first argument."
     raise IndexError(msg) from e
 
-if is_compatible(driver_name):
-    import_driver(driver_name)
-else:
+
+if not is_compatible(driver_name):
     logging.debug(
         f"Skipped importing {driver_name} because it is not meant to be compatible with this python version.",
     )
+elif should_skip_driver(driver_name):
+    logging.debug(
+        f"Skipped importing {driver_name} because it cannot be tested.",
+    )
+else:
+    import_driver(driver_name)
