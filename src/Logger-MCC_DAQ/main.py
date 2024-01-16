@@ -42,9 +42,9 @@ try:
     from mcculw.ul import ULError
     from mcculw.device_info import DaqDeviceInfo
     from mcculw.enums import ScanOptions, FunctionType, Status, AnalogInputMode, InterfaceType, ULRange
-except FileNotFoundError:
+except FileNotFoundError as e:
     msg = "MCC DAQ Software missing. Install InstaCal and Universal Library (UL)."
-    raise Exception(msg)
+    raise ImportError(msg) from e
 
 
 class Device(EmptyDevice):
