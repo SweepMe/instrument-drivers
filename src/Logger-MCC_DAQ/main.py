@@ -36,10 +36,15 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 addFolderToPATH()
 
-from mcculw import ul
-from mcculw.ul import ULError
-from mcculw.device_info import DaqDeviceInfo
-from mcculw.enums import ScanOptions, FunctionType, Status, AnalogInputMode, InterfaceType, ULRange
+# this driver needs libraries installed by the manufacturer software InstaCal
+try:
+    from mcculw import ul
+    from mcculw.ul import ULError
+    from mcculw.device_info import DaqDeviceInfo
+    from mcculw.enums import ScanOptions, FunctionType, Status, AnalogInputMode, InterfaceType, ULRange
+except FileNotFoundError:
+    msg = "MCC DAQ Software missing. Install InstaCal and Universal Library (UL)."
+    raise Exception(msg)
 
 
 class Device(EmptyDevice):
@@ -151,7 +156,7 @@ class Device(EmptyDevice):
         # print("Number of analog inputs:", self.ai_info.num_chans)
 
         # AI Range
-        if not self.ai_range in self.ai_info.supported_ranges:
+        if self.ai_range not in self.ai_info.supported_ranges:
             msg = "The DAQ device does not support this AI range."
             raise Exception(msg)
 
