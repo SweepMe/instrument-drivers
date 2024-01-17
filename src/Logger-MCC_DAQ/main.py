@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2023 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2023-2024 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,7 +31,6 @@
 # Device: Measurement Computing Corporation DAQ devices
 
 from pysweepme import addFolderToPATH
-from pysweepme.ErrorMessage import error, debug
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 addFolderToPATH()
@@ -39,9 +38,8 @@ addFolderToPATH()
 # this driver needs libraries installed by the manufacturer software InstaCal
 try:
     from mcculw import ul
-    from mcculw.ul import ULError
     from mcculw.device_info import DaqDeviceInfo
-    from mcculw.enums import ScanOptions, FunctionType, Status, AnalogInputMode, InterfaceType, ULRange
+    from mcculw.enums import AnalogInputMode, InterfaceType, ULRange
 except FileNotFoundError as e:
     msg = "MCC DAQ Software missing. Install InstaCal and Universal Library (UL)."
     raise ImportError(msg) from e
@@ -49,24 +47,21 @@ except FileNotFoundError as e:
 
 class Device(EmptyDevice):
     description = """
-                  MCC High-Speed Multifunction DAQ
-                  
-                  To use this driver, installation of MCC DAQ Software, including Universal Library™ is needed. 
-                  Please download it here: https://www.mccdaq.com/Software-Downloads
-                  
-                  If your device supports additional AI ranges, they can be added by extending the available_ai_ranges 
-                  dictionary.
-                  """
+                <h4>MCC High-Speed Multifunction DAQ</h4>
+
+                <p>To use this driver, installation of MCC DAQ Software, including Universal Library™ is needed.
+                Please download it from the <a href="https://www.mccdaq.com/Software-Downloads">MCC Homepage</a></p>
+
+                <p>If your device supports additional AI ranges, they can be added by extending the
+                <code>available_ai_ranges</code> dictionary.</p>
+                """
 
     def __init__(self):
-
         EmptyDevice.__init__(self)
 
         self.shortname = "MCC-DAQ"  # short name will be shown in the sequencer
         self.variables = []
         self.units = []
-
-        self.port_manager = False
 
         self.board_num = 0  # only fixed board 0 supported at the moment
 
@@ -82,22 +77,21 @@ class Device(EmptyDevice):
             "10 V": ULRange.BIP10VOLTS,
             "5 V": ULRange.BIP5VOLTS,
             "2 V": ULRange.BIP2VOLTS,
-            "1 V": ULRange.BIP1VOLTS
+            "1 V": ULRange.BIP1VOLTS,
         }
         self.ai_range = None
 
     def set_GUIparameter(self):
-
         gui_parameter = {
             "Analog input mode": list(self.measurement_modes.keys()),
             "Analog input channels": "1, 2",
-            "Analog input range": list(self.available_ai_ranges.keys())
+            "Analog input range": list(self.available_ai_ranges.keys()),
         }
 
         return gui_parameter
 
     def get_GUIparameter(self, parameter):
-        """ parse and store GUI options"""
+        """Parse and store GUI options."""
         self.port_string = parameter["Port"]
         self.analog_input_mode = self.measurement_modes[parameter["Analog input mode"]]
         self.analog_inputs_list = parameter["Analog input channels"].split(",")
@@ -110,7 +104,6 @@ class Device(EmptyDevice):
         self.ai_range = self.available_ai_ranges[parameter["Analog input range"]]
 
     def find_ports(self):
-
         ul.ignore_instacal()
         ul.release_daq_device(self.board_num)
 
@@ -122,7 +115,6 @@ class Device(EmptyDevice):
             return ["No device was found"]
 
     def connect(self):
-
         ul.ignore_instacal()
 
         inventory = ul.get_daq_device_inventory(InterfaceType.ANY)
@@ -144,9 +136,6 @@ class Device(EmptyDevice):
         ul.release_daq_device(self.board_num)
 
     def initialize(self):
-        # Input mode
-        ul.a_input_mode(self.board_num, AnalogInputMode[self.analog_input_mode])
-
         daq_dev_info = DaqDeviceInfo(self.board_num)
         if not daq_dev_info.supports_analog_input:
             msg = "The DAQ device does not support analog inputs."
@@ -160,12 +149,14 @@ class Device(EmptyDevice):
             msg = "The DAQ device does not support this AI range."
             raise Exception(msg)
 
-    def measure(self):
+    def configure(self):
+        # Input mode
+        ul.a_input_mode(self.board_num, AnalogInputMode[self.analog_input_mode])
 
+    def measure(self):
         self.data = []
 
         for ai in self.analog_inputs:
-
             # Get a value from the device
             if self.ai_info.resolution <= 16:
                 # Use the a_in method for devices with a resolution <= 16
@@ -186,7 +177,6 @@ class Device(EmptyDevice):
         return self.data
 
     def create_device_list(self):
-
         device_list = []
         inventory = ul.get_daq_device_inventory(InterfaceType.ANY)
         if len(inventory) > 0:
