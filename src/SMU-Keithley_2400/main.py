@@ -87,10 +87,12 @@ class Device(EmptyDevice):
             
             # List sweep feature
             "ListSweepCheck": True,
+            "ListSweepType": ["Sweep", "Custom"],
             "ListSweepStart": 0.5,
             "ListSweepEnd": 1.0,
             "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
             "ListSweepStepPointsValue": 0.1,
+            "ListSweepCustomValues": "",
             "ListSweepDual": False,
             "ListSweepHoldtime": 0.1,
             "ListSweepDelaytime": 0.1,
