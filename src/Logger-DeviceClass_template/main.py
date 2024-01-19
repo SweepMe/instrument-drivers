@@ -218,9 +218,10 @@ class Device(EmptyDevice):
         debug("Custom files:", self.get_folder("CUSTOMFILES"))  # the folder in which all data is saved before saving
         debug("Driver folder:", self.get_folder("SELF"))  # the folder where this file is in
 
-        # In 'initialize' you can check whether the user input is valid. If not you can abort the run by using the lines below
-        # self.stop_measurement("Value of ... not valid. Please use ...") # this function adds a stop message that is displays in an info box
-        # return False  # Any semantic standard function that returns with False stops the measurement
+        # In 'initialize' you can check whether the user input is valid.
+        # If not you can abort the run by throwing an exception as shown in the lines below
+        # msg = "Value of ... not valid. Please use ..."
+        # raise Exception(msg)
 
     def deinitialize(self):
         # called only once at the end of the measurement
@@ -280,7 +281,7 @@ class Device(EmptyDevice):
 
     def apply(self):
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-        # apply is not called in the module 'Logger' as as logger cannot apply any value,
+        # apply is not called in the module 'Logger' as logger cannot apply any value,
         # but it can be used in all other modules that have varying sweep values
         # apply is only called if the setvalue ("Sweep value") has changed
         debug("apply")
