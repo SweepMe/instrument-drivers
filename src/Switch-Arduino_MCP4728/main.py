@@ -62,6 +62,7 @@ class Device(EmptyDevice):
         self.multi_pins = False
         self.multi_mcp = False
         self.max_voltage = None
+        self.addresses = []
 
         self.unit = {
             "Voltage in V": "V",
@@ -78,32 +79,32 @@ class Device(EmptyDevice):
         }
 
     def get_GUIparameter(self, parameter={}):
+        # Handle output pins
         channel = parameter["Channel"]
         if channel == "all":
             self.multi_pins = True
         else:
             self.pin = int(channel)
-            self.variables.append(f"Channel{self.pin}")
-            self.units.append("V")
 
+        # Handle I2C addresses
         address_list = parameter["I2C Address"].split(",")
         if len(address_list) == 1:
-            self.address = int(parameter["I2C Address"])
+            self.addresses.append(int(parameter["I2C Address"]))
         else:
-            self.address = []
             for addr in address_list:
-                self.address.append(int(addr))
+                self.addresses.append(int(addr))
             self.multi_mcp = True
 
         self.sweepmode = str(parameter["SweepMode"])
 
+        # Reference can either be internal (2.048 V or 4.096 V) or external (custom V)
         self.reference_voltage = str(parameter["Voltage reference"])
         if self.reference_voltage == "External":
             self.external_voltage = float(parameter["External voltage in V"])
 
         # Set variables and units
         if channel == "all" and self.multi_mcp:
-            channel_num = len(self.address) * 4
+            channel_num = len(self.addresses) * 4
         elif channel == "all" and not self.multi_mcp:
             channel_num = 4
         else:
@@ -122,23 +123,15 @@ class Device(EmptyDevice):
         # Set Name/Number of COM Port as key
         instance_key = f"mcp4728_{self.port.port.port}"
 
-        if instance_key in self.device_communication:
-            pass
-        else:
-            # Check for Ready
+        if instance_key not in self.device_communication:
+            # Wait for Arduino initialization
             self.port.read()
             self.device_communication[instance_key] = "Connected"
 
-    def initialize(self):
-        pass
-
-    def deinitialize(self):
-        pass
-
     def configure(self):
-        # Initialize MCP4728 with given I2C address
+        # Initialize single MCP4728 with given I2C address - multi MCPs are set in apply
         if not self.multi_mcp:
-            self.set_address(self.address)
+            self.set_address(self.addresses[0])
 
         # Set Reference Voltage and Gain
         if self.reference_voltage == "Internal 2.048 V":
@@ -159,7 +152,7 @@ class Device(EmptyDevice):
             value_list = self.value.split(":")
 
             # Adjust number of channels depending on number of boards and pins
-            number_of_channels = 4 * len(self.address) if self.multi_mcp else 4
+            number_of_channels = 4 * len(self.addresses) if self.multi_mcp else 4
 
             if len(value_list) != number_of_channels:
                 msg = f"Incorrect number of voltages received. Expected {number_of_channels}, got {len(value_list)}"
@@ -172,18 +165,16 @@ class Device(EmptyDevice):
                 else:
                     volt_bit = self.voltage_to_12bit(float(value))
 
-                # If number of pin is higher than 3, change address to next board
+                # Iterate through pin numbers (0-3) and initialize MCP for each pin=0
                 pin = n % 4
-                print(n, pin)
                 if pin == 0:
                     mcp_num = int(n / 4)
-                    self.set_address(self.address[mcp_num])
+                    self.set_address(self.addresses[mcp_num])
 
                 self.set_voltage(pin, volt_bit)
 
         else:
             # set voltage for single pin
-
             try:
                 volt = float(self.value)
             except ValueError as e:
@@ -197,18 +188,14 @@ class Device(EmptyDevice):
 
             self.set_voltage(self.pin, volt_bit)
 
-    def reach(self):
-        pass
-
-    def measure(self):
-        pass
-
     def call(self):
+        # Return values that are set to the pins
         return self.value if self.multi_pins else [self.value]
 
     """ here, convenience functions start """
 
     def voltage_to_12bit(self, voltage, relative_voltage=False):
+        # Convert given voltage to integer between 0 and 4095 (max voltage)
         voltage_bit = int(voltage / 100 * 4095) if relative_voltage else int(4095 / self.max_voltage * voltage)
 
         if not 0 <= voltage_bit < 4096:
@@ -217,24 +204,28 @@ class Device(EmptyDevice):
 
         return voltage_bit
 
-    def set_voltage(self, channel, bit_value):
-        command_string = f"CH{channel}={bit_value}"
-
+    def set_voltage(self, pin, bit_value):
+        # Send command to set voltage (in bit value) at given pin
+        command_string = f"CH{pin}={bit_value}"
         self.port.write(command_string)
+
+        # Check Arduino response
         ret = self.port.read()
-        if ret == f"ACK{channel}={bit_value}":
+        if ret == f"ACK{pin}={bit_value}":
             pass
         elif ret[:3] == "NAK":
-            msg = f"Failed to set voltage at channel {channel}"
+            msg = f"Failed to set voltage at pin {pin}"
             raise Exception(msg)
 
     def set_address(self, address: int):
-        # TODO: Check if 0-7 or 1-8
+        # Initialize MCP at Arduino to receive further commands
         if not 0 <= address <= 7:
             msg = "I2C Address must be 0-7"
             raise Exception(msg)
 
         command_string = f"AD={address}"
+
+        # Check Arduino response
         self.port.write(command_string)
         ret = self.port.read()
 
@@ -248,24 +239,28 @@ class Device(EmptyDevice):
             raise Exception(msg)
 
     def set_vref(self, use_internal_vref=True):
+        # Set reference voltage as internal or external
         v_ref = "I" if use_internal_vref else "E"
 
         command_string = f"VR={v_ref}"
         self.port.write(command_string)
-        ret = self.port.read()
 
+        # Check Arduino response
+        ret = self.port.read()
         if ret[:3] != "ACK" and ret[-1] == v_ref:
             msg = "Failed to set reference voltage (vref)"
             raise Exception(msg)
 
     def set_gain(self, gain):
+        # For internal reference voltage, choose 1x or 2x gain
         if gain not in [1, 2]:
             msg = "gain can only be 1 or 2"
             raise ValueError(msg)
 
         command_string = f"GN={gain}"
         self.port.write(command_string)
-        ret = self.port.read()
 
+        # Check Arduino response
+        ret = self.port.read()
         if not ret[:3] == "ACK" and ret[-1] == gain:
             raise Exception("Failed to set gain (vref)")
