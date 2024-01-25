@@ -35,14 +35,13 @@ from pysweepme import EmptyDevice
 
 class Device(EmptyDevice):
     description = """
-                        <h3>MCP4728</h3>
-                        <p>0x60 is standard. I2C Address is given either as 0-7 (HEX) or 0x60-0x67 (DEC)</p>
-                        If uncertain, you can use I2C scanner with arduino to check your I2C address
-                        Voltage Reference: Use either internal 2V, which can be amplified to internal 4V
-                        When using external reference voltage, set it
-                        Multi Channel Use: Parameter need to be set as string devided by ":"
-                        Multi Board use: only works with multi channel. Give list of number of boards * 4 inputs
-                        """
+        <h3>Arduino MCP4728</h3>
+        <p>This driver allows to set output voltages at MCP 4728 boards with 12-bit resolution. It can control up to 8 boards, each with 4 pins.</p>
+        <p>Set <em>Channel </em>to the pin number you want to set, or <em>all </em>to set all four channels. The voltage values must be passed as a colon-separated string: <em>1.0:2.5:0:4.2</em></p>
+        <p>The I&sup2;C address is set as integer 0-7, corresponding to the boards standard addresses 0x60-0x67 (HEX). You can check your devices' address by using an <a href="https://playground.arduino.cc/Main/I2cScanner/">I&sup2;C Scanner</a>.</p>
+        <p>The maximum voltage is defined by the Voltage reference, which can either be internal (2.048 V or 4.096 V by using 2x gain) or from an external source, e.g. the Arduino's 5 V or 3.3 V output. When using an external reference, the voltage must be given.</p>
+        <p>To use multiple MCPs, their I&sup2;C addresses need to be changed individually, as described <a href="https://github.com/jknipper/mcp4728_program_address">here</a>. Choose <em>Channel: all </em>and set a comma-separated list for <em>I2C Address: 0, 1, 2</em>.</p>
+    """
 
     def __init__(self) -> None:
         EmptyDevice.__init__(self)
