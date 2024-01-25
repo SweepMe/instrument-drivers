@@ -31,11 +31,16 @@
 # Device: Arduino AllPins
 
 
-import numpy as np
 from EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
+    description = """
+        <h3>Arduino AllPins</h3>
+        <p>This driver allows to read out given digital and analog pins.</p>
+        <p>&nbsp;</p>
+    """
+
     def __init__(self):
         EmptyDevice.__init__(self)
 
@@ -44,18 +49,8 @@ class Device(EmptyDevice):
         self.variables = []
         self.units = []
 
-        for i in np.arange(12) + 2:
-            self.variables.append("Digital %i" % i)
-            self.units.append("")
-
-        for i in np.arange(8):
-            self.variables.append("Analog %i" % i)
-            self.units.append("")
-
         self.plottype = [True for x in self.variables]  # True to plot data
         self.savetype = [True for x in self.variables]  # True to save data
-
-        # self.idlevalue = 0 # motor position to go home
 
         self.port_manager = True
         self.port_types = ["COM"]
@@ -64,6 +59,37 @@ class Device(EmptyDevice):
             "EOL": "\n",
             "baudrate": 115200,
         }
+
+        self.max_voltage = 5
+
+        self.unit_dict = {
+            "Volt": "V",
+            "Bit": " ",
+        }
+
+    def set_GUIparameter(self):
+        return {
+            "Digital channel": "2,3,4,5,6,7,8,9,10,11,12,13",
+            "Analog channel": "0,1,2,3,4,5,6,7",
+            "Analog unit": ["Volt", "Bit"],
+            "Resolution in Bit": 10,
+        }
+
+    def get_GUIparameter(self, parameter={}):
+        self.variables = []
+        self.units = []
+
+        if parameter["Digital channel"] != "":
+            for pin in parameter["Digital channel"].split(","):
+                self.variables.append("Digital %i" % int(pin))
+                self.units.append("")
+
+        if parameter["Analog channel"] != "":
+            for pin in parameter["Analog channel"].split(","):
+                self.variables.append("Analog %i" % int(pin))
+                self.units.append(self.unit_dict[parameter["Analog unit"]])
+
+        self.resolution = 2 ** int(parameter["Resolution in Bit"]) - 1
 
     def initialize(self):
         # we only need to wait once to receive the setup message
@@ -76,8 +102,27 @@ class Device(EmptyDevice):
         self.port.port_properties["NrDevices"] -= 1
 
     def measure(self):
-        self.port.write("R")
+        command_string = "R"
+        for var in self.variables:
+            if "Digital" in var:
+                pin = int(var.replace("Digital ", ""))
+                command_string += f"{pin}D,"
+            elif "Analog" in var:
+                pin = int(var.replace("Analog ", ""))
+                command_string += f"{pin}A,"
+
+        self.port.write(command_string)
 
     def call(self):
         self.answer = self.port.read()[:-1]
-        return list(map(float, self.answer.split(",")))
+
+        ret = []
+        for n, val in enumerate(self.answer.split(",")):
+            value = float(val)
+
+            if self.units[n] == "V":
+                value *= self.max_voltage / self.resolution
+
+            ret.append(value)
+
+        return ret

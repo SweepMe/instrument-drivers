@@ -27,25 +27,40 @@ void loop() {
     
     command = Serial.readStringUntil('\n');
 
-    if (command == "R") {
+    
+    if (command.startsWith("R")) {
+      // Expects command starting with R followed by channel number and analog/digital key
+      // Example: R2D,12D,0A,1A,\n
 
-        for (int i=2; i <= 13; i++){
-
-//          answer = answer + digitalRead(i) + ",";
-          Serial.print(digitalRead(i));
-          Serial.print(",");
-        }
+      String channel;
       
-        for (int i=0; i <= 7; i++){
+      // Skip first letter
+      for (int i = 1; i < command.length(); i++) {
+        char c = command.charAt(i);
 
-//          answer = answer + analogRead(i) + ",";
-          Serial.print(analogRead(i));
+        // Digital Pin detected
+        if (c == 'D') {
+          Serial.print(digitalRead(channel.toInt()));
           Serial.print(",");
+          channel = "";
         }
-
-//        Serial.println(answer);
-        Serial.print("\n");
-
+        // Analog Pin detected
+        else if (c == 'A') {
+          Serial.print(analogRead(channel.toInt()));
+          Serial.print(",");
+          channel = "";
+        }
+        // Deliminter
+        else if (c == ',') {
+          channel = "";
+        }
+        // Read out channel
+        else {
+          channel += c;
+        }
+      }
+      // End measurement sequence
+      Serial.print("\n");
    }
 
   }
