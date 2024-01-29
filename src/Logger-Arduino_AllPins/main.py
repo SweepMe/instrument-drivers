@@ -27,7 +27,6 @@
 
 
 # SweepMe! device class
-# Type: Logger
 # Device: Arduino AllPins
 
 
@@ -39,9 +38,27 @@ class Device(EmptyDevice):
         <h3>Arduino AllPins</h3>
         <p>This driver allows to read out given digital and analog pins.</p>
         <p>&nbsp;</p>
+        <p><strong>Usage:</strong></p>
+        <ul>
+        <li>Before the first start, please upload the .ino file that comes with this driver to the Arduino using the
+         Arduino IDE.</li>
+        <li>Type in the digital channels and analog channels as analog channels. For example "A0, A1, A4" for 
+        analog inputs.</li>
+        <li>If you select "Volt" as unit, the values will be returned between 0-5 V assuming the given 
+        resolution in Bit. Most Arduino boards come with a resolution of 10 bit (4096 steps)</li>
+        <li>If you select "Numerical", an integer value will be returned independent from the resolution or the 
+        voltage range of the Arduino board.</li>
+        </ul>
+        <p>&nbsp;</p>
+        <p><strong>Known issues:</strong></p>
+        <ul>
+        <li>If you select analog or digitial pins that do no exist at your Arduino board, the driver still reads out 
+        a value and returns it. So please check yourself whether the requested pins exist.</li>
+        </ul>
+        <p>&nbsp;</p>
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         EmptyDevice.__init__(self)
 
         self.shortname = "Arduino AllPins"
@@ -69,8 +86,8 @@ class Device(EmptyDevice):
 
     def set_GUIparameter(self):
         return {
-            "Digital channel": "2,3,4,5,6,7,8,9,10,11,12,13",
-            "Analog channel": "0,1,2,3,4,5,6,7",
+            "Digital channels": "2,3,4,5,6,7,8,9,10,11,12,13",
+            "Analog channels": "0,1,2,3,4,5,6,7",
             "Analog unit": ["Volt", "Numerical"],
             "Resolution in Bit": 10,
         }
@@ -79,9 +96,9 @@ class Device(EmptyDevice):
         self.variables = []
         self.units = []
 
-        if parameter["Digital channel"] != "":
+        if parameter["Digital channels"] != "":
             # Remove whitespace and enable input as D1,D2 or 1D, 2D,...
-            digital_channels = parameter["Digital channel"].replace(" ", "")
+            digital_channels = parameter["Digital channels"].replace(" ", "")
             digital_channels = digital_channels.replace("D", "")
 
             for pin in digital_channels.split(","):
@@ -89,9 +106,9 @@ class Device(EmptyDevice):
                     self.variables.append("Digital %i" % int(pin))
                     self.units.append("")
 
-        if parameter["Analog channel"] != "":
+        if parameter["Analog channels"] != "":
             # Remove whitespace and enable input as A1,A2 or 1A, 2A,...
-            analog_channels = parameter["Analog channel"].replace(" ", "")
+            analog_channels = parameter["Analog channels"].replace(" ", "")
             analog_channels = analog_channels.replace("A", "")
 
             for pin in analog_channels.split(","):
@@ -101,20 +118,22 @@ class Device(EmptyDevice):
 
         self.resolution = 2 ** int(parameter["Resolution in Bit"]) - 1
 
-    def initialize(self):
-        # Set Name/Number of COM Port as key
-        instance_key = f"Arduino_AllPins_{self.port.port.port}"
+        self.port_str = parameter["Port"]
+        self.driver_name = parameter["Device"]
 
-        if instance_key not in self.device_communication:
+    def initialize(self):
+
+        # Set Name/Number of COM Port as key
+        self.instance_key = f"{self.driver_name}_{self.port_str}"
+
+        if self.instance_key not in self.device_communication:
             # Wait for Arduino initialization
             self.port.read()
-            self.device_communication[instance_key] = "Connected"
+            self.device_communication[self.instance_key] = "Connected"
 
     def deinitialize(self):
-        # Name/Number of COM Port as key
-        instance_key = f"Arduino_AllPins_{self.port.port.port}"
-
-        self.device_communication.pop(instance_key)
+        if self.instance_key in self.device_communication:
+            self.device_communication.pop(self.instance_key)
 
     def measure(self):
         command_string = "R"
