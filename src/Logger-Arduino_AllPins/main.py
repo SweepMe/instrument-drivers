@@ -60,18 +60,18 @@ class Device(EmptyDevice):
             "baudrate": 115200,
         }
 
-        self.max_voltage = 5
+        self.max_voltage = 5.0
 
         self.unit_dict = {
             "Volt": "V",
-            "Bit": " ",
+            "Numerical": "",
         }
 
     def set_GUIparameter(self):
         return {
             "Digital channel": "2,3,4,5,6,7,8,9,10,11,12,13",
             "Analog channel": "0,1,2,3,4,5,6,7",
-            "Analog unit": ["Volt", "Bit"],
+            "Analog unit": ["Volt", "Numerical"],
             "Resolution in Bit": 10,
         }
 
@@ -80,26 +80,41 @@ class Device(EmptyDevice):
         self.units = []
 
         if parameter["Digital channel"] != "":
-            for pin in parameter["Digital channel"].split(","):
-                self.variables.append("Digital %i" % int(pin))
-                self.units.append("")
+            # Remove whitespace and enable input as D1,D2 or 1D, 2D,...
+            digital_channels = parameter["Digital channel"].replace(" ", "")
+            digital_channels = digital_channels.replace("D", "")
+
+            for pin in digital_channels.split(","):
+                if pin != "":
+                    self.variables.append("Digital %i" % int(pin))
+                    self.units.append("")
 
         if parameter["Analog channel"] != "":
-            for pin in parameter["Analog channel"].split(","):
-                self.variables.append("Analog %i" % int(pin))
-                self.units.append(self.unit_dict[parameter["Analog unit"]])
+            # Remove whitespace and enable input as A1,A2 or 1A, 2A,...
+            analog_channels = parameter["Analog channel"].replace(" ", "")
+            analog_channels = analog_channels.replace("A", "")
+
+            for pin in analog_channels.split(","):
+                if pin != "":
+                    self.variables.append("Analog %i" % int(pin))
+                    self.units.append(self.unit_dict[parameter["Analog unit"]])
 
         self.resolution = 2 ** int(parameter["Resolution in Bit"]) - 1
 
     def initialize(self):
-        # we only need to wait once to receive the setup message
-        if self.port.port_properties["NrDevices"] == 0:
-            print(self.port.read())  # read out the initialization string sent by the Arduino
+        # Set Name/Number of COM Port as key
+        instance_key = f"Arduino_AllPins_{self.port.port.port}"
 
-        self.port.port_properties["NrDevices"] += 1
+        if instance_key not in self.device_communication:
+            # Wait for Arduino initialization
+            self.port.read()
+            self.device_communication[instance_key] = "Connected"
 
     def deinitialize(self):
-        self.port.port_properties["NrDevices"] -= 1
+        # Name/Number of COM Port as key
+        instance_key = f"Arduino_AllPins_{self.port.port.port}"
+
+        self.device_communication.pop(instance_key)
 
     def measure(self):
         command_string = "R"
