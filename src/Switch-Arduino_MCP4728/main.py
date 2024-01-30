@@ -150,22 +150,23 @@ class Device(EmptyDevice):
 
     def apply(self):
         if self.multi_pins:
-            # Receive values as list, split by ":"
-            value_list = self.value.split(":")
+            # Receive values as list, split by ":" and convert to float
+            split_values = self.value.split(":")
+            self.value_list = list(map(float, split_values))
 
             # Adjust number of channels depending on number of boards and pins
             number_of_channels = 4 * len(self.addresses) if self.multi_mcp else 4
 
-            if len(value_list) != number_of_channels:
+            if len(self.value_list) != number_of_channels:
                 msg = f"Incorrect number of voltages received. Expected {number_of_channels}, got {len(value_list)}"
                 raise Exception(msg)
 
-            for n, value in enumerate(value_list):
+            for n, value in enumerate(self.value_list):
                 # Convert individual values to 12 Bit and set voltages
                 if self.sweepmode == "Output in %":
-                    volt_bit = self.voltage_to_12bit(float(value), relative_voltage=True)
+                    volt_bit = self.voltage_to_12bit(value, relative_voltage=True)
                 else:
-                    volt_bit = self.voltage_to_12bit(float(value))
+                    volt_bit = self.voltage_to_12bit(value)
 
                 # Iterate through pin numbers (0-3) and initialize MCP for each pin=0
                 pin = n % 4
@@ -178,21 +179,21 @@ class Device(EmptyDevice):
         else:
             # set voltage for single pin
             try:
-                volt = float(self.value)
+                self.volt = float(self.value)
             except ValueError as e:
                 msg = "Single Channel Mode activated. Expects float or int from self.value"
                 raise ImportError(msg) from e
 
             if self.sweepmode == "Output in %":
-                volt_bit = self.voltage_to_12bit(volt, relative_voltage=True)
+                volt_bit = self.voltage_to_12bit(self.volt, relative_voltage=True)
             else:
-                volt_bit = self.voltage_to_12bit(volt)
+                volt_bit = self.voltage_to_12bit(self.volt)
 
             self.set_voltage(self.pin, volt_bit)
 
     def call(self):
         # Return values that are set to the pins
-        return self.value if self.multi_pins else [self.value]
+        return self.value_list if self.multi_pins else [self.volt]
 
     """ here, convenience functions start """
 
