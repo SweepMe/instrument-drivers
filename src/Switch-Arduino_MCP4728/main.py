@@ -86,6 +86,7 @@ class Device(EmptyDevice):
             self.pin = int(channel)
 
         # Handle I2C addresses
+        self.addresses = []
         address_list = parameter["I2C Address"].split(",")
         if len(address_list) == 1:
             self.addresses.append(int(parameter["I2C Address"]))
@@ -109,6 +110,8 @@ class Device(EmptyDevice):
         else:
             channel_num = 1
 
+        self.variables = []
+        self.units = []
         for n in range(channel_num):
             # If single channel, use the correct pin number
             if channel_num == 1:
