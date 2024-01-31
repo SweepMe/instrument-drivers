@@ -229,6 +229,9 @@ class Device(EmptyDevice):
         elif ret[:3] == "NAK":
             msg = f"Failed to set voltage at pin {pin}"
             raise Exception(msg)
+        else:
+            msg = f"Failed to set voltage of {bit_value} at pin {pin}. Arduino response: {ret}"
+            raise Exception(msg)
 
     def set_address(self, address: int):
         # Initialize MCP at Arduino to receive further commands
@@ -250,6 +253,9 @@ class Device(EmptyDevice):
         elif ret[:3] == "NAK":
             msg = f"Failed I2C connection to address {ret[3:]}"
             raise Exception(msg)
+        else:
+            msg = f"Failed to set address to {address}. Arduino response: {ret}"
+            raise Exception(msg)
 
     def set_vref(self, use_internal_vref=True):
         # Set reference voltage as internal or external
@@ -260,8 +266,8 @@ class Device(EmptyDevice):
 
         # Check Arduino response
         ret = self.port.read()
-        if ret[:3] != "ACK" and ret[-1] == v_ref:
-            msg = "Failed to set reference voltage (vref)"
+        if ret != f"ACK{v_ref}":
+            msg = f"Failed to set reference voltage (vref). Arduino response: {ret}"
             raise Exception(msg)
 
     def set_gain(self, gain):
@@ -275,5 +281,12 @@ class Device(EmptyDevice):
 
         # Check Arduino response
         ret = self.port.read()
-        if not ret[:3] == "ACK" and ret[-1] == gain:
-            raise Exception("Failed to set gain (vref)")
+        if ret != f"ACK{gain}":
+            msg = f"Failed to set gaine (vref). Arduino response: {ret}"
+            raise Exception(msg)
+
+    def check_serial(self):
+        self.port.write("SR")
+        ret = self.port.read()
+        if ret != "0":
+            print("Serial response: ", ret)
