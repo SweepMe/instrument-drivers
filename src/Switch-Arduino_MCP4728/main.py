@@ -164,7 +164,6 @@ class Device(EmptyDevice):
             for address in self.addresses:
                 self.set_address(address)
                 for pin in range(4):
-                    print(pin)
                     self.set_voltage(pin, 0)
         else:
             self.set_voltage(self.pin, 0)
@@ -295,9 +294,3 @@ class Device(EmptyDevice):
         if ret != f"ACK{gain}":
             msg = f"Failed to set gaine (vref). Arduino response: {ret}"
             raise Exception(msg)
-
-    def check_serial(self):
-        self.port.write("SR")
-        ret = self.port.read()
-        if ret != "0":
-            print("Serial response: ", ret)
