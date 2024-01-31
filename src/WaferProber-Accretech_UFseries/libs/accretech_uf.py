@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2022 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022-2024 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -570,6 +570,12 @@ class AccretechProber:
         get the current absolute position
 
         Caution: Unit depends on system settings. Using 'Metric' unit is 1e-1 µm. Using 'English' unit is 1e-5 inch.
+
+        Attention:
+        The command 'R' was designed for 200 mm wafer and might not work with 300 mm wafer
+        In future, one could use the command ur11401 und ur11402 to read x and y position. The 'ur' command is used
+        to read parameter values. However, the coordinate system of ur11401 und ur11402 is different with respect to
+        the 'R' command
 
         Returns:
             int: x coordinate in µm
