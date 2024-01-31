@@ -119,16 +119,26 @@ class Device(EmptyDevice):
             self.variables.append(f"Channel{n}")
             self.units.append(self.unit[self.sweepmode])
 
+        self.port_str = parameter["Port"]
+        self.driver_name = parameter["Device"]
+
     """ here, semantic standard functions start that are called by SweepMe! during a measurement """
 
     def connect(self):
         # Set Name/Number of COM Port as key
-        instance_key = f"mcp4728_{self.port.port.port}"
+        self.instance_key = f"{self.driver_name}_{self.port_str}"
 
-        if instance_key not in self.device_communication:
+        if self.instance_key not in self.device_communication:
             # Wait for Arduino initialization
             self.port.read()
-            self.device_communication[instance_key] = "Connected"
+            self.device_communication[self.instance_key] = "Connected"
+
+    def disconnect(self):
+        # Set Name/Number of COM Port as key
+        self.instance_key = f"{self.driver_name}_{self.port_str}"
+
+        if self.instance_key in self.device_communication:
+            self.device_communication.pop(self.instance_key)
 
     def configure(self):
         # Initialize single MCP4728 with given I2C address - multi MCPs are set in apply
