@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2022-2023 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022-2024 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -183,7 +183,6 @@ class Device(EmptyDevice):
         del self.prober  # this makes sure the event mechanism is disabled
 
     def initialize(self):
-
 
         self.print_info()
 
