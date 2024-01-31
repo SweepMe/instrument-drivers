@@ -292,5 +292,5 @@ class Device(EmptyDevice):
         # Check Arduino response
         ret = self.port.read()
         if ret != f"ACK{gain}":
-            msg = f"Failed to set gaine (vref). Arduino response: {ret}"
+            msg = f"Failed to set gain (vref). Arduino response: {ret}"
             raise Exception(msg)
