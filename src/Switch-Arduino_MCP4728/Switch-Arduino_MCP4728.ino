@@ -1,5 +1,4 @@
 #include <Adafruit_MCP4728.h>
-#include <Wire.h>
 
 Adafruit_MCP4728 working_mcp;
 Adafruit_MCP4728 mcp0;

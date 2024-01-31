@@ -37,6 +37,9 @@ class Device(EmptyDevice):
     description = """
         <h3>Arduino MCP4728</h3>
         <p>This driver allows to set output voltages at MCP 4728 boards with 12-bit resolution. It can control up to 8 boards, each with 4 pins.</p>
+        <h4>Setup</h4>
+        <p>Load the Switch-Arduino_MCP.ino sketch onto your Arduino. Set <em>baudrate</em> to 115200 and <em>terminator</em> to "\n". Install the Adafruit_MCP4728 library on your Arduino.</p>
+        <h4>Parameters</h4>
         <p>Set <em>Channel </em>to the pin number you want to set, or <em>all </em>to set all four channels. The voltage values must be passed as a colon-separated string: <em>1.0:2.5:0:4.2</em></p>
         <p>The I&sup2;C address is set as integer 0-7, corresponding to the boards standard addresses 0x60-0x67 (HEX). You can check your devices' address by using an <a href="https://playground.arduino.cc/Main/I2cScanner/">I&sup2;C Scanner</a>.</p>
         <p>The maximum voltage is defined by the Voltage reference, which can either be internal (2.048 V or 4.096 V by using 2x gain) or from an external source, e.g. the Arduino's 5 V or 3.3 V output. When using an external reference, the voltage must be given.</p>
@@ -54,7 +57,7 @@ class Device(EmptyDevice):
         self.port_types = ["COM"]
         self.port_properties = {
             "EOL": "\n",
-            "timeout": 15,
+            "timeout": 5,
             "baudrate": 115200,
         }
 
@@ -73,7 +76,7 @@ class Device(EmptyDevice):
             "Channel": ["0", "1", "2", "3", "all"],
             "I2C Address": "0",
             "SweepMode": ["Voltage in V", "Output in %"],
-            "Voltage reference": ["External", "Internal 2.048 V", "Internal 4.096 V"],
+            "Voltage reference": ["Internal 2.048 V", "Internal 4.096 V", "External"],
             "External voltage in V": 5.0,
         }
 
@@ -134,9 +137,6 @@ class Device(EmptyDevice):
             self.device_communication[self.instance_key] = "Connected"
 
     def disconnect(self):
-        # Set Name/Number of COM Port as key
-        self.instance_key = f"{self.driver_name}_{self.port_str}"
-
         if self.instance_key in self.device_communication:
             self.device_communication.pop(self.instance_key)
 
@@ -157,6 +157,17 @@ class Device(EmptyDevice):
         elif self.reference_voltage == "External":
             self.set_vref(use_internal_vref=False)
             self.max_voltage = self.external_voltage
+
+    def unconfigure(self):
+        # Set all outputs to 0
+        if self.multi_pins:
+            for address in self.addresses:
+                self.set_address(address)
+                for pin in range(4):
+                    print(pin)
+                    self.set_voltage(pin, 0)
+        else:
+            self.set_voltage(self.pin, 0)
 
     def apply(self):
         if self.multi_pins:
