@@ -31,6 +31,7 @@
 # Device: Keithley 2450
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import debug
 import time
 import numpy as np
 import sys
@@ -127,6 +128,7 @@ class Device(EmptyDevice):
             # print(self.vendor, self.model, self.serialno, self.version)
             
             self.port.write("smu.reset()")
+            self.port.write("defbuffer1.clear()")  # clear the default buffer
             self.port.write("errorqueue.clear()")
                                     
             # self.port.write("localnode.linefreq = 50")
@@ -223,9 +225,13 @@ class Device(EmptyDevice):
             self.port.write("READ?")
         
         elif self.language == "TSP":  
-            self.port.write("data = buffer.make(10)")
+            self.port.write("data = buffer.make(1)")  # buffer for one reading
             self.port.write("smu.measure.read(data)")
-       
+
+            # way to directly trigger sending the reading:
+            # self.port.write("print(smu.measure.read(data))")
+            # print("Reading", self.port.read())
+
     def call(self):
     
         if self.language == "SCPI2400":
@@ -241,7 +247,15 @@ class Device(EmptyDevice):
                 self.i, self.v = answer
             elif self.source.startswith("Current"):
                 self.v, self.i = answer
-    
+
+        # large values indicate errors
+        if self.v > 1e20:
+            self.v = float("nan")
+            debug("Keithley2450: Unable to read voltage.")
+        if self.i > 1e20:
+            self.i = float("nan")
+            debug("Keithley2450: Unable to read current.")
+
         return [float(self.v), float(self.i)]
                     
     def route_front(self):
