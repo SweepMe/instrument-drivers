@@ -30,11 +30,12 @@
 # Type: SMU
 # Device: Keithley 2450
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 import time
 import numpy as np
 import sys
 from collections import OrderedDict
+
 
 class Device(EmptyDevice):
 
@@ -42,44 +43,41 @@ class Device(EmptyDevice):
     
         super().__init__()
         
-        self.shortname = "Keithley2450"
+        self.shortname = "Keithley 2450"
         
-        self.variables =["Voltage", "Current"]
-        self.units =    ["V", "A"]
-        self.plottype = [True, True] # True to plot data
-        self.savetype = [True, True] # True to save data
+        self.variables = ["Voltage", "Current"]
+        self.units = ["V", "A"]
+        self.plottype = [True, True]  # True to plot data
+        self.savetype = [True, True]  # True to save data
         
         self.port_manager = True
         self.port_types = ['USB', 'GPIB']
-        self.port_properties = {'timeout':10}
+        self.port_properties = {'timeout': 10}
         self.port_identifications = ['KEITHLEY INSTRUMENTS,MODEL 2450,']
         
-        self.isPoweron = False
-        
-        # 10 nA ±10.5 nA
-        # 100 nA ±10.6 nA
-        # 1 μA ±1.05 μA
-        # 10 μA ±1.06 μA
-        # 100 μA ±10.6 μA
-        # 1 mA ±106 μA
-        # 10 mA ±1.06 mA
-        # 100 mA ±10.6 mA
-        # 1 A ±106 mA
-
+        self.is_power_on = False
 
     def set_GUIparameter(self):
         GUIparameter = {
-                        "SweepMode": ["Voltage [V]", "Current [A]"],
+                        "SweepMode": ["Voltage in V", "Current in A"],
                         "RouteOut": ["Front", "Rear"],
                         "Speed": ["Fast", "Medium", "Slow"],
-                        "Range": ["Auto", "10 nA", "100 nA", "1 µA", "10 µA", "100 µA", "1 mA", "10 mA", "100 mA", "1 A"],                       
+                        "Range": ["Auto",
+                                  "10 nA",
+                                  "100 nA",
+                                  "1 µA",
+                                  "10 µA",
+                                  "100 µA",
+                                  "1 mA",
+                                  "10 mA",
+                                  "100 mA",
+                                  "1 A"],
                         "Average": 1,
                         "Compliance": 100e-6,
                         "4wire": False,
                         }
         
         return GUIparameter
-        
 
     def get_GUIparameter(self, parameter={}):
               
@@ -94,14 +92,12 @@ class Device(EmptyDevice):
     def connect(self):
     
         self.port.write("*LANG?")
-        self.language = self.port.read() # TSP, SCPI, SCPI2400
+        self.language = self.port.read()  # TSP, SCPI, SCPI2400
         # set language with *LANG SCPI, *LANG TSP, *LANG SCPI2400 and reboot, ask for language *LANG? 
         
         if self.language == "SCPI":
             self.language = "SCPI2400"
-        
-        # print(self.language)
-        
+
     def initialize(self):
        
         if self.language == "SCPI2400":
@@ -111,16 +107,14 @@ class Device(EmptyDevice):
             # print(self.vendor, self.model, self.serialno, self.version)
             # reset all values
             self.port.write("*rst" )
-            self.port.write("status:preset" )
+            self.port.write("status:preset")
             self.port.write("*cls")
             
-            self.port.write(":SYST:BEEP:STAT OFF") # control-Beep off
+            self.port.write(":SYST:BEEP:STAT OFF")  # control-Beep off
             
-            #self.port.write(":SYST:LFR 50")
-            
+            # self.port.write(":SYST:LFR 50")
 
         if self.language == "TSP":
-        
 
             self.port.write("print(localnode.vendor)")
             self.vendor = self.port.read()
@@ -135,10 +129,8 @@ class Device(EmptyDevice):
             self.port.write("smu.reset()")
             self.port.write("errorqueue.clear()")
                                     
-            #self.port.write("localnode.linefreq = 50")
-            
-    
-                   
+            # self.port.write("localnode.linefreq = 50")
+
     def configure(self):
     
         if self.language == "SCPI2400":
@@ -152,7 +144,7 @@ class Device(EmptyDevice):
                 self.port.write(":SENS:AVER:COUN 1")
                 self.port.write(":SENS:AVER:STAT OFF")
 
-        if self.language == "TSP":
+        elif self.language == "TSP":
            
             if self.average > 1:
                 self.port.write("smu.measure.filter.count = %i" % self.average)
@@ -163,18 +155,15 @@ class Device(EmptyDevice):
                 self.port.write("smu.measure.filter.count = 1")
                 self.port.write("smu.measure.filter.enable = smu.OFF")
 
-
-        if self.source == "Voltage [V]":
+        if self.source.startswith("Voltage"):
             self.source_volt()
             
-        if self.source == "Current [A]":
+        if self.source.startswith("Current"):
             self.source_curr()
-            
-            
+
         ### Speed/Integration ###
         self.set_speed(self.speed)
-        
-       
+
         ### 4 wire ###
         if self.four_wire:
             self.rsen_on()
@@ -183,14 +172,14 @@ class Device(EmptyDevice):
             
         ### Route out ###
         if self.route_out == "Front":
-            self.route_Fron()
+            self.route_front()
         
         if self.route_out == "Rear":
-            self.route_Rear()   
+            self.route_rear()
 
     def deinitialize(self):
         self.rsen_off()
-        self.route_Fron()
+        self.route_front()
          
     def poweron(self):
         
@@ -200,7 +189,7 @@ class Device(EmptyDevice):
         elif self.language == "TSP":
             self.port.write("smu.source.output = smu.ON")
                         
-        self.isPoweron = True
+        self.is_power_on = True
         
     def poweroff(self):
 
@@ -211,14 +200,15 @@ class Device(EmptyDevice):
             elif self.language == "TSP":
                 self.port.write("smu.source.output = smu.OFF")
             
-        self.isPoweron = False
+        self.is_power_on = False
                                  
     def apply(self):
 
         self.value = str(self.value)
 
+        source = self.source[0:4].upper()  # VOLT or CURR
         if self.language == "SCPI2400":
-            self.port.write(":SOUR:"+self.source[:-4]+":LEV %s" % self.value)
+            self.port.write(":SOUR:"+source+":LEV %s" % self.value)
             
         elif self.language == "TSP":
             self.port.write("smu.source.level = %s" % self.value)
@@ -234,8 +224,7 @@ class Device(EmptyDevice):
         
         elif self.language == "TSP":  
             self.port.write("data = buffer.make(10)")
-            self.port.write("smu.measure.read(data)")    
-           
+            self.port.write("smu.measure.read(data)")
        
     def call(self):
     
@@ -248,14 +237,14 @@ class Device(EmptyDevice):
             self.port.write("printbuffer(1, 1, data.readings, data.sourcevalues)") 
             answer = self.port.read().split(',')
             
-            if self.source == "Voltage [V]":
+            if self.source.startswith("Voltage"):
                 self.i, self.v = answer
-            elif self.source == "Current [A]":
+            elif self.source.startswith("Current"):
                 self.v, self.i = answer
     
         return [float(self.v), float(self.i)]
                     
-    def route_Fron(self):  
+    def route_front(self):
     
         # if self.language == "SCPI2400": 
             # self.port.write("ROUT:TERM?")
@@ -264,7 +253,7 @@ class Device(EmptyDevice):
             # self.port.write("print(smu.measure.terminals)")
             # self.port.read()
         
-        if self.isPoweron:
+        if self.is_power_on:
             self.poweroff()
         
         if hasattr(self, "language"):
@@ -274,10 +263,9 @@ class Device(EmptyDevice):
             elif self.language == "TSP":
                 self.port.write("smu.measure.terminals = smu.TERMINALS_FRONT")
 
- 
-    def route_Rear(self):
+    def route_rear(self):
     
-        if self.isPoweron:
+        if self.is_power_on:
             self.poweroff()
             
         if self.language == "SCPI2400": 
@@ -286,7 +274,6 @@ class Device(EmptyDevice):
         elif self.language == "TSP":
             self.port.write("smu.measure.terminals = smu.TERMINALS_REAR")
 
-        
     def set_speed(self, speed):
         if speed == "Fast":
             self.nplc = 0.1
@@ -335,15 +322,16 @@ class Device(EmptyDevice):
             else:
                 self.port.write("smu.measure.autorange = smu.OFF")
                 self.port.write("smu.measure.range = %s" % str(self.range.replace("A", "")))
-                
-            
-            
+
             self.port.write("smu.measure.autozero.once()")
 
     def source_curr(self): 
 
-        self.range = self.range.replace(" ", "").replace("p", "E-12").replace("n", "E-9").replace("µ", "E-6").replace("m", "E-3")
-
+        self.range = (self.range.replace(" ", "")
+                      .replace("p", "E-12")
+                      .replace("n", "E-9")
+                      .replace("µ", "E-6")
+                      .replace("m", "E-3"))
                         
         if self.language == "SCPI2400":
             self.port.write(":SOUR:FUNC CURR")                  
@@ -372,13 +360,12 @@ class Device(EmptyDevice):
             self.port.write("smu.source.vlimit.level = " + self.protection)
             self.port.write("smu.measure.autozero.once()")
             
-            if self.range == "Auto": # it means Auto was selected
+            if self.range == "Auto":  # it means Auto was selected
                     
                 self.port.write("smu.source.autorange = smu.ON")
             else:
                 self.port.write("smu.source.autorange = smu.OFF")
                 self.port.write("smu.source.range = %s" % str(self.range.replace("A", "")))
-
 
     def rsen_on(self):
         if self.language == "SCPI2400":
@@ -414,4 +401,3 @@ class Device(EmptyDevice):
             #self.port.write("smu.source.offmode = smu.OFFMODE_HIGHZ")
             #To set the output-off state to guard
             #self.port.write("smu.source.offmode = smu.OFFMODE_GUARD")
-    
