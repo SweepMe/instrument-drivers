@@ -225,7 +225,7 @@ class Device(EmptyDevice):
             self.port.write("READ?")
         
         elif self.language == "TSP":  
-            self.port.write("data = buffer.make(1)")  # buffer for one reading
+            self.port.write("data = buffer.make(10)")
             self.port.write("smu.measure.read(data)")
 
             # way to directly trigger sending the reading:
@@ -304,7 +304,11 @@ class Device(EmptyDevice):
              
     def source_volt(self):
     
-        self.range = self.range.replace(" ", "").replace("p", "e-12").replace("n", "e-9").replace("µ", "e-6").replace("m", "e-3")
+        self.range = (self.range.replace(" ", "")
+                      .replace("p", "e-12")
+                      .replace("n", "e-9")
+                      .replace("µ", "e-6")
+                      .replace("m", "e-3"))
     
         if self.language == "SCPI2400":
             self.port.write(":SOUR:FUNC VOLT")                  
