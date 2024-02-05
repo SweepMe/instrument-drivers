@@ -229,13 +229,15 @@ class Device(EmptyDevice):
         """Starts execution of the relay matrix self-test. Depending on the matrix size the test may take up to
         1 minute to finish. Disconnect all measurement cables before starting the self-test! The test may fail if cables
          are connected.
+        This function onls starts the test, but does not wait for its end and does not return any success message.
+        Use run_self_test to perform a full test.
         """
         self.port.write("*TST")
         if not self.port_string.startswith("GPIB"):
             self.port.read()
 
-    def enquiry_self_test(self) -> None:
-        """Queries the result of the relay matrix self-test.
+    def get_self_test_result(self) -> None:
+        """Queries the result of the relay matrix self-test that was triggerd with start_self_test
 
         Response: 
         0 Self-test passed 
@@ -245,9 +247,12 @@ class Device(EmptyDevice):
         return self.port.read()
 
     def run_self_test(self) -> str:
+        """Performs a full self test by combining start_self_test and get_self_test_result
+
+        """
         self.start_self_test()
         self.get_operation_complete()
-        return self.enquiry_self_test()
+        return self.get_self_test_result()
 
     def set_remote(self) -> None:
         """Set device to remote mode which disables the keyboard.
