@@ -36,6 +36,12 @@ import string
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
+"""
+Note: There is a difference between GPIB communication and the other interfaces. Typically, all commands trigger a
+return message, independent whether the commands set or read a property. However, in case of GPIB commands that just 
+set a property do not trigger a return message.
+"""
+
 
 class Device(EmptyDevice):
 
