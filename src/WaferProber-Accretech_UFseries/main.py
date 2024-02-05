@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2022-2023 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022-2024 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -48,7 +48,6 @@ import imp
 import os
 accretech_uf = imp.load_source("accretech_uf", os.path.dirname(os.path.abspath(__file__)) +
                                os.sep + r"libs\accretech_uf.py")
-
 
 # this is needed as a fallback solutions as pysweepme.UserInterface is not available for all 1.5.5 update versions
 try:
@@ -400,8 +399,8 @@ class Device(EmptyDevice):
         self.die_x, self.die_y = self.prober.request_die_coordinate()
 
         # We always get in contact if not done already
-        # if not self.prober.is_chuck_contacted():
-        #     self.prober.z_up()
+        if not self.prober.is_chuck_contacted():
+            self.prober.z_up()
 
         # Check whether dies are correct
         self.print_die_info()
