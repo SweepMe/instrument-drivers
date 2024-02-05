@@ -27,7 +27,7 @@
 
 
 # SweepMe! device class
-# Type: Switch
+# Module: Switch
 # Device: mb-Technologies HVM
 
 
@@ -35,6 +35,12 @@ import time
 import string
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+"""
+Note: There is a difference between GPIB communication and the other interfaces. Typically, all commands trigger a
+return message, independent whether the commands set or read a property. However, in case of GPIB commands that just 
+set a property do not trigger a return message.
+"""
 
 
 class Device(EmptyDevice):
@@ -59,6 +65,9 @@ class Device(EmptyDevice):
                     <li>Using a "0" all channels will remain open. This command is not part of the communication
                     protocol but was implemented in the SweepMe! driver for reasons of convenience.</li>
                     <li>TCPIP/LAN communication is possible by registering a raw socket with port 10001.</li>
+                    <li>In case of using the resistance box mode, the digital output pin 1 is set to High and a
+                     resistance of 300 kOhm is used. After the processing the branch, the digital output pin 1 is
+                      set to Low leading to a resistace of 0 Ohm (short)</li>
                     </ul>
                 """
 
@@ -69,7 +78,7 @@ class Device(EmptyDevice):
         self.shortname = "HVM"
         
         self.port_manager = True
-        self.port_types = ['GPIB', 'TCPIP', 'COM']
+        self.port_types = ["GPIB", "TCPIP", "COM"]
         self.port_properties = {    
             "timeout": 3,
             "EOL": "\n",
@@ -84,19 +93,20 @@ class Device(EmptyDevice):
         
         gui_parameter = {
             "SweepMode": ["Channels"],
-            "Switch settling time in ms": 20,
             "Discharge": True,
             "Discharge time in s": "1.0",
+            "Use resistance box": False,
         }
         
         return gui_parameter
         
     def get_GUIparameter(self, parameter={}):
+        self.port_string = parameter["Port"]
         self.device = parameter['Device']
-        self.switch_settling_time_ms = parameter["Switch settling time in ms"]
         self.sweepmode = parameter["SweepMode"]
         self.use_discharge = parameter["Discharge"]
         self.discharge_time = parameter["Discharge time in s"]
+        self.use_resistance_box = parameter["Use resistance box"]
 
     def connect(self):
 
@@ -121,20 +131,32 @@ class Device(EmptyDevice):
     def initialize(self):
 
         self.reset()
-        self.open_all_channels()
+        self.get_operation_complete()
 
     def configure(self):
-        self.switch_settling_time_s = float(self.switch_settling_time_ms) / 1000
 
         self.set_connection_rule_free(rule=True)  # multiple connections are possible
 
-        if self.use_discharge:
-            self.set_discharge_mode(True)
-            time.sleep(float(self.discharge_time))
-            self.set_discharge_mode(False)
+        if self.use_resistance_box:
+            self.enable_resistance_box(True)
+            self.get_operation_complete()
 
     def unconfigure(self):
+        if self.use_discharge:
+            self.set_discharge_mode(True)
+            self.get_operation_complete()
+
+            time.sleep(float(self.discharge_time))
+
+            self.set_discharge_mode(False)
+            self.get_operation_complete()
+
+        if self.use_resistance_box:
+            self.enable_resistance_box(False)
+            self.get_operation_complete()
+
         self.open_all_channels()
+        self.get_operation_complete()
 
     def apply(self):
         self.value = str(self.value)
@@ -146,16 +168,17 @@ class Device(EmptyDevice):
 
             self.close_channel(self.value)
 
+            # we do not wait in 'reach' phase to make sure all channels are closed before any other device can apply
+            # a voltage for example
+            self.get_operation_complete()
+
             # print(self.is_channel_closed(self.value))  # does not work with COM communication
 
             # for testing purposes
             # will be later removed/commented when driver is working
             # print("Closed channels: ", self.is_channel_closed(self.value))
             # print("Closed channels: ", self.get_closed_channels())
-    
-    def reach(self):
-        time.sleep(self.switch_settling_time_s)
-        
+
     def call(self):
         return self.value
         
@@ -163,7 +186,7 @@ class Device(EmptyDevice):
 
     @staticmethod
     def split_list(list_, chunk_size=50):
-        """ this method returns chunks of a list to be processed
+        """This method returns chunks of a list to be processed.
         """
         for i in range(0, len(list_), chunk_size):
             yield list_[i:i + chunk_size]
@@ -171,19 +194,20 @@ class Device(EmptyDevice):
     def check_connections(self, connections):
 
         if isinstance(connections, str):
-            connections = connections.replace(' ', '').replace(';', ',').replace(':', ',')
-            connections = connections.split(',')
+            connections = connections.replace(" ", "").replace(";", ",").replace(":", ",")
+            connections = connections.split(",")
 
         if all([x in self.available_channels_5digit for x in connections]):  # 5 digits
             return connections
         elif all([x in self.available_channels for x in connections]):  # 2 digits - alphanumeric
             return connections
         else:
-            raise ValueError("Channel configuration has wrong format")
+            mag = "Channel configuration has wrong format"
+            raise ValueError(msg)
 
     def get_identification(self):
-        """
-        Queries identification string 
+        """Queries identification string
+
         Returns:
             answer (manufacturer, model number, serial number, hardware version, software version)
         """
@@ -192,44 +216,56 @@ class Device(EmptyDevice):
         return answer
     
     def get_operation_complete(self):
-        """
-        Waits until all pending operations are complete then returns 1
-        
+        """Waits until all pending operations are complete then returns 1
+
+        Returns:
+            bool: True if operation complete finished. Otherwise it will timeout.
         """
         self.port.write("*OPC?")
-        if self.port.read() == "1":
-            return True
-        else:
-            return False
+        return self.port.read() == "1"
 
     def reset(self) -> None:
-        """
-        Resets the instrument and opens all relays. 
+        """Resets the instrument and opens all relays.
         """
         self.port.write("*RST")
+        if not self.port_string.startswith("GPIB"):
+            self.port.read()
 
-    def run_self_test(self) -> None:
-        """
-        Starts execution of the relay matrix self-test. Depending on the matrix size the test may take up to 1 minute to 
-        finish. 
-        Disconnect all measurement cables before starting the self-test! The test may fail if cables are connected. 
+    def start_self_test(self) -> None:
+        """Starts execution of the relay matrix self-test. Depending on the matrix size the test may take up to
+        1 minute to finish. Disconnect all measurement cables before starting the self-test! The test may fail if cables
+         are connected.
+        This function onls starts the test, but does not wait for its end and does not return any success message.
+        Use run_self_test to perform a full test.
         """
         self.port.write("*TST")
+        if not self.port_string.startswith("GPIB"):
+            self.port.read()
 
-    def enquiry_self_test(self) -> None:
-        """
-        Queries the result of the relay matrix self-test.
+    def get_self_test_result(self) -> None:
+        """Queries the result of the relay matrix self-test that was triggerd with start_self_test
+
         Response: 
         0 Self-test passed 
         n (relay, …) Self-test failed , n=number of failing relays, list of failing relays follows 
         """
         self.port.write("*TST?")
+        return self.port.read()
+
+    def run_self_test(self) -> str:
+        """Performs a full self test by combining start_self_test and get_self_test_result
+
+        """
+        self.start_self_test()
+        self.get_operation_complete()
+        return self.get_self_test_result()
 
     def set_remote(self) -> None:
-        """
-        Set device to remote mode which disables the keyboard.
+        """Set device to remote mode which disables the keyboard.
         """
         self.port.write("*REM")
+        if not self.port_string.startswith("GPIB"):
+            self.port.read()
 
     def set_local(self) -> None:
         """
@@ -237,18 +273,23 @@ class Device(EmptyDevice):
         """
 
         self.port.write("*LOC")
+        if not self.port_string.startswith("GPIB"):
+            self.port.read()
 
     def open_all_channels(self):
         """
         This function opens all relays.
+
         Returns:
             None
         """
         self.port.write("OPEN ALL")
+        if not self.port_string.startswith("GPIB"):
+            self.port.read()
 
     def close_channel(self, channels):
-        """
-        This function closes given channel string.
+        """This function closes given channel string.
+
         Args:
             channels: string or list of strings
 
@@ -257,12 +298,16 @@ class Device(EmptyDevice):
         """
 
         channels = self.check_connections(channels)
-
+        if len(channels) > 25:
+            msg = "Unable to close more than 25 channels at the same time."
+            raise ValueError(msg)
         self.port.write('CLOS %s' % ",".join(channels))
+        if not self.port_string.startswith("GPIB"):
+            self.port.read()
     
     def open_channel(self, channels) -> None:
-        """
-        This function opens the given channels.
+        """This function opens the given channels.
+
         Args:
             channels: string or list of strings
 
@@ -273,10 +318,11 @@ class Device(EmptyDevice):
         channels = self.check_connections(channels)
 
         self.port.write('OPEN %s' % ",".join(channels))
+        if not self.port_string.startswith("GPIB"):
+            self.port.read()
     
     def is_channel_closed(self, channels):
-        """
-        Queries the close status of the relays specified in the list. Queries are sent in chunks as the e.g. the GPIB
+        """Queries the close status of the relays specified in the list. Queries are sent in chunks as the e.g. the GPIB
         buffer is not large enough to process all possible channels for some switching matrices
 
         Returns:
@@ -286,16 +332,15 @@ class Device(EmptyDevice):
         channels = self.check_connections(channels)
 
         closed_channels = []
-        for chunk in split_list(channels):
+        for chunk in self.split_list(channels):
             self.port.write(":CLOS? %s" % ",".join(chunk))
             answer = self.port.read()
-            closed_channels += list(map(int, answer.split(' ')))
+            closed_channels += list(map(int, answer.split(" ")))
         return closed_channels
 
     def is_channel_open(self, channels):
-        """
-        Queries the close status of the relays specified in the list. Queries are sent in chunks as the e.g. the GPIB
-        buffer is not large enough to process all possible channels for some switching matrices
+        """Queries the close status of the relays specified in the list. Queries are sent in chunks as the e.g.
+        the GPIB buffer is not large enough to process all possible channels for some switching matrices
 
         Returns:
             list of integer: 1 means open, 0 means closed
@@ -304,14 +349,15 @@ class Device(EmptyDevice):
         channels = self.check_connections(channels)
 
         open_channels = []
-        for chunk in split_list(channels):
+        for chunk in self.split_list(channels):
             self.port.write(":OPEN? %s" % ",".join(chunk))
             answer = self.port.read()
             open_channels += list(map(int, answer.split(' ')))
         return open_channels
 
     def get_closed_channels(self):
-
+        """Convenience function to query all open channels
+        """
         all_channels = self.is_channel_closed(self.available_channels)
         closed_channels = []
 
@@ -322,7 +368,8 @@ class Device(EmptyDevice):
         return closed_channels
 
     def get_open_channels(self):
-
+        """Convenience function to query all open channels
+        """
         all_channels = self.is_channel_open(self.available_channels)
 
         open_channels = []
@@ -333,23 +380,24 @@ class Device(EmptyDevice):
         return open_channels
 
     def set_connection_rule_free(self, rule=True) -> None:
-        """
-        Sets the connection rule to
-        free: an input port can connect to multiple output ports
-        single: an input port can connect to one output port only
-        """
+        """Sets the connection rule
 
+        Args:
+            rule: bool
+                True -> free: an input port can connect to multiple output ports
+                False -> single: an input port can connect to one output port only
+        """
         if rule:
             self.port.write("CONN:RULE ALL,FREE")
         else:
             self.port.write("CONN:RULE ALL,SROU")
 
+        if not self.port_string.startswith("GPIB"):
+            self.port.read()
+
     def get_relay_cycle_counts(self, channels):
+        """Queries the number of relay switch cycles for the given channels.
         """
-        Queries the number of relay switch cycles for the given channels
-
-        """
-
         channels = self.check_connections(channels)
 
         self.port.write("SYST:STA:REL? %s" % channels)
@@ -357,21 +405,56 @@ class Device(EmptyDevice):
         return answer.split(" ")
     
     def set_discharge_mode(self, mode) -> None:
-        """
-        Set discharge mode
+        """Set discharge mode
 
         Args:
             mode: int (bool) being 0 (False) or 1 (True)
         """
         self.port.write("ROUT:DIS %i" % int(mode))
+        if not self.port_string.startswith("GPIB"):
+            self.port.read()
 
-    def get_discharge_mode(self):
+    def get_discharge_mode(self) -> int:
         self.port.write("ROUT:DIS?")
         answer = int(self.port.read())
         return answer
 
-    def get_serial_number(self, board):
+    def enable_resistance_box(self, state=True) -> None:
+        """Enable the resistance in an add-on resistance box that is controlled via output pin 1
+
+        Args:
+            state: bool or int
+                False or 0: short the resistor (0 Ohm)
+                True or 1: set the resistor (300 kOhm)
+
         """
+        self.set_digital_output(1)
+        self.set_digital_output_value(1, int(state))
+
+    def set_digital_output_value(self, pin, mode):
+        """Set a output pin of the IO line to high (True) or low (False)
+
+        Args:
+            pin: int -> number of the digital IO line
+            mode: int, bool -> High (1 or True), Low (0 or False
+        """
+        self.port.write("DIG %i,%i" % (int(pin), int(mode)))
+        if not self.port_string.startswith("GPIB"):
+            self.port.read()
+
+    def set_digital_output(self, pin):
+        """Set the given IO line as outputs.
+
+        Args:
+            pin: int, number of the digital IO line
+        """
+        self.port.write("DIG:OUT %i" % int(pin))
+        if not self.port_string.startswith("GPIB"):
+            self.port.read()
+
+    def get_serial_number(self, board):
+        """Returns the serial number depending on the board.
+
         board:
         1 to 12 Relay board
         101 Logic board
@@ -385,16 +468,14 @@ class Device(EmptyDevice):
         Returns:
             string: serial number
             string: date
-
         """
 
         self.port.write("SYSTEM:BOARD:SERIAL? %s" % str(board))
-        answer = self.port.read().split(',')
+        answer = self.port.read().split(",")
         return answer
 
     def get_error(self):
-        """
-        Errors are saved in a temporary storage. This command queries the first error in the list.
+        """Errors are saved in a temporary storage. This command queries the first error in the list.
         The error is then removed from the list. The error list is cleared at power - on and when executing
         the *RST command.
         """
@@ -408,8 +489,7 @@ class Device(EmptyDevice):
             error = self.get_error()
             if error == "0,No error":
                 break
-            else:
-                print(error)
+            print(error)
 
 
 if __name__ == "__main__":
@@ -418,3 +498,4 @@ if __name__ == "__main__":
     print(cmd, device.check_connections(cmd))
     cmd = "10101", "10201", "20101"  # triggers exception
     print(cmd, device.check_connections(cmd))
+    
