@@ -37,7 +37,7 @@ import numpy as np
 import time
 import os
 
-import FolderManager
+from pysweepme import FolderManager
 FolderManager.addFolderToPATH()
 
 import importlib
