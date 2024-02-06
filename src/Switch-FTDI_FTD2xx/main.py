@@ -27,18 +27,10 @@
 
 
 # SweepMe! device class
-# Device: Arduino MCP4728
+# Device: FTDI FTD2xx
 
-import os
-import sys
-
-file_dir = os.path.dirname(__file__)
-sys.path.append(file_dir)
-
-libs_path = file_dir + os.sep + "libs"
-libraries_path = file_dir + os.sep + r"libraries\libs_39_64"
-sys.path.append(libraries_path)
-
+from pysweepme import FolderManager
+FolderManager.addFolderToPATH()
 
 import binascii
 
@@ -48,96 +40,98 @@ from pysweepme import EmptyDevice
 
 class Device(EmptyDevice):
     description = """
-        Need FTDI driver installed
+        For FTD 2xx boards such as FTD245R
         Can send initial command when initializing or end command when deinitializing
     """
 
     def __init__(self) -> None:
         EmptyDevice.__init__(self)
 
-        self.shortname = "FTDI245"
-        self.variables = []
+        self.shortname = "FTD2xx"
+        self.variables = ["Response"]
         self.units = []
 
         self.port_manager = False
-        self.port_types = ["USB"]
+
+        # Read and write timeout in ms
+        self.timeout_ms = 5000
 
     def find_ports(self):
-        # print(ftd.listDevices())
         return [dev.decode() for dev in ftd.listDevices()]
 
     def set_GUIparameter(self):
         return {
-            "Command": "Some Command",
             "Encoding": ["HEX", "ASCII"],
-            "Init Command": "",
-            "End Command": "",
+            "SweepMode": "Command",
+            "Start command": "",
+            "End command": "",
         }
 
     def get_GUIparameter(self, parameter={}):
         self.encoding = parameter["Encoding"]
+        self.units.append(self.encoding)
 
-        self.port_str = parameter["Port"]
+        self.start_command = self.convert_to_string(parameter["Start command"])
+        self.end_command = self.convert_to_string(parameter["End command"])
+
+        self.port_str = self.convert_to_string(parameter["Port"])
         self.driver_name = parameter["Device"]
 
     """ here, semantic standard functions start that are called by SweepMe! during a measurement """
 
     def connect(self):
-        # Check if port string is still in list of devices - maybe double?
-        if self.port_str not in ftd.listDevices():
-            msg = f"FTD Device with serial number {self.port_str} not found"
-            raise Exception(msg)
-
-        # Open device
-        try:
-            self.device = ftd.openEx(self.port_str)
-        except ftd.ftd2xx.DeviceError:
-            msg = f"Cannot open FTD Device with serial number {self.port_str}"
-            raise Exception(msg)
-
-
         # Set Name/Number of COM Port as key
         self.instance_key = f"{self.driver_name}_{self.port_str}"
+        if self.instance_key in self.device_communication:
+            self.device = self.device_communication[self.instance_key]
+        else:
+            # Open device
+            port_byte = self.port_str.encode()
+            try:
+                self.device = ftd.openEx(port_byte)
+            except ftd.ftd2xx.DeviceError:
+                msg = f"Cannot open FTD Device with serial number {port_byte}. Available devices: {ftd.listDevices()}"
+                raise Exception(msg)
 
-        if self.instance_key not in self.device_communication:
-            self.device_communication[self.instance_key] = "Connected"
+            self.device_communication[self.instance_key] = self.device
 
     def disconnect(self):
-        # Close device
         self.device.close()
 
         if self.instance_key in self.device_communication:
             self.device_communication.pop(self.instance_key)
 
     def configure(self):
-        self.device.setTimeouts(5000, 5000)
+        self.device.setTimeouts(self.timeout_ms, self.timeout_ms)
+        self.send_string(self.start_command)
 
     def unconfigure(self):
-        # TODO: Timeout?
-        pass
+        self.send_string(self.end_command)
 
     def apply(self):
-        # command: 5 Bytes
-
-        if self.encoding == "HEX":
-            # length 5
-            command = binascii.unhexlify(self.value.replace(" ", ""))
-        # elif self.encoding == "ASCII":
-        else:
-            # length 14
-            command = bytes(self.value, "utf-8")
-
-        self.device.write(command)
+        self.send_string(self.value)
 
     def call(self):
         # Number of bytes in queue
         queue = self.device.getQueueStatus()
-
-        # check timeout?
-
         if queue > 0:
             return(self.device.read(queue))
         else:
-            return None
+            return ""
 
     """ here, convenience functions start """
+
+    def send_string(self, string):
+        if self.encoding == "HEX":
+            encoded_string = binascii.unhexlify(string.replace(" ", ""))
+        else:
+            encoded_string = bytes(string, "utf-8")
+
+        self.device.write(encoded_string)
+
+    def convert_to_string(self, input):
+        # If port string is given as byte string
+        try:
+            return input.decode()
+        except (UnicodeDecodeError, AttributeError):
+            return input
