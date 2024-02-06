@@ -96,12 +96,11 @@ class Device(EmptyDevice):
         }
 
     def find_ports(self):
-        # TODO: update SweepMe! to allow finding ports next to the automatically found one
-
-        ports = ["LPTlib via xxx.xxx.xxx.xxx"]
 
         if RUNNING_ON_4200SCS:
-            ports.insert(0, "LPTlib control - no port required")
+            ports = ["LPTlib"]
+        else:
+            ports = ["LPTlib via xxx.xxx.xxx.xxx"]
 
         return ports
         
