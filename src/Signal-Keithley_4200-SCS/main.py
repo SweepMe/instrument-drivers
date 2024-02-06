@@ -197,7 +197,12 @@ class Device(EmptyDevice):
                 # not supported yet with pylptlib -> # self.inst = inst
                 self.param = param
 
-            ret = self.lpt.initialize()
+            try:
+                ret = self.lpt.initialize()
+            except ConnectionRefusedError as e:
+                debug("Unable to connect to a lptlib server application running on the 4200-SCS. Please check your"
+                      "network settings and make sure the server application is running.")
+                raise e
             
             self.card_id = self.lpt.getinstid(self.card_name)
 
