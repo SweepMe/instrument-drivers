@@ -171,3 +171,5 @@ cython_debug/
 /src/*/libs/**/__pycache__/
 /src/*/libraries/libs_39_32/**/__pycache__/
 /src/*/libraries/libs_39_64/**/__pycache__/
+
+/src/Switch-FTDI_FTD245XX/thermusb_example
