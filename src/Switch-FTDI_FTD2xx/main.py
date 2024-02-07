@@ -39,9 +39,13 @@ from pysweepme import EmptyDevice
 
 
 class Device(EmptyDevice):
-    description = """
-        For FTD 2xx boards such as FTD245R
-        Can send initial command when initializing or end command when deinitializing
+        description = """
+        <h3>FTDI FTD 2xx</h3>
+        <p>This driver allows to send byte strings to FTD boards such as the FTD245R.</p>
+        <h4>Setup</h4>
+        <p>The FTDI driver needs to be installed, which can be found <a href="https://ftdichip.com/drivers/">here</a>.</p>
+        <h4>Parameters</h4>
+        <p>The <em>Start Command </em>and <em>End command </em>are sent at the configure and unconfgure steps, respectively.</p>
     """
 
     def __init__(self) -> None:
