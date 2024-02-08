@@ -1,26 +1,17 @@
 import pysweepme
-import time
 
 driver_name = 'Switch-FTDI_FTD2xx'
 driver_path = r'C:\Code\instrument-drivers\src'
-port_string = b'FTBHYRHM' # 'USB'
+port_string = b'FTDCYSHN' # insert your device serial number here
 
 # Initialize Driver
 switch = pysweepme.get_driver(driver_name, driver_path, port_string)
 
 # Set measurement parameter
-switch.set_parameters(
-    {
-        "Encoding": "HEX",
-    },
-)
-
-# print(type(port_string))
-serial = b'FTBHYRHM'
-id = 67330049
+switch.set_parameters({"Encoding": "HEX"})
 
 # Initialize Device
-switch.find_ports()
+switch.find_ports() # print to see available port_strings
 switch.connect()
 switch.configure()
 
