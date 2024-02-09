@@ -29,14 +29,15 @@
 # SweepMe! device class
 # Device: FTDI FTD2xx
 
-from pysweepme import FolderManager
-
-FolderManager.addFolderToPATH()
+from __future__ import annotations
 
 import binascii
 
+from pysweepme import EmptyDevice, FolderManager
+
+FolderManager.addFolderToPATH()
+
 import ftd2xx as ftd
-from pysweepme import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -63,20 +64,20 @@ class Device(EmptyDevice):
         # Read and write timeout in ms
         self.timeout_ms = 5000
 
-    def find_ports(self):
+    def find_ports(self) -> list[str]:
         return [dev.decode() for dev in ftd.listDevices()]
 
-    def set_GUIparameter(self):
+    def set_GUIparameter(self) -> dict[str, list[str] | str | int]:
         return {
             "Encoding": ["HEX", "ASCII"],
             "SweepMode": "Command",
-            "Start command": " ",
-            "End command": " ",
+            "Start command": "",
+            "End command": "",
             "Readout length": 0,
             "Timeout in ms": 5000,
         }
 
-    def get_GUIparameter(self, parameter={}):
+    def get_GUIparameter(self, parameter={}) -> None:
         self.encoding = parameter["Encoding"]
         self.units.append(self.encoding)
 
@@ -91,7 +92,7 @@ class Device(EmptyDevice):
 
     """ here, semantic standard functions start that are called by SweepMe! during a measurement """
 
-    def connect(self):
+    def connect(self) -> None:
         # Set Name/Number of COM Port as key
         self.instance_key = f"{self.driver_name}_{self.port_str}"
         if self.instance_key in self.device_communication:
@@ -107,20 +108,20 @@ class Device(EmptyDevice):
 
             self.device_communication[self.instance_key] = self.device
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         self.device.close()
 
         if self.instance_key in self.device_communication:
             self.device_communication.pop(self.instance_key)
 
-    def configure(self):
+    def configure(self) -> None:
         self.device.setTimeouts(self.timeout_ms, self.timeout_ms)
         self.send_string(self.start_command)
 
-    def unconfigure(self):
+    def unconfigure(self) -> None:
         self.send_string(self.end_command)
 
-    def apply(self):
+    def apply(self) -> None:
         self.send_string(self.value)
 
     def call(self) -> str:
@@ -130,21 +131,24 @@ class Device(EmptyDevice):
             queue = self.device.getQueueStatus()
             answer = self.device.read(queue)
 
-        return answer.decode("utf-8")
+        print(f"Answer: {answer}, Converted: {self.convert_to_string(answer)}")
+
+        return self.convert_to_string(answer)
 
     """ here, convenience functions start """
 
-    def send_string(self, string):
+    def send_string(self, string: str) -> None:
         if self.encoding == "HEX":
             encoded_string = binascii.unhexlify(string.replace(" ", ""))
         else:
             encoded_string = bytes(string, "utf-8")
 
+        print(f"Sending: {string}, Converted: {encoded_string}")
         self.device.write(encoded_string)
 
-    def convert_to_string(self, input):
+    def convert_to_string(self, bytestring: str | bytes) -> str:
         # If port string is given as byte string
         try:
-            return input.decode()
+            return bytestring.decode()
         except (UnicodeDecodeError, AttributeError):
-            return input
+            return bytestring
