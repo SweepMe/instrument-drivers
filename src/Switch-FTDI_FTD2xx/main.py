@@ -129,7 +129,8 @@ class Device(EmptyDevice):
         else:
             queue = self.device.getQueueStatus()
             answer = self.device.read(queue)
-        return answer
+
+        return answer.decode("utf-8")
 
     """ here, convenience functions start """
 
