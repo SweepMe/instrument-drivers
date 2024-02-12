@@ -446,15 +446,16 @@ class Eurotherm(EmptyDevice):
         return 60.0
           
     def get_decimal_positions(self):
-        """ get the number decimal positions """
+        """ get the number of decimal positions """
     
         resolution = self.get_resolution()            
-        # print("Resolution", resolution)
 
-        if resolution == 0: # Full resolution is selected and we have to ask for the number of decimal point positions
-
+        if resolution == 0:  # Full resolution is selected and we have to ask for the number of decimal point positions
             decimal_point_positions = self.get_decimalpoint_positions()
-            # print("Decimal point positions:", decimal_point_positions)
+        elif resolution == 1:  # Integer resolution
+            decimal_point_positions = 0
+        else:
+            raise ValueError(f"Unknown resolution returned with value {resolution}:")
 
         return decimal_point_positions
                 
