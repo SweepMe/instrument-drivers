@@ -32,10 +32,6 @@
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug
-import time
-import numpy as np
-import sys
-from collections import OrderedDict
 
 
 class Device(EmptyDevice):
@@ -52,18 +48,28 @@ class Device(EmptyDevice):
         self.savetype = [True, True]  # True to save data
         
         self.port_manager = True
-        self.port_types = ['USB', 'GPIB']
-        self.port_properties = {'timeout': 10}
-        self.port_identifications = ['KEITHLEY INSTRUMENTS,MODEL 2450,']
+        self.port_types = ["USB", "GPIB"]
+        self.port_properties = {"timeout": 10}
+        self.port_identifications = ["KEITHLEY INSTRUMENTS,MODEL 2450,"]
         
         self.is_power_on = False
 
     def set_GUIparameter(self):
-        GUIparameter = {
+
+        gui_parameter = {
                         "SweepMode": ["Voltage in V", "Current in A"],
                         "RouteOut": ["Front", "Rear"],
                         "Speed": ["Fast", "Medium", "Slow"],
                         "Range": ["Auto",
+                                  "Limited 10 nA",
+                                  "Limited 100 nA",
+                                  "Limited 1 µA",
+                                  "Limited 10 µA",
+                                  "Limited 100 µA",
+                                  "Limited 1 mA",
+                                  "Limited 10 mA",
+                                  "Limited 100 mA",
+                                  "Limited 1 A",
                                   "10 nA",
                                   "100 nA",
                                   "1 µA",
@@ -78,17 +84,17 @@ class Device(EmptyDevice):
                         "4wire": False,
                         }
         
-        return GUIparameter
+        return gui_parameter
 
     def get_GUIparameter(self, parameter={}):
               
-        self.four_wire = parameter['4wire']
-        self.route_out = parameter['RouteOut']
-        self.source = parameter['SweepMode']
-        self.protection = parameter['Compliance']
-        self.speed = parameter['Speed']
-        self.range = parameter['Range']
-        self.average = int(parameter['Average'])
+        self.four_wire = parameter["4wire"]
+        self.route_out = parameter["RouteOut"]
+        self.source = parameter["SweepMode"]
+        self.protection = parameter["Compliance"]
+        self.speed = parameter["Speed"]
+        self.range = parameter["Range"]
+        self.average = int(parameter["Average"])
         
     def connect(self):
     
@@ -107,13 +113,13 @@ class Device(EmptyDevice):
             self.vendor, self.model, self.serialno, self.version = self.port.read().split(",")
             # print(self.vendor, self.model, self.serialno, self.version)
             # reset all values
-            self.port.write("*rst" )
+            self.port.write("*rst")
             self.port.write("status:preset")
             self.port.write("*cls")
             
             self.port.write(":SYST:BEEP:STAT OFF")  # control-Beep off
             
-            # self.port.write(":SYST:LFR 50")
+            # self.port.write(":SYST:LFR 50")  # unused because not everyone has 50 Hz
 
         if self.language == "TSP":
 
@@ -131,12 +137,12 @@ class Device(EmptyDevice):
             self.port.write("defbuffer1.clear()")  # clear the default buffer
             self.port.write("errorqueue.clear()")
                                     
-            # self.port.write("localnode.linefreq = 50")
+            # self.port.write("localnode.linefreq = 50")  # unused because not everyone has 50 Hz
 
     def configure(self):
     
         if self.language == "SCPI2400":
-                       
+        
             if self.average > 1:
                 self.port.write(":SENS:AVER:COUN %i" % self.average)
                 self.port.write(":SENS:AVER:STAT ON")
@@ -147,7 +153,7 @@ class Device(EmptyDevice):
                 self.port.write(":SENS:AVER:STAT OFF")
 
         elif self.language == "TSP":
-           
+          
             if self.average > 1:
                 self.port.write("smu.measure.filter.count = %i" % self.average)
                 self.port.write("smu.measure.filter.enable = smu.ON")
@@ -163,16 +169,16 @@ class Device(EmptyDevice):
         if self.source.startswith("Current"):
             self.source_curr()
 
-        ### Speed/Integration ###
+        # Speed/Integration #
         self.set_speed(self.speed)
 
-        ### 4 wire ###
+        # 4 wire #
         if self.four_wire:
             self.rsen_on()
         else:
             self.rsen_off()
             
-        ### Route out ###
+        # Route out #
         if self.route_out == "Front":
             self.route_front()
         
@@ -219,7 +225,7 @@ class Device(EmptyDevice):
         self.measure()
         self.call()
 
-    def measure(self):    
+    def measure(self):
              
         if self.language == "SCPI2400":
             self.port.write("READ?")
@@ -235,37 +241,59 @@ class Device(EmptyDevice):
     def call(self):
     
         if self.language == "SCPI2400":
-            answer = self.port.read().split(',')
+            answer = self.port.read().split(",")
             self.v, self.i = answer[0:2]
         
         elif self.language == "TSP":
 
             self.port.write("printbuffer(1, 1, data.readings, data.sourcevalues)") 
-            answer = self.port.read().split(',')
+            answer = self.port.read().split(",")
             
             if self.source.startswith("Voltage"):
-                self.i, self.v = answer
+                self.i, self.v = list(map(float, answer))
             elif self.source.startswith("Current"):
-                self.v, self.i = answer
-
+                self.v, self.i = list(map(float, answer))
+                
         # large values indicate errors
-        if self.v > 1e20:
+        error_threshold_value = 1e20  # values larger than this indicate an error not a measurement value
+        if self.v > error_threshold_value:
             self.v = float("nan")
             debug("Keithley2450: Unable to read voltage.")
-        if self.i > 1e20:
+        if self.i > error_threshold_value:
             self.i = float("nan")
             debug("Keithley2450: Unable to read current.")
 
-        return [float(self.v), float(self.i)]
-                    
+        return [self.v, self.i]
+
+    # Convenience functions start here
+
+    @staticmethod
+    def convert_unit_prefix(number_text: str):
+        """
+        This function converts a unit prefix such as n, µ or m to the scientific e notation
+        """
+
+        number_text = (number_text.replace("f", "e-15")
+                                  .replace("p", "e-12")
+                                  .replace("n", "e-9")
+                                  .replace("µ", "e-6")
+                                  .replace("µ", "e-3")
+                                  .replace("k", "e3")
+                                  .replace("M", "e6")
+                                  .replace("G", "e9"))
+
+        return number_text
+
+    # Functions that wrap communication commands start here #
+
     def route_front(self):
     
-        # if self.language == "SCPI2400": 
-            # self.port.write("ROUT:TERM?")
+        # if self.language == "SCPI2400":
+        #     self.port.write("ROUT:TERM?")
             
         # if self.language == "TSP":
-            # self.port.write("print(smu.measure.terminals)")
-            # self.port.read()
+        #     self.port.write("print(smu.measure.terminals)")
+        #     self.port.read()
         
         if self.is_power_on:
             self.poweroff()
@@ -304,12 +332,10 @@ class Device(EmptyDevice):
              
     def source_volt(self):
     
-        self.range = (self.range.replace(" ", "")
-                      .replace("p", "e-12")
-                      .replace("n", "e-9")
-                      .replace("µ", "e-6")
-                      .replace("m", "e-3"))
-    
+        self.range = self.convert_unit_prefix(self.range)
+        self.range = self.range.replace("A", "")  # removing the Ampere unit
+        self.range = self.range.replace(" ", "")
+
         if self.language == "SCPI2400":
             self.port.write(":SOUR:FUNC VOLT")                  
             # sourcemode = Voltage
@@ -317,39 +343,42 @@ class Device(EmptyDevice):
             # sourcemode fix
             self.port.write(":SENS:FUNC \"CURR\"")              
             # measurement mode
-            self.port.write(":SENS:CURR:PROT "+ self.protection)
+            self.port.write(":SENS:CURR:PROT " + self.protection)
             # Protection with Imax
-            # self.port.write(":SOUR:VOLT:READ:BACK ON") ## does not work and leads to error???
+            # self.port.write(":SOUR:VOLT:READ:BACK ON")  # does not work and leads to error???
             
-            if self.range == "Auto": # it means Auto was selected              
+            if self.range == "Auto":  # it means Auto was selected
                 self.port.write(":SENS:CURR:RANG:AUTO ON")
-
+            elif "Limited" in self.range:
+                self.port.write(":SENS:CURR:RANG:AUTO ON")
+                limited_lower_range = self.range[7:]  # cutting off the "Limited"
+                self.port.write("SENSe:CURRent:RANGe:AUTO:LLIMit %s" % limited_lower_range)
             else:
                 self.port.write(":SENS:CURR:RANG:AUTO OFF")
-                self.port.write(":SENS:CURR:RANG %s" % str(self.range.replace("A", "")))
+                self.port.write(":SENS:CURR:RANG %s" % str(self.range))
       
         elif self.language == "TSP":
             self.port.write("smu.source.func = smu.FUNC_DC_VOLTAGE")
             self.port.write("smu.measure.func = smu.FUNC_DC_CURRENT")
-            self.port.write("smu.source.autorange = smu.ON") # for voltage range
+            self.port.write("smu.source.autorange = smu.ON")  # for voltage range
             
             self.port.write("smu.source.ilimit.level = " + self.protection)
             
-            if self.range == "Auto": # it means Auto was selected
+            if self.range == "Auto":  # it means Auto was selected
                 self.port.write("smu.measure.autorange = smu.ON")
-            else:
+            elif "Limited" in self.range:  # Limited auto range
+                self.port.write("smu.measure.autorange = smu.ON")
+                limited_lower_range = self.range[7:]  # cutting off the "Limited"
+                self.port.write("smu.measure.autorangelow = %s" % limited_lower_range)
+            else:  # Fixed range
                 self.port.write("smu.measure.autorange = smu.OFF")
-                self.port.write("smu.measure.range = %s" % str(self.range.replace("A", "")))
+                self.port.write("smu.measure.range = %s" % str(self.range))
 
             self.port.write("smu.measure.autozero.once()")
 
     def source_curr(self): 
 
-        self.range = (self.range.replace(" ", "")
-                      .replace("p", "E-12")
-                      .replace("n", "E-9")
-                      .replace("µ", "E-6")
-                      .replace("m", "E-3"))
+        self.range = self.convert_unit_prefix(self.range)
                         
         if self.language == "SCPI2400":
             self.port.write(":SOUR:FUNC CURR")                  
@@ -358,14 +387,14 @@ class Device(EmptyDevice):
             # sourcemode fix		
             self.port.write(":SENS:FUNC \"VOLT\"")              
             # measurement mode
-            self.port.write(":SENS:VOLT:PROT "+ self.protection)
+            self.port.write(":SENS:VOLT:PROT " + self.protection)
             # Protection with Imax
             self.port.write(":SENS:VOLT:RANG:AUTO ON")
             # Autorange for voltage measurement
             # self.port.write(":SOUR:CURR:READ:BACK ON")  ## does not work and leads to error???
             # Read the source value again
             
-            if self.range == "Auto": # it means Auto was selected
+            if self.range == "Auto":  # it means Auto was selected
                     
                 self.port.write(":SOUR:CURR:RANG:AUTO ON")
             else:
@@ -401,21 +430,21 @@ class Device(EmptyDevice):
                 
     def output_mode(self):
         if self.language == "SCPI2400":
-            #To set the output-off state to normal,
+            # To set the output-off state to normal,
             self.port.write(":OUTP:SMOD NORM")
-            #To set the output-off state to zero
-            #self.port.write(":OUTP:SMOD ZERO") 
-            #To set the output-off state to high impedance
-            #self.port.write(":OUTP:SMOD HIMP")
-            #To set the output-off state to guard
-            #self.port.write(":OUTP:SMOD GUAR")
+            # To set the output-off state to zero
+            # self.port.write(":OUTP:SMOD ZERO")
+            # To set the output-off state to high impedance
+            # self.port.write(":OUTP:SMOD HIMP")
+            # To set the output-off state to guard
+            # self.port.write(":OUTP:SMOD GUAR")
             
         elif self.language == "TSP":
-            #To set the output-off state to normal,
+            # To set the output-off state to normal,
             self.port.write("smu.source.offmode = smu.OFFMODE_NORMAL")
-            #To set the output-off state to zero
-            #self.port.write("smu.source.offmode = smu.OFFMODE_ZERO") 
-            #To set the output-off state to high impedance
-            #self.port.write("smu.source.offmode = smu.OFFMODE_HIGHZ")
-            #To set the output-off state to guard
-            #self.port.write("smu.source.offmode = smu.OFFMODE_GUARD")
+            # To set the output-off state to zero
+            # self.port.write("smu.source.offmode = smu.OFFMODE_ZERO")
+            # To set the output-off state to high impedance
+            # self.port.write("smu.source.offmode = smu.OFFMODE_HIGHZ")
+            # To set the output-off state to guard
+            # self.port.write("smu.source.offmode = smu.OFFMODE_GUARD")
