@@ -222,6 +222,7 @@ class Device(EmptyDevice):
             self.port.write("smu.source.level = %s" % self.value)
                         
         # needed to trigger a measurement and thus to trigger the final output of the level
+        # should be replaced by TSP command 'waitcomplete()' or SCPI '*OPC?' handling
         self.measure()
         self.call()
 
@@ -335,6 +336,7 @@ class Device(EmptyDevice):
         self.range = self.convert_unit_prefix(self.range)
         self.range = self.range.replace("A", "")  # removing the Ampere unit
         self.range = self.range.replace(" ", "")
+        range_value = self.range.replace("Limited", "")  # removing Limited from current range string
 
         if self.language == "SCPI2400":
             self.port.write(":SOUR:FUNC VOLT")                  
@@ -351,11 +353,10 @@ class Device(EmptyDevice):
                 self.port.write(":SENS:CURR:RANG:AUTO ON")
             elif "Limited" in self.range:
                 self.port.write(":SENS:CURR:RANG:AUTO ON")
-                limited_lower_range = self.range[7:]  # cutting off the "Limited"
-                self.port.write("SENSe:CURRent:RANGe:AUTO:LLIMit %s" % limited_lower_range)
+                self.port.write("SENSe:CURRent:RANGe:AUTO:LLIMit %s" % range_value)
             else:
                 self.port.write(":SENS:CURR:RANG:AUTO OFF")
-                self.port.write(":SENS:CURR:RANG %s" % str(self.range))
+                self.port.write(":SENS:CURR:RANG %s" % range_value)
       
         elif self.language == "TSP":
             self.port.write("smu.source.func = smu.FUNC_DC_VOLTAGE")
@@ -368,11 +369,10 @@ class Device(EmptyDevice):
                 self.port.write("smu.measure.autorange = smu.ON")
             elif "Limited" in self.range:  # Limited auto range
                 self.port.write("smu.measure.autorange = smu.ON")
-                limited_lower_range = self.range[7:]  # cutting off the "Limited"
-                self.port.write("smu.measure.autorangelow = %s" % limited_lower_range)
+                self.port.write("smu.measure.autorangelow = %s" % range_value)
             else:  # Fixed range
                 self.port.write("smu.measure.autorange = smu.OFF")
-                self.port.write("smu.measure.range = %s" % str(self.range))
+                self.port.write("smu.measure.range = %s" % range_value)
 
             self.port.write("smu.measure.autozero.once()")
 
