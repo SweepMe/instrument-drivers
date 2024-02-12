@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2022 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022, 2024 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -30,9 +30,10 @@
 # Type: SMU
 # Device: KORAD KD3005P
 
+
 import time
-from ErrorMessage import error
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import error
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
 
@@ -42,39 +43,41 @@ class Device(EmptyDevice):
         
         self.shortname = "KD3005P"
         
-        self.variables =["Voltage", "Current"]
-        self.units =    ["V", "A"]
-        self.plottype = [True, True] # True to plot data
-        self.savetype = [True, True] # True to save data
+        self.variables = ["Voltage", "Current"]
+        self.units = ["V", "A"]
+        self.plottype = [True, True]  # True to plot data
+        self.savetype = [True, True]  # True to save data
 
         self.port_manager = True
         self.port_types = ["COM"]
         
-        self.port_properties = { "timeout": 0.2,
-                                 "EOL": "",
-                                 "baudrate": 9600,
-                                 "delay": 0.05,
-                                 "Exception": False,
-                                 }
-                                 
+        self.port_properties = {
+            "timeout": 0.2,
+            "EOL": "",
+            "baudrate": 9600,
+            "delay": 0.05,
+            "Exception": False,
+            }
+
         self.commands = {
-                        "Voltage [V]" : "VSET",  # remains for compatibility reasons
-                        "Current [A]" : "ISET",  # remains for compatibility reasons
-                        "Voltage in V" : "VSET",
-                        "Current in A" : "ISET",
+                        "Voltage [V]": "VSET",  # remains for compatibility reasons
+                        "Current [A]": "ISET",  # remains for compatibility reasons
+                        "Voltage in V": "VSET",
+                        "Current in A": "ISET",
                         }
-                                 
+
     def set_GUIparameter(self):
         
-        GUIparameter = {
-                        "SweepMode" : ["Voltage in V", "Current in A"],
+        gui_parameter = {
+                        "SweepMode": ["Voltage in V", "Current in A"],
                         "RouteOut": ["Front"],
                         "Compliance": 0.1,
                         }
                         
-        return GUIparameter
+        return gui_parameter
                                  
-    def get_GUIparameter(self, parameter = {}):
+    def get_GUIparameter(self, parameter={}):
+
         self.source = parameter['SweepMode']
         self.protection = parameter['Compliance']
         # self.average = int(parameter['Average'])
@@ -88,19 +91,18 @@ class Device(EmptyDevice):
         self.port.write("*IDN?")
         time.sleep(0.1)
         identifier = self.port.read(self.port.in_waiting())
-        print("Identifier:", identifier)
+        # print("Identifier:", identifier)
         
         # if not "3005P" in identifier:
             # self.stopMeasurement = "Returned identification string %s is incorrect. Please check whether the correct device is connected." % identifier
             # return False
 
     def configure(self):
-
         if self.source.startswith("Voltage"):
             self.port.write("ISET1:%1.2f" % float(self.protection))
-        if self.source.startswith("Current"):
+        elif self.source.startswith("Current"):
             self.port.write("VSET1:%1.2f" % float(self.protection))
-           
+
     def deinitialize(self):
         pass
 
@@ -109,10 +111,10 @@ class Device(EmptyDevice):
         
     def poweroff(self):
         self.port.write("OUT0")
-                 
+
     def apply(self):
         self.port.write(self.commands[self.source] + "1:%1.2f" % float(self.value))
-         
+
     def measure(self):        
         # self.port.write("VSET1?")
         # self.vset = float(self.port.read(5))
@@ -124,6 +126,7 @@ class Device(EmptyDevice):
         answer = self.port.read(5)
         try:
             self.i = float(answer)
+            
         except:
             error()
             self.port.write("IOUT1?")
@@ -150,7 +153,3 @@ class Device(EmptyDevice):
 
     def call(self):
         return [self.v, self.i]
-        
-
-        
-        
