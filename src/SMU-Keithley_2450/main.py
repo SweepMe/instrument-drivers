@@ -350,10 +350,11 @@ class Device(EmptyDevice):
 
             if "Auto" in self.range:  # Full auto-ranging
                 self.port.write(":SENS:CURR:RANG:AUTO ON")
-            elif "Limited" in self.range:
+                self.port.write("SENSe:CURRent:RANGe:AUTO:LLIMit DEF")
+            elif "Limited" in self.range:  # Limited auto-ranging
                 self.port.write(":SENS:CURR:RANG:AUTO ON")
                 self.port.write("SENSe:CURRent:RANGe:AUTO:LLIMit %s" % range_value)
-            elif "Fixed" in self.range:
+            elif "Fixed" in self.range:  # Fixed range
                 self.port.write(":SENS:CURR:RANG:AUTO OFF")
                 self.port.write(":SENS:CURR:RANG %s" % range_value)
 
@@ -361,12 +362,12 @@ class Device(EmptyDevice):
             self.port.write("smu.source.func = smu.FUNC_DC_VOLTAGE")
             self.port.write("smu.measure.func = smu.FUNC_DC_CURRENT")
             self.port.write("smu.source.autorange = smu.ON")  # for voltage range
-
             self.port.write("smu.source.ilimit.level = " + self.protection)
 
             if "Auto" in self.range:  # Full auto-ranging
                 self.port.write("smu.measure.autorange = smu.ON")
-            elif "Limited" in self.range:
+                self.port.write("smu.measure.lowrange = lowRange")
+            elif "Limited" in self.range:  # Limited auto-ranging
                 self.port.write("smu.measure.autorange = smu.ON")
                 self.port.write("smu.measure.autorangelow = %s" % range_value)
             elif "fixed" in self.range:  # Fixed range
@@ -377,7 +378,13 @@ class Device(EmptyDevice):
 
     def source_curr(self):
 
-        self.range = self.convert_unit_prefix(self.range)
+        range_value = self.range
+        range_value = range_value.replace("Limited", "")
+        range_value = range_value.replace("Fixed", "")
+        range_value = range_value.replace(" ", "")  # removing spaces
+        range_value = range_value.replace("A", "")  # removing the Ampere unit
+
+        range_value = self.convert_unit_prefix(range_value)  # convert magnitudes to float
 
         if self.language == "SCPI2400":
             self.port.write(":SOUR:FUNC CURR")
@@ -393,12 +400,13 @@ class Device(EmptyDevice):
             # self.port.write(":SOUR:CURR:READ:BACK ON")  ## does not work and leads to error???
             # Read the source value again
 
-            if self.range == "Auto":  # it means Auto was selected
-
+            if self.range == "Auto":  # Auto-ranging
+                self.port.write(":SOUR:CURR:RANG:AUTO ON")
+            elif "Limited" in self.range:
                 self.port.write(":SOUR:CURR:RANG:AUTO ON")
             else:
                 self.port.write(":SOUR:CURR:RANG:AUTO OFF")
-                self.port.write(":SOUR:CURR:RANG %s" % str(self.range.replace("A", "")))
+                self.port.write(":SOUR:CURR:RANG %s" % range_value)
 
         elif self.language == "TSP":
             self.port.write("smu.source.func = smu.FUNC_DC_CURRENT")
@@ -406,12 +414,13 @@ class Device(EmptyDevice):
             self.port.write("smu.source.vlimit.level = " + self.protection)
             self.port.write("smu.measure.autozero.once()")
 
-            if self.range == "Auto":  # it means Auto was selected
-
+            if self.range == "Auto":  # Auto-ranging
+                self.port.write("smu.source.autorange = smu.ON")
+            elif "Limited" in self.range:
                 self.port.write("smu.source.autorange = smu.ON")
             else:
                 self.port.write("smu.source.autorange = smu.OFF")
-                self.port.write("smu.source.range = %s" % str(self.range.replace("A", "")))
+                self.port.write("smu.source.range = %s" % range_value)
 
     def rsen_on(self):
         if self.language == "SCPI2400":
