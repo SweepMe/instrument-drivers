@@ -404,7 +404,7 @@ class Device(EmptyDevice):
                 self.port.write(":SOUR:CURR:RANG:AUTO ON")
             elif "Limited" in self.range:
                 self.port.write(":SOUR:CURR:RANG:AUTO ON")
-            else:
+            elif "Fixed" in self.range:
                 self.port.write(":SOUR:CURR:RANG:AUTO OFF")
                 self.port.write(":SOUR:CURR:RANG %s" % range_value)
 
@@ -418,7 +418,7 @@ class Device(EmptyDevice):
                 self.port.write("smu.source.autorange = smu.ON")
             elif "Limited" in self.range:
                 self.port.write("smu.source.autorange = smu.ON")
-            else:
+            elif "Fixed" in self.range:
                 self.port.write("smu.source.autorange = smu.OFF")
                 self.port.write("smu.source.range = %s" % range_value)
 
