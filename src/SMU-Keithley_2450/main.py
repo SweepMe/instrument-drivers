@@ -334,7 +334,6 @@ class Device(EmptyDevice):
         range_value = range_value.replace("Fixed", "")
         range_value = range_value.replace(" ", "")  # removing spaces
         range_value = range_value.replace("A", "")  # removing the Ampere unit
-
         range_value = self.convert_unit_prefix(range_value)  # convert magnitudes to float
 
         if self.language == "SCPI2400":
@@ -350,13 +349,13 @@ class Device(EmptyDevice):
 
             if "Auto" in self.range:  # Full auto-ranging
                 self.port.write(":SENS:CURR:RANG:AUTO ON")
-                self.port.write("SENSe:CURRent:RANGe:AUTO:LLIMit DEF")
+                # self.port.write("SENSe:CURRent:RANGe:AUTO:LLIMit DEF")  # does not work
             elif "Limited" in self.range:  # Limited auto-ranging
                 self.port.write(":SENS:CURR:RANG:AUTO ON")
                 self.port.write("SENSe:CURRent:RANGe:AUTO:LLIMit %s" % range_value)
             elif "Fixed" in self.range:  # Fixed range
                 self.port.write(":SENS:CURR:RANG:AUTO OFF")
-                self.port.write(":SENS:CURR:RANG %s" % range_value)
+                self.port.write(":SENS:CURR:RANG " + range_value)
 
         elif self.language == "TSP":
             self.port.write("smu.source.func = smu.FUNC_DC_VOLTAGE")
@@ -366,13 +365,13 @@ class Device(EmptyDevice):
 
             if "Auto" in self.range:  # Full auto-ranging
                 self.port.write("smu.measure.autorange = smu.ON")
-                self.port.write("smu.measure.lowrange = lowRange")
+                # self.port.write("smu.measure.lowrange = lowRange")  # does not work
             elif "Limited" in self.range:  # Limited auto-ranging
                 self.port.write("smu.measure.autorange = smu.ON")
                 self.port.write("smu.measure.autorangelow = %s" % range_value)
-            elif "fixed" in self.range:  # Fixed range
+            elif "Fixed" in self.range:  # Fixed range
                 self.port.write("smu.measure.autorange = smu.OFF")
-                self.port.write("smu.measure.range = %s" % range_value)
+                self.port.write("smu.measure.range = " + range_value)
 
             self.port.write("smu.measure.autozero.once()")
 
