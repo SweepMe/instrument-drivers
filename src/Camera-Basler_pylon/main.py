@@ -44,12 +44,12 @@ class Device(EmptyDevice):
     def __init__(self) -> None:
         EmptyDevice.__init__(self)
 
-        self.shortname = "Camera Basler"  # short name will be shown in the sequencer
+        self.shortname = "Basler"  # short name will be shown in the sequencer
         self.instance_key: str
         self.variables = []
         self.units = []
 
-        # Acquistion Parameters
+        # Acquisition Parameters
         self.trigger_source: str
         self.gain_auto: str
         self.gain = None
@@ -71,7 +71,7 @@ class Device(EmptyDevice):
 
     def set_GUIparameter(self) -> dict:
         gui_parameter = {
-            "SweepMode": ["None", "Exposure time [s]"],
+            "SweepMode": ["None", "Exposure time in s"],
             "Trigger": ["Software"],
             "GainAuto": ["Off", "Once", "Continuous"],
             "ExposureAuto": ["Off", "Once", "Continuous"],
@@ -98,13 +98,13 @@ class Device(EmptyDevice):
         self.camera_name = parameter["Port"]
 
         self.sweepmode = parameter["SweepMode"]
-        if self.sweepmode == "Exposure time [s]":
+        if self.sweepmode == "Exposure time in s":
             self.variables.append("Exposure time")
             self.units.append("s")
             self.plottype.append(True)
             self.savetype.append(True)
 
-        # Acquistion Parameters
+        # Acquisition Parameters
         self.trigger_source = str(parameter["Trigger"])
         self.gain_auto = str(parameter["GainAuto"])
         self.gain = parameter["Gain"]
