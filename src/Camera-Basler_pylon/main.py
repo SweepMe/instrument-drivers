@@ -46,8 +46,8 @@ class Device(EmptyDevice):
 
         self.shortname = "Basler"  # short name will be shown in the sequencer
         self.instance_key: str
-        self.variables = []
-        self.units = []
+        self.variables = ["path"]
+        self.units = [""]
 
         # Acquisition Parameters
         self.trigger_source: str
@@ -70,6 +70,7 @@ class Device(EmptyDevice):
         self.camera = None
 
     def set_GUIparameter(self) -> dict:
+        # These are the parameters of the previous version of the driver
         gui_parameter = {
             "SweepMode": ["None", "Exposure time in s"],
             "Trigger": ["Software"],
@@ -97,6 +98,7 @@ class Device(EmptyDevice):
         """Parse and store GUI options."""
         self.camera_name = parameter["Port"]
 
+        # These are the parameters of the previous version of the driver
         self.sweepmode = parameter["SweepMode"]
         if self.sweepmode == "Exposure time in s":
             self.variables.append("Exposure time")
@@ -135,14 +137,18 @@ class Device(EmptyDevice):
         self.get_cameras_dict()
 
         try:
-            _camera = self.cameras_dict[self.camera_name]
-            self.camera = pylon.InstantCamera(self.tlf.CreateDevice(_camera))
-            self.camera.Open()
-
-            # Register camera in device_communication
+            # Check if camera is already registered by SweepMe
             self.instance_key = f"{self.shortname}_{self.camera_name}"
             if self.instance_key not in self.device_communication:
-                self.device_communication[self.instance_key] = "Connected"
+                _camera = self.cameras_dict[self.camera_name]
+                self.camera = pylon.InstantCamera(self.tlf.CreateDevice(_camera))
+
+                # Register camera in device_communication
+                self.device_communication[self.instance_key] = self.camera
+            else:
+                self.camera = self.device_communication[self.instance_key]
+
+            self.camera.Open()  # Might need to be moved to the initialize function
 
         except Exception as e:
             msg = f"Error opening connection to camera: {e!s}"
@@ -165,23 +171,31 @@ class Device(EmptyDevice):
         pass
 
     def measure(self) -> None:
+
+        images_to_grab = 1
+        self.filename = r"C:\Users\Public\Documents\SweepMe!\Measurement\saved_pypylon_img.jpeg"
+        img = pylon.PylonImage()
+
         try:
-            # Starting the grabbing of c_countOfImagesToGrab images.
-            self.camera.StartGrabbingMax(1)
+            # Starting the grabbing of images_to_grab images.
+            self.camera.StartGrabbingMax(images_to_grab)
             while self.camera.IsGrabbing():
+                # Wait for an image and then retrieve it. A timeout of 5000 ms is used.
                 grabResult = self.camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
                 if grabResult.GrabSucceeded():
+                    img.AttachGrabResultBuffer(grabResult)
+
                     # Save the image data.
-                    self.image = grabResult.GetArray()
-                    print(self.image)
-                    # pylon.ImageFileHandler().Save(pylon.ImageFileFormat_Png, filename, img)
+                    img.Save(pylon.ImageFileFormat_Jpeg, self.filename)
+                else:
+                    print("Error: ", grabResult.ErrorCode, grabResult.ErrorDescription)
                 grabResult.Release()
         except Exception as e:
             msg = f"Error capturing image: {e!s}"
             raise Exception(msg) from e
 
     def call(self) -> None:
-        pass
+        return self.filename
 
     "--- Convenience Functions ---"
 
