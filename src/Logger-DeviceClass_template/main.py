@@ -192,9 +192,9 @@ class Device(EmptyDevice):
     def connect(self):
         ### called only once at the start of the measurement
         ### this function 'connect' is typically not needed if the port manager is activated
-
-        debug(60 * "-")
-        debug("connect")
+        
+        print()
+        debug("->connect")
 
         ### if you do not use the port manager you can also create your own port objects
         # rm = visa.ResourceManager()
@@ -207,16 +207,16 @@ class Device(EmptyDevice):
 
     def disconnect(self):
         # called only once at the end of the measurement
-        debug("disconnect")
+        debug("->disconnect")
 
     def initialize(self):
         # called only once at the start of the measurement
-        debug("initialize")
+        debug("-> initialize")
 
-        debug("Tempfolder:", self.get_folder("TEMP"))  # the folder in which all data is saved before saving
-        debug("External libs:", self.get_folder("EXTLIBS"))  # the folder in which all data is saved before saving
-        debug("Custom files:", self.get_folder("CUSTOMFILES"))  # the folder in which all data is saved before saving
-        debug("Driver folder:", self.get_folder("SELF"))  # the folder where this file is in
+        # debug("   Tempfolder:", self.get_folder("TEMP"))  # the folder in which all data is saved before saving
+        # debug("   External libs:", self.get_folder("EXTLIBS"))  # the folder in which all data is saved before saving
+        # debug("   Custom files:", self.get_folder("CUSTOMFILES"))  # the folder in which all data is saved before saving
+        # debug("   Driver folder:", self.get_folder("SELF"))  # the folder where this file is in
 
         # In 'initialize' you can check whether the user input is valid.
         # If not you can abort the run by throwing an exception as shown in the lines below
@@ -225,47 +225,47 @@ class Device(EmptyDevice):
 
     def deinitialize(self):
         # called only once at the end of the measurement
-        debug("deinitialize")
-
-    def poweron(self):
-        # called if the measurement procedure enters a branch of the sequencer
-        # and the module has not been used in the previous branch
-        debug("poweron")
-
-    def poweroff(self):
-        # called if the measurement procedure leaves a branch of the sequencer
-        # and the module is not used in the next branch
-        debug("poweroff")
+        debug("-> deinitialize")
 
     def configure(self):
         # called if the measurement procedure enters a branch of the sequencer
         # and the module has not been used in the previous branch
-        debug("configure")
+        debug("->  configure")
 
     def unconfigure(self):
         # called if the measurement procedure leaves a branch of the sequencer
         # and the module is not used in the next branch
-        debug("unconfigure")
+        debug("->  unconfigure")
 
     def signin(self):
         # called if the variation of the module that is loading this device class starts
-        debug("signin")
+        debug("->   signin")
 
     def signout(self):
         # called if the variation of the module that is loading this device class ends
-        debug("signout")
-
+        debug("->   signout")
+        
     def reconfigure(self, parameters, keys):
         """'reconfigure' is called whenever parameters of the GUI change by using the {...}-parameter system."""
         debug()
-        debug("reconfigure")
-        debug("Parameters:", parameters)
-        debug("Changed keys:", keys)
+        debug("->  reconfigure")
+        debug("->  Parameters:", parameters)
+        debug("->  Changed keys:", keys)
 
         ### The following two lines are the default behavior that is used by EmptyDevice
         ### if you do not override 'reconfigure'
         # self.get_GUIparameter(parameters)
         # self.configure()
+        
+    def poweron(self):
+        # called if the measurement procedure enters a branch of the sequencer
+        # and the module has not been used in the previous branch
+        debug("->    poweron")
+
+    def poweroff(self):
+        # called if the measurement procedure leaves a branch of the sequencer
+        # and the module is not used in the next branch
+        debug("->    poweroff")
 
     ###------------------------------------------------------------------
     """ the following functions are called for each measurement point """
@@ -277,16 +277,16 @@ class Device(EmptyDevice):
 
     def start(self):
         """'start' can be used to do some first steps before the acquisition of a measurement point starts."""
-        debug("start")
+        debug("->     start")
 
     def apply(self):
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         # apply is not called in the module 'Logger' as logger cannot apply any value,
         # but it can be used in all other modules that have varying sweep values
         # apply is only called if the setvalue ("Sweep value") has changed
-        debug("apply")
+        debug("->     apply")
 
-        debug("New value to apply:", self.value)
+        debug("->     New value to apply:", self.value)
         # self.value is a variable created by SweepMe! and stores the latest sweep value that should be applied
         # It can be any object. Please make sure to to test the type
         # and change it to the format you need before you send it to a device.
@@ -294,40 +294,40 @@ class Device(EmptyDevice):
     def reach(self):
         """'reach' can be added to make sure the latest setvalue applied during 'apply' is reached."""
         # only called if 'apply' has been called beforehand
-        debug("reach")
+        debug("->     reach")
 
     def adapt(self):
         """'adapt' can be used to adapt an instrument to a new situation after other instruments got a new setvalue."""
-        debug("adapt")
+        debug("->     adapt")
 
     def adapt_ready(self):
         """'adapt_ready' can be used to make sure that a procedure started in 'adapt' is finished.
 
         Thus, multiple instrument can start an adapt-procedure simultaneously.
         """
-        debug("adapt_ready")
+        debug("->     adapt_ready")
 
     def trigger_ready(self):
-        debug("trigger_ready")
+        debug("->     trigger_ready")
 
     def measure(self):
         """'measure' should be used to trigger the acquisition of new data.
 
         If all drivers use this function for this purpose, the data acquisition can start almost simultaneously.
         """
-        debug("measure")
+        debug("->     measure")
 
     def request_result(self):
         """'request_result' can be used to ask an instrument to send data."""
-        debug("request_result")
+        debug("->     request_result")
 
     def read_result(self):
         """'read_result' can be used get the data from a buffer that was requested during 'request_result'."""
-        debug("read_result")
+        debug("->     read_result")
 
     def process_data(self):
         """'process_data' can be used for some evaluation of the data before it is returned."""
-        debug("process_data")
+        debug("->     process_data")
 
     def call(self):
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables.
@@ -336,7 +336,7 @@ class Device(EmptyDevice):
         """
         # most import function:
         # return exactly the number of values that have been defined by self.variables and self.units
-        debug("call")
+        debug("->     call")
 
         value1 = random.random()
         value2 = random.random() ** 2
@@ -347,4 +347,4 @@ class Device(EmptyDevice):
 
     def finish(self):
         """'finish' can be used to do some final steps after the acquisition of a measurement point."""
-        debug("finish")
+        debug("->     finish")
