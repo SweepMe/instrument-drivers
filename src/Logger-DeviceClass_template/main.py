@@ -213,10 +213,10 @@ class Device(EmptyDevice):
         # called only once at the start of the measurement
         debug("-> initialize")
 
-        # debug("   Tempfolder:", self.get_folder("TEMP"))  # the folder in which all data is saved before saving
-        # debug("   External libs:", self.get_folder("EXTLIBS"))  # the folder in which all data is saved before saving
-        # debug("   Custom files:", self.get_folder("CUSTOMFILES"))  # the folder in which all data is saved before saving
-        # debug("   Driver folder:", self.get_folder("SELF"))  # the folder where this file is in
+        # debug("-> Tempfolder:", self.get_folder("TEMP"))  # the folder in which all data is saved before saving
+        # debug("-> External libs:", self.get_folder("EXTLIBS"))  # the folder in which all data is saved before saving
+        # debug("-> Custom files:", self.get_folder("CUSTOMFILES"))  # the folder in which all data is saved before saving
+        # debug("-> Driver folder:", self.get_folder("SELF"))  # the folder where this file is in
 
         # In 'initialize' you can check whether the user input is valid.
         # If not you can abort the run by throwing an exception as shown in the lines below
@@ -247,10 +247,9 @@ class Device(EmptyDevice):
         
     def reconfigure(self, parameters, keys):
         """'reconfigure' is called whenever parameters of the GUI change by using the {...}-parameter system."""
-        debug()
-        debug("->  reconfigure")
-        debug("->  Parameters:", parameters)
-        debug("->  Changed keys:", keys)
+        debug("->   reconfigure")
+        # debug("->   Parameters:", parameters)
+        # debug("->   Changed keys:", keys)
 
         ### The following two lines are the default behavior that is used by EmptyDevice
         ### if you do not override 'reconfigure'
