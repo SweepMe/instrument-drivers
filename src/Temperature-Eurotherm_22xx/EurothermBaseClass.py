@@ -223,9 +223,6 @@ class Eurotherm(EmptyDevice):
         self.units = [self.temperature_unit, "%"]
         self.plottype = [True, True]
         self.savetype = [True, True]
-          
-        self.measureT = parameter["MeasureT"]
-        self.reachT = parameter["ReachT"]
 
         self.zeroOutputaftersweep = parameter["ZeroPowerAfterSweep"]
 
