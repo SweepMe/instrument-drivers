@@ -8,7 +8,7 @@ All users of SweepMe! can download versioned drivers from our server via the inc
 To get started with SweepMe!, please visit the 'First steps' article of our [Wiki](https://wiki.sweep-me.net/wiki/Main_Page).
 
 ## Development guide
-Our Wiki contains a section about [Driver Programming](https://wiki.sweep-me.net/wiki/Driver_Programming) where you can find a description of the driver API.
+Our Wiki contains an article about [Driver Programming](https://wiki.sweep-me.net/wiki/Driver_Programming) where you can find a description of the driver API.
 
 Simple modifications can be done without using this repository.
 Just right-click a version in SweepMe!'s version manager and use "Create custom version".
