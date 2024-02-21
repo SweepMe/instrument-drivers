@@ -5,7 +5,7 @@ The software has an open driver interface so that everybody can work on own driv
 **But: The drivers in this repository are for developers only.**
 All users of SweepMe! can download versioned drivers from our server via the included version manager.
 
-To get started with SweepMe!, please visit the 'First steps' section of our [Wiki](https://wiki.sweep-me.net/wiki/Main_Page).
+To get started with SweepMe!, please visit the 'First steps' article of our [Wiki](https://wiki.sweep-me.net/wiki/Main_Page).
 
 ## Development guide
 Our Wiki contains a section about [Driver Programming](https://wiki.sweep-me.net/wiki/Driver_Programming) where you can find a description of the driver API.
