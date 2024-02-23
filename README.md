@@ -18,7 +18,7 @@ This will copy the driver to a public folder on your driver. Activate this custo
 
 * Update SweepMe! to version 1.5.6.12 or higher
 * Clone the instrument-drivers repository to your local drive
-* Add a Windows PATH system variable "SWEEPME_REPO_DRIVERS" and link it to the folder src of the repository that contains all drivers 
+* Add a Windows PATH system variable "SWEEPME_DRIVERS_REPO" and link it to the folder src of the repository that contains all drivers 
 * After restarting SweepMe!, the version manager (menu "Tools" -> "Modules & Devices") is now listing also version labeled with the origin "repo".
 * Activate those driver versions from the repo if you like to test and work on them.
 
