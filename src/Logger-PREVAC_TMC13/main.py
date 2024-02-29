@@ -31,7 +31,6 @@
 # Device: PREVAC TMC13
 from __future__ import annotations
 
-
 import struct
 
 from EmptyDeviceClass import EmptyDevice
@@ -42,7 +41,7 @@ class Device(EmptyDevice):
     TMC13 Thickness Monitor Controller
     """
 
-    actions = ["run_reset_thickness"]
+    actions = ["should_reset_thickness"]
 
     def __init__(self):
         EmptyDevice.__init__(self)
@@ -64,19 +63,19 @@ class Device(EmptyDevice):
 
         # Device Parameter
         self.tooling_factor: float
-        self.run_set_tooling: bool = False
+        self.should_set_tooling: bool = False
 
         self.acoustic_impedance: float
-        self.run_set_acoustic_impedance: bool = False
+        self.should_set_acoustic_impedance: bool = False
 
         self.density: float
-        self.run_reset_thickness: bool = False
+        self.should_reset_thickness: bool = False
 
         self.frequency_min = None
         self.frequency_max = None
 
         # Prevac V2.x Communication Protocol
-        self.startbyte = chr(0xBB)
+        self.start_byte = chr(0xBB)
         # self.device_address = chr(0xC8)
         self.device_address = chr(0x01)
         self.host_address = chr(0xFF)
@@ -93,7 +92,6 @@ class Device(EmptyDevice):
             "Acoustic impedance in 1e5 g/cm²/s": 1.0,
         }
 
-
     def get_GUIparameter(self, parameter={}) -> None:
         # TODO: set self parameter as readable string
         channel = parameter["Channel"]
@@ -102,15 +100,15 @@ class Device(EmptyDevice):
         # TODO: Convert input to bytes
         self.channel = "\x01"  # , parameter["Channel"]
 
-        self.run_reset_thickness = parameter["Reset thickness"]
+        self.should_reset_thickness = parameter["Reset thickness"]
 
-        self.run_set_tooling = parameter["Set Tooling"]
+        self.should_set_tooling = parameter["Set Tooling"]
         self.tooling_factor = float(parameter["Tooling in %"])
 
-        self.self.run_set_density = parameter["Set Density"]
+        self.self.should_set_density = parameter["Set Density"]
         self.density = float(parameter["Density in g/cm^3"])
 
-        self.self.run_set_acoustic_impedance = parameter["Set Acoustic Impedance"]
+        self.self.should_set_acoustic_impedance = parameter["Set Acoustic Impedance"]
         self.acoustic_impedance = float(parameter["Acoustic impedance in 1e5 g/cm²/s"])
 
         self.variables = ["Thickness", "Rate", "XTAL life"]
@@ -119,21 +117,17 @@ class Device(EmptyDevice):
         self.savetype = [True, True, True]
 
     def connect(self):
-        # print("get_host")
         self.host_address = self.get_host()
         print("Host address", self.host_address, ord(self.host_address))
 
-        # print("get_serial_number")
         serial_number = self.get_serial_number()
-        # print("Serial number:", serial_number)
+        print("Serial number:", serial_number)
 
-        # print("get_product_number")
         product_number = self.get_product_number()
-        # print("Product number:", product_number)
+        print("Product number:", product_number)
 
-        # print("get_device_version")
         device_version = self.get_device_version()
-        # print("Device version:", device_version[:15])
+        print("Device version:", device_version)
 
         print("assign master")
         self.assign_master()
@@ -144,21 +138,21 @@ class Device(EmptyDevice):
     #    self.release_master()
 
     def initialize(self) -> None:
-        if self.run_set_tooling:
+        if self.should_set_tooling:
             if self.tooling_factor > 0:
                 self.set_tooling_factor(self.tooling_factor)
             else:
                 msg = f"Unaccepted tooling factor of {self.tooling_factor}. Please enter a float number"
                 raise Exception(msg)
 
-        if self.self.run_set_density:
+        if self.self.should_set_density:
             if self.density > 0:
                 self.set_material_density(self.density)
             else:
                 msg = f"Unaccepted density of {self.density}. Please enter a float number"
                 raise Exception(msg)
 
-        if self.self.run_set_acoustic_impedance:
+        if self.self.should_set_acoustic_impedance:
             if self.acoustic_impedance > 0:
                 self.set_material_acoustic_impedance(self.acoustic_impedance)
             else:
@@ -172,13 +166,13 @@ class Device(EmptyDevice):
         if self.reset_thickness:
             self.reset_thickness()
 
-        if self.self.run_set_density:
+        if self.self.should_set_density:
             self.set_material_density(float(self.density))
 
-        if self.run_set_tooling:
+        if self.should_set_tooling:
             self.set_tooling_factor(float(self.tooling_factor))
 
-        if self.self.run_set_acoustic_impedance:
+        if self.self.should_set_acoustic_impedance:
             self.set_material_acoustic_impedance(float(self.acoustic_impedance))
 
     def call(self) -> list[float]:
@@ -187,7 +181,6 @@ class Device(EmptyDevice):
         crystal_life = self.get_crystal_life()
 
         return [thickness, rate, crystal_life]
-
 
     """ convenience functions """
 
@@ -214,7 +207,7 @@ class Device(EmptyDevice):
     def send_data_frame(self, command: int, data: str = "") -> None:
         """Send a Prevac V2.x Protocol data frame to the device.
         Code is an integer of hex format 0x0202 and corresponds to the command
-        value is the data that is send in addition to the command.
+        data is the data that is send in addition to the command.
         """
         # Split the most significant and least significant byte of the command
         msb, lsb = struct.pack(">H", command)
@@ -223,7 +216,7 @@ class Device(EmptyDevice):
         message = length + self.device_address + self.host_address + chr(msb) + chr(lsb) + data
 
         checksum = self.generate_checksum(message)
-        cmd_to_write = (self.startbyte + message + checksum).encode("latin1")
+        cmd_to_write = (self.start_byte + message + checksum).encode("latin1")
 
         self.port.write(cmd_to_write)
 
@@ -234,7 +227,7 @@ class Device(EmptyDevice):
         """Receive a Prevac V2.x Protocol data frame from the device."""
         header = self.port.read(1)
 
-        if int(header) == ord(self.startbyte):
+        if int(header) == ord(self.start_byte):
             # Read Data Frame
             length = int(self.port.read(1))  # should be already int because of indexing
             device = self.port.read(1)
@@ -252,7 +245,7 @@ class Device(EmptyDevice):
             error = bytes(data[-1:])
             self.check_error_code(error)
 
-            # checksum control
+            # verify checksum
             # TODO: Create data frame class
             checksum = ord(self.port.read(1))
             received_message = length + device + host + msb + lsb + data
@@ -270,7 +263,7 @@ class Device(EmptyDevice):
             return data  # we cut off the first byte as it is the return error code
 
         else:
-            msg = f"PREVAC TMC13: Returned message does not start with correct byte {self.startbyte}"
+            msg = f"PREVAC TMC13: Returned message does not start with correct byte {self.start_byte}"
             raise Exception(msg)
 
     def check_error_code(self, error_code: bytes) -> None:
@@ -326,40 +319,61 @@ class Device(EmptyDevice):
         # TODO: Check response
 
     def get_product_number(self) -> str:
-        """Returns the product number"""
+        """Returns the product number."""
         command = 0x7F01
 
         self.send_data_frame(command)
-        product_number = self.receive_data_frame()
+        response = self.receive_data_frame()
+        # 15 Bytes of ASCII
+        # TODO: Check which parts of the response are the product number
+        # TODO: Check if ascii decoding is correct
+        # TODO: Check if 1-16 or 0-15
+        try:
+            product_number = response.decode("latin1")[:15]
+        except UnicodeDecodeError:
+            product_number = "Non-ASCII Product Number"
 
-        return product_number.decode("latin1")
+        return product_number
+
+    def get_serial_number(self) -> str:
+        """Returns the serial number of the device."""
+        command = 0x7F02
+        self.send_data_frame(command)
+        response = self.receive_data_frame()
+
+        try:
+            serial_number = response.decode("latin1")[:13]
+        except UnicodeDecodeError:
+            serial_number = "Non-ASCII Serial Number"
+
+        return serial_number
 
     def get_device_version(self) -> str:
-        """Returns the device version"""
+        """Returns the device version."""
         command = 0x7F03
 
         self.send_data_frame(command)
-        version = self.receive_data_frame()
+        response = self.receive_data_frame()
 
-        return version.decode("latin1")
+        # TODO: Maybe need length?
+        try:
+            version = response.decode("latin1")
+        except UnicodeDecodeError:
+            version = "Non-ASCII Version"
 
-    def get_serial_number(self) -> str:
-        """Returns the serial number of the device"""
-        command = 0x7F02
-        self.send_data_frame(command)
-        serial_number = self.receive_data_frame()
+        return version
 
-        return serial_number.decode("latin1")
+    """ Measurement functions """
 
     def get_thickness(self) -> float:
         """Returns thickness in nm."""
         command = 0x0202
         self.send_data_frame(command, self.channel)
-        answer = self.receive_data_frame()
 
-        # TODO: strip off the channel number?
-        thickness_angstrom = struct.unpack(">d", answer)[0]
-        # TODO: Check for unit
+        answer = self.receive_data_frame()
+        channel = answer[0]
+        thickness_angstrom = struct.unpack(">d", answer[1:9])[0]
+
         return thickness_angstrom / 10
 
     def get_thickness_unit(self) -> str:
@@ -389,10 +403,31 @@ class Device(EmptyDevice):
         self.send_data_frame(command, self.channel)
 
         answer = self.receive_data_frame()
-        rate = struct.unpack(">d", answer)[0]
-        # TODO: Check if Channel number is transmitted
+        channel = answer[0]
+        return struct.unpack(">d", answer[1:9])[0]
 
-        return rate
+    def get_rate_unit(self) -> str:
+        """Returns the unit in which the rate is displayed."""
+        command = 0x0205
+        self.send_data_frame(command, self.channel)
+
+        answer = self.receive_data_frame()
+        channel = answer[0]
+        unit = answer[1]
+
+        rate_unit_dict = {
+            "4": "A/s",
+            "5": "kA/s",
+            "6": "nm/s",
+            "8": "A/min",
+            "9": "kA/min",
+            "10": "nm/min",
+            "12": "A/h",
+            "13": "kA/h",
+            "14": "nm/h",
+        }
+
+        return rate_unit_dict[unit]
 
     # TODO: Add get_rate_unit()
 
@@ -410,19 +445,17 @@ class Device(EmptyDevice):
         """Set tooling factor in %."""
         command = 0x020D
         value = struct.pack(">d", tooling_factor).decode("latin1")
-        print(value, repr(value))
         self.send_data_frame(command, str(self.channel + value))
         value = self.receive_data_frame()
 
     def get_material_density(self) -> float:
-        """Returns density in g/cm³"""
+        """Returns density in g/cm³."""
         command = 0x0214
         self.send_data_frame(command, self.channel)
         answer = self.receive_data_frame()
         # answer = "\x01\x05\x99\x99\x99\x99\x99\x9a"
 
         return struct.unpack(">d", answer)[0]
-
 
     def set_material_density(self, density: float) -> None:
         """Set density in g/cm³."""
@@ -458,7 +491,6 @@ class Device(EmptyDevice):
 
         return struct.unpack(">d", answer)[0]
 
-
     def get_maximum_frequency(self) -> float:
         """Return maximum crystal frquency."""
         command = 0x020F
@@ -466,7 +498,6 @@ class Device(EmptyDevice):
         answer = self.receive_data_frame()
 
         return struct.unpack(">d", answer)[0]
-
 
     def get_minimum_frequency(self) -> float:
         """Return minimum crystal frquency."""
@@ -488,7 +519,38 @@ class Device(EmptyDevice):
         """Returns the pressure in mbar."""
         command = 0x0101
         self.send_data_frame(command, self.channel)
-        value = self.receive_data_frame()
+        answer = self.receive_data_frame()
+        channel = answer[0]
+        value = answer[1:9]
 
-        return struct.unpack(">d", value[1:])[0]
+        return struct.unpack(">d", value)[0]
 
+    def get_pressure_unit(self) -> str:
+        """Returns the unit in which the pressure is displayed."""
+        command = 0x0103
+        self.send_data_frame(command, self.channel)
+
+        answer = self.receive_data_frame()
+        channel = answer[0]
+        unit = answer[1]
+
+        pressure_unit_dict = {
+            "0": "mbar",
+            "1": "Torr",
+            "2": "Pa",
+            "3": "psia",
+        }
+        return pressure_unit_dict[unit]
+
+
+def check_bytestring_before_decoding(bytestring: bytes) -> str:
+    """Check if bytestring is printable before decoding it."""
+    decoded_string = ""
+    for b in range(len(bytestring)):
+        b = bytestring[b : b + 1]
+        if 32 < int(b[0]) < 127:
+            decoded_string += b.decode("ascii")
+        else:
+            decoded_string += "_"
+
+    return decoded_string
