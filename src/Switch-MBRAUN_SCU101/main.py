@@ -4,19 +4,19 @@
 # find those in the corresponding folders or contact the maintainer.
 #
 # MIT License
-# 
-# Copyright (c) 2021 Axel Fischer (sweep-me.net)
-# 
+#
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -25,200 +25,195 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
 # SweepMe! device class
 # Type: Switch
 # Device: MBRAUN SCU101
 
+from __future__ import annotations
 
-from FolderManager import addFolderToPATH
-addFolderToPATH()
-
-import minimalmodbus
-import numpy
+# from FolderManager import addFolderToPATH
+# addFolderToPATH()
+# TODO: LibraryBuilder2 -> minimalmodbus
 import time
 
-from ErrorMessage import error, debug
+import minimalmodbus
+from EmptyDeviceClass import EmptyDevice  # Class comes with SweepMe!
 
-from EmptyDeviceClass import EmptyDevice # Class comes with SweepMe!
-# If you like to see the source code of EmptyDevice, take a look at the pysweepme package that contains this file
 
 class Device(EmptyDevice):
-
     ## here you can add html formatted description to your device class that is shown by modules like 'Logger' or 'Switch' that have a description field.
-    description =   """ no description yet  """
+    description = """ set correct MB Type RS 232  """
 
-    def __init__(self):
+    def __init__(self) -> None:
         EmptyDevice.__init__(self)
-        
-        self.shortname = "SCU101" # short name will be shown in the sequencer
-        self.variables = ["State"] # define as many variables you need
-        self.units = [""] # make sure that you have as many units as you have variables
-        self.plottype = [True]   # True to plot data, corresponding to self.variables
-        self.savetype = [True]   # True to save data, corresponding to self.variables
-        
-        
-        ### use/uncomment the next line to use the port manager
-        #self.port_manager = True 
-           
-        ### use/uncomment the next line to let SweepMe! search for ports of these types. Also works if self.port_manager is False or commented.
+
+        self.shortname = "SCU101"  # short name will be shown in the sequencer
+        self.variables = ["State"]  # define as many variables you need
+        self.units = [""]  # make sure that you have as many units as you have variables
+        self.plottype = [True]  # True to plot data, corresponding to self.variables
+        self.savetype = [True]  # True to save data, corresponding to self.variables
+
         self.port_types = ["COM"]
-        
-        
+
         ## "<Name>" : (<Modbus  register>, <has digits>, <EI-Bisync mnemonic>)
         self.registers = {
-                            "State": 0, # Modbus only
-                            }
-            
-            
-    def set_GUIparameter(self):
-    
-        # add keys and values to generate GUI elements in the Parameters-Box
-        # If you use this template to create a driver for modules other than Logger or Switch, you need to use fixed keys that are defined for each module.
-        
-        GUIparameter = {
-                        "SweepMode": ["State", "None"],
-                        }
-        
-        return GUIparameter
+            "State": 0,  # Modbus only
+        }
 
-    def get_GUIparameter(self, parameter):
+        # Device Parameter
+        self.port_string: str
+        self.address: int
+        self.modbus: None
 
+        self.shutter_state: int
+        self.shutter_state_dict = {
+            0: "Unknown",
+            1: "Open",
+            2: "Closed",
+            3: "Moving",
+            4: "Not connected",
+            5: "Blocked",
+        }
+
+        self.set_state = None
+
+    def set_GUIparameter(self) -> dict:
+        """Get parameters from the GUI and set them as attributes."""
+        return {
+            "SweepMode": ["State", "None"],
+            "MB Address": "1",
+        }
+
+    def get_GUIparameter(self, parameter) -> dict:
+        """Get parameters from the GUI and set them as attributes."""
         self.sweepmode = parameter["SweepMode"]
 
-        ### see all available keys you get from the GUI
-        # print(parameter)
-        
-        ### get a value of a GUI item that was created by set_GUIparameter()
-        # print(parameter["String"])
-        # print(parameter["Check"])
-        # print(parameter["Combo"])
-        # print(parameter["Int"])
-        # print(parameter["Float"])
-        # print(parameter["Data path"])
-        
-        ### the port selected by the user is readout here and saved in a variable that can be later used to open the correct port
-        self.port_string = parameter["Port"] # use this string to open the right port object later during 'connect'
-        # print("Selected port", self.port_string) 
-        
-               
-        ## Check which communication is selected ##
-        
-        if ":" in self.port_string:
-            port_string_splitted = self.port_string.split(":")
-                        
-        else:
-            port_string_splitted = self.port_string, ""
-            
-        self.com_port, self.address = port_string_splitted
-        
+        self.port_string = parameter["Port"]
+        self.address = int(parameter["MB Address"])
+
+        max_address = 247
+        if self.address < 1 or self.address > max_address:
+            msg = "The Modbus address must be between 1 and 247."
+            raise Exception(msg)
 
     #### ----------------------------------------------------------------------------------------------------------------------
     """ here, semantic standard functions start that are called by SweepMe! during a measurement """
-    ### all functions are overload functions that are called by SweepMe!
-    ### remove those function that you do not needed
-    
-        
-    def connect(self):
 
-        if not self.address.isdigit():
-            self.stop_Measurement("Please add the Modbus address to the COM port using the following syntax 'COM1:{address}', e.g. 'COM1:3'.")
-            return False
-        
-        self.port = minimalmodbus.Instrument(self.com_port, int(self.address), close_port_after_each_call=False, debug = False)
-                 
-        ## self.port.serial is the underlying pyserial COM port object of minimalmodbus         
-        self.port.serial.timeout = 2
-        self.port.serial.baudrate = 19200
-        self.port.serial.parity = 'E'
-        #self.port.serial.bytesize = 8
-        #self.port.serial.stopbits = 1
-            
-            
-    def apply(self):
+    def connect(self) -> None:
+        """Connect to the device."""
+        self.modbus = minimalmodbus.Instrument(
+            self.port_string,
+            self.address,
+            close_port_after_each_call=False,
+            debug=False,
+        )
 
+        self.modbus.serial.timeout = 2
+        self.modbus.serial.baudrate = 19200
+        self.modbus.serial.parity = "E"
+
+    def disconnect(self) -> None:
+        """Disconnect from the device."""
+        self.modbus.serial.close()
+
+    def initialize(self) -> None:
+        """Initialize the device."""
+        self.shutter_state = self.get_shutter_state()
+
+    def apply(self) -> None:
+        """Apply the settings."""
         if self.sweepmode == "State":
-        
-            if isinstance(self.value, int):
-                if self.value >= 1:
-                    set_state = 1
-                else:
-                    set_state = 0
-                    
-            elif isinstance(self.value, float):        
-                if int(self.value) > 0:
-                    set_state = 1
-                else:
-                    set_state = 0
-                 
-            elif isinstance(self.value, str):
-                
-                try:
-                    set_state = int(self.value == "True" or self.value == "1" or self.value.lower() == "open" )
-                except:
-                    self.stop_Measurement("Unable to convert string '%s' to shutter state" % self.value)
-                    return False
-                    
-            elif isinstance(self.value, bool):
-                
-                set_state = int(self.value)
-                
-            value = int("0000001%i" % set_state)  # the second bit is set to 1 to change the exectute flag and thus trigger the change.
-            self.port.write_register(1, value, 0)
-            self.set_state = set_state
-    
-    def adapt(self):
-        
+            target_shutter_state = self.handle_set_state_input(self.value)
+            self.set_shutter_state(target_shutter_state)
+
+    def handle_set_state_input(self, input: float | int | bool) -> hex:
+        """Handle the input for the state of the shutter and return hex representation."""
+        if isinstance(input, (float, int)):
+            state_hex = 0x0001 if int(input) >= 1 else 0x0002
+
+        elif isinstance(input, bool):
+            state_hex = 0x0001 if input else 0x0002
+
+        elif isinstance(input, str):
+            state_hex = 0x0001 if input.lower() == "open" else 0x0002
+
+        if state_hex not in [0x0001, 0x0002]:
+            msg = "Input of %s cannot be transformed to allowed shutter states of 0x0001 or 0x0002." % input
+            raise Exception(msg)
+
+        return state_hex
+
+    def set_shutter_state(self, target_shutter_state: int) -> None:
+        """Set the state of the shutter."""
+        register_address = 1
+        shutter_set_mask = 0x0003
+        execute_flag_mask = 0x0004
+
+        # Set the new shutter position
+        current_value = self.read_register(register_address, shutter_set_mask)
+
+        # Masks for setting and clearing bits
+        clear_mask = ~(shutter_set_mask | execute_flag_mask)  # Combine masks and invert to create a clear mask
+        # Isolate bits for the new shutter position
+        set_shutter_position_mask = target_shutter_state & shutter_set_mask
+
+        # Apply masks to current_value
+        # First, clear the bits related to the shutter set and execute flag in the current value
+        cleared_current_value = current_value & clear_mask
+        # Then, set the shutter position bits in the cleared current value
+        value_to_write = cleared_current_value | set_shutter_position_mask
+
+        self.write_register(register_address, value_to_write)
+
+        # Execute the new shutter position
+        value_to_write |= execute_flag_mask
+        self.write_register(register_address, value_to_write)
+
+    def write_register(self, address: int, value: int) -> None:
+        """Write a register to the device."""
+        print("write_register:", address, value)
+        self.modbus.write_register(address, value, functioncode=6)
+
+    def adapt(self) -> None:
+        """Adapt the settings if GUI parameters have changed."""
         if self.sweepmode == "State":
-        
             while True:
-                
-                value = self.port.read_register(0, 0)
-                
-                print("adapt", value)
-                
-                state_value = value % 16
+                self.shutter_state = self.get_shutter_state()
+                shutter_position = self.shutter_state_dict[self.shutter_state]
 
-                if state_value == 0: # State unknown
-                    pass
-                    
-                elif state_value == 1: # Open
-                    if self.set_state == 1:
-                        break
-                
-                elif state_value == 2: # Close
-                    if self.set_state == 2:
-                        break
-                
-                elif state_value == 3: # Moving
-                    pass # Everything is alright, we just have to wait
-                
-                elif state_value == 4: # Not connected?
-                    self.stop_Measurement("Unable to move the shutter as the controller is unable to connect to it.")
-                    return False
-                
-                elif state_value == 5: # Blocked?
-                    self.stop_Measurement("Unable to move the shutter as it is blocked.")
-                    return False
-                
+                if self.shutter_state_dict[self.shutter_state] == "Not connected":
+                    msg = "Unable to move the shutter as the controller is unable to connect to it."
+                    raise Exception(msg)
+                elif self.shutter_state_dict[self.shutter_state] == "Blocked":
+                    msg = "Unable to move the shutter as it is blocked."
+                    raise Exception(msg)
+
+                if shutter_position == "Open":
+                    self.set_state = 1
+                    break
+                elif shutter_position == "Closed":
+                    self.set_state = 2
+                    break
+
                 time.sleep(0.1)
-            
-            
-    def measure(self):
 
-        value = self.port.read_register(0, 0)
-        
-        print("measure:", value)
-            
-        state_value = value % 16
-        
+    def measure(self) -> None:
+        """Measure the current state of the device."""
+        self.shutter_state = self.get_shutter_state()
 
-        if state_value == 1: # Open
-            self.state = 1
-        
-        elif state_value == 2: # Close
-            self.state = 0
+    def call(self) -> str:
+        """Return the current state of the device."""
+        return self.shutter_state_dict[self.shutter_state]
 
-    def call(self):
-        
-        return self.state
+    def get_shutter_state(self) -> int:
+        """Read the current state of the shutter."""
+        addr = 0
+        mask = 0x000F
+
+        return self.read_register(addr, mask)
+
+    def read_register(self, address: int, mask: hex) -> int:
+        """Read a register from the device."""
+        print("read_register. address: ", address, "mask: ", mask)
+        response = self.modbus.read_register(address, 0, functioncode=4)
+        return response & mask
