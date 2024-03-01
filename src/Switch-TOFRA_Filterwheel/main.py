@@ -69,7 +69,7 @@ class Device(EmptyDevice):
         self.positions = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]  # 12 filter positions
         
         # loads from further Filter configurations from .ini that is expected in public folder "CustomFiles"
-        self.positions_to_add = list(self.getConfigOptions("Filter").values())  
+        self.positions_to_add = list(self.get_configoptions("Filter").values())
         
         self.port_manager = True
         self.port_types = ["COM"]

@@ -165,9 +165,6 @@ class Device(EmptyDevice):
         self.port.write(
             f"{self.commands[self.source]} {self.value}, (@{self.channel})")
 
-    def trigger(self):
-        pass
-
     def measure(self):
         pass
 

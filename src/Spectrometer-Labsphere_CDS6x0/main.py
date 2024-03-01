@@ -169,10 +169,10 @@ class Device(EmptyDevice):
                                               
             self.set_Integration_time()
         
-    def trigger(self):
+    def measure(self):
         self.CDS6x0.RequestAveragedScan()
         
-    def measure(self):
+    def request_result(self):
         while self.CDS6x0.TakeAveragedScanInProgress:
             time.sleep(0.01)
 

@@ -228,9 +228,6 @@ class Device(EmptyDevice):
             self.configure()                                        # reconfigure waveform
             self.port.write(f"INIT:TRAN (@{self.channel})")
 
-    def trigger(self):
-        pass
-
     def measure(self):
         # default read voltage and current
         self.port.write(f"MEAS:VOLT? (@{self.channel})")

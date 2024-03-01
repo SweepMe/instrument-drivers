@@ -95,7 +95,7 @@ class Device(EmptyDevice):
                         "6",
                         ]
             
-        filters_to_add = self.getConfigOptions("Filter")
+        filters_to_add = self.get_configoptions("Filter")
         for key in filters_to_add :
             self.filters.append(filters_to_add[key])
                         
@@ -106,7 +106,7 @@ class Device(EmptyDevice):
                          "3", 
                          ]
                          
-        gratings_to_add = self.getConfigOptions("Grating")
+        gratings_to_add = self.get_configoptions("Grating")
         for key in gratings_to_add :
             self.gratings.append(gratings_to_add[key])
 

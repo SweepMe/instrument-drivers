@@ -248,10 +248,6 @@ class Device(EmptyDevice):
         elif self.sweepmode.startswith("Current"):
             self.ps.configure_current_output(self.channel, self.value, self.protection)
 
-         
-    def trigger(self):
-        pass
-                       
     def measure(self):  
         pass
        

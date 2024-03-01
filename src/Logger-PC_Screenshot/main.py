@@ -51,7 +51,7 @@ import sys, os
 #from PIL import ImageGrab
 #import win32api
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
 
@@ -120,7 +120,7 @@ class Device(EmptyDevice):
             self.file_suffix = "_" + self.file_suffix
         
     def initialize(self):
-        self.tempfolder = self.get_Folder("TEMP")
+        self.tempfolder = self.get_folder("TEMP")
         self.i = 0
         
         monitor = self.sct.monitors[self.monitor_number]

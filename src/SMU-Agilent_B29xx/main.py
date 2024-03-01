@@ -192,10 +192,7 @@ class Device(EmptyDevice):
     def apply(self):
     
         self.port.write(":SOUR%s:%s  %s" % (self.channel, self.commands[self.source], self.value))     # set source
-         
-    def trigger(self):
-        pass
-                       
+
     def measure(self):    
         pass                              
 

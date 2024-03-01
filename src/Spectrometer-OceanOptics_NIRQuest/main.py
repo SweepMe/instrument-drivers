@@ -55,7 +55,7 @@ class Device(EmptyDevice):
         self.plottype = [True, True, True, True]
         self.savetype = [True, True, True, True]
 
-        self.calibrationfolder = self.get_Folder("CALIBRATIONS")
+        self.calibrationfolder = self.get_folder("CALIBRATIONS")
          
     def get_GUIparameter(self, parameter = {}):
         self.integration_time = float(parameter["IntegrationTime"])        
@@ -185,9 +185,6 @@ class Device(EmptyDevice):
                 self.messageBox("Reference spectrum not taken. No support for changing integration time.")
                                               
             self.set_Integration_time()
-        
-    def trigger(self):
-        pass
 
     def measure(self):
         pass        
