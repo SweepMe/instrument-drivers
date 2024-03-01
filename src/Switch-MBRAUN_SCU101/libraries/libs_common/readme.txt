@@ -1,1 +1,0 @@
-This file is needed to make sure that SweepMe! 1.5.6 does not load the SweepMe! 1.5.5 related libs folder
