@@ -31,11 +31,6 @@
 
 from __future__ import annotations
 
-# from FolderManager import addFolderToPATH
-# addFolderToPATH()
-# TODO: LibraryBuilder2 -> minimalmodbus
-import time
-
 import minimalmodbus
 from EmptyDeviceClass import EmptyDevice  # Class comes with SweepMe!
 
@@ -43,8 +38,21 @@ from EmptyDeviceClass import EmptyDevice  # Class comes with SweepMe!
 class Device(EmptyDevice):
     ## here you can add html formatted description to your device class that is shown by modules like 'Logger' or 'Switch' that have a description field.
     description = """
-    set correct MB Type RS 232
-    wait for shutter: wait until the shutter has reached the target state.
+        <h3>MBRAUN SCU 101 Shutter</h3>
+        <p>This driver controls the MBRAUN Shutter Control Unit SCU 101.</p>
+        <h4>Hardware Setup</h4>
+        <p>In the SCU 101 menu:</p>
+        <ul>
+        <li>E0: Set the MB Address</li>
+        <li>E1-E2: Check baudrate (19200) and parity (E)</li>
+        <li>E4: Set MB Type to RS 232</li>
+        </ul>
+        <h4>Parameters</h4>
+        <ul>
+        <li>Set the MB Address according to your hardware.</li>
+        <li>Choose the shutter number you want to control (1 or 2)</li>
+        <li>The SweepValue that sets the shutter state can be either int (1 = open,&nbsp;&ne;1 = close), boolean (True = open, False = close), or string ("open", &ne;"open" = close).</li>
+        </ul>
     """
 
     def __init__(self) -> None:
@@ -57,11 +65,6 @@ class Device(EmptyDevice):
         self.savetype = [True]  # True to save data, corresponding to self.variables
 
         self.port_types = ["COM"]
-
-        ## "<Name>" : (<Modbus  register>, <has digits>, <EI-Bisync mnemonic>)
-        self.registers = {
-            "State": 0,  # Modbus only
-        }
 
         # Device Parameter
         self.port_string: str
@@ -80,9 +83,6 @@ class Device(EmptyDevice):
             4: "Not connected",
             5: "Blocked",
         }
-        self.wait_for_shutter: float
-
-        self.set_state = None
 
     def set_GUIparameter(self) -> dict:
         """Get parameters from the GUI and set them as attributes."""
@@ -90,7 +90,6 @@ class Device(EmptyDevice):
             "SweepMode": ["State", "None"],
             "MB Address": "1",
             "Shutter Number": ["1", "2"],
-            "Wait for Shutter": "0.1",
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:
@@ -100,7 +99,6 @@ class Device(EmptyDevice):
         self.port_string = parameter["Port"]
         self.address = int(parameter["MB Address"])
         self.shutter_number = int(parameter["Shutter Number"])
-        self.wait_for_shutter = float(parameter["Wait for Shutter"])
 
         max_address = 247
         if self.address < 1 or self.address > max_address:
@@ -111,30 +109,20 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Connect to the device."""
-        self.instance_key = f"{self.shortname}_{self.port_string}_{self.address}"
+        self.modbus = minimalmodbus.Instrument(
+            self.port_string,
+            self.address,
+            close_port_after_each_call=False,
+            debug=False,
+        )
 
-        # TODO: Is it correct to re-use the modbus object?
-        if self.instance_key not in self.device_communication:
-            self.modbus = minimalmodbus.Instrument(
-                self.port_string,
-                self.address,
-                close_port_after_each_call=False,
-                debug=False,
-            )
-
-            self.modbus.serial.timeout = 2
-            self.modbus.serial.baudrate = 19200
-            self.modbus.serial.parity = "E"
-
-            self.device_communication[self.instance_key] = self.modbus
-
-        else:
-            self.modbus = self.device_communication[self.instance_key]
+        self.modbus.serial.timeout = 2
+        self.modbus.serial.baudrate = 19200
+        self.modbus.serial.parity = "E"
 
     def disconnect(self) -> None:
         """Disconnect from the device."""
         self.modbus.serial.close()
-        self.device_communication.pop(self.instance_key)
 
     def initialize(self) -> None:
         """Initialize the device."""
@@ -146,11 +134,8 @@ class Device(EmptyDevice):
             target_shutter_state = self.handle_set_state_input(self.value)
             self.set_shutter_state(target_shutter_state)
 
-            if self.wait_for_shutter > 0:
-                self.wait_for_shutter_state(int(target_shutter_state))
-
     def measure(self) -> None:
-        """Measure the current state of the device."""
+        """Measure the current state of the shutter."""
         self.shutter_state = self.get_shutter_state()
 
         if self.shutter_state_dict[self.shutter_state] == "Not connected":
@@ -181,7 +166,7 @@ class Device(EmptyDevice):
     def handle_set_state_input(self, set_state_input: float | int | bool) -> hex:
         """Handle the input for the state of the shutter and return hex representation."""
         if isinstance(set_state_input, (float, int)):
-            state_hex = 0x0001 if int(set_state_input) >= 1 else 0x0002
+            state_hex = 0x0001 if int(set_state_input) == 1 else 0x0002
 
         elif isinstance(set_state_input, bool):
             state_hex = 0x0001 if set_state_input else 0x0002
@@ -189,7 +174,7 @@ class Device(EmptyDevice):
         elif isinstance(set_state_input, str):
             state_hex = 0x0001 if set_state_input.lower() == "open" else 0x0002
 
-        if state_hex not in [0x0001, 0x0002]:
+        else:
             msg = "Input of %s cannot be transformed to allowed shutter states of 0x0001 or 0x0002." % input
             raise Exception(msg)
 
@@ -224,16 +209,6 @@ class Device(EmptyDevice):
     def write_register(self, address: int, value: int) -> None:
         """Write a register to the device."""
         self.modbus.write_register(address, value, functioncode=6)
-
-    def wait_for_shutter_state(self, target_state: int) -> None:
-        """Wait for the shutter to reach the target state."""
-        while True:
-            self.shutter_state = self.get_shutter_state()
-            self.handle_fault_state()
-            if self.shutter_state == target_state:
-                break
-
-            time.sleep(self.wait_for_shutter)
 
     def handle_fault_state(self) -> None:
         """Handle the fault state of the shutter."""
