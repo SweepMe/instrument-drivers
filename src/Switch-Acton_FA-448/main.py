@@ -54,7 +54,7 @@ class Device(EmptyDevice):
 
     def __init__(self):
 
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         # Short name in sequencer
         self.shortname = "FA-448"

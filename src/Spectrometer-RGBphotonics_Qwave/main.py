@@ -42,7 +42,7 @@ class Device(EmptyDevice):
 
     def __init__(self):
     
-        EmptyDevice.__init__(self)
+        super().__init__()
         
         self.shortname = "Qwave"
         
