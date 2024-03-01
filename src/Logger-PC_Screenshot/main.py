@@ -89,8 +89,9 @@ class Device(EmptyDevice):
         return GUIparameter
     
     def get_GUIparameter(self, parameter):
-    
-        self.label = parameter["Label"]
+
+        # in pysweepme there is no label and we use an empty string as default
+        self.label = parameter.get("Label", "")
         
         try:
             self.x1 = int(parameter["x1"])

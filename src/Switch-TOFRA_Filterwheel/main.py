@@ -97,7 +97,6 @@ class Device(EmptyDevice):
         self.pos_list = np.array(self.filter_readout[::2], dtype = int)
         self.filter_wavelengths = np.array(self.filter_readout[1::2], dtype = float)
         self.end_position = parameter["End position"]
-        self.config = parameter["Configuration"]
 
     def connect(self):
         """
@@ -113,8 +112,6 @@ class Device(EmptyDevice):
     def initialize(self):
 
         # set instrument at GUI selected state and ready for next commands
-        if len(self.config) > 1:
-            raise Exception("Please use a single filter in field 'Configuration' if you choose Set value.")
         if self.sweepmode == "None":
             if len(self.pos_list) > 1:
                 raise Exception("Please use a single filter in field 'Filter position' if Sweep mode is None.")

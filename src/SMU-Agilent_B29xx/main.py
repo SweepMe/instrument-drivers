@@ -65,6 +65,7 @@ class Device(EmptyDevice):
         
         GUIparameter = {
                         "SweepMode" : ["Voltage [V]", "Current [A]"],
+                        "4wire": False,
                         "RouteOut": ["Front", "Rear"],
                         "Speed": ["Fast", "Medium", "Slow"],
                         "Compliance": 100e-6,
@@ -79,12 +80,14 @@ class Device(EmptyDevice):
         self.source = parameter['SweepMode']
         self.protection = parameter['Compliance']
         self.speed = parameter['Speed']
-        self.average = int(parameter['Average'])
-        
-        if self.average < 1:
-            self.average = 1
-        if self.average > 100:
-            self.average = 100
+
+        # not yet supported
+        # self.average = int(parameter['Average'])
+        #
+        # if self.average < 1:
+        #     self.average = 1
+        # if self.average > 100:
+        #     self.average = 100
             
         self.device = parameter['Device']
         self.channel = self.device[-1]

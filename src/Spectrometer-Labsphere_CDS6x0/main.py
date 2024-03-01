@@ -72,14 +72,14 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter={}):
     
         self.device_type = parameter["Port"]
-        self.calibration = parameter["Calibration"]
+        self.calibration = parameter.get("Calibration", "")
         self.sweep_mode = parameter["SweepMode"]
         self.integration_time = 1000.0 * float(parameter["IntegrationTime"])
-        self.integration_time_automatic_max = 1000.0 * float(parameter["IntegrationTimeMax"])
-        self.automatic = parameter["IntegrationTimeAutomatic"]
+        self.integration_time_automatic_max = 1000.0 * float(parameter.get("IntegrationTimeMax", 10.0))
+        self.automatic = parameter.get("IntegrationTimeAutomatic", False)
         self.average = int(parameter["Average"])
-        self.trigger_type = parameter["Trigger"]
-        self.trigger_delay = float(parameter["TriggerDelay"])
+        self.trigger_type = parameter.get("Trigger", "Internal")
+        self.trigger_delay = float(parameter.get("TriggerDelay", 0.0))
         
     def connect(self):
         

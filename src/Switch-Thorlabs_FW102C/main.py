@@ -108,8 +108,6 @@ class Device(EmptyDevice):
         self.filter_wavelengths = np.array(self.filter_readout[1::2], dtype=float)
 
         self.end_position = parameter["Home position"]
-        
-        self.config = parameter["Configuration"]  # This is the value from the Test section of the module
 
     def initialize(self):
     

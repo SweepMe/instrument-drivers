@@ -100,9 +100,7 @@ class Device(EmptyDevice):
         self.filter_wavelengths = np.array(self.filter_readout[1::2], dtype = float)
 
         self.home = parameter["Home position"]
-        
-        self.config = parameter["Configuration"]
-        
+
 
     def connect(self):
         # figure out early whether a connection is established
@@ -114,9 +112,6 @@ class Device(EmptyDevice):
  
     def initialize(self):
         ''' set instrument at GUI selected state and ready for next commands'''
-        if len(self.config) > 1:
-            self.stop_Measurement("Please use a single filter in field 'Configuration' if you choose Set value.")
-            return False
         if self.sweepmode == "None":
             if len(self.pos_list) > 1:
                 self.stop_Measurement("Please use a single filter in field 'Filter position' if Sweep mode is None.")
