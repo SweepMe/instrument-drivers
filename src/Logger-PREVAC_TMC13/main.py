@@ -178,25 +178,7 @@ class Device(EmptyDevice):
 
     """ convenience functions """
 
-    # Byte Description
-    # 1 - HEADER First byte is responsible for identifying the serial protocol.
-    # Header in hexadecimal is 0xBB
-    # 2 - DATA LENGTH Length of the data field. Maximum data file length is 0xFF
-    # (256 bytes). Prevac Serial Protocol
-    # 3 - DEVICE ADDRESS Identification of hardware device address. Default value is
-    # 0xC8
-    # 4 - HOST ADDRESS Host identification address. Assigned to host during the
-    # registration process (using a unique ID).
-    # 5 - FUNCTION CODE - MSB First procedure function code byte
-    # 8th (MSB) bit is the read(0)/write(1) select bit
-    # 6 - FUNCTION CODE - LSB Second procedure function code byte
-    # 7 .. [7 + DATA LENGTH] -
-    # DATA FIELD
-    # Data capture needed to realize defined functions.
-    # [7 + DATA LENGTH] + 1(last
-    # frame position) - CRC
-    # CRC is simple module 256 calculated without protocol
-    # header byte(see section 6.5.2.4)
+
 
     def send_data_frame(self, command: int, data: str = "") -> None:
         """Send a Prevac V2.x Protocol data frame to the device.
