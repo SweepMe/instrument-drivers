@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import struct
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -43,8 +43,8 @@ class Device(EmptyDevice):
 
     actions = ["should_reset_thickness"]
 
-    def __init__(self):
-        EmptyDevice.__init__(self)
+    def __init__(self) -> None:
+        super().__init__()
 
         self.channel = None
         self.shortname = "TMC13"
@@ -75,12 +75,12 @@ class Device(EmptyDevice):
         self.frequency_max = None
 
         # Prevac V2.x Communication Protocol
-        self.start_byte = chr(0xBB)
-        # self.device_address = chr(0xC8)
+        self.start_byte = chr(0xBB)  # chr(0xC8)
         self.device_address = chr(0x01)
         self.host_address = chr(0xFF)
 
     def set_GUIparameter(self) -> dict:
+        """Get parameters from the GUI and set them as attributes."""
         return {
             "Channel": ["1", "2", "3", "4", "5", "6"],
             "Reset thickness": False,  # To avoid accidental resetting when recording
@@ -92,7 +92,8 @@ class Device(EmptyDevice):
             "Acoustic impedance in 1e5 g/cm²/s": 1.0,
         }
 
-    def get_GUIparameter(self, parameter={}) -> None:
+    def get_GUIparameter(self, parameter: dict) -> None:
+        """Get parameters from the GUI and set them as attributes."""
         # TODO: set self parameter as readable string
         channel = parameter["Channel"]
         self.channel = int(channel).to_bytes(1, byteorder="big").decode("latin1")
@@ -105,10 +106,10 @@ class Device(EmptyDevice):
         self.should_set_tooling = parameter["Set Tooling"]
         self.tooling_factor = float(parameter["Tooling in %"])
 
-        self.self.should_set_density = parameter["Set Density"]
+        self.should_set_density = parameter["Set Density"]
         self.density = float(parameter["Density in g/cm^3"])
 
-        self.self.should_set_acoustic_impedance = parameter["Set Acoustic Impedance"]
+        self.should_set_acoustic_impedance = parameter["Set Acoustic Impedance"]
         self.acoustic_impedance = float(parameter["Acoustic impedance in 1e5 g/cm²/s"])
 
         self.variables = ["Thickness", "Rate", "XTAL life"]
@@ -116,7 +117,8 @@ class Device(EmptyDevice):
         self.plottype = [True, True, True]
         self.savetype = [True, True, True]
 
-    def connect(self):
+    def connect(self) -> None:
+        """Establish a connection to the device."""
         self.host_address = self.get_host()
         print("Host address", self.host_address, ord(self.host_address))
 
@@ -138,6 +140,15 @@ class Device(EmptyDevice):
     #    self.release_master()
 
     def initialize(self) -> None:
+        """Get frequency range."""
+        self.frequency_min = self.get_minimum_frequency()
+        self.frequency_max = self.get_maximum_frequency()
+
+    def configure(self) -> None:
+        """Reset thickness if needed and set material properties."""
+        if self.reset_thickness:
+            self.reset_thickness()
+
         if self.should_set_tooling:
             if self.tooling_factor > 0:
                 self.set_tooling_factor(self.tooling_factor)
@@ -145,37 +156,22 @@ class Device(EmptyDevice):
                 msg = f"Unaccepted tooling factor of {self.tooling_factor}. Please enter a float number"
                 raise Exception(msg)
 
-        if self.self.should_set_density:
+        if self.should_set_density:
             if self.density > 0:
                 self.set_material_density(self.density)
             else:
                 msg = f"Unaccepted density of {self.density}. Please enter a float number"
                 raise Exception(msg)
 
-        if self.self.should_set_acoustic_impedance:
+        if self.should_set_acoustic_impedance:
             if self.acoustic_impedance > 0:
                 self.set_material_acoustic_impedance(self.acoustic_impedance)
             else:
                 msg = f"Unaccepted acoustic impedance of {self.acoustic_impedance}. Please enter a float number"
                 raise Exception(msg)
 
-        self.frequency_min = self.get_minimum_frequency()
-        self.frequency_max = self.get_maximum_frequency()
-
-    def configure(self):
-        if self.reset_thickness:
-            self.reset_thickness()
-
-        if self.self.should_set_density:
-            self.set_material_density(float(self.density))
-
-        if self.should_set_tooling:
-            self.set_tooling_factor(float(self.tooling_factor))
-
-        if self.self.should_set_acoustic_impedance:
-            self.set_material_acoustic_impedance(float(self.acoustic_impedance))
-
     def call(self) -> list[float]:
+        """Return the current thickness, rate and crystal life."""
         thickness = self.get_thickness()
         rate = self.get_rate()
         crystal_life = self.get_crystal_life()
@@ -221,6 +217,7 @@ class Device(EmptyDevice):
         self.port.write(cmd_to_write)
 
     def generate_checksum(self, message: str) -> str:
+        """Generate a checksum for the Prevac V2.x Protocol."""
         return chr(sum([ord(char) for char in message]) % 256)
 
     def receive_data_frame(self) -> bytes:
@@ -266,7 +263,9 @@ class Device(EmptyDevice):
             msg = f"PREVAC TMC13: Returned message does not start with correct byte {self.start_byte}"
             raise Exception(msg)
 
-    def check_error_code(self, error_code: bytes) -> None:
+    @staticmethod
+    def check_error_code(error_code: bytes) -> None:
+        """Check if the error code is in the list of PREVAC error codes and raise an exception if it is."""
         error_codes = {
             b"\x91": "Value is too large",
             b"\x92": "Value is too small",
@@ -285,6 +284,7 @@ class Device(EmptyDevice):
     """ setter/getter functions """
 
     def get_host(self) -> str:
+        """Get the host address of the device."""
         command = 0x7FF0
         self.send_data_frame(command)
         host = self.receive_data_frame()
@@ -294,6 +294,7 @@ class Device(EmptyDevice):
         return host.decode("latin1")
 
     def assign_master(self) -> None:
+        """Assign the master code that enables remote control."""
         # Example assign master
         # BB    01      C8     01    FF F1     01      BB
         # start length  device host  code      value   checksum
@@ -309,6 +310,7 @@ class Device(EmptyDevice):
         print(answer)
 
     def release_master(self) -> None:
+        """End remote control."""
         # b'\xbb\x01\x01\x7f\x7f\xf10!'
 
         command = 0x7FF1
