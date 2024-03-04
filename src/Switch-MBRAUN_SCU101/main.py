@@ -31,8 +31,10 @@
 
 from __future__ import annotations
 
+import time
+
 import minimalmodbus
-from EmptyDeviceClass import EmptyDevice  # Class comes with SweepMe!
+from pysweepme.EmptyDeviceClass import EmptyDevice  # Class comes with SweepMe!
 
 
 class Device(EmptyDevice):
@@ -49,14 +51,14 @@ class Device(EmptyDevice):
         </ul>
         <h4>Parameters</h4>
         <ul>
-        <li>Set the MB Address according to your hardware.</li>
+        <li>Set the Modbus address according to your hardware settings under E0: MB Address.</li>
         <li>Choose the shutter number you want to control (1 or 2)</li>
         <li>The SweepValue that sets the shutter state can be either int (1 = open,&nbsp;&ne;1 = close), boolean (True = open, False = close), or string ("open", &ne;"open" = close).</li>
         </ul>
     """
 
     def __init__(self) -> None:
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         self.shortname = "SCU101"  # short name will be shown in the sequencer
         self.variables = ["State"]  # define as many variables you need
@@ -75,6 +77,7 @@ class Device(EmptyDevice):
         # Device States
         self.shutter_number: int
         self.shutter_state: int
+        self.target_shutter_state: int
         self.shutter_state_dict = {
             0: "Unknown",
             1: "Open",
@@ -84,12 +87,16 @@ class Device(EmptyDevice):
             5: "Blocked",
         }
 
+        # communication commands
+        self.command_open = 0x0001
+        self.command_close = 0x0002
+
     def set_GUIparameter(self) -> dict:
-        """Get parameters from the GUI and set them as attributes."""
+        """Provide default parameters for the GUI."""
         return {
             "SweepMode": ["State", "None"],
-            "MB Address": "1",
-            "Shutter Number": ["1", "2"],
+            "Modbus address": "1",
+            "Shutter number": ["1", "2"],
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:
@@ -97,18 +104,18 @@ class Device(EmptyDevice):
         self.sweepmode = parameter["SweepMode"]
 
         self.port_string = parameter["Port"]
-        self.address = int(parameter["MB Address"])
-        self.shutter_number = int(parameter["Shutter Number"])
-
-        max_address = 247
-        if self.address < 1 or self.address > max_address:
-            msg = "The Modbus address must be between 1 and 247."
-            raise Exception(msg)
+        self.address = int(parameter["Modbus address"])
+        self.shutter_number = int(parameter["Shutter number"])
 
     """ here, semantic standard functions start that are called by SweepMe! during a measurement """
 
     def connect(self) -> None:
         """Connect to the device."""
+        max_address = 247
+        if self.address < 1 or self.address > max_address:
+            msg = "The Modbus address must be between 1 and 247."
+            raise Exception(msg)
+
         self.modbus = minimalmodbus.Instrument(
             self.port_string,
             self.address,
@@ -116,7 +123,7 @@ class Device(EmptyDevice):
             debug=False,
         )
 
-        self.modbus.serial.timeout = 2
+        self.modbus.serial.timeout = 1
         self.modbus.serial.baudrate = 19200
         self.modbus.serial.parity = "E"
 
@@ -131,19 +138,21 @@ class Device(EmptyDevice):
     def apply(self) -> None:
         """Apply the settings."""
         if self.sweepmode == "State":
-            target_shutter_state = self.handle_set_state_input(self.value)
-            self.set_shutter_state(target_shutter_state)
+            self.target_shutter_state = self.handle_set_state_input(self.value)
+            self.set_shutter_state(self.target_shutter_state)
+
+    def reach(self) -> None:
+        """Wait for shutter to reach the new position."""
+        wait_time = 0.1
+        while self.shutter_state != self.target_shutter_state:
+            self.shutter_state = self.get_shutter_state()
+            self.check_for_fault_state()
+            time.sleep(wait_time)
 
     def measure(self) -> None:
         """Measure the current state of the shutter."""
         self.shutter_state = self.get_shutter_state()
-
-        if self.shutter_state_dict[self.shutter_state] == "Not connected":
-            msg = "Unable to move the shutter as the controller is unable to connect to it."
-            raise Exception(msg)
-        elif self.shutter_state_dict[self.shutter_state] == "Blocked":
-            msg = "Unable to move the shutter as it is blocked."
-            raise Exception(msg)
+        self.check_for_fault_state()
 
     def call(self) -> str:
         """Return the current state of the device."""
@@ -166,13 +175,13 @@ class Device(EmptyDevice):
     def handle_set_state_input(self, set_state_input: float | int | bool) -> hex:
         """Handle the input for the state of the shutter and return hex representation."""
         if isinstance(set_state_input, (float, int)):
-            state_hex = 0x0001 if int(set_state_input) == 1 else 0x0002
+            state_hex = self.command_open if int(set_state_input) == 1 else self.command_close
 
         elif isinstance(set_state_input, bool):
-            state_hex = 0x0001 if set_state_input else 0x0002
+            state_hex = self.command_open if set_state_input else self.command_close
 
         elif isinstance(set_state_input, str):
-            state_hex = 0x0001 if set_state_input.lower() == "open" else 0x0002
+            state_hex = self.command_open if set_state_input.lower() == "open" else self.command_close
 
         else:
             msg = "Input of %s cannot be transformed to allowed shutter states of 0x0001 or 0x0002." % input
@@ -186,23 +195,14 @@ class Device(EmptyDevice):
         shutter_set_mask = 0x0003
         execute_flag_mask = 0x0004
 
-        # Set the new shutter position
+        # Create a mask to keep the current register values and only change bytes according the commands mask
         current_value = self.read_register(register_address, shutter_set_mask)
-
-        # Masks for setting and clearing bits
-        clear_mask = ~(shutter_set_mask | execute_flag_mask)  # Combine masks and invert to create a clear mask
-        # Isolate bits for the new shutter position
-        set_shutter_position_mask = target_shutter_state & shutter_set_mask
-
-        # Apply masks to current_value
-        # First, clear the bits related to the shutter set and execute flag in the current value
-        cleared_current_value = current_value & clear_mask
-        # Then, set the shutter position bits in the cleared current value
-        value_to_write = cleared_current_value | set_shutter_position_mask
-
+        value_to_write = (current_value & ~(shutter_set_mask | execute_flag_mask)) | (
+            target_shutter_state & shutter_set_mask
+        )
         self.write_register(register_address, value_to_write)
 
-        # Execute the new shutter position
+        # Execute the new shutter position - needs to be done in a separate write_register call
         value_to_write |= execute_flag_mask
         self.write_register(register_address, value_to_write)
 
@@ -210,8 +210,8 @@ class Device(EmptyDevice):
         """Write a register to the device."""
         self.modbus.write_register(address, value, functioncode=6)
 
-    def handle_fault_state(self) -> None:
-        """Handle the fault state of the shutter."""
+    def check_for_fault_state(self) -> None:
+        """Check the current state for error messages."""
         if self.shutter_state_dict[self.shutter_state] == "Not connected":
             msg = "Unable to move the shutter as the controller is unable to connect to it."
             raise Exception(msg)
