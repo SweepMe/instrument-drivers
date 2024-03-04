@@ -84,32 +84,29 @@ class Device(EmptyDevice):
         return {
             "Channel": ["1", "2", "3", "4", "5", "6"],
             "Reset thickness": False,  # To avoid accidental resetting when recording
-            "Set Tooling": False,
+            "Set tooling": False,
             "Tooling in %": "100.0",
-            "Set Density": False,
+            "Set density": False,
             "Density in g/cm^3": "1.3",
-            "Set Acoustic Impedance": False,
+            "Set acoustic impedance": False,
             "Acoustic impedance in 1e5 g/cm²/s": 1.0,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:
         """Get parameters from the GUI and set them as attributes."""
-        # TODO: set self parameter as readable string
+        # Channel number must be of \x01 format
         channel = parameter["Channel"]
         self.channel = int(channel).to_bytes(1, byteorder="big").decode("latin1")
 
-        # TODO: Convert input to bytes
-        self.channel = "\x01"  # , parameter["Channel"]
+        self.should_reset_thickness = bool(parameter["Reset thickness"])
 
-        self.should_reset_thickness = parameter["Reset thickness"]
-
-        self.should_set_tooling = parameter["Set Tooling"]
+        self.should_set_tooling = bool(parameter["Set Tooling"])
         self.tooling_factor = float(parameter["Tooling in %"])
 
-        self.should_set_density = parameter["Set Density"]
+        self.should_set_density = bool(parameter["Set Density"])
         self.density = float(parameter["Density in g/cm^3"])
 
-        self.should_set_acoustic_impedance = parameter["Set Acoustic Impedance"]
+        self.should_set_acoustic_impedance = bool(parameter["Set Acoustic Impedance"])
         self.acoustic_impedance = float(parameter["Acoustic impedance in 1e5 g/cm²/s"])
 
         self.variables = ["Thickness", "Rate", "XTAL life"]
@@ -119,6 +116,7 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Establish a connection to the device."""
+        # TODO: Remove unnecessary device parameter calls
         self.host_address = self.get_host()
         print("Host address", self.host_address, ord(self.host_address))
 
@@ -216,7 +214,8 @@ class Device(EmptyDevice):
 
         self.port.write(cmd_to_write)
 
-    def generate_checksum(self, message: str) -> str:
+    @staticmethod
+    def generate_checksum(message: str) -> str:
         """Generate a checksum for the Prevac V2.x Protocol."""
         return chr(sum([ord(char) for char in message]) % 256)
 
@@ -238,9 +237,8 @@ class Device(EmptyDevice):
                 print("Length", "device", "host", "msb", "lsb", "data")
                 print(length, device, host, msb, lsb, data)
 
-            # If an error occurs, the last data field is the error code
-            error = bytes(data[-1:])
-            self.check_error_code(error)
+            # If an error occurs, the last data field contains the error code
+            self.check_error_code(bytes(data[-1:]))
 
             # verify checksum
             # TODO: Create data frame class
@@ -252,12 +250,11 @@ class Device(EmptyDevice):
                 msg = "PREVAC TMC13: Checksums do not match"
                 raise Exception(msg)
 
-            # TODO: Check if raise Exception is correct
             if self.port.in_waiting() > 0:
                 msg = f"PREVAC TMC13: There are still Bytes in waiting: {self.port.in_waiting()}."
                 raise Exception(msg)
 
-            return data  # we cut off the first byte as it is the return error code
+            return data
 
         else:
             msg = f"PREVAC TMC13: Returned message does not start with correct byte {self.start_byte}"
