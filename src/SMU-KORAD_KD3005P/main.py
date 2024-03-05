@@ -88,23 +88,15 @@ class Device(EmptyDevice):
             # self.average = 100
         
     def initialize(self):
-        self.port.write("*IDN?")
-        time.sleep(0.1)
-        identifier = self.port.read(self.port.in_waiting())
+
+        identifier = self.get_identification()
         # print("Identifier:", identifier)
-        
-        # if not "3005P" in identifier:
-            # self.stopMeasurement = "Returned identification string %s is incorrect. Please check whether the correct device is connected." % identifier
-            # return False
 
     def configure(self):
         if self.source.startswith("Voltage"):
             self.port.write("ISET1:%1.2f" % float(self.protection))
         elif self.source.startswith("Current"):
             self.port.write("VSET1:%1.2f" % float(self.protection))
-
-    def deinitialize(self):
-        pass
 
     def poweron(self):
         self.port.write("OUT1")
@@ -153,3 +145,13 @@ class Device(EmptyDevice):
 
     def call(self):
         return [self.v, self.i]
+
+    # wrapped commands start here
+
+    def get_identification(self):
+
+        self.port.write("*IDN?")
+        time.sleep(0.1)
+        # When using Virtual COM port, a \x00 character is at the end of the message that cannot be printed
+        identifier = self.port.read(self.port.in_waiting()).replace("\x00", "")
+        return identifier
