@@ -42,7 +42,7 @@ class Device(EmptyDevice):
 
     def __init__(self):
     
-        EmptyDevice.__init__(self)
+        super().__init__()
         
         self.shortname = "Qwave"
         
@@ -64,14 +64,14 @@ class Device(EmptyDevice):
         
     def get_GUIparameter(self, parameter = {}):
         self.integration_time = float(parameter["IntegrationTime"])
-        self.integration_time_automatic_max = float(parameter["IntegrationTimeMax"])
+        self.integration_time_automatic_max = float(parameter.get("IntegrationTimeMax", 10.0))
         self.sweep_mode = parameter["SweepMode"]
-        self.automatic = parameter["IntegrationTimeAutomatic"]
+        self.automatic = parameter.get("IntegrationTimeAutomatic", False)
         self.average = int(parameter["Average"])
         self.device_type = parameter["Port"]
-        self.calibration = parameter["Calibration"]
+        self.calibration = parameter.get("Calibration", "")
         self.trigger_type = parameter["Trigger"]
-        self.trigger_delay = float(parameter["TriggerDelay"])  
+        self.trigger_delay = float(parameter.get("TriggerDelay", 0.0))
                    
     def connect(self):
     
@@ -215,23 +215,19 @@ class Device(EmptyDevice):
                                               
             self.set_Integration_time()
         
-    def trigger(self):
-    
+    def measure(self):
         while self.spectrometer.Status != self.spec_status.Idle:
             time.sleep(0.01)
             
         if self.trigger_type == "Internal":       
             self.spectrometer.StartExposure()
 
-    def measure(self):
-        while self.spectrometer.Status == self.spec_status.WaitingForTrigger:
+    def request_result(self):
+        while self.spectrometer.Status in [self.spec_status.WaitingForTrigger, self.spec_status.TakingSpectrum]:
             time.sleep(0.01)  
             # if trigger_type == "External": The spectrometer waits for a hardware trigger event. This can freeze the application...
-            
-    def call(self):
-        while self.spectrometer.Status == self.spec_status.TakingSpectrum:
-            time.sleep(0.01)
-            
+
+    def read_result(self):
         self.spectrum = []
 
         for i in self.spectrometer.GetSpectrum():
@@ -240,14 +236,13 @@ class Device(EmptyDevice):
         #print self.spectrometer.LoadLevel # can be used to adjust the auto level
         self.spectrum = np.asarray(self.spectrum)
 
+    def call(self):
         return [self.wavelengths, self.spectrum, self.integration_time]
 
-        
     def read_Integration_time(self):
         pass
         
     def set_Integration_time(self):
-        
         if self.integration_time < self.integration_time_min:
             self.integration_time = self.integration_time_min
             

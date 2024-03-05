@@ -108,7 +108,7 @@ class Device(EmptyDevice):
         # for the UI:  We add filter strings from the config file in CustomFiles
         # this will only
         self.filters = ["Auto", 1, 2, 3, 4, 5]
-        filters_to_add = self.getConfigOptions("Filter")
+        filters_to_add = self.get_configoptions("Filter")
         for key in filters_to_add:
             self.filters.append(filters_to_add[key])
 
@@ -121,7 +121,7 @@ class Device(EmptyDevice):
 
         """ Lamps """
         self.lamps = ["Xenon <- 600 nm -> Halogen", "Xenon", "Halogen"]
-        lamps_to_add = self.getConfigOptions("Lamp")
+        lamps_to_add = self.get_configoptions("Lamp")
         for key in lamps_to_add:
             self.lamps.append(lamps_to_add[key])
 

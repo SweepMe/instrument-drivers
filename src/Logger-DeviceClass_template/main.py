@@ -77,7 +77,7 @@ class Device(EmptyDevice):
                     """
 
     def __init__(self):
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         self.shortname = "Template"  # short name will be shown in the sequencer
         self.variables = ["Variable1", "Variable2", "Variable3", "Variable4"]  # define as many variables you need

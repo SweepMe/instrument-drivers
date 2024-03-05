@@ -52,7 +52,7 @@ class Device(EmptyDevice):
 
     def __init__(self):
     
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         self.shortname = "Microphone"
         
@@ -124,10 +124,7 @@ class Device(EmptyDevice):
             )
      
     def apply(self):
-        pass 
-        
-    def trigger(self):
-        pass 
+        pass
              
     def measure(self):
         self.frames = []
@@ -144,17 +141,14 @@ class Device(EmptyDevice):
         
         return [self.rms]    
         
-    def process(self):
-        
+    def finish(self):
         wf = wave.open(self.WAVE_OUTPUT_FILENAME %(self.dev_index, self.count), 'wb')
         wf.setnchannels(self.CHANNELS)
         wf.setsampwidth(self.p.get_sample_size(self.FORMAT))
         wf.setframerate(self.RATE)
         wf.writeframes(b''.join(self.frames))
         wf.close()
-        
-    def finish(self):
-        pass 
+
         
     def deinitialize(self):
         self.p.terminate()

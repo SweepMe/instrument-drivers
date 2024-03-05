@@ -40,7 +40,7 @@ class Device(EmptyDevice):
 
     def __init__(self):
     
-        EmptyDevice.__init__(self)
+        super().__init__()
         
         self.shortname = "Keithley2450"
         
@@ -226,10 +226,7 @@ class Device(EmptyDevice):
         # needed to trigger a measurement and thus to trigger the final output of the level
         self.measure()
         self.call()
-         
-    def trigger(self):
-        pass
-                       
+
     def measure(self):    
              
         if self.language == "SCPI2400":

@@ -47,7 +47,7 @@ class Device(EmptyDevice):
 
     def __init__(self):
 
-        EmptyDevice.__init__(self)
+        super().__init__()
         
         self.shortname = "USBxxxx"
         
@@ -56,7 +56,7 @@ class Device(EmptyDevice):
         self.plottype = [True, True, True]
         self.savetype = [True, True, True]
 
-        self.calibrationfolder = self.get_Folder("CALIBRATIONS")
+        self.calibrationfolder = self.get_folder("CALIBRATIONS")
 
     def find_Ports(self):
 
@@ -88,14 +88,14 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter = {}):
         self.integration_time = parameter["IntegrationTime"]
-        self.integration_time_automatic_max = parameter["IntegrationTimeMax"]
+        self.integration_time_automatic_max = parameter.get("IntegrationTimeMax", 10.0)
         self.sweep_mode = parameter["SweepMode"]
-        self.automatic = parameter["IntegrationTimeAutomatic"]
+        self.automatic = parameter.get("IntegrationTimeAutomatic", False)
         self.average = parameter["Average"]
         self.device_type = parameter["Port"]
-        self.calibration = parameter["Calibration"]
+        self.calibration = parameter.get("Calibration", "")
         self.trigger_type = parameter["Trigger"]
-        self.trigger_delay = parameter["TriggerDelay"]
+        self.trigger_delay = parameter.get("TriggerDelay", 0.0)
         
         if self.calibration == "" or self.calibration == "None":
             self.units = ["nm", "", "s"]
@@ -210,9 +210,6 @@ class Device(EmptyDevice):
                 self.messageBox("Reference spectrum not taken. No support for changing integration time.")
                                               
             self.set_Integration_time()
-        
-    def trigger(self):
-        pass
 
     def measure(self):
         pass        

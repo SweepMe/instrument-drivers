@@ -42,7 +42,7 @@ class Device(EmptyDevice):
 
     def __init__(self):
 
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         self.port_manager = True
         self.port_types = ["TCPIP", "GPIB"]
@@ -227,9 +227,6 @@ class Device(EmptyDevice):
             self.port.write(f"ABORT:TRAN (@{self.channel}); *WAI")  # wait for pending abort                       
             self.configure()                                        # reconfigure waveform
             self.port.write(f"INIT:TRAN (@{self.channel})")
-
-    def trigger(self):
-        pass
 
     def measure(self):
         # default read voltage and current

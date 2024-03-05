@@ -39,7 +39,7 @@ class Device(EmptyDevice):
 
     def __init__(self):
         
-        EmptyDevice.__init__(self)
+        super().__init__()
         
         self.shortname = "Keithley236"
         
@@ -147,10 +147,7 @@ class Device(EmptyDevice):
         # "self.value" is just handed over by SweepMe! with actual Sweep value
        
         self.port.write("B%s,0,0X" % self.value) 
-         
-    def trigger(self):
-        pass
-                       
+
     def measure(self):    
         self.port.write("H0X")                        
 

@@ -62,7 +62,7 @@ class Device(EmptyDevice):
 
     def __init__(self):
 
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         # Short name in sequencer
         self.shortname = "FW102C"
@@ -76,7 +76,7 @@ class Device(EmptyDevice):
         self.filter_positions = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
         # loads from further Filter configurations from Switch-Thorlabs_FW102C.ini that is
         # expected in public folder "CustomFiles"
-        self.positions_to_add = list(self.getConfigOptions("Filter").values())  
+        self.positions_to_add = list(self.get_configoptions("Filter").values())
 
         self.port_manager = True
         self.port_types = ["COM"]
@@ -108,8 +108,6 @@ class Device(EmptyDevice):
         self.filter_wavelengths = np.array(self.filter_readout[1::2], dtype=float)
 
         self.end_position = parameter["Home position"]
-        
-        self.config = parameter["Configuration"]  # This is the value from the Test section of the module
 
     def initialize(self):
     

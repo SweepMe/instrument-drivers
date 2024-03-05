@@ -55,7 +55,7 @@ class Device(EmptyDevice):
 
     def __init__(self):
 
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         # Short name in sequencer
         self.shortname = "TOFRA filterwheel"
@@ -69,7 +69,7 @@ class Device(EmptyDevice):
         self.positions = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]  # 12 filter positions
         
         # loads from further Filter configurations from .ini that is expected in public folder "CustomFiles"
-        self.positions_to_add = list(self.getConfigOptions("Filter").values())  
+        self.positions_to_add = list(self.get_configoptions("Filter").values())
         
         self.port_manager = True
         self.port_types = ["COM"]
@@ -97,7 +97,6 @@ class Device(EmptyDevice):
         self.pos_list = np.array(self.filter_readout[::2], dtype = int)
         self.filter_wavelengths = np.array(self.filter_readout[1::2], dtype = float)
         self.end_position = parameter["End position"]
-        self.config = parameter["Configuration"]
 
     def connect(self):
         """
@@ -113,8 +112,6 @@ class Device(EmptyDevice):
     def initialize(self):
 
         # set instrument at GUI selected state and ready for next commands
-        if len(self.config) > 1:
-            raise Exception("Please use a single filter in field 'Configuration' if you choose Set value.")
         if self.sweepmode == "None":
             if len(self.pos_list) > 1:
                 raise Exception("Please use a single filter in field 'Filter position' if Sweep mode is None.")

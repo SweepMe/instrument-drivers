@@ -51,7 +51,7 @@ import sys, os
 #from PIL import ImageGrab
 #import win32api
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
 
@@ -59,7 +59,7 @@ class Device(EmptyDevice):
 
     def __init__(self):
     
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         self.shortname = "Screenshot"
         
@@ -89,8 +89,9 @@ class Device(EmptyDevice):
         return GUIparameter
     
     def get_GUIparameter(self, parameter):
-    
-        self.label = parameter["Label"]
+
+        # in pysweepme there is no label and we use an empty string as default
+        self.label = parameter.get("Label", "")
         
         try:
             self.x1 = int(parameter["x1"])
@@ -120,7 +121,7 @@ class Device(EmptyDevice):
             self.file_suffix = "_" + self.file_suffix
         
     def initialize(self):
-        self.tempfolder = self.get_Folder("TEMP")
+        self.tempfolder = self.get_folder("TEMP")
         self.i = 0
         
         monitor = self.sct.monitors[self.monitor_number]

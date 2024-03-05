@@ -57,7 +57,7 @@ class Device(EmptyDevice):
 
     def __init__(self):
 
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         self.shortname = "Agilent N6705A"
 
@@ -164,9 +164,6 @@ class Device(EmptyDevice):
     def apply(self):
         self.port.write(
             f"{self.commands[self.source]} {self.value}, (@{self.channel})")
-
-    def trigger(self):
-        pass
 
     def measure(self):
         pass
