@@ -37,13 +37,16 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
+    """Device class for the PREVAC TMC13 Thickness Monitor Controller."""
     description = """
     TMC13 Thickness Monitor Controller
+    Copy .ini to CustomDocuments
     """
 
-    actions = ["should_reset_thickness"]
+    actions = ["reset_thickness"]
 
     def __init__(self) -> None:
+        """Initialize the device class."""
         super().__init__()
 
         self.channel = None
@@ -69,6 +72,8 @@ class Device(EmptyDevice):
         self.should_set_acoustic_impedance: bool = False
 
         self.density: float
+        self.should_set_density: bool = False
+
         self.should_reset_thickness: bool = False
 
         self.frequency_min = None
@@ -78,6 +83,7 @@ class Device(EmptyDevice):
         self.start_byte = chr(0xBB)  # chr(0xC8)
         self.device_address = chr(0x01)
         self.host_address = chr(0xFF)
+        self.unique_id: str  # = "\x50\x72\x66\x66\x61\x63\x54\x65\x72\x6d"
 
     def set_GUIparameter(self) -> dict:
         """Get parameters from the GUI and set them as attributes."""
@@ -114,33 +120,17 @@ class Device(EmptyDevice):
         self.plottype = [True, True, True, True]
         self.savetype = [True, True, True, True]
 
+        # read unique host id from run.ini file
+        self.set_unique_host_id_from_ini()
+
     def connect(self) -> None:
-        """Establish a connection to the device."""
-        # self.host_address = self.get_host()
-        # print("Host address", self.host_address, ord(self.host_address))
-        #
-        # serial_number = self.get_serial_number()
-        # print("Serial number:", serial_number)
-        #
-        # product_number = self.get_product_number()
-        # print("Product number:", product_number)
-        #
-        # device_version = self.get_device_version()
-        # print("Device version:", device_version)
+        """Enable Remote Control on the device."""
+        self.register_host()
+        self.assign_master()
 
-        # TODO: Does not update Widget?
-        self.units[0] = self.get_thickness_unit()
-        self.units[1] = self.get_rate_unit()
-        self.units[2] = "%"
-        self.units[3] = self.get_pressure_unit()
-
-        print("assign master")
-        # self.assign_master()
-
-    # def disconnect(self):
-    #
-    #    print("release master")
-    #    self.release_master()
+    def disconnect(self) -> None:
+        """End the remote control mode on the device."""
+        self.release_master()
 
     def initialize(self) -> None:
         """Get frequency range."""
@@ -182,14 +172,13 @@ class Device(EmptyDevice):
 
         return [thickness, rate, crystal_life, pressure]
 
-    """ convenience functions """
-
-
+    """ Communication functions """
 
     def send_data_frame(self, command: int, data: str = "") -> None:
         """Send a Prevac V2.x Protocol data frame to the device.
+
         Code is an integer of hex format 0x0202 and corresponds to the command
-        data is the data that is send in addition to the command.
+        data is the data that is sent in addition to the command.
         """
         # Split the most significant and least significant byte of the command
         msb, lsb = struct.pack(">H", command)
@@ -221,16 +210,11 @@ class Device(EmptyDevice):
 
             data = self.port.read(length[0])
 
-            if self.verbose:
-                print("Length", "device", "host", "msb", "lsb", "data")
-                print(length, device, host, msb, lsb, data)
-
             # If an error occurs, the last data field contains the error code
             # TODO: Check error Codes only for Write Commands
             # self.check_error_code(bytes(data[-1:]))
 
             # verify checksum
-            # TODO: Create data frame class
             checksum = ord(self.port.read(1))
             received_message = length + device + host + msb + lsb + data
             calc_checksum = ord(self.generate_checksum(received_message.decode("latin1")))
@@ -258,7 +242,7 @@ class Device(EmptyDevice):
             b"\x93": "Wrong parameter (probably wrong data format or index out of range)",
             b"\x95": "Read only parameter, write prohibited",
             b"\x96": "Host not know and not registered",
-            b"\x97": "Host know but not selected to remote control",
+            b"\x97": "Host known but not selected to remote control",
             b"\x98": "Device configured to work in local mode",
             b"\x99": "Operation or parameter is not available",
         }
@@ -275,36 +259,49 @@ class Device(EmptyDevice):
         self.send_data_frame(command)
         host = self.receive_data_frame()
 
-        # TODO: Set self.host_address
-
         return host.decode("latin1")
 
+    def register_host(self) -> None:
+        """Register the host unique ID on the TMC."""
+        command = 0x7FF0
+        self.send_data_frame(command, self.unique_id)
+        answer = self.receive_data_frame()
+        self.check_error_code(bytes(answer[-1:]))
+        self.host_address = answer.decode("latin1")
+
     def assign_master(self) -> None:
-        """Assign the master code that enables remote control."""
-        # Example assign master
-        # BB    01      C8     01    FF F1     01      BB
-        # start length  device host  code      value   checksum
+        """Assign the master code that enables remote control.
 
-        # b'\xbb\x01\x01\x7f\x7f\xf11"'
-
-        command = 0x7FF1
-        assign_master_code = "1"
+        The master pc has to be registered as a host using the register_host function.
+        """
+        command = 0xFFF1
+        assign_master_code = "\x01"  # Set Master
         self.send_data_frame(command, assign_master_code)
         answer = self.receive_data_frame()
 
-        # TODO: Check response
-        print(answer)
+        if answer != b"\x00":
+            msg = "Could not assign master to device"
+            raise Exception(msg)
+
+    def get_master_status(self) -> str:
+        """Get the master status of the device."""
+        command = 0x7FF1
+        self.send_data_frame(command)
+        answer = self.receive_data_frame()
+
+        # TODO: Check if the master status is correct
+        status = bin(answer[0])[2:]
 
     def release_master(self) -> None:
         """End remote control."""
-        # b'\xbb\x01\x01\x7f\x7f\xf10!'
-
-        command = 0x7FF1
-        release_master_command = "0"
-        self.send_data_frame(command, release_master_command)
+        command = 0xFFF1
+        assign_master_code = "\x00"  # Release Master
+        self.send_data_frame(command, assign_master_code)
         answer = self.receive_data_frame()
 
-        # TODO: Check response
+        if answer != b"\x00":
+            msg = "Could not release master from device"
+            raise Exception(msg)
 
     def get_product_number(self) -> str:
         """Returns the product number."""
@@ -374,7 +371,6 @@ class Device(EmptyDevice):
         """Return a byte value if the answer contains the channel."""
         self.send_data_frame(command, self.channel)
         answer = self.receive_data_frame()
-        print(answer)
         channel = answer[0]
         byte_value = answer[1]
         return channel, byte_value
@@ -384,7 +380,7 @@ class Device(EmptyDevice):
         command = 0x0202
         thickness_angstrom = self.get_double_value(command)
 
-        return thickness_angstrom # / 10
+        return thickness_angstrom / 10
 
     def get_thickness_unit(self) -> str:
         """Returns the unit in which the thickness is displayed."""
@@ -421,8 +417,6 @@ class Device(EmptyDevice):
 
         return rate_unit_dict[unit]
 
-    # TODO: Add get_rate_unit()
-
     def get_tooling_factor(self) -> float:
         """Return tooling factor in %."""
         command = 0x020D
@@ -430,7 +424,7 @@ class Device(EmptyDevice):
 
     def set_tooling_factor(self, tooling_factor: float) -> None:
         """Set tooling factor in %."""
-        command = 0x020D
+        command = 0x820D
         value = struct.pack(">d", tooling_factor).decode("latin1")
         self.send_data_frame(command, str(self.channel + value))
         value = self.receive_data_frame()
@@ -443,21 +437,23 @@ class Device(EmptyDevice):
 
     def set_material_density(self, density: float) -> None:
         """Set density in g/cm³."""
-        command = 0x0214
+        command = 0x8214  # +8 in MSB for write command
         value = "%1.2f" % float(density)
         self.send_data_frame(command, str(self.channel + value))
 
         # Read out answer to check for error codes
-        self.receive_data_frame()
+        answer = self.receive_data_frame()
+        self.check_error_code(bytes(answer[-1:]))
 
     def set_material_acoustic_impedance(self, impedance: float) -> None:
         """Set acoustic impedance in 1e5g/cm²/s."""
-        command = 0x0215
+        command = 0x8215  # +8 in MSB for write command
         value = struct.pack(">d", impedance).decode("latin1")
         self.send_data_frame(command, self.channel + value)
 
         # Read out answer to check for error codes
-        self.receive_data_frame()
+        answer = self.receive_data_frame()
+        self.check_error_code(bytes(answer[-1:]))
 
     def get_crystal_life(self) -> float:
         """Returns crystal life in %."""
@@ -473,22 +469,23 @@ class Device(EmptyDevice):
         return self.get_double_value(command)
 
     def get_maximum_frequency(self) -> float:
-        """Return maximum crystal frquency."""
+        """Return maximum crystal frequency."""
         command = 0x020F
         return self.get_double_value(command)
 
     def get_minimum_frequency(self) -> float:
-        """Return minimum crystal frquency."""
+        """Return minimum crystal frequency."""
         command = 0x020E
         return self.get_double_value(command)
 
     def reset_thickness(self) -> None:
         """Reset the thickness to 0.0."""
-        command = 0x0211
+        command = 0x8211  # +8 in MSB for write command
         self.send_data_frame(command, self.channel)
 
         # Read out answer to check for error codes
-        self.receive_data_frame()
+        answer = self.receive_data_frame()
+        self.check_error_code(bytes(answer[-1:]))
 
     def get_pressure(self) -> float:
         """Returns the pressure in mbar."""
@@ -510,15 +507,11 @@ class Device(EmptyDevice):
         }
         return pressure_unit_dict[unit]
 
+    def set_unique_host_id_from_ini(self) -> None:
+        """Set the unique host id from the run.ini file."""
+        ini_data = self.getConfigOptions("PREVAC_TMC13")
+        self.unique_id = ini_data["host_unique_id"]
 
-def check_bytestring_before_decoding(bytestring: bytes) -> str:
-    """Check if bytestring is printable before decoding it."""
-    decoded_string = ""
-    for b in range(len(bytestring)):
-        b = bytestring[b : b + 1]
-        if 32 < int(b[0]) < 127:
-            decoded_string += b.decode("ascii")
-        else:
-            decoded_string += "_"
-
-    return decoded_string
+        if self.unique_id == "PrevacTerm":
+            msg = "Please change the unique host id in the run.ini file to a unique value."
+            raise Exception(msg)

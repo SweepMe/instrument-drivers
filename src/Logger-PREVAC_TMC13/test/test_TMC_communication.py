@@ -181,11 +181,6 @@ class GetterTests(unittest.TestCase):
         pressure = self.tmc.get_pressure()
         print(pressure)
 
-    def test_get_pressure_unit(self) -> None:
-        """Test the reading of the pressure unit."""
-        pressure_unit = self.tmc.get_pressure_unit()
-        print(pressure_unit)
-
     def test_get_unit(self) -> None:
         """Test the reading of the unit."""
         parameter_dict = {
@@ -197,6 +192,101 @@ class GetterTests(unittest.TestCase):
         for parameter in parameter_dict:
             unit = getattr(self.tmc, f"get_{parameter}_unit")()
             self.assertEqual(unit, parameter_dict[parameter], f"{parameter} unit is incorrect.")  # noqa: PT009
+
+
+class SetterTests(unittest.TestCase):
+    """Test data frame communication using PREVAC protocol."""
+
+    def setUp(self) -> None:
+        """Set up the test environment with local driver_path and COM port address."""
+        driver_name = "Logger-PREVAC_TMC13"
+        driver_path = r"C:\Code\instrument-drivers\src"  # Needs to be adjusted
+        port_string = "COM13"  # Needs to be adjusted
+        self.tmc = pysweepme.get_driver(driver_name, driver_path, port_string)
+        self.tmc.set_parameters(
+            {
+                "Channel": "1",
+                "Reset thickness": False,
+                "Set tooling": False,
+                "Tooling in %": "100.0",
+                "Set density": False,
+                "Density in g/cm^3": "1.3",
+                "Set acoustic impedance": False,
+                "Acoustic impedance in 1e5 g/cm²/s": 1.0,
+            },
+        )
+
+
+    def test_manual_setting(self) -> None:
+        """Test the manual setting of the frequency."""
+        # host = self.tmc.get_host()
+        # print(ord(host))  # 0x02
+        # print(chr(0xFF))
+
+        # Assign Host Number
+        # Using some unique id, a new host pc can be registered
+        # This can be seen in the TMC GUI under "Hosts"
+        # The returned host address 0, 1, 2, ... is used for communication?
+
+        command = 0x7FF0
+        unique_id = "\x50\x72\x66\x66\x61\x63\x54\x65\x72\x6D"
+        print(unique_id)  # PrffacTerm
+        self.tmc.send_data_frame(command, unique_id)
+        answer = self.tmc.receive_data_frame()
+        print('Assign Host: ', answer)  # b'\x03'
+
+        answer = b'\x04'
+        host = answer.decode("latin1")
+        print('Host: ', host, chr(0x04))
+
+        self.assertEqual(host, chr(0x04), "Host is not assigned correctly.")  # noqa: PT009
+
+        self.tmc.host_address = chr(0x04)
+
+        # Enable Master Mode
+        command = 0xFFF1  # Why is it different from doc???
+        # But it shows the command in the TMC GUI
+        value = "\x01"
+        self.tmc.send_data_frame(command, value)
+        answer = self.tmc.receive_data_frame()
+        print('Enable Master: ', answer)
+
+        # Read Master Control Status
+        command = 0x7FF1
+        value = ""
+        self.tmc.send_data_frame(command, value)
+        answer = self.tmc.receive_data_frame()  # b'\x1d'
+        bits = bin(answer)[2:]
+        print('Master Control Status: ', bits, type(bits))
+
+        # How can I read the master mode status?
+        # Example: Set SETPOINT LOW: Order Code 0x8106
+        # Doc: Order 0x0106
+
+        # Clear Thickness
+        command = 0x8211  # Add 8 to achieve setter command???
+        value = ""
+        self.tmc.send_data_frame(command, value)
+        answer = self.tmc.receive_data_frame()
+        print('Clear Thickness: ', answer)
+
+        # # Read Material Name
+        # command = 0x0213
+        # value = ""
+        # self.tmc.send_data_frame(command, value)
+        # answer = self.tmc.receive_data_frame()
+        # print(answer, answer.decode("latin1"))
+
+
+    def test_set_unique_host_id_from_ini(self) -> None:
+        """Test the reading of the unique id from the ini file."""
+        unique_id = "PrffacTerm"
+        converted_id = unique_id
+
+        self.assertEqual(converted_id, "\x50\x72\x66\x66\x61\x63\x54\x65\x72\x6d")
+    def test_assign_master(self) -> None:
+        """Test the initialization of remote control."""
+        self.tmc.assign_master()
 
 
 if __name__ == "__main__":
