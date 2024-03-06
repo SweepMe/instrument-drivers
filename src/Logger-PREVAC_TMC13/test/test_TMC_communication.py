@@ -95,14 +95,6 @@ class GetterTests(unittest.TestCase):
             },
         )
 
-    def test_checksum(self) -> None:
-        """Test the calculation of the checksum."""
-        message = "\x01\xC8\x01\x01\x01\x01"
-        checksum = self.tmc.generate_checksum(message)
-        checksum_bytes = checksum.encode("latin1")
-
-        assert checksum_bytes == b"\xcd", "Checksum is not calculated correctly."
-
     def test_send_data_frame(self) -> None:
         """Test the sending of a data frame."""
         # Test get_host
@@ -112,21 +104,6 @@ class GetterTests(unittest.TestCase):
         answer = self.tmc.receive_data_frame()
         self.assertIsInstance(answer, bytes, "Answer has incorrect type.")  # noqa: PT009
 
-    def test_device_numbers(self) -> None:
-        """Test the reading of the product number."""
-        product_number = self.tmc.get_product_number()
-        self.assertEqual(len(product_number), 15, "Product number has incorrect length.")  # noqa: PT009
-        # print(product_number, len(product_number), type(product_number))
-
-        serial_number = self.tmc.get_serial_number()
-        self.assertEqual(len(serial_number), 13, "Serial number has incorrect length.")  # noqa: PT009
-        # print(serial_number, len(serial_number), type(serial_number))
-
-        device_version = self.tmc.get_device_version()
-        self.assertEqual(len(device_version), 15, "Device version has incorrect length.")  # noqa: PT009
-        # print(device_version, len(device_version), type(device_version))
-
-    # TODO: Remove the other tests and only test the measurements
     def test_measurements(self) -> None:
         """Test the reading of the measurements."""
         parameters = [
@@ -144,42 +121,6 @@ class GetterTests(unittest.TestCase):
 
             self.assertIsInstance(value, float, f"{parameter} has incorrect type.")  # noqa: PT009
             self.assertGreaterEqual(value, 0, f"{parameter} is negative.")  # noqa: PT009
-
-    def test_get_thickness(self) -> None:
-        """Test the reading of the thickness."""
-        thickness = self.tmc.get_thickness()
-        print(thickness)
-
-        self.assertIsInstance(thickness, float, "thickness has incorrect type.")  # noqa: PT009
-        self.assertGreaterEqual(thickness, 0, "thickness is negative.")  # noqa: PT009
-
-    def test_get_rate(self) -> None:
-        """Test the reading of the rate."""
-        rate = self.tmc.get_rate()
-
-        self.assertIsInstance(rate, float, "Rate has incorrect type.")  # noqa: PT009
-        self.assertGreaterEqual(rate, 0, "Rate is negative.")  # noqa: PT009
-
-    def test_get_tooling_factor(self) -> None:
-        """Test the reading of the tooling factor."""
-        tooling_factor = self.tmc.get_tooling_factor()
-        print(tooling_factor)
-
-        assert isinstance(tooling_factor, float), "Tooling factor has incorrect type."
-        assert tooling_factor >= 0.0, "Tooling factor is negative."
-
-    def test_get_density(self) -> None:
-        """Test the reading of the density."""
-        density = self.tmc.get_material_density()
-        print(density)
-
-        assert isinstance(density, float), "Density has incorrect type."
-        assert density >= 0.0, "Density is negative."
-
-    def test_get_pressure(self) -> None:
-        """Test the reading of the pressure."""
-        pressure = self.tmc.get_pressure()
-        print(pressure)
 
     def test_get_unit(self) -> None:
         """Test the reading of the unit."""
@@ -216,78 +157,56 @@ class SetterTests(unittest.TestCase):
             },
         )
 
+    def test_register_host(self) -> None:
+        """Test the registration of the host."""
+        self.tmc.register_host()
 
-    def test_manual_setting(self) -> None:
-        """Test the manual setting of the frequency."""
-        # host = self.tmc.get_host()
-        # print(ord(host))  # 0x02
-        # print(chr(0xFF))
+        self.assertEqual(self.tmc.host_address, chr(0x04), "Host is not assigned correctly.")  # noqa: PT009
+        self.assertEqual(self.tmc.tmc.host_address, chr(0x04), "Host is not assigned correctly.")  # noqa: PT009
 
-        # Assign Host Number
-        # Using some unique id, a new host pc can be registered
-        # This can be seen in the TMC GUI under "Hosts"
-        # The returned host address 0, 1, 2, ... is used for communication?
+    def test_assign_release_master(self) -> None:
+        """Test the enabling of the master mode."""
+        self.tmc.register_host()
+        self.tmc.enable_master()
 
-        command = 0x7FF0
-        unique_id = "\x50\x72\x66\x66\x61\x63\x54\x65\x72\x6D"
-        print(unique_id)  # PrffacTerm
-        self.tmc.send_data_frame(command, unique_id)
-        answer = self.tmc.receive_data_frame()
-        print('Assign Host: ', answer)  # b'\x03'
+        # TODO: Check Error Codes
+        status = self.tmc.get_master_status()
+        self.assertEqual(status, "11111", "Master status is incorrect.")  # noqa: PT009
 
-        answer = b'\x04'
-        host = answer.decode("latin1")
-        print('Host: ', host, chr(0x04))
+        self.tmc.release_master()
+        status = self.tmc.get_master_status()
+        self.assertEqual(status, "11111", "Master status is incorrect.")  # noqa: PT009
 
-        self.assertEqual(host, chr(0x04), "Host is not assigned correctly.")  # noqa: PT009
+    def test_reset_thickness(self) -> None:
+        """Test the reset of the thickness."""
+        self.tmc.reset_thickness()
 
-        self.tmc.host_address = chr(0x04)
+        thickness = self.tmc.get_thickness()
+        self.assertEqual(thickness, 0.0, "Thickness is not reset correctly.")  # noqa: PT009
 
-        # Enable Master Mode
-        command = 0xFFF1  # Why is it different from doc???
-        # But it shows the command in the TMC GUI
-        value = "\x01"
-        self.tmc.send_data_frame(command, value)
-        answer = self.tmc.receive_data_frame()
-        print('Enable Master: ', answer)
+    def test_set_tooling(self) -> None:
+        """Test the setting of the tooling."""
+        tooling = 50.0
+        self.tmc.set_tooling(tooling)
 
-        # Read Master Control Status
-        command = 0x7FF1
-        value = ""
-        self.tmc.send_data_frame(command, value)
-        answer = self.tmc.receive_data_frame()  # b'\x1d'
-        bits = bin(answer)[2:]
-        print('Master Control Status: ', bits, type(bits))
+        new_tooling = self.tmc.get_tooling_factor()
+        self.assertEqual(new_tooling, tooling, "Tooling is not set correctly.")  # noqa: PT009
 
-        # How can I read the master mode status?
-        # Example: Set SETPOINT LOW: Order Code 0x8106
-        # Doc: Order 0x0106
+    def test_set_density(self) -> None:
+        """Test the setting of the density."""
+        density = 1.5
+        self.tmc.set_material_density(density)
 
-        # Clear Thickness
-        command = 0x8211  # Add 8 to achieve setter command???
-        value = ""
-        self.tmc.send_data_frame(command, value)
-        answer = self.tmc.receive_data_frame()
-        print('Clear Thickness: ', answer)
+        new_density = self.tmc.get_material_density()
+        self.assertEqual(new_density, density, "Density is not set correctly.")  # noqa: PT009
 
-        # # Read Material Name
-        # command = 0x0213
-        # value = ""
-        # self.tmc.send_data_frame(command, value)
-        # answer = self.tmc.receive_data_frame()
-        # print(answer, answer.decode("latin1"))
+    def test_set_acoustic_impedance(self) -> None:
+        """Test the setting of the acoustic impedance."""
+        acoustic_impedance = 1.5
+        self.tmc.set_acoustic_impedance(acoustic_impedance)
 
-
-    def test_set_unique_host_id_from_ini(self) -> None:
-        """Test the reading of the unique id from the ini file."""
-        unique_id = "PrffacTerm"
-        converted_id = unique_id
-
-        self.assertEqual(converted_id, "\x50\x72\x66\x66\x61\x63\x54\x65\x72\x6d")
-    def test_assign_master(self) -> None:
-        """Test the initialization of remote control."""
-        self.tmc.assign_master()
-
+        new_acoustic_impedance = self.tmc.get_acoustic_impedance()
+        self.assertEqual(new_acoustic_impedance, acoustic_impedance, "Acoustic impedance is not set correctly.")  # noqa: PT009
 
 if __name__ == "__main__":
     unittest.main()

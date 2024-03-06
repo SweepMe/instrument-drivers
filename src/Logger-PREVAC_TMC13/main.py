@@ -85,7 +85,7 @@ class Device(EmptyDevice):
         self.host_address = chr(0xFF)
         self.unique_id: str = "\x53\x77\x65\x65\x70\x4d\x65"
         
-        self.tmc: PrevacCommunicationInterface
+        self.prevac_interface: PrevacCommunicationInterface
         
     def set_GUIparameter(self) -> dict:
         """Get parameters from the GUI and set them as attributes."""
@@ -124,7 +124,7 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Enable Remote Control on the device."""
-        self.tmc = PrevacCommunicationInterface(self.port, self.host_address, self.channel)
+        self.prevac_interface = PrevacCommunicationInterface(self.port, self.host_address, self.channel)
 
         self.register_host()
         self.assign_master()
@@ -175,25 +175,17 @@ class Device(EmptyDevice):
 
     """ Getter Functions """
 
-    def get_host(self) -> str:
-        """Get the host address of the device."""
-        command = 0x7FF0
-        self.tmc.send_data_frame(command)
-        host = self.tmc.receive_data_frame()
-
-        return host.decode("latin1")
-
     def get_thickness(self) -> float:
         """Returns thickness in A."""
         command = 0x0202
-        thickness_angstrom = self.tmc.get_double_value(command)
+        thickness_angstrom = self.prevac_interface.get_double_value(command)
 
         return thickness_angstrom / 10
 
     def get_thickness_unit(self) -> str:
         """Returns the unit in which the thickness is displayed."""
         command = 0x0203
-        unit = self.tmc.get_byte_value(command)
+        unit = self.prevac_interface.get_byte_value(command)
         thickness_unit_dict = {
             0: "A",
             1: "kA",
@@ -205,12 +197,12 @@ class Device(EmptyDevice):
     def get_rate(self) -> float:
         """Returns the rate in A/s."""
         command = 0x0204
-        return self.tmc.get_double_value(command)
+        return self.prevac_interface.get_double_value(command)
 
     def get_rate_unit(self) -> str:
         """Returns the unit in which the rate is displayed."""
         command = 0x0205
-        unit = self.tmc.get_byte_value(command)
+        unit = self.prevac_interface.get_byte_value(command)
         rate_unit_dict = {
             4: "A/s",
             5: "kA/s",
@@ -228,14 +220,14 @@ class Device(EmptyDevice):
     def get_pressure(self) -> float:
         """Returns the pressure in mbar."""
         command = 0x0101
-        channel, pressure = self.tmc.get_double_value_and_channel(command)
+        channel, pressure = self.prevac_interface.get_double_value_and_channel(command)
 
         return pressure
 
     def get_pressure_unit(self) -> str:
         """Returns the unit in which the pressure is displayed."""
         command = 0x0103
-        channel, unit = self.tmc.get_byte_value_and_channel(command)
+        channel, unit = self.prevac_interface.get_byte_value_and_channel(command)
 
         pressure_unit_dict = {
             0: "mbar",
@@ -248,13 +240,13 @@ class Device(EmptyDevice):
     def get_tooling_factor(self) -> float:
         """Return tooling factor in %."""
         command = 0x020D
-        return self.tmc.get_double_value(command)
+        return self.prevac_interface.get_double_value(command)
 
     def get_material_density(self) -> float:
         """Returns density in g/cm³."""
         # TODO: Currently not working, response is b'\x01@\x05\x99\x99\x99\x99\x99\x9a'
         command = 0x0214
-        return self.tmc.get_double_value(command)
+        return self.prevac_interface.get_double_value(command)
 
     def get_crystal_life(self) -> float:
         """Returns crystal life in %."""
@@ -266,57 +258,69 @@ class Device(EmptyDevice):
     def get_crystal_frequency(self) -> float:
         """Return crystal frequency."""
         command = 0x0201
-        return self.tmc.get_double_value(command)
+        return self.prevac_interface.get_double_value(command)
 
     def get_maximum_frequency(self) -> float:
         """Return maximum crystal frequency."""
         command = 0x020F
-        return self.tmc.get_double_value(command)
+        return self.prevac_interface.get_double_value(command)
 
     def get_minimum_frequency(self) -> float:
         """Return minimum crystal frequency."""
         command = 0x020E
-        return self.tmc.get_double_value(command)
+        return self.prevac_interface.get_double_value(command)
 
     """ Setter Functions """
 
     def reset_thickness(self) -> None:
         """Reset the thickness to 0.0."""
         command = 0x8211  # +8 in MSB for write command
-        self.tmc.send_data_frame(command, self.channel)
-        self.tmc.check_response_for_errors()
+        self.prevac_interface.send_data_frame(command, self.channel)
+        self.prevac_interface.check_response_for_errors()
 
     def set_tooling_factor(self, tooling_factor: float) -> None:
         """Set tooling factor in %."""
         command = 0x820D
         value = struct.pack(">d", tooling_factor).decode("latin1")
-        self.tmc.send_data_frame(command, str(self.channel + value))
-        self.tmc.check_response_for_errors()
+        self.prevac_interface.send_data_frame(command, str(self.channel + value))
+        self.prevac_interface.check_response_for_errors()
 
     def set_material_density(self, density: float) -> None:
         """Set density in g/cm³."""
         command = 0x8214  # +8 in MSB for write command
         value = "%1.2f" % float(density)
-        self.tmc.send_data_frame(command, str(self.channel + value))
-        self.tmc.check_response_for_errors()
+        self.prevac_interface.send_data_frame(command, str(self.channel + value))
+        self.prevac_interface.check_response_for_errors()
 
     def set_material_acoustic_impedance(self, impedance: float) -> None:
         """Set acoustic impedance in 1e5g/cm²/s."""
         command = 0x8215  # +8 in MSB for write command
         value = struct.pack(">d", impedance).decode("latin1")
-        self.tmc.send_data_frame(command, self.channel + value)
-        self.tmc.check_response_for_errors()
+        self.prevac_interface.send_data_frame(command, self.channel + value)
+        self.prevac_interface.check_response_for_errors()
 
     """ Remote Control Configuration """
 
-    def register_host(self) -> None:
-        """Register the host unique ID on the TMC."""
+    def get_host(self) -> str:
+        """Get the host address of the device."""
         command = 0x7FF0
-        self.tmc.send_data_frame(command, self.unique_id)
-        answer = self.tmc.check_response_for_errors()
+        self.prevac_interface.send_data_frame(command)
+        host = self.prevac_interface.receive_data_frame()
+
+        return host.decode("latin1")
+
+    def register_host(self) -> None:
+        """Register the host unique ID on the TMC.
+
+        A list of registered hosts can be seen in the TMC GUI under "Remote Control".
+        The returned host address is used for further communication.
+        """
+        command = 0x7FF0
+        self.prevac_interface.send_data_frame(command, self.unique_id)
+        answer = self.prevac_interface.check_response_for_errors()
         new_host_address = answer.decode("latin1")
         self.host_address = new_host_address
-        self.tmc.host_address = new_host_address
+        self.prevac_interface.host_address = new_host_address
 
     def assign_master(self) -> None:
         """Assign the master code that enables remote control.
@@ -325,8 +329,8 @@ class Device(EmptyDevice):
         """
         command = 0xFFF1
         assign_master_code = "\x01"  # Set Master
-        self.tmc.send_data_frame(command, assign_master_code)
-        answer = self.tmc.receive_data_frame()
+        self.prevac_interface.send_data_frame(command, assign_master_code)
+        answer = self.prevac_interface.receive_data_frame()
 
         if answer != b"\x00":
             msg = "Could not assign master to device"
@@ -335,18 +339,23 @@ class Device(EmptyDevice):
     def get_master_status(self) -> str:
         """Get the master status of the device."""
         command = 0x7FF1
-        self.tmc.send_data_frame(command)
-        answer = self.tmc.receive_data_frame()
+        self.prevac_interface.send_data_frame(command)
+        answer = self.prevac_interface.receive_data_frame()
 
         # TODO: Check if the master status is correct
         status = bin(answer[0])[2:]
+        if status[0] == "0":
+            msg = "Master status is not correct"
+            raise Exception(msg)
+
+        return status
 
     def release_master(self) -> None:
         """End remote control."""
         command = 0xFFF1
         assign_master_code = "\x00"  # Release Master
-        self.tmc.send_data_frame(command, assign_master_code)
-        answer = self.tmc.receive_data_frame()
+        self.prevac_interface.send_data_frame(command, assign_master_code)
+        answer = self.prevac_interface.receive_data_frame()
 
         if answer != b"\x00":
             msg = "Could not release master from device"
