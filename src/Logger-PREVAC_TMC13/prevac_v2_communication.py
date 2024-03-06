@@ -113,3 +113,74 @@ class PrevacCommunicationInterface:
             raise Exception(msg)
 
         return answer
+
+    def check_error_status(self) -> None:
+        """Check the device status for errors."""
+        # TODO: Check if error index needs to be sent as value
+        command = 0x7F51
+        self.send_data_frame(command)
+        answer = self.receive_data_frame()
+        # TODO: Check return type
+        error = answer[1:]
+
+        error_codes = {
+            0x7F01: "Internal communication error",
+            0x7F02: "Communication with Anybus module error",
+            0x7F03: "Communication with Bluetooth Anybus module error",
+            0x7F04: "Critically low disk space",
+            # TMC13 Status Codes Page 144:
+            0x4101: "DC module is not available",
+            0x4102: "The connection to Bus has been lost.",
+            0x4103: "DC power supply is damaged or short circuit",
+            0x4104: "HV power supply is damaged.",
+            0x4105: "HV power supply has short circuit.",
+            0x4106: "Main power failure.",
+            0x4107: "Safety relay failure",
+            # Communication Error Codes page 145: - Maybe called with 0x0216
+            0x10: "Crystals head during movement.",
+            0x11: "You can not select the stepper motor type for crystals head ‑ assigned to other channel.",
+            0x12: "TM assigned to other crystals head.",
+            0x13: "The crystals head must 􀏐irst be calibrated.",
+            0x14: "Calibration not available.",
+            0x15: "The crystals head does not have an assigned TM channel.",
+            0x16: "No assigned relay output.",
+            0x17: "You can not select the relay output ‑ assigned to another function.",
+            0x18: "Parameter for a different type of magazine.",
+            # Vacuum Gauges Communication Error Codes page 145:
+            0x80: "CTR90 head not selected to set FS.",
+            0x81: "MKS870 head not selected to set FS.",
+            0x82: "Not selected -define- gas type.",
+            0x83: "Meter damaged.",
+            0x84: "Selected head does not support degas function.",
+            0x85: "Vacuum is too low to start system degassing.",
+            0x86: "Selected head does not support emission function.",
+        }
+
+        if error in error_codes:
+            msg = "Prevac Error: " + error_codes[error]
+            raise Exception(msg)
+
+    def check_warning_status(self) -> None:
+        """Check the device status for warnings."""
+        command = 0x7F52
+        self.send_data_frame(command)
+        answer = self.receive_data_frame()
+        # TODO: Check return type
+        warning = answer[1:]
+
+        warning_codes = {
+            0x7F80: "Low disk space",
+            0x7F06: "Invalid read the internal temperature of the device.",
+            0x7F07: "The internal temperature of the device is above safe level.",
+            0x7F08: "The internal temperature of the unit is too high. Switching to standby mode.",
+            # TMC13 Status Codes Page 144:
+            0x4180: "DC no load or the connection is broken.",
+            0x4181: "DC current has reached the limit.",
+            0x4182: "Emission current has reached the limit.",
+            0x4183: "No external interlock.",
+            0x4184: "No vacuum interlock.",
+        }
+
+        if warning in warning_codes:
+            msg = "Prevac Warning: " + warning_codes[warning]
+            raise Exception(msg)

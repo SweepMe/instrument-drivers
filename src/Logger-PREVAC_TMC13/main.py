@@ -27,13 +27,16 @@
 
 
 # SweepMe! device class
-# Type: Logger
 # Device: PREVAC TMC13
 from __future__ import annotations
 
 import struct
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme.FolderManager import addFolderToPATH
+
+addFolderToPATH()
+
 from prevac_v2_communication import PrevacCommunicationInterface
 
 
@@ -41,8 +44,20 @@ class Device(EmptyDevice):
     """Device class for the PREVAC TMC13 Thickness Monitor Controller."""
 
     description = """
-    TMC13 Thickness Monitor Controller
-    Copy .ini to CustomDocuments
+    <h3>Prevac TMC13</h3>
+    <p>This driver controls Prevac TMC13 thickness monitors.</p>
+    <h4>Setup</h4>
+    <ul>
+        <li>Enable remote control in the settings of the TMC device.</li>
+    </ul>
+    <h4>Parameters</h4>
+    <ul>
+        <li>Set the channel number according to your hardware.</li>
+        <li>Reset thickness: If set True, the thickness will be set to 0 at the start of the measurement.</li>
+        <li>Set tooling/density/acoustic impedance: If set True, the given parameters will be set to the device. 
+            Otherwise, the parameters set in the device GUI will be used.
+        </li>
+    </ul>
     """
 
     actions = ["reset_thickness"]
@@ -51,9 +66,8 @@ class Device(EmptyDevice):
         """Initialize the device class."""
         super().__init__()
 
+        # Port Parameters
         self.channel = None
-        self.shortname = "TMC13"
-
         self.port_manager = True
         self.port_types = ["COM"]
         self.port_properties = {
@@ -64,7 +78,14 @@ class Device(EmptyDevice):
             "raw_read": True,
             "raw_write": True,
         }
-        self.verbose = False
+
+        # SweepMe Parameters
+        self.shortname = "TMC13"
+
+        self.variables = ["Thickness", "Rate", "XTAL life", "Pressure"]
+        self.units = ["nm", "A/s", "%", "mbar"]
+        self.plottype = [True, True, True, True]
+        self.savetype = [True, True, True, True]
 
         # Device Parameter
         self.tooling_factor: float
@@ -84,9 +105,9 @@ class Device(EmptyDevice):
         # Prevac V2.x Communication Protocol
         self.host_address = chr(0xFF)
         self.unique_id: str = "\x53\x77\x65\x65\x70\x4d\x65"
-        
+
         self.prevac_interface: PrevacCommunicationInterface
-        
+
     def set_GUIparameter(self) -> dict:
         """Get parameters from the GUI and set them as attributes."""
         return {
@@ -117,11 +138,6 @@ class Device(EmptyDevice):
         self.should_set_acoustic_impedance = bool(parameter["Set acoustic impedance"])
         self.acoustic_impedance = float(parameter["Acoustic impedance in 1e5 g/cm²/s"])
 
-        self.variables = ["Thickness", "Rate", "XTAL life", "Pressure"]
-        self.units = ["A", "A/s", "%", "mbar"]
-        self.plottype = [True, True, True, True]
-        self.savetype = [True, True, True, True]
-
     def connect(self) -> None:
         """Enable Remote Control on the device."""
         self.prevac_interface = PrevacCommunicationInterface(self.port, self.host_address, self.channel)
@@ -140,6 +156,10 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Reset thickness if needed and set material properties."""
+        # TODO: Check if checking the device status is correct in configure
+        self.check_device_status()
+        self.check_vacuum_gauge_status()
+
         if self.reset_thickness:
             self.reset_thickness()
 
@@ -242,10 +262,24 @@ class Device(EmptyDevice):
         command = 0x020D
         return self.prevac_interface.get_double_value(command)
 
+    def get_material_name(self) -> str:
+        """Return the material name."""
+        # TODO: Test if this function and decoding works
+        command = 0x0213
+        self.prevac_interface.send_data_frame(command, self.channel)
+        answer = self.prevac_interface.receive_data_frame()
+        return answer.decode("latin1")
+
     def get_material_density(self) -> float:
         """Returns density in g/cm³."""
         # TODO: Currently not working, response is b'\x01@\x05\x99\x99\x99\x99\x99\x9a'
         command = 0x0214
+        return self.prevac_interface.get_double_value(command)
+
+    def get_material_acoustic_impedance(self) -> float:
+        """Returns acoustic impedance in 1e5g/cm²/s."""
+        # TODO: test if this function works
+        command = 0x0215
         return self.prevac_interface.get_double_value(command)
 
     def get_crystal_life(self) -> float:
@@ -269,6 +303,29 @@ class Device(EmptyDevice):
         """Return minimum crystal frequency."""
         command = 0x020E
         return self.prevac_interface.get_double_value(command)
+
+    def check_device_status(self) -> None:
+        """Check the device status for errors and warnings."""
+        command = 0x7F50
+        self.prevac_interface.send_data_frame(command)
+        status = self.prevac_interface.receive_data_frame()
+
+        if status[0] > 0:
+            self.prevac_interface.check_error_status()
+        if status[1] > 0:
+            self.prevac_interface.check_warning_status()
+
+    def check_vacuum_gauge_status(self) -> int:
+        """Check the vacuum gauge status for errors and warnings."""
+        command = 0x0105
+        channel, status = self.prevac_interface.get_byte_value_and_channel(command)
+
+        # TODO: Add status codes
+        if status == -1:
+            msg = "Prevac Warning: Vacuum gauge sensor break"
+            raise Exception(msg)
+
+        return status
 
     """ Setter Functions """
 
@@ -338,6 +395,7 @@ class Device(EmptyDevice):
 
     def get_master_status(self) -> str:
         """Get the master status of the device."""
+        # TODO: Export this to the communication interface
         command = 0x7FF1
         self.prevac_interface.send_data_frame(command)
         answer = self.prevac_interface.receive_data_frame()
@@ -345,7 +403,19 @@ class Device(EmptyDevice):
         # TODO: Check if the master status is correct
         status = bin(answer[0])[2:]
         if status[0] == "0":
-            msg = "Master status is not correct"
+            msg = "Not working as Master."
+            raise Exception(msg)
+
+        if status[2] == "0":
+            msg = "Device Remote Control not enabled in TMC GUI."
+            raise Exception(msg)
+
+        if status[3] == "0":
+            msg = "Host not registered."
+            raise Exception(msg)
+
+        if status[4] == "0":
+            msg = "Other MASTER host device in system."
             raise Exception(msg)
 
         return status
