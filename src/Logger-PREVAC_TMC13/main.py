@@ -37,7 +37,7 @@ from pathlib import Path
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 # Import the communication interface
-file_path = Path(__file__).resolve().parent / "prevac_protocol.py"
+file_path = Path(__file__).resolve().parent / "libraries" / "prevac_protocol.py"
 spec = importlib.util.spec_from_file_location("prevac_protocol", file_path)
 prevac_protocol = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prevac_protocol)
@@ -87,12 +87,15 @@ class Device(EmptyDevice):
         # SweepMe Parameters
         self.shortname = "TMC13"
 
-        self.variables = ["Thickness", "Rate", "XTAL life", "Pressure"]
-        self.units = ["nm", "A/s", "%", "mbar"]
-        self.plottype = [True, True, True, True]
-        self.savetype = [True, True, True, True]
+        self.variables = ["Thickness", "Rate", "XTAL life"]
+        self.units = ["nm", "A/s", "%"]
+        self.plottype = [True, True, True]
+        self.savetype = [True, True, True]
 
         # Device Parameter
+        self.should_read_pressure: bool = False
+        self.should_reset_thickness: bool = False
+
         self.tooling_factor: float
         self.should_set_tooling: bool = False
 
@@ -102,14 +105,12 @@ class Device(EmptyDevice):
         self.density: float
         self.should_set_density: bool = False
 
-        self.should_reset_thickness: bool = False
-
         self.frequency_min = None
         self.frequency_max = None
 
         # Prevac V2.x Communication Protocol
         self.host_address = chr(0xFF)
-        self.unique_id: str = "\x53\x77\x65\x65\x70\x4d\x65"
+        self.unique_id: str = "\x53\x77\x65\x65\x70\x4d\x65"  # "SweepMe"
 
         self.prevac_interface: PrevacCommunicationInterface
 
@@ -118,6 +119,7 @@ class Device(EmptyDevice):
         return {
             "Channel": ["1", "2", "3", "4", "5", "6"],
             "Reset thickness": False,  # To avoid accidental resetting when recording
+            "Read pressure": False,
             "Set tooling": False,
             "Tooling in %": "100.0",
             "Set density": False,
@@ -131,6 +133,13 @@ class Device(EmptyDevice):
         # Channel number must be of \x01 format
         channel = parameter["Channel"]
         self.channel = int(channel).to_bytes(1, byteorder="big").decode("latin1")
+
+        self.should_read_pressure = bool(parameter["Read pressure"])
+        if self.should_read_pressure:
+            self.variables.append("Pressure")
+            self.units.append("mbar")
+            self.plottype.append(True)
+            self.savetype.append(True)
 
         self.should_reset_thickness = bool(parameter["Reset thickness"])
 
@@ -191,12 +200,12 @@ class Device(EmptyDevice):
 
     def call(self) -> list[float]:
         """Return the current thickness, rate and crystal life."""
-        thickness = self.get_thickness()
-        rate = self.get_rate()
-        crystal_life = self.get_crystal_life()
-        pressure = self.get_pressure()
+        measured_values = [self.get_thickness(), self.get_rate(), self.get_crystal_life()]
 
-        return [thickness, rate, crystal_life, pressure]
+        if self.should_read_pressure:
+            measured_values.append(self.get_pressure())
+
+        return measured_values
 
     """ Getter Functions """
 
@@ -371,18 +380,19 @@ class Device(EmptyDevice):
 
         return host.decode("latin1")
 
-    def register_host(self) -> None:
+    def register_host(self, host_id: str|None = None) -> None:
         """Register the host unique ID on the TMC.
 
         A list of registered hosts can be seen in the TMC GUI under "Remote Control".
         The returned host address is used for further communication.
         """
         command = 0x7FF0
-        self.prevac_interface.send_data_frame(command, self.unique_id)
+        value = self.unique_id if host_id is None else host_id
+        self.prevac_interface.send_data_frame(command, value)
         answer = self.prevac_interface.check_response_for_errors()
-        new_host_address = answer.decode("latin1")
-        self.host_address = new_host_address
-        self.prevac_interface.host_address = new_host_address
+
+        self.host_address = answer.decode("latin1")
+        self.prevac_interface.host_address = self.host_address
 
     def assign_master(self) -> None:
         """Assign the master code that enables remote control.

@@ -1,15 +1,16 @@
 import importlib.util
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 # Import the communication interface
-file_path = Path(__file__).resolve().parent.parent / "prevac_protocol.py"
+file_path = Path(__file__).resolve().parent.parent / "libraries" / "prevac_protocol.py"
 spec = importlib.util.spec_from_file_location("prevac_protocol", file_path)
 prevac_protocol = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prevac_protocol)
 
 SendingDataFrame = prevac_protocol.SendingDataFrame
 ReceiverDataFrame = prevac_protocol.ReceivingDataFrame
+
 
 class DataFrameTest(unittest.TestCase):
     """Test the data frame class."""
@@ -19,7 +20,7 @@ class DataFrameTest(unittest.TestCase):
         device_address = 0xC8
         host_address = 0x01
         command = 0x0101  # example for read vacuum level
-        data = [0x01] # example for read vacuum level
+        data = [0x01]  # example for read vacuum level
 
         dataframe = SendingDataFrame(device=device_address, host=host_address, command=command, data=data)
 
@@ -33,7 +34,7 @@ class DataFrameTest(unittest.TestCase):
         self.assertEqual(dataframe.checksum, checksum, "Checksum is not generated correctly.")  # noqa: PT009
 
         expected_message = b"\xBB\x01\xC8\x01\x01\x01\x01\xCD"
-        self.assertEqual(dataframe.command_to_write, expected_message, "Message is not generated correctly.")  # noqa: PT009
+        assert dataframe.command_to_write == expected_message, "Message is not generated correctly."
 
     def test_complicated_command(self) -> None:
         """Test the generation of the shutter control message."""
@@ -45,4 +46,4 @@ class DataFrameTest(unittest.TestCase):
         dataframe = SendingDataFrame(device=device_address, host=host_address, command=command, data=data)
 
         expected_message = b"\xBB\x02\xC8\x01\x82\x07\x01\x01\x56"
-        self.assertEqual(dataframe.command_to_write, expected_message, "Message is not generated correctly.") # noqa: PT009
+        assert dataframe.command_to_write == expected_message, "Message is not generated correctly."
