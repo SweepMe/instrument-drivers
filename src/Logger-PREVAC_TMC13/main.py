@@ -30,14 +30,17 @@
 # Device: PREVAC TMC13
 from __future__ import annotations
 
+import importlib.util
 import struct
+from pathlib import Path
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
-from pysweepme.FolderManager import addFolderToPATH
 
-addFolderToPATH()
-
-from prevac_v2_communication import PrevacCommunicationInterface
+# Import the communication interface
+file_path = Path(__file__).resolve().parent / "prevac_v2_communication.py"
+spec = importlib.util.spec_from_file_location("PrevacCommunicationInterface", file_path)
+PrevacCommunicationInterface = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(PrevacCommunicationInterface)
 
 
 class Device(EmptyDevice):
@@ -54,7 +57,7 @@ class Device(EmptyDevice):
     <ul>
         <li>Set the channel number according to your hardware.</li>
         <li>Reset thickness: If set True, the thickness will be set to 0 at the start of the measurement.</li>
-        <li>Set tooling/density/acoustic impedance: If set True, the given parameters will be set to the device. 
+        <li>Set tooling/density/acoustic impedance: If set True, the given parameters will be set to the device.
             Otherwise, the parameters set in the device GUI will be used.
         </li>
     </ul>
