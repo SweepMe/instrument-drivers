@@ -37,10 +37,12 @@ from pathlib import Path
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 # Import the communication interface
-file_path = Path(__file__).resolve().parent / "prevac_v2_communication.py"
-spec = importlib.util.spec_from_file_location("PrevacCommunicationInterface", file_path)
-PrevacCommunicationInterface = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(PrevacCommunicationInterface)
+file_path = Path(__file__).resolve().parent / "prevac_protocol.py"
+spec = importlib.util.spec_from_file_location("prevac_protocol", file_path)
+prevac_protocol = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(prevac_protocol)
+
+PrevacCommunicationInterface = prevac_protocol.PrevacCommunicationInterface
 
 
 class Device(EmptyDevice):

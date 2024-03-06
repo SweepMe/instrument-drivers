@@ -1,13 +1,15 @@
-import os
-import sys
+import importlib.util
+from pathlib import Path
 import unittest
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.append(parent_dir)
+# Import the communication interface
+file_path = Path(__file__).resolve().parent.parent / "prevac_protocol.py"
+spec = importlib.util.spec_from_file_location("prevac_protocol", file_path)
+prevac_protocol = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(prevac_protocol)
 
-from dataframe import SendingDataFrame
-
+SendingDataFrame = prevac_protocol.SendingDataFrame
+ReceiverDataFrame = prevac_protocol.ReceivingDataFrame
 
 class DataFrameTest(unittest.TestCase):
     """Test the data frame class."""
