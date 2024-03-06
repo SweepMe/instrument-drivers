@@ -2,6 +2,7 @@ import struct
 
 
 class DataFrame:
+    """Base class for the PREVAC V2.x Communication Protocol data frame."""
     def __init__(self) -> None:
         """Initialize the data frame. Set everything to 0."""
         # Make everything int and convert to char when needed
@@ -106,9 +107,22 @@ class SendingDataFrame(DataFrame):
 class ReceivingDataFrame(DataFrame):
     """Class for receiving. Inherits from DataFrame."""
 
-    def __init__(self, device: int, host: int, command: int, data: [int]):
-        super().__init__(device, host, command, data)
-        self.start_byte = 0xBC
+    def __init__(self, device: bytes, host: bytes, msb: bytes, lsb: bytes, data: bytearray, checksum: bytes) -> None:
+        super().__init__()
+        self.host = host[0]
+        self.device = device[0]
+        self.msb = msb[0]
+        self.lsb = lsb[0]
+        self.data = data  # How to transform to int?
+        self.received_checksum = checksum[0]
+
+    def check_checksum(self) -> None:
+        """Check if the checksum is correct and raise an exception if it is not."""
+        self.generate_checksum()
+
+        if self.checksum != self.received_checksum:
+            msg = "PREVAC TMC13: Checksums do not match"
+            raise Exception(msg)
 
     def check_error_code(self) -> None:
         """Check if the error code is in the list of PREVAC error codes and raise an exception if it is."""
