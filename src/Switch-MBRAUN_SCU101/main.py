@@ -26,7 +26,6 @@
 # SOFTWARE.
 
 # SweepMe! device class
-# Type: Switch
 # Device: MBRAUN SCU101
 
 from __future__ import annotations
@@ -87,6 +86,10 @@ class Device(EmptyDevice):
             5: "Blocked",
         }
 
+        self.start_state: str
+        self.end_state: str
+        self.timeout_seconds = 10
+
         # communication commands
         self.command_open = 0x0001
         self.command_close = 0x0002
@@ -97,11 +100,16 @@ class Device(EmptyDevice):
             "SweepMode": ["State", "None"],
             "Modbus address": "1",
             "Shutter number": ["1", "2"],
+            "State at start": ["As is", "Open", "Closed"],
+            "State at end": ["As is", "Open", "Closed"],
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:
         """Get parameters from the GUI and set them as attributes."""
         self.sweepmode = parameter["SweepMode"]
+
+        self.start_state = str(parameter["State at start"])
+        self.end_state = str(parameter["State at end"])
 
         self.port_string = parameter["Port"]
         self.address = int(parameter["Modbus address"])
@@ -131,34 +139,64 @@ class Device(EmptyDevice):
         """Disconnect from the device."""
         self.modbus.serial.close()
 
-    def initialize(self) -> None:
-        """Initialize the device."""
-        self.shutter_state = self.get_shutter_state()
+    def configure(self) -> None:
+        """Set initial state."""
+        self.update_and_check_shutter_state()
+
+        if self.start_state != "As is":
+            if self.start_state == "Open":
+                self.target_shutter_state = self.command_open
+            elif self.start_state == "Closed":
+                self.target_shutter_state = self.command_close
+            else:
+                msg = "Unspecified start state."
+                raise Exception(msg)
+
+            if self.shutter_state != self.target_shutter_state:
+                self.set_shutter_state(self.target_shutter_state)
+                self.await_shutter_movement_completion()
+
+    def unconfigure(self) -> None:
+        """Set end state."""
+        self.update_and_check_shutter_state()
+
+        if self.end_state != "As is":
+            if self.end_state == "Open":
+                self.target_shutter_state = self.command_open
+            elif self.end_state == "Closed":
+                self.target_shutter_state = self.command_close
+            else:
+                msg = "Unspecified end state."
+                raise Exception(msg)
+
+            if self.shutter_state != self.target_shutter_state:
+                self.set_shutter_state(self.target_shutter_state)
+                self.await_shutter_movement_completion()
 
     def apply(self) -> None:
         """Apply the settings."""
         if self.sweepmode == "State":
-            self.target_shutter_state = self.handle_set_state_input(self.value)
-            self.set_shutter_state(self.target_shutter_state)
+            _target_shutter_state = self.handle_set_state_input(self.value)
+            self.set_shutter_state(_target_shutter_state)
 
     def reach(self) -> None:
         """Wait for shutter to reach the new position."""
-        wait_time = 0.1
-        while self.shutter_state != self.target_shutter_state:
-            self.shutter_state = self.get_shutter_state()
-            self.check_for_fault_state()
-            time.sleep(wait_time)
+        self.await_shutter_movement_completion()
 
     def measure(self) -> None:
         """Measure the current state of the shutter."""
-        self.shutter_state = self.get_shutter_state()
-        self.check_for_fault_state()
+        self.update_and_check_shutter_state()
 
     def call(self) -> str:
         """Return the current state of the device."""
         return self.shutter_state_dict[self.shutter_state]
 
     """ SCU101 specific functions"""
+
+    def update_and_check_shutter_state(self) -> None:
+        """Update the current state of the shutter."""
+        self.shutter_state = self.get_shutter_state()
+        self.check_for_fault_state()
 
     def get_shutter_state(self) -> int:
         """Read the current state of the shutter."""
@@ -174,7 +212,7 @@ class Device(EmptyDevice):
 
     def handle_set_state_input(self, set_state_input: float | int | bool) -> hex:
         """Handle the input for the state of the shutter and return hex representation."""
-        if isinstance(set_state_input, (float, int)):
+        if isinstance(set_state_input, (float, int)):  # noqa: UP038
             state_hex = self.command_open if int(set_state_input) == 1 else self.command_close
 
         elif isinstance(set_state_input, bool):
@@ -195,6 +233,8 @@ class Device(EmptyDevice):
         shutter_set_mask = 0x0003
         execute_flag_mask = 0x0004
 
+        self.target_shutter_state = target_shutter_state
+
         # Create a mask to keep the current register values and only change bytes according the commands mask
         current_value = self.read_register(register_address, shutter_set_mask)
         value_to_write = (current_value & ~(shutter_set_mask | execute_flag_mask)) | (
@@ -206,6 +246,22 @@ class Device(EmptyDevice):
         value_to_write |= execute_flag_mask
         self.write_register(register_address, value_to_write)
 
+    def await_shutter_movement_completion(self) -> None:
+        """Wait for the shutter to reach the target state."""
+        start_time = time.time()
+        wait_time = 0.1
+
+        while self.shutter_state != self.target_shutter_state:
+            self.update_and_check_shutter_state()
+
+            elapsed_time = time.time() - start_time
+            if elapsed_time > self.timeout_seconds:
+                msg = "Shutter did not reach the target state within %s seconds." % self.timeout_seconds
+                raise Exception(msg)
+
+            time.sleep(wait_time)
+
+
     def write_register(self, address: int, value: int) -> None:
         """Write a register to the device."""
         self.modbus.write_register(address, value, functioncode=6)
@@ -215,6 +271,7 @@ class Device(EmptyDevice):
         if self.shutter_state_dict[self.shutter_state] == "Not connected":
             msg = "Unable to move the shutter as the controller is unable to connect to it."
             raise Exception(msg)
-        elif self.shutter_state_dict[self.shutter_state] == "Blocked":
+
+        if self.shutter_state_dict[self.shutter_state] == "Blocked":
             msg = "Unable to move the shutter as it is blocked."
             raise Exception(msg)
