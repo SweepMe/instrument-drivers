@@ -46,7 +46,7 @@ class Device(EmptyDevice):
         <ul>
         <li>E0: Set the MB Address</li>
         <li>E1-E2: Check baudrate (19200) and parity (E)</li>
-        <li>E4: Set MB Type to RS 232</li>
+        <li>E4: Set MB Type to RS 232 or RS485, depending on your connector.</li>
         </ul>
         <h4>Parameters</h4>
         <ul>
