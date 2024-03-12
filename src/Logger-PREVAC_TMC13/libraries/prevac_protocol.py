@@ -104,9 +104,11 @@ class PrevacCommunicationInterface:
         # Channel number is missing in the answer at position 0
         return struct.unpack(">d", answer[:9])[0]
 
-    def get_double_value_and_channel(self, command: int) -> tuple[int, float]:
-        """Return a double value if the answer contains the channel."""
-        self.send_data_frame(command, self.channel)
+    def get_double_value_and_channel(self, command: int, channel: str | None = None) -> tuple[int, float]:
+        r"""Return a double value if the answer contains the channel. Readout channel can be given in format \x01."""
+        _channel = channel if channel is not None else self.channel
+        self.send_data_frame(command, _channel)
+
         answer = self.receive_data_frame()
         channel = answer[0]
         double = struct.unpack(">d", answer[1:9])[0]
@@ -342,7 +344,14 @@ class ReceivingDataFrame(DataFrame):
     """Class for receiving. Inherits from DataFrame."""
 
     def __init__(
-        self, length: bytes, device: bytes, host: bytes, msb: bytes, lsb: bytes, data: bytearray, checksum: bytes,
+        self,
+        length: bytes,
+        device: bytes,
+        host: bytes,
+        msb: bytes,
+        lsb: bytes,
+        data: bytearray,
+        checksum: bytes,
     ) -> None:
         super().__init__()
         self.length = length[0]

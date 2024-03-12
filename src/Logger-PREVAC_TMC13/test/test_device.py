@@ -146,6 +146,13 @@ class GetterTests(unittest.TestCase):
         self.assertEqual(name, "SweepMeTest", "Material name is incorrect.")  # noqa: PT009
 
 
+    def test_get_pressure_by_channel(self) -> None:
+        """Test the reading of the pressure by channel."""
+        for channel in range(1, 3):
+            pressure = self.tmc.get_pressure(channel)
+            self.assertIsInstance(pressure, float, "Pressure has incorrect type.")  # noqa: PT009
+
+
 class SetterTests(unittest.TestCase):
     """Test data frame communication using PREVAC protocol."""
 

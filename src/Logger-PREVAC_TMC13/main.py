@@ -89,7 +89,8 @@ class Device(EmptyDevice):
         self.savetype = [True, True, True]
 
         # Device Parameter
-        self.should_read_pressure: bool = False
+        self.should_read_pressure_1: bool = False
+        self.should_read_pressure_2: bool = False
         self.should_reset_thickness: bool = False
 
         self.tooling_factor: float
@@ -115,13 +116,15 @@ class Device(EmptyDevice):
         return {
             "Channel": ["1", "2", "3", "4", "5", "6"],
             "Reset thickness": False,  # To avoid accidental resetting when recording
-            "Read pressure": False,
             "Set tooling": False,
             "Tooling in %": "100.0",
             "Set density": False,
             "Density in g/cm^3": "1.3",
             "Set acoustic impedance": False,
             "Acoustic impedance in 1e5 g/cm²/s": 1.0,
+            " ": None,
+            "Read pressure 1": False,
+            "Read pressure 2": False,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:
@@ -129,13 +132,6 @@ class Device(EmptyDevice):
         # Channel number must be of \x01 format
         channel = parameter["Channel"]
         self.channel = int(channel).to_bytes(1, byteorder="big").decode("latin1")
-
-        self.should_read_pressure = bool(parameter["Read pressure"])
-        if self.should_read_pressure:
-            self.variables.append("Pressure")
-            self.units.append("mbar")
-            self.plottype.append(True)
-            self.savetype.append(True)
 
         self.should_reset_thickness = bool(parameter["Reset thickness"])
 
@@ -148,10 +144,26 @@ class Device(EmptyDevice):
         self.should_set_acoustic_impedance = bool(parameter["Set acoustic impedance"])
         self.acoustic_impedance = float(parameter["Acoustic impedance in 1e5 g/cm²/s"])
 
+        self.should_read_pressure_1 = bool(parameter["Read pressure 1"])
+        if self.should_read_pressure_1:
+            self.variables.append("Pressure 1")
+            self.units.append("mbar")
+            self.plottype.append(True)
+            self.savetype.append(True)
+
+        self.should_read_pressure_2 = bool(parameter["Read pressure 2"])
+        if self.should_read_pressure_2:
+            self.variables.append("Pressure 2")
+            self.units.append("mbar")
+            self.plottype.append(True)
+            self.savetype.append(True)
+
     def connect(self) -> None:
         """Enable Remote Control on the device."""
         self.prevac_interface = PrevacCommunication.PrevacCommunicationInterface(
-            self.port, self.host_address, self.channel,
+            self.port,
+            self.host_address,
+            self.channel,
         )
 
         self.register_host()
@@ -200,8 +212,10 @@ class Device(EmptyDevice):
         """Return the current thickness, rate and crystal life."""
         measured_values = [self.get_thickness(), self.get_rate(), self.get_crystal_life()]
 
-        if self.should_read_pressure:
-            measured_values.append(self.get_pressure())
+        if self.should_read_pressure_1:
+            measured_values.append(self.get_pressure(1))
+        if self.should_read_pressure_2:
+            measured_values.append(self.get_pressure(2))
 
         return measured_values
 
@@ -249,10 +263,13 @@ class Device(EmptyDevice):
 
         return rate_unit_dict[unit]
 
-    def get_pressure(self) -> float:
-        """Returns the pressure in mbar."""
+    def get_pressure(self, channel: int = 1) -> float:
+        """Returns the pressure in mbar of the given channel."""
         command = 0x0101
-        channel, pressure = self.prevac_interface.get_double_value_and_channel(command)
+
+        # Channel number must be of \x01 format
+        _channel = channel.to_bytes(1, byteorder="big").decode("latin1")
+        channel, pressure = self.prevac_interface.get_double_value_and_channel(command, _channel)
 
         return pressure
 
