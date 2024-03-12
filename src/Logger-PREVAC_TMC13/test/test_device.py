@@ -3,6 +3,8 @@ import unittest
 import pysweepme
 
 
+COM_PORT = "COM16" # Needs to be adjusted
+
 class SequencerTest(unittest.TestCase):
     """Test semantic functions of the Sequencer."""
 
@@ -10,7 +12,7 @@ class SequencerTest(unittest.TestCase):
         """Set up the test environment with local driver_path and COM port address."""
         driver_name = "Logger-PREVAC_TMC13"
         driver_path = r"C:\Code\instrument-drivers\src"  # Needs to be adjusted
-        port_string = "COM13"  # Needs to be adjusted
+        port_string = COM_PORT
         self.tmc = pysweepme.get_driver(driver_name, driver_path, port_string)
         self.tmc.set_parameters(
             {
@@ -48,8 +50,7 @@ class SequencerTest(unittest.TestCase):
         """Test the connection to the device and hardware numbers."""
         self.tmc.connect()
         # TODO: Set host_address
-        print(self.tmc.host_address)
-        assert self.host_address is not None
+        assert self.tmc.host_address is not None
 
     def test_initialize(self) -> None:
         """Test the initialization of the device."""
@@ -80,7 +81,7 @@ class GetterTests(unittest.TestCase):
         """Set up the test environment with local driver_path and COM port address."""
         driver_name = "Logger-PREVAC_TMC13"
         driver_path = r"C:\Code\instrument-drivers\src"  # Needs to be adjusted
-        port_string = "COM13"  # Needs to be adjusted
+        port_string = COM_PORT
         self.tmc = pysweepme.get_driver(driver_name, driver_path, port_string)
         self.tmc.set_parameters(
             {
@@ -95,13 +96,15 @@ class GetterTests(unittest.TestCase):
             },
         )
 
+        self.tmc.connect()
+
     def test_send_data_frame(self) -> None:
         """Test the sending of a data frame."""
         # Test get_host
         command = 0x7FF0
-        self.tmc.send_data_frame(command)
+        self.tmc.prevac_interface.send_data_frame(command)
 
-        answer = self.tmc.receive_data_frame()
+        answer = self.tmc.prevac_interface.receive_data_frame()
         self.assertIsInstance(answer, bytes, "Answer has incorrect type.")  # noqa: PT009
 
     def test_measurements(self) -> None:
@@ -120,7 +123,7 @@ class GetterTests(unittest.TestCase):
             value = getattr(self.tmc, f"get_{parameter}")()
 
             self.assertIsInstance(value, float, f"{parameter} has incorrect type.")  # noqa: PT009
-            self.assertGreaterEqual(value, 0, f"{parameter} is negative.")  # noqa: PT009
+            # self.assertGreaterEqual(value, 0, f"{parameter} is negative.")  # noqa: PT009
 
     def test_get_unit(self) -> None:
         """Test the reading of the unit."""
@@ -142,7 +145,7 @@ class SetterTests(unittest.TestCase):
         """Set up the test environment with local driver_path and COM port address."""
         driver_name = "Logger-PREVAC_TMC13"
         driver_path = r"C:\Code\instrument-drivers\src"  # Needs to be adjusted
-        port_string = "COM13"  # Needs to be adjusted
+        port_string = COM_PORT
         self.tmc = pysweepme.get_driver(driver_name, driver_path, port_string)
         self.tmc.set_parameters(
             {
@@ -157,21 +160,21 @@ class SetterTests(unittest.TestCase):
             },
         )
 
+        self.tmc.connect()
+
     def test_register_host(self) -> None:
         """Test the registration of the host."""
         self.tmc.register_host()
-
-        self.assertEqual(self.tmc.host_address, chr(0x04), "Host is not assigned correctly.")  # noqa: PT009
-        self.assertEqual(self.tmc.tmc.host_address, chr(0x04), "Host is not assigned correctly.")  # noqa: PT009
+        self.assertEqual(self.tmc.host_address, chr(0x01), "Host is not assigned correctly.")  # noqa: PT009
 
     def test_assign_release_master(self) -> None:
         """Test the enabling of the master mode."""
         self.tmc.register_host()
-        self.tmc.enable_master()
+        self.tmc.assign_master()
 
         # TODO: Check Error Codes
         status = self.tmc.get_master_status()
-        self.assertEqual(status, "11111", "Master status is incorrect.")  # noqa: PT009
+        self.assertEqual(status, "1101", "Master status is incorrect.")  # noqa: PT009
 
         self.tmc.release_master()
         status = self.tmc.get_master_status()

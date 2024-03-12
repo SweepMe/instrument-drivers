@@ -75,6 +75,7 @@ class PrevacCommunicationInterface:
         checksum = self.port.read(1)
 
         dataframe = ReceivingDataFrame(
+            length=length,
             device=device,
             host=host,
             msb=msb,
@@ -226,7 +227,7 @@ class DataFrame:
         self.host: int = 0x00
         self.device: int = 0x00
         self.command: int = 0x00
-        self.data: int = 0x00
+        self.data: [int] = []
 
         self.msb: int = 0x00
         self.lsb: int = 0x00
@@ -257,14 +258,14 @@ class DataFrame:
 class SendingDataFrame(DataFrame):
     """Class for sending. Inherits from DataFrame."""
 
-    def __init__(self, device: int, host: int, command: int, data: [int]) -> None:
+    def __init__(self, device: int, host: int, command: int, data: str) -> None:
         """Initialize the sending data frame."""
         super().__init__()
 
         self.device = device
         self.host = host
         self.command = command
-        self.data = data
+        self.data = [ord(symbol) for symbol in data]  # convert to [int]
 
         self.generate_length()
         self.generate_msb_lsb()
@@ -324,13 +325,14 @@ class SendingDataFrame(DataFrame):
 class ReceivingDataFrame(DataFrame):
     """Class for receiving. Inherits from DataFrame."""
 
-    def __init__(self, device: bytes, host: bytes, msb: bytes, lsb: bytes, data: bytearray, checksum: bytes) -> None:
+    def __init__(self, length: bytes, device: bytes, host: bytes, msb: bytes, lsb: bytes, data: bytearray, checksum: bytes) -> None:
         super().__init__()
+        self.length = length[0]
         self.host = host[0]
         self.device = device[0]
         self.msb = msb[0]
         self.lsb = lsb[0]
-        self.data = data  # How to transform to int?
+        self.data = list(data)  # convert to [int] data  # How to transform to int?
         self.received_checksum = checksum[0]
 
     def check_checksum(self) -> None:
@@ -338,7 +340,7 @@ class ReceivingDataFrame(DataFrame):
         self.generate_checksum()
 
         if self.checksum != self.received_checksum:
-            msg = "PREVAC TMC13: Checksums do not match"
+            msg = f"PREVAC TMC13: Checksums do not match. {self.checksum} != {self.received_checksum}"
             raise Exception(msg)
 
     def check_error_code(self) -> None:

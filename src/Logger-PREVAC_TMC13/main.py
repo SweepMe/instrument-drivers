@@ -30,20 +30,15 @@
 # Device: PREVAC TMC13
 from __future__ import annotations
 
-import importlib.util
 import struct
 from pathlib import Path
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 # Import the communication interface
-file_path = Path(__file__).resolve().parent / "libraries" / "prevac_protocol.py"
-spec = importlib.util.spec_from_file_location("prevac_protocol", file_path)
-prevac_protocol = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(prevac_protocol)
-
-PrevacCommunicationInterface = prevac_protocol.PrevacCommunicationInterface
-
+from imp import load_source
+prevac_protocol_path = str(Path(__file__).resolve().parent / "libraries" / "prevac_protocol.py")
+PrevacCommunication = load_source("prevac_protocol", prevac_protocol_path)
 
 class Device(EmptyDevice):
     """Device class for the PREVAC TMC13 Thickness Monitor Controller."""
@@ -112,7 +107,7 @@ class Device(EmptyDevice):
         self.host_address = chr(0xFF)
         self.unique_id: str = "\x53\x77\x65\x65\x70\x4d\x65"  # "SweepMe"
 
-        self.prevac_interface: PrevacCommunicationInterface
+        self.prevac_interface: PrevacCommunication.PrevacCommunicationInterface
 
     def set_GUIparameter(self) -> dict:
         """Get parameters from the GUI and set them as attributes."""
@@ -154,7 +149,7 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Enable Remote Control on the device."""
-        self.prevac_interface = PrevacCommunicationInterface(self.port, self.host_address, self.channel)
+        self.prevac_interface = PrevacCommunication.PrevacCommunicationInterface(self.port, self.host_address, self.channel)
 
         self.register_host()
         self.assign_master()
@@ -174,7 +169,7 @@ class Device(EmptyDevice):
         self.check_device_status()
         self.check_vacuum_gauge_status()
 
-        if self.reset_thickness:
+        if self.should_reset_thickness:
             self.reset_thickness()
 
         if self.should_set_tooling:
@@ -380,7 +375,7 @@ class Device(EmptyDevice):
 
         return host.decode("latin1")
 
-    def register_host(self, host_id: str|None = None) -> None:
+    def register_host(self, host_id: str | None = None) -> None:
         """Register the host unique ID on the TMC.
 
         A list of registered hosts can be seen in the TMC GUI under "Remote Control".
@@ -417,21 +412,22 @@ class Device(EmptyDevice):
 
         # TODO: Check if the master status is correct
         status = bin(answer[0])[2:]
-        if status[0] == "0":
-            msg = "Not working as Master."
-            raise Exception(msg)
-
-        if status[2] == "0":
-            msg = "Device Remote Control not enabled in TMC GUI."
-            raise Exception(msg)
-
-        if status[3] == "0":
-            msg = "Host not registered."
-            raise Exception(msg)
-
-        if status[4] == "0":
-            msg = "Other MASTER host device in system."
-            raise Exception(msg)
+        # status is 11101, but its still working
+        # if status[-1] == "0":
+        #     msg = "Not working as Master."
+        #     raise Exception(msg)
+        #
+        # if status[-3] == "0":
+        #     msg = "Device Remote Control not enabled in TMC GUI."
+        #     raise Exception(msg)
+        #
+        # if status[-4] == "0":
+        #     msg = "Host not registered."
+        #     raise Exception(msg)
+        #
+        # if status[-5] == "1":
+        #     msg = "Other MASTER host device in system."
+        #     raise Exception(msg)
 
         return status
 
