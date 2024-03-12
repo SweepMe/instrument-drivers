@@ -112,6 +112,19 @@ class PrevacCommunicationInterface:
         double = struct.unpack(">d", answer[1:9])[0]
         return channel, double
 
+    def send_double_value_and_channel(self, command: int, value: float) -> None:
+        """Send double value and the channel to the device."""
+        value_range = [0.1, 999.99]
+        if value < value_range[0] or value > value_range[1]:
+            msg = f"Unaccepted send_double_value of {value}. Please enter a float number between 0.1 and 999.99"
+            raise Exception(msg)
+
+        # Pack the float into a bytes object (64-bit double precision)
+        bytes_obj = struct.pack(">d", value)
+        data = self.channel + bytes_obj.decode("latin1")
+
+        self.send_data_frame(command, data)
+
     def get_byte_value(self, command: int) -> int:
         """Return a byte value."""
         self.send_data_frame(command, self.channel)
@@ -141,17 +154,18 @@ class PrevacCommunicationInterface:
         answer = self.receive_data_frame()
         error_code = bytes(answer[-1:])
         if error_code in error_codes:
-            msg = error_codes[error_code]
+            msg = "TMC13 Error " + str(error_code) + error_codes[error_code]
             raise Exception(msg)
 
         return answer
 
-    def check_error_status(self) -> None:
+    def check_error_status(self, error_index: int) -> int:
         """Check the device status for errors."""
-        # TODO: Check if error index needs to be sent as value
         command = 0x7F51
-        self.send_data_frame(command)
+        value = str(error_index)
+        self.send_data_frame(command, value)
         answer = self.receive_data_frame()
+
         # TODO: Check return type
         error = answer[1:]
 
@@ -192,11 +206,13 @@ class PrevacCommunicationInterface:
             msg = "Prevac Error: " + error_codes[error]
             raise Exception(msg)
 
-    def check_warning_status(self) -> None:
+    def check_warning_status(self, warning_index: int) -> None:
         """Check the device status for warnings."""
         command = 0x7F52
-        self.send_data_frame(command)
+        value = str(warning_index)
+        self.send_data_frame(command, value)
         answer = self.receive_data_frame()
+
         # TODO: Check return type
         warning = answer[1:]
 
@@ -325,7 +341,9 @@ class SendingDataFrame(DataFrame):
 class ReceivingDataFrame(DataFrame):
     """Class for receiving. Inherits from DataFrame."""
 
-    def __init__(self, length: bytes, device: bytes, host: bytes, msb: bytes, lsb: bytes, data: bytearray, checksum: bytes) -> None:
+    def __init__(
+        self, length: bytes, device: bytes, host: bytes, msb: bytes, lsb: bytes, data: bytearray, checksum: bytes,
+    ) -> None:
         super().__init__()
         self.length = length[0]
         self.host = host[0]

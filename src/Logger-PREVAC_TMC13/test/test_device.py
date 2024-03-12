@@ -2,8 +2,8 @@ import unittest
 
 import pysweepme
 
+COM_PORT = "COM16"  # Needs to be adjusted
 
-COM_PORT = "COM16" # Needs to be adjusted
 
 class SequencerTest(unittest.TestCase):
     """Test semantic functions of the Sequencer."""
@@ -43,7 +43,9 @@ class SequencerTest(unittest.TestCase):
         float_parameters = ["tooling_factor", "density", "acoustic_impedance"]
         for parameter in float_parameters:
             self.assertIsInstance(
-                getattr(self.tmc, parameter), float, f"{parameter} has incorrect type.",
+                getattr(self.tmc, parameter),
+                float,
+                f"{parameter} has incorrect type.",
             )
 
     def test_connect(self) -> None:
@@ -113,7 +115,8 @@ class GetterTests(unittest.TestCase):
             "thickness",
             "rate",
             "tooling_factor",
-            # "material_density",
+            "material_density",
+            "material_acoustic_impedance",
             "crystal_frequency",
             "maximum_frequency",
             "minimum_frequency",
@@ -123,12 +126,12 @@ class GetterTests(unittest.TestCase):
             value = getattr(self.tmc, f"get_{parameter}")()
 
             self.assertIsInstance(value, float, f"{parameter} has incorrect type.")  # noqa: PT009
-            # self.assertGreaterEqual(value, 0, f"{parameter} is negative.")  # noqa: PT009
+            # self.assertGreaterEqual(value, 0, f"{parameter} is negative.")
 
     def test_get_unit(self) -> None:
         """Test the reading of the unit."""
         parameter_dict = {
-            "thickness" : "A",
+            "thickness": "A",
             "rate": "A/s",
             "pressure": "mbar",
         }
@@ -136,6 +139,11 @@ class GetterTests(unittest.TestCase):
         for parameter in parameter_dict:
             unit = getattr(self.tmc, f"get_{parameter}_unit")()
             self.assertEqual(unit, parameter_dict[parameter], f"{parameter} unit is incorrect.")  # noqa: PT009
+
+    def test_get_material_name(self) -> None:
+        """Test the reading of the material name."""
+        name = self.tmc.get_material_name()
+        self.assertEqual(name, "SweepMeTest", "Material name is incorrect.")  # noqa: PT009
 
 
 class SetterTests(unittest.TestCase):
@@ -189,27 +197,46 @@ class SetterTests(unittest.TestCase):
 
     def test_set_tooling(self) -> None:
         """Test the setting of the tooling."""
-        tooling = 50.0
-        self.tmc.set_tooling(tooling)
+        old_tooling = self.tmc.get_tooling_factor()
+
+        tooling = 72  # The same value as in the setup
+        self.tmc.set_tooling_factor(tooling)
 
         new_tooling = self.tmc.get_tooling_factor()
         self.assertEqual(new_tooling, tooling, "Tooling is not set correctly.")  # noqa: PT009
 
     def test_set_density(self) -> None:
         """Test the setting of the density."""
-        density = 1.5
+        old_density = self.tmc.get_material_density()
+
+        density = old_density + 0.1
         self.tmc.set_material_density(density)
 
         new_density = self.tmc.get_material_density()
-        self.assertEqual(new_density, density, "Density is not set correctly.")  # noqa: PT009
+        self.assertEqual(density, new_density, "Density is not set correctly.")  # noqa: PT009
 
     def test_set_acoustic_impedance(self) -> None:
         """Test the setting of the acoustic impedance."""
-        acoustic_impedance = 1.5
-        self.tmc.set_acoustic_impedance(acoustic_impedance)
+        old_impedance = self.tmc.get_material_acoustic_impedance()
 
-        new_acoustic_impedance = self.tmc.get_acoustic_impedance()
-        self.assertEqual(new_acoustic_impedance, acoustic_impedance, "Acoustic impedance is not set correctly.")  # noqa: PT009
+        acoustic_impedance = old_impedance + 0.1
+        self.tmc.set_material_acoustic_impedance(acoustic_impedance)
+
+        new_acoustic_impedance = self.tmc.get_material_acoustic_impedance()
+        self.assertEqual(
+            new_acoustic_impedance,
+            acoustic_impedance,
+            "Acoustic impedance is not set correctly.",
+        )
+
+    def test_check_device_status(self) -> None:
+        """Test the reading of the error status."""
+        self.tmc.check_device_status()
+
+    def test_check_error_status(self) -> None:
+        """Test the reading of the error status."""
+        self.tmc.prevac_interface.check_error_status()
+
 
 if __name__ == "__main__":
     unittest.main()

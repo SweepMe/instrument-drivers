@@ -30,15 +30,15 @@
 # Device: PREVAC TMC13
 from __future__ import annotations
 
-import struct
+# Import the communication interface
+from imp import load_source
 from pathlib import Path
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
-# Import the communication interface
-from imp import load_source
 prevac_protocol_path = str(Path(__file__).resolve().parent / "libraries" / "prevac_protocol.py")
 PrevacCommunication = load_source("prevac_protocol", prevac_protocol_path)
+
 
 class Device(EmptyDevice):
     """Device class for the PREVAC TMC13 Thickness Monitor Controller."""
@@ -55,7 +55,8 @@ class Device(EmptyDevice):
         <li>Set the channel number according to your hardware.</li>
         <li>Reset thickness: If set True, the thickness will be set to 0 at the start of the measurement.</li>
         <li>Set tooling/density/acoustic impedance: If set True, the given parameters will be set to the device.
-            Otherwise, the parameters set in the device GUI will be used.
+            Otherwise, the parameters set in the device GUI will be used. In general, the device does not save the
+            changes in the material properties after the measurement.
         </li>
     </ul>
     """
@@ -149,7 +150,9 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Enable Remote Control on the device."""
-        self.prevac_interface = PrevacCommunication.PrevacCommunicationInterface(self.port, self.host_address, self.channel)
+        self.prevac_interface = PrevacCommunication.PrevacCommunicationInterface(
+            self.port, self.host_address, self.channel,
+        )
 
         self.register_host()
         self.assign_master()
@@ -273,23 +276,22 @@ class Device(EmptyDevice):
 
     def get_material_name(self) -> str:
         """Return the material name."""
-        # TODO: Test if this function and decoding works
         command = 0x0213
         self.prevac_interface.send_data_frame(command, self.channel)
-        answer = self.prevac_interface.receive_data_frame()
+        answer = self.prevac_interface.receive_data_frame()[1:-1]
         return answer.decode("latin1")
 
     def get_material_density(self) -> float:
         """Returns density in g/cm³."""
-        # TODO: Currently not working, response is b'\x01@\x05\x99\x99\x99\x99\x99\x9a'
         command = 0x0214
-        return self.prevac_interface.get_double_value(command)
+        channel, density = self.prevac_interface.get_double_value_and_channel(command)
+        return density
 
     def get_material_acoustic_impedance(self) -> float:
         """Returns acoustic impedance in 1e5g/cm²/s."""
-        # TODO: test if this function works
         command = 0x0215
-        return self.prevac_interface.get_double_value(command)
+        channel, acoustic_impedance = self.prevac_interface.get_double_value_and_channel(command)
+        return acoustic_impedance
 
     def get_crystal_life(self) -> float:
         """Returns crystal life in %."""
@@ -319,10 +321,17 @@ class Device(EmptyDevice):
         self.prevac_interface.send_data_frame(command)
         status = self.prevac_interface.receive_data_frame()
 
-        if status[0] > 0:
-            self.prevac_interface.check_error_status()
-        if status[1] > 0:
-            self.prevac_interface.check_warning_status()
+        number_of_errors = status[0]
+        number_of_warnings = status[1]
+
+        if number_of_errors > 0:
+            print(f"{number_of_errors} device errors detected")  # noqa: T201
+            for error_index in range(number_of_errors):
+                self.prevac_interface.check_error_status(error_index)
+        if number_of_warnings > 0:
+            print(f"{number_of_warnings} device warnings detected")  # noqa: T201
+            for warning_index in range(number_of_warnings):
+                self.prevac_interface.check_warning_status(warning_index)
 
     def check_vacuum_gauge_status(self) -> int:
         """Check the vacuum gauge status for errors and warnings."""
@@ -347,22 +356,22 @@ class Device(EmptyDevice):
     def set_tooling_factor(self, tooling_factor: float) -> None:
         """Set tooling factor in %."""
         command = 0x820D
-        value = struct.pack(">d", tooling_factor).decode("latin1")
-        self.prevac_interface.send_data_frame(command, str(self.channel + value))
+
+        self.prevac_interface.send_double_value_and_channel(command, tooling_factor)
         self.prevac_interface.check_response_for_errors()
 
     def set_material_density(self, density: float) -> None:
         """Set density in g/cm³."""
         command = 0x8214  # +8 in MSB for write command
-        value = "%1.2f" % float(density)
-        self.prevac_interface.send_data_frame(command, str(self.channel + value))
+
+        self.prevac_interface.send_double_value_and_channel(command, density)
         self.prevac_interface.check_response_for_errors()
 
     def set_material_acoustic_impedance(self, impedance: float) -> None:
         """Set acoustic impedance in 1e5g/cm²/s."""
         command = 0x8215  # +8 in MSB for write command
-        value = struct.pack(">d", impedance).decode("latin1")
-        self.prevac_interface.send_data_frame(command, self.channel + value)
+
+        self.prevac_interface.send_double_value_and_channel(command, impedance)
         self.prevac_interface.check_response_for_errors()
 
     """ Remote Control Configuration """
