@@ -80,13 +80,7 @@ class Device(EmptyDevice):
 
         self.source = parameter['SweepMode']
         self.protection = parameter['Compliance']
-        # self.average = int(parameter['Average'])
-        
-        # if self.average < 1:
-            # self.average = 1
-        # if self.average > 100:
-            # self.average = 100
-        
+
     def initialize(self):
 
         identifier = self.get_identification()
@@ -99,21 +93,16 @@ class Device(EmptyDevice):
             self.port.write("VSET1:%1.2f" % float(self.protection))
 
     def poweron(self):
-        self.port.write("OUT1")
+        self.set_output(1)
         
     def poweroff(self):
-        self.port.write("OUT0")
+        self.set_output(0)
 
     def apply(self):
         self.port.write(self.commands[self.source] + "1:%1.2f" % float(self.value))
 
     def measure(self):        
-        # self.port.write("VSET1?")
-        # self.vset = float(self.port.read(5))
-        
-        # self.port.write("ISET1?")
-        # self.iset = float(self.port.read(6)[:-1])
-        
+
         self.port.write("IOUT1?")
         answer = self.port.read(5)
         try:
@@ -155,3 +144,22 @@ class Device(EmptyDevice):
         # When using Virtual COM port, a \x00 character is at the end of the message that cannot be printed
         identifier = self.port.read(self.port.in_waiting()).replace("\x00", "")
         return identifier
+
+    def get_voltage_limit(self):
+        self.port.write("VSET1?")
+        vset = float(self.port.read(5))
+        return vset
+
+    def get_current_limit(self):
+        self.port.write("ISET1?")
+        iset = float(self.port.read(6)[:-1])
+        return iset
+
+    def set_output(self, state):
+
+        if not state:
+            state = 0
+        else:
+            state = 1
+
+        self.port.write("OUT%i" % state)
