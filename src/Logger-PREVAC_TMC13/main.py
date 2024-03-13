@@ -95,10 +95,9 @@ class Device(EmptyDevice):
         self.should_set_tooling: bool = False
         self.tooling_factor: float = 100.0
 
-        self.should_set_acoustic_impedance: bool = False
+        self.use_custom_material: bool = False
+        self.material_name: str = ""  # Not read out or returned yet, can be used for documentation
         self.acoustic_impedance: float = 1.0
-
-        self.should_set_density: bool = False
         self.density: float = 1.3
 
         self.should_read_pressure_1: bool = False
@@ -120,9 +119,10 @@ class Device(EmptyDevice):
             "Reset thickness": False,  # To avoid accidental resetting when recording
             "Set tooling": False,
             "Tooling in %": "100.0",
-            "Set density": False,
+            "  ": None,
+            "Custom material": False,
+            "Name": "",
             "Density in g/cm^3": "1.3",
-            "Set acoustic impedance": False,
             "Acoustic impedance in 1e5 g/cm²/s": 1.0,
             " ": None,
             "Read pressure 1": False,
@@ -136,16 +136,16 @@ class Device(EmptyDevice):
         self.channel = int(channel).to_bytes(1, byteorder="big").decode("latin1")
 
         self.should_reset_thickness = bool(parameter["Reset thickness"])
-
         self.should_set_tooling = bool(parameter["Set tooling"])
         self.tooling_factor = float(parameter["Tooling in %"])
 
-        self.should_set_density = bool(parameter["Set density"])
+        # Custom Material Properties
+        self.use_custom_material = bool(parameter["Custom material"])
+        self.material_name = str(parameter["Name"])
         self.density = float(parameter["Density in g/cm^3"])
-
-        self.should_set_acoustic_impedance = bool(parameter["Set acoustic impedance"])
         self.acoustic_impedance = float(parameter["Acoustic impedance in 1e5 g/cm²/s"])
 
+        # Pressure Readings
         self.should_read_pressure_1 = bool(parameter["Read pressure 1"])
         if self.should_read_pressure_1:
             self.add_pressure_readings(1)
@@ -193,10 +193,9 @@ class Device(EmptyDevice):
         if self.should_set_tooling:
             self.set_tooling_factor(self.tooling_factor)
 
-        if self.should_set_density:
+        if self.use_custom_material:
+            self.set_material_name(self.material_name)
             self.set_material_density(self.density)
-
-        if self.should_set_acoustic_impedance:
             self.set_material_acoustic_impedance(self.acoustic_impedance)
 
     def call(self) -> list[float]:
@@ -405,6 +404,17 @@ class Device(EmptyDevice):
 
         command = 0x820D
         self.prevac_interface.send_double_value_and_channel(command, tooling_factor)
+        self.prevac_interface.check_response_for_errors()
+
+    def set_material_name(self, name: str) -> None:
+        """Set the name of the material."""
+        if name == "":
+            msg = "Custom material name cannot be empty."
+            raise Exception(msg)
+
+        command = 0x8213  # +8 in MSB for write command
+        # TODO: Check if the name is in correct format
+        self.prevac_interface.send_data_frame(command, name)
         self.prevac_interface.check_response_for_errors()
 
     def set_material_density(self, density: float) -> None:
