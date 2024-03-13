@@ -3,17 +3,15 @@ import unittest
 import pysweepme
 
 COM_PORT = "COM16"  # Needs to be adjusted
-
+DRIVER_PATH = r"C:\~\instrument-drivers\src"  # Needs to be adjusted
+DRIVER_NAME = "Logger-PREVAC_TMC13"
 
 class SequencerTest(unittest.TestCase):
     """Test semantic functions of the Sequencer."""
 
     def setUp(self) -> None:
         """Set up the test environment with local driver_path and COM port address."""
-        driver_name = "Logger-PREVAC_TMC13"
-        driver_path = r"C:\Code\instrument-drivers\src"  # Needs to be adjusted
-        port_string = COM_PORT
-        self.tmc = pysweepme.get_driver(driver_name, driver_path, port_string)
+        self.tmc = pysweepme.get_driver(DRIVER_NAME, DRIVER_PATH, COM_PORT)
         self.tmc.set_parameters(
             {
                 "Channel": "1",  # Currently not used
@@ -51,7 +49,6 @@ class SequencerTest(unittest.TestCase):
     def test_connect(self) -> None:
         """Test the connection to the device and hardware numbers."""
         self.tmc.connect()
-        # TODO: Set host_address
         assert self.tmc.host_address is not None
 
     def test_initialize(self) -> None:
@@ -81,10 +78,7 @@ class GetterTests(unittest.TestCase):
 
     def setUp(self) -> None:
         """Set up the test environment with local driver_path and COM port address."""
-        driver_name = "Logger-PREVAC_TMC13"
-        driver_path = r"C:\Code\instrument-drivers\src"  # Needs to be adjusted
-        port_string = COM_PORT
-        self.tmc = pysweepme.get_driver(driver_name, driver_path, port_string)
+        self.tmc = pysweepme.get_driver(DRIVER_NAME, DRIVER_PATH, COM_PORT)
         self.tmc.set_parameters(
             {
                 "Channel": "1",
@@ -126,7 +120,6 @@ class GetterTests(unittest.TestCase):
             value = getattr(self.tmc, f"get_{parameter}")()
 
             self.assertIsInstance(value, float, f"{parameter} has incorrect type.")  # noqa: PT009
-            # self.assertGreaterEqual(value, 0, f"{parameter} is negative.")
 
     def test_get_unit(self) -> None:
         """Test the reading of the unit."""
@@ -158,10 +151,7 @@ class SetterTests(unittest.TestCase):
 
     def setUp(self) -> None:
         """Set up the test environment with local driver_path and COM port address."""
-        driver_name = "Logger-PREVAC_TMC13"
-        driver_path = r"C:\Code\instrument-drivers\src"  # Needs to be adjusted
-        port_string = COM_PORT
-        self.tmc = pysweepme.get_driver(driver_name, driver_path, port_string)
+        self.tmc = pysweepme.get_driver(DRIVER_NAME, DRIVER_PATH, COM_PORT)
         self.tmc.set_parameters(
             {
                 "Channel": "1",
