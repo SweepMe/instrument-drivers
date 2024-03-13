@@ -244,6 +244,5 @@ class SetterTests(unittest.TestCase):
         """Test the reading of the error status."""
         self.tmc.prevac_interface.check_error_status()
 
-
 if __name__ == "__main__":
     unittest.main()

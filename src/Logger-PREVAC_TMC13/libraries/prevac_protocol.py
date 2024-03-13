@@ -29,12 +29,17 @@ from __future__ import annotations
 
 import struct
 
+import pysweepme
+
 
 class PrevacCommunicationInterface:
     """Class for the communication interface to the Prevac TMC13 device using the Prevac V2.x protocol."""
 
-    def __init__(self, port, host_address: str, channel: str) -> None:
-        """Initialize the communication interface."""
+    def __init__(self, port: pysweepme.Ports.Port, host_address: str, channel: str) -> None:
+        """Initialize the communication interface.
+
+        When importing in an EmptyDevice instance, the port object is self.port.
+        """
         self.port = port
         self.device_address = chr(0x01)
         self.host_address = host_address
@@ -52,7 +57,7 @@ class PrevacCommunicationInterface:
             device=ord(self.device_address),
             host=ord(self.host_address),
             command=command,
-            data=data,  # TODO: test if data is a string
+            data=data,
         )
 
         self.port.write(dataframe.command_to_write)
@@ -116,11 +121,6 @@ class PrevacCommunicationInterface:
 
     def send_double_value_and_channel(self, command: int, value: float) -> None:
         """Send double value and the channel to the device."""
-        value_range = [0.1, 999.99]
-        if value < value_range[0] or value > value_range[1]:
-            msg = f"Unaccepted send_double_value of {value}. Please enter a float number between 0.1 and 999.99"
-            raise Exception(msg)
-
         # Pack the float into a bytes object (64-bit double precision)
         bytes_obj = struct.pack(">d", value)
         data = self.channel + bytes_obj.decode("latin1")
@@ -166,11 +166,9 @@ class PrevacCommunicationInterface:
         command = 0x7F51
         value = str(error_index)
         self.send_data_frame(command, value)
-        answer = self.receive_data_frame()
+        error = self.receive_data_frame()[1:]
 
-        # TODO: Check return type
-        error = answer[1:]
-
+        # Not sure if all of these error codes are retrieved with the command 0x7F51
         error_codes = {
             0x7F01: "Internal communication error",
             0x7F02: "Communication with Anybus module error",
@@ -213,10 +211,7 @@ class PrevacCommunicationInterface:
         command = 0x7F52
         value = str(warning_index)
         self.send_data_frame(command, value)
-        answer = self.receive_data_frame()
-
-        # TODO: Check return type
-        warning = answer[1:]
+        warning = self.receive_data_frame()[1:]
 
         warning_codes = {
             0x7F80: "Low disk space",
@@ -289,7 +284,7 @@ class SendingDataFrame(DataFrame):
         self.generate_msb_lsb()
         self.generate_checksum()
 
-        self.command_to_write: bytes
+        self.command_to_write: bytes = b""
         self.generate_command_to_write()
 
     def generate_length(self) -> None:
@@ -353,6 +348,7 @@ class ReceivingDataFrame(DataFrame):
         data: bytearray,
         checksum: bytes,
     ) -> None:
+        """Initialize the receiving data frame from received byte values."""
         super().__init__()
         self.length = length[0]
         self.host = host[0]

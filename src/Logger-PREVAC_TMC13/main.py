@@ -35,6 +35,7 @@ from imp import load_source
 from pathlib import Path
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import debug
 
 prevac_protocol_path = str(Path(__file__).resolve().parent / "libraries" / "prevac_protocol.py")
 PrevacCommunication = load_source("prevac_protocol", prevac_protocol_path)
@@ -58,10 +59,11 @@ class Device(EmptyDevice):
             Otherwise, the parameters set in the device GUI will be used. In general, the device does not save the
             changes in the material properties after the measurement.
         </li>
+        <li>Read pressure 1/2: Enables readout of pressure sensors in channel 1 and 2.</li>
     </ul>
     """
 
-    actions = ["reset_thickness"]
+    actions = ["reset_thickness"]  # Enables the reset_thickness action in the GUI
 
     def __init__(self) -> None:
         """Initialize the device class."""
@@ -82,25 +84,25 @@ class Device(EmptyDevice):
 
         # SweepMe Parameters
         self.shortname = "TMC13"
-
         self.variables = ["Thickness", "Rate", "XTAL life"]
         self.units = ["nm", "A/s", "%"]
         self.plottype = [True, True, True]
         self.savetype = [True, True, True]
 
         # Device Parameter
-        self.should_read_pressure_1: bool = False
-        self.should_read_pressure_2: bool = False
         self.should_reset_thickness: bool = False
 
-        self.tooling_factor: float
         self.should_set_tooling: bool = False
+        self.tooling_factor: float = 100.0
 
-        self.acoustic_impedance: float
         self.should_set_acoustic_impedance: bool = False
+        self.acoustic_impedance: float = 1.0
 
-        self.density: float
         self.should_set_density: bool = False
+        self.density: float = 1.3
+
+        self.should_read_pressure_1: bool = False
+        self.should_read_pressure_2: bool = False
 
         self.frequency_min = None
         self.frequency_max = None
@@ -111,7 +113,7 @@ class Device(EmptyDevice):
 
         self.prevac_interface: PrevacCommunication.PrevacCommunicationInterface
 
-    def set_GUIparameter(self) -> dict:
+    def set_GUIparameter(self) -> dict:  # noqa: N802
         """Get parameters from the GUI and set them as attributes."""
         return {
             "Channel": ["1", "2", "3", "4", "5", "6"],
@@ -127,7 +129,7 @@ class Device(EmptyDevice):
             "Read pressure 2": False,
         }
 
-    def get_GUIparameter(self, parameter: dict) -> None:
+    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Get parameters from the GUI and set them as attributes."""
         # Channel number must be of \x01 format
         channel = parameter["Channel"]
@@ -146,17 +148,18 @@ class Device(EmptyDevice):
 
         self.should_read_pressure_1 = bool(parameter["Read pressure 1"])
         if self.should_read_pressure_1:
-            self.variables.append("Pressure 1")
-            self.units.append("mbar")
-            self.plottype.append(True)
-            self.savetype.append(True)
+            self.add_pressure_readings(1)
 
         self.should_read_pressure_2 = bool(parameter["Read pressure 2"])
         if self.should_read_pressure_2:
-            self.variables.append("Pressure 2")
-            self.units.append("mbar")
-            self.plottype.append(True)
-            self.savetype.append(True)
+            self.add_pressure_readings(2)
+
+    def add_pressure_readings(self, pressure_channel: int) -> None:
+        """Add pressure readings to the device."""
+        self.variables.append(f"Pressure {pressure_channel}")
+        self.units.append("mbar")
+        self.plottype.append(True)
+        self.savetype.append(True)
 
     def connect(self) -> None:
         """Enable Remote Control on the device."""
@@ -180,33 +183,21 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Reset thickness if needed and set material properties."""
-        # TODO: Check if checking the device status is correct in configure
         self.check_device_status()
         self.check_vacuum_gauge_status()
+        self.check_units()
 
         if self.should_reset_thickness:
             self.reset_thickness()
 
         if self.should_set_tooling:
-            if self.tooling_factor > 0:
-                self.set_tooling_factor(self.tooling_factor)
-            else:
-                msg = f"Unaccepted tooling factor of {self.tooling_factor}. Please enter a float number"
-                raise Exception(msg)
+            self.set_tooling_factor(self.tooling_factor)
 
         if self.should_set_density:
-            if self.density > 0:
-                self.set_material_density(self.density)
-            else:
-                msg = f"Unaccepted density of {self.density}. Please enter a float number"
-                raise Exception(msg)
+            self.set_material_density(self.density)
 
         if self.should_set_acoustic_impedance:
-            if self.acoustic_impedance > 0:
-                self.set_material_acoustic_impedance(self.acoustic_impedance)
-            else:
-                msg = f"Unaccepted acoustic impedance of {self.acoustic_impedance}. Please enter a float number"
-                raise Exception(msg)
+            self.set_material_acoustic_impedance(self.acoustic_impedance)
 
     def call(self) -> list[float]:
         """Return the current thickness, rate and crystal life."""
@@ -219,6 +210,26 @@ class Device(EmptyDevice):
 
         return measured_values
 
+    """ Convenience Functions """
+    def check_units(self) -> None:
+        """Check that values are communicated in the correct unit. Could add set_unit functions if needed."""
+        thickness_unit = self.get_thickness_unit()
+        rate_unit = self.get_rate_unit()
+        pressure_unit = self.get_pressure_unit()
+
+        # thickness is measured in A and converted to nm by get_thickness
+        if thickness_unit != "A":
+            msg = f"Thickness unit is {thickness_unit}, but should be A. Change the unit in the device GUI."
+            debug(msg)
+
+        if rate_unit != "A/s":
+            msg = f"Rate unit is {rate_unit}, but should be A/s. Change the unit in the device GUI."
+            debug(msg)
+
+        if pressure_unit != "mbar":
+            msg = f"Pressure unit is {pressure_unit}, but should be mbar. Change the unit in the device GUI."
+            debug(msg)
+
     """ Getter Functions """
 
     def get_thickness(self) -> float:
@@ -229,7 +240,7 @@ class Device(EmptyDevice):
         return thickness_angstrom / 10
 
     def get_thickness_unit(self) -> str:
-        """Returns the unit in which the thickness is displayed."""
+        """Returns the unit in which the thickness is communicated by the device."""
         command = 0x0203
         unit = self.prevac_interface.get_byte_value(command)
         thickness_unit_dict = {
@@ -295,7 +306,7 @@ class Device(EmptyDevice):
         """Return the material name."""
         command = 0x0213
         self.prevac_interface.send_data_frame(command, self.channel)
-        answer = self.prevac_interface.receive_data_frame()[1:-1]
+        answer = self.prevac_interface.receive_data_frame()[1:-1]  # answer contains two additional bytes
         return answer.decode("latin1")
 
     def get_material_density(self) -> float:
@@ -342,25 +353,38 @@ class Device(EmptyDevice):
         number_of_warnings = status[1]
 
         if number_of_errors > 0:
-            print(f"{number_of_errors} device errors detected")  # noqa: T201
+            debug(f"{number_of_errors} device errors detected")
             for error_index in range(number_of_errors):
                 self.prevac_interface.check_error_status(error_index)
         if number_of_warnings > 0:
-            print(f"{number_of_warnings} device warnings detected")  # noqa: T201
+            debug(f"{number_of_warnings} device warnings detected")
             for warning_index in range(number_of_warnings):
                 self.prevac_interface.check_warning_status(warning_index)
 
-    def check_vacuum_gauge_status(self) -> int:
-        """Check the vacuum gauge status for errors and warnings."""
+    def check_vacuum_gauge_status(self) -> None:
+        """Check the vacuum gauge status for errors and warnings. TMC13 displays Sensor Break! near ambient pressure."""
         command = 0x0105
         channel, status = self.prevac_interface.get_byte_value_and_channel(command)
 
-        # TODO: Add status codes
-        if status == -1:
-            msg = "Prevac Warning: Vacuum gauge sensor break"
-            raise Exception(msg)
+        status_dict = {
+            -1: "Sensor Break!",
+            0: "Vacuum",
+            1: "Wait for emission",
+            2: "No Emission",
+            3: "Wait for ignition",
+            4: "Not Calibrated",
+            5: "Voltage",
+            6: "Degasing",
+            7: "Exter. Setpoint",
+            8: "Low Pressure",
+            9: "High Pressure",
+            10: "0.00e+00",
+        }
 
-        return status
+        critical_status = [-1]  # Can be extended if needed
+        if status in critical_status:
+            msg = f"Prevac Warning: {status_dict[status]}"
+            debug(msg)
 
     """ Setter Functions """
 
@@ -372,22 +396,40 @@ class Device(EmptyDevice):
 
     def set_tooling_factor(self, tooling_factor: float) -> None:
         """Set tooling factor in %."""
-        command = 0x820D
+        min_tooling = 0
+        max_tooling = 10000
+        if tooling_factor < min_tooling or tooling_factor > max_tooling:
+            msg = (f"Unaccepted tooling factor of {tooling_factor}. "
+                   f"Please enter a float number between {min_tooling} and {max_tooling}.")
+            raise Exception(msg)
 
+        command = 0x820D
         self.prevac_interface.send_double_value_and_channel(command, tooling_factor)
         self.prevac_interface.check_response_for_errors()
 
     def set_material_density(self, density: float) -> None:
         """Set density in g/cm³."""
-        command = 0x8214  # +8 in MSB for write command
+        min_density = 0.1
+        max_density = 999.99
+        if density < min_density or density > max_density:
+            msg = (f"Unaccepted material density of {density}. "
+                   f"Please enter a float number between {min_density} and {max_density}.")
+            raise Exception(msg)
 
+        command = 0x8214  # +8 in MSB for write command
         self.prevac_interface.send_double_value_and_channel(command, density)
         self.prevac_interface.check_response_for_errors()
 
     def set_material_acoustic_impedance(self, impedance: float) -> None:
         """Set acoustic impedance in 1e5g/cm²/s."""
-        command = 0x8215  # +8 in MSB for write command
+        min_impedance = 0.1
+        max_impedance = 999.99
+        if impedance < min_impedance or impedance > max_impedance:
+            msg = (f"Unaccepted material acoustic impedance of {impedance}. "
+                   f"Please enter a float number between {min_impedance} and {max_impedance}.")
+            raise Exception(msg)
 
+        command = 0x8215  # +8 in MSB for write command
         self.prevac_interface.send_double_value_and_channel(command, impedance)
         self.prevac_interface.check_response_for_errors()
 
@@ -431,29 +473,23 @@ class Device(EmptyDevice):
 
     def get_master_status(self) -> str:
         """Get the master status of the device."""
-        # TODO: Export this to the communication interface
         command = 0x7FF1
         self.prevac_interface.send_data_frame(command)
         answer = self.prevac_interface.receive_data_frame()
 
-        # TODO: Check if the master status is correct
         status = bin(answer[0])[2:]
-        # status is 11101, but its still working
-        # if status[-1] == "0":
-        #     msg = "Not working as Master."
-        #     raise Exception(msg)
-        #
-        # if status[-3] == "0":
-        #     msg = "Device Remote Control not enabled in TMC GUI."
-        #     raise Exception(msg)
-        #
-        # if status[-4] == "0":
-        #     msg = "Host not registered."
-        #     raise Exception(msg)
-        #
-        # if status[-5] == "1":
-        #     msg = "Other MASTER host device in system."
-        #     raise Exception(msg)
+        # The status might be 11101, but it is still working. Hence, debug instead of raise is called.
+        if status[-1] == "0":
+            debug("Not working as Master.")
+
+        if status[-3] == "0":
+            debug("Device Remote Control not enabled in TMC GUI.")
+
+        if status[-4] == "0":
+            debug("Host not registered.")
+
+        if status[-5] == "1":
+            debug("Other MASTER host device in system.")
 
         return status
 
