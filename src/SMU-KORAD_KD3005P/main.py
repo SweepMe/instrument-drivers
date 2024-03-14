@@ -156,10 +156,20 @@ class Device(EmptyDevice):
         return iset
 
     def set_output(self, state):
+        """
+        Sets the output state of the power supply to On or Off.
 
-        if not state:
+        Args:
+            state: 1 or True -> On, 0 or False -> Off
+        """
+
+        if state is False:
             state = 0
-        else:
+        elif state is True:
             state = 1
+
+        if state not in [0, 1]:
+            msg = "Argument 'state' must be 0 (off) or 1 (on)."
+            raise ValueError(msg)
 
         self.port.write("OUT%i" % state)
