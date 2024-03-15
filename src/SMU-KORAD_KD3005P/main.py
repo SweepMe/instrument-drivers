@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2022 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022, 2024 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -30,9 +30,10 @@
 # Type: SMU
 # Device: KORAD KD3005P
 
+
 import time
-from ErrorMessage import error
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import error
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
 
@@ -42,88 +43,71 @@ class Device(EmptyDevice):
         
         self.shortname = "KD3005P"
         
-        self.variables =["Voltage", "Current"]
-        self.units =    ["V", "A"]
-        self.plottype = [True, True] # True to plot data
-        self.savetype = [True, True] # True to save data
+        self.variables = ["Voltage", "Current"]
+        self.units = ["V", "A"]
+        self.plottype = [True, True]  # True to plot data
+        self.savetype = [True, True]  # True to save data
 
         self.port_manager = True
         self.port_types = ["COM"]
         
-        self.port_properties = { "timeout": 0.2,
-                                 "EOL": "",
-                                 "baudrate": 9600,
-                                 "delay": 0.05,
-                                 "Exception": False,
-                                 }
-                                 
+        self.port_properties = {
+            "timeout": 0.2,
+            "EOL": "",
+            "baudrate": 9600,
+            "delay": 0.05,
+            "Exception": False,
+            }
+
         self.commands = {
-                        "Voltage [V]" : "VSET",  # remains for compatibility reasons
-                        "Current [A]" : "ISET",  # remains for compatibility reasons
-                        "Voltage in V" : "VSET",
-                        "Current in A" : "ISET",
+                        "Voltage [V]": "VSET",  # remains for compatibility reasons
+                        "Current [A]": "ISET",  # remains for compatibility reasons
+                        "Voltage in V": "VSET",
+                        "Current in A": "ISET",
                         }
-                                 
+
     def set_GUIparameter(self):
         
-        GUIparameter = {
-                        "SweepMode" : ["Voltage in V", "Current in A"],
+        gui_parameter = {
+                        "SweepMode": ["Voltage in V", "Current in A"],
                         "RouteOut": ["Front"],
                         "Compliance": 0.1,
                         }
                         
-        return GUIparameter
+        return gui_parameter
                                  
-    def get_GUIparameter(self, parameter = {}):
+    def get_GUIparameter(self, parameter={}):
+
         self.source = parameter['SweepMode']
         self.protection = parameter['Compliance']
-        # self.average = int(parameter['Average'])
-        
-        # if self.average < 1:
-            # self.average = 1
-        # if self.average > 100:
-            # self.average = 100
-        
+
     def initialize(self):
-        self.port.write("*IDN?")
-        time.sleep(0.1)
-        identifier = self.port.read(self.port.in_waiting())
-        print("Identifier:", identifier)
-        
-        # if not "3005P" in identifier:
-            # self.stopMeasurement = "Returned identification string %s is incorrect. Please check whether the correct device is connected." % identifier
-            # return False
+
+        identifier = self.get_identification()
+        # print("Identifier:", identifier)
 
     def configure(self):
-
         if self.source.startswith("Voltage"):
             self.port.write("ISET1:%1.2f" % float(self.protection))
-        if self.source.startswith("Current"):
+        elif self.source.startswith("Current"):
             self.port.write("VSET1:%1.2f" % float(self.protection))
-           
-    def deinitialize(self):
-        pass
 
     def poweron(self):
-        self.port.write("OUT1")
+        self.set_output(1)
         
     def poweroff(self):
-        self.port.write("OUT0")
-                 
+        self.set_output(0)
+
     def apply(self):
         self.port.write(self.commands[self.source] + "1:%1.2f" % float(self.value))
-         
+
     def measure(self):        
-        # self.port.write("VSET1?")
-        # self.vset = float(self.port.read(5))
-        
-        # self.port.write("ISET1?")
-        # self.iset = float(self.port.read(6)[:-1])
-        
+
         self.port.write("IOUT1?")
         answer = self.port.read(5)
         try:
             self.i = float(answer)
+            
         except:
             error()
             self.port.write("IOUT1?")
@@ -150,7 +134,42 @@ class Device(EmptyDevice):
 
     def call(self):
         return [self.v, self.i]
-        
 
-        
-        
+    # wrapped commands start here
+
+    def get_identification(self):
+
+        self.port.write("*IDN?")
+        time.sleep(0.1)
+        # When using Virtual COM port, a \x00 character is at the end of the message that cannot be printed
+        identifier = self.port.read(self.port.in_waiting()).replace("\x00", "")
+        return identifier
+
+    def get_voltage_limit(self):
+        self.port.write("VSET1?")
+        vset = float(self.port.read(5))
+        return vset
+
+    def get_current_limit(self):
+        self.port.write("ISET1?")
+        iset = float(self.port.read(6)[:-1])
+        return iset
+
+    def set_output(self, state):
+        """
+        Sets the output state of the power supply to On or Off.
+
+        Args:
+            state: 1 or True -> On, 0 or False -> Off
+        """
+
+        if state is False:
+            state = 0
+        elif state is True:
+            state = 1
+
+        if state not in [0, 1]:
+            msg = "Argument 'state' must be 0 (off) or 1 (on)."
+            raise ValueError(msg)
+
+        self.port.write("OUT%i" % state)
