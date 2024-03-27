@@ -23,6 +23,7 @@
 import ctypes as c
 
 from .error_codes import ERROR_CODES
+import param
 
 _dll_path = r"C:\s4200\sys\bin\lptlib.dll"
 _dll = None
@@ -1046,13 +1047,35 @@ def measz(instr_id: str, model: str, speed: str) -> (float, float):
 
     meas_result1 = c.c_double()
     meas_result2 = c.c_double()
+    c_model = handle_model(model)
+    c_speed = handle_speed(speed)
 
-    # TODO: Implement model and speed
-
-    err = _dll.measz(c_instr_id, c.byref(meas_result1), c.byref(meas_result2))
+    err = _dll.measz(c_instr_id, c_model, c_speed, c.byref(meas_result1), c.byref(meas_result2))
     check_error(err)
 
     return float(meas_result1.value), float(meas_result2.value)
+
+def handle_model(model: str) -> c.c_int32:
+    """Handle model parameter."""
+    if model.startswith("KI_CVU_TYPE_"):
+        model = getattr(param, model)
+        c_model = c.c_int32(model)
+    else:
+        msg = "Model must be a valid CVU model of format KI_CVU_TYPE_XXX."
+        raise ValueError(msg)
+
+    return c_model
+
+def handle_speed(speed: str) -> c.c_int32:
+    """Handle speed parameter."""
+    if speed.startswith("KI_CVU_SPEED_"):
+        speed = getattr(param, speed)
+        c_speed = c.c_int32(speed)
+    else:
+        msg = "Speed must be a valid CVU speed of format KI_CVU_SPEED_XXX."
+        raise ValueError(msg)
+
+    return c_speed
 
 
 def rtfary(number_of_points: int) -> list[float]:
@@ -1172,9 +1195,10 @@ def smeasz(instr_id: int, model: str, speed: str, array_size: int) -> (list[floa
     meas_result1 = make_double_array(array_size)
     meas_result2 = make_double_array(array_size)
 
-    # TODO: Implement model and speed
+    c_model = handle_model(model)
+    c_speed = handle_speed(speed)
 
-    err = _dll.smeasz(c_instr_id, model, speed, c.byref(meas_result1), c.byref(meas_result2))
+    err = _dll.smeasz(c_instr_id, c_model, c_speed, c.byref(meas_result1), c.byref(meas_result2))
     check_error(err)
 
     return meas_result1, meas_result2.value
@@ -1189,9 +1213,10 @@ def smeaszRT(
     meas_result2 = make_double_array(number_of_points)
     c_column_name = make_char_pointer(column_name)
 
-    # TODO: Implement model and speed
+    c_model = handle_model(model)
+    c_speed = handle_speed(speed)
 
-    err = _dll.smeasz(c_instr_id, model, speed, c.byref(meas_result1), c.byref(meas_result2), c_column_name)
+    err = _dll.smeaszRT(c_instr_id, c_model, c_speed, c.byref(meas_result1), c.byref(meas_result2), c_column_name)
     check_error(err)
 
     return meas_result1, meas_result2.value
