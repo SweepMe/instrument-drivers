@@ -90,7 +90,9 @@ class Device(EmptyDevice):
         #     self.average = 100
             
         self.device = parameter['Device']
-        self.channel = self.device[-1]
+        # The channel is defined by the route_out parameter
+        # For 'Front' the channel is 1, for 'Rear' the channel is 2
+        self.channel = 1 if self.route_out == 'Front' else 2
         
         
     def initialize(self):
@@ -154,9 +156,9 @@ class Device(EmptyDevice):
         
         # 4-wire sense
         if self.four_wire:
-            self.port.write("SYST:REM ON")
+            self.port.write("SENS:REM ON")
         else:
-            self.port.write("SYST:REM OFF")
+            self.port.write("SENS:REM OFF")
         
         """
         # averaging
@@ -194,7 +196,7 @@ class Device(EmptyDevice):
                         
     def apply(self):
     
-        self.port.write(":SOUR%s:%s  %s" % (self.channel, self.commands[self.source], self.value))     # set source
+        self.port.write(":SOUR%s:%s %s" % (self.channel, self.commands[self.source], self.value))     # set source
 
     def measure(self):    
         pass                              
