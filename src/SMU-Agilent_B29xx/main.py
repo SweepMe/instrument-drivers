@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2018 Axel Fischer (sweep-me.net)
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -30,53 +30,52 @@
 # Type: SMU
 # Device: Agilent 29xx
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
-
-    multichannel = [" CH1", " CH2"]
 
     def __init__(self):
         
         super().__init__()
         
         self.shortname = "Agilent B29xx"
-        
-        # remains here for compatibility with v1.5.3
-        self.multichannel = [" CH1", " CH2"]
-        
-        self.variables =["Voltage", "Current"]
-        self.units =    ["V", "A"]
-        self.plottype = [True, True] # True to plot data
-        self.savetype = [True, True] # True to save data
+
+        self.variables = ["Voltage", "Current"]
+        self.units = ["V", "A"]
+        self.plottype = [True, True]  # True to plot data
+        self.savetype = [True, True]  # True to save data
 
         self.port_manager = True
         self.port_types = ["USB", "GPIB"]
-        
-        # self.port_properties = { "timeout": 10,
-                                 # }
-                                 
+
+        self.port_properties = {
+            # "timeout": 10,
+        }
+
         self.commands = {
-                        "Voltage [V]" : "VOLT",
-                        "Current [A]" : "CURR",
+                        "Voltage [V]": "VOLT",  # deprecated, remains for compatibility
+                        "Current [A]": "CURR",  # deprecated, remains for compatibility
+                        "Voltage in V": "VOLT",
+                        "Current in A": "CURR",
                         }
-                                 
+
     def set_GUIparameter(self):
         
         GUIparameter = {
-                        "SweepMode" : ["Voltage [V]", "Current [A]"],
+                        "SweepMode": ["Voltage in V", "Current in A"],
+                        "Channel": ["CH1", "CH2"],
                         "4wire": False,
-                        "RouteOut": ["Front", "Rear"],
+                        # "RouteOut": ["Front", "Rear"],
                         "Speed": ["Fast", "Medium", "Slow"],
                         "Compliance": 100e-6,
-                        #"Average": 1, # not yet supported
+                        # "Average": 1, # not yet supported
                         }
                         
         return GUIparameter
                                  
     def get_GUIparameter(self, parameter = {}):
         self.four_wire = parameter['4wire']
-        self.route_out = parameter['RouteOut']
+        # self.route_out = parameter['RouteOut']
         self.source = parameter['SweepMode']
         self.protection = parameter['Compliance']
         self.speed = parameter['Speed']
@@ -89,29 +88,19 @@ class Device(EmptyDevice):
         # if self.average > 100:
         #     self.average = 100
             
-        self.device = parameter['Device']
-        # The channel is defined by the route_out parameter
-        # For 'Front' the channel is 1, for 'Rear' the channel is 2
-        self.channel = 1 if self.route_out == 'Front' else 2
-        
-        
+        self.device = parameter['Device']      
+        self.channel = parameter['Channel'][-1]
+
     def initialize(self):
         # once at the beginning of the measurement
         self.port.write("*RST")
-        ##from Keithley2400##  self.port.write("status:preset" )
-        ##from Keithley2400##  self.port.write("*CLS") # reset all values
-        
-        self.port.write("SYST:BEEP:STAT OFF")     # control-Beep off
-        
-        self.port.write(":SYST:LFR 50") # LineFrequency = 50 Hz
-        
+        self.port.write("SYST:BEEP:STAT OFF")  # control-Beep off
+        self.port.write(":SYST:LFR 50")  # LineFrequency = 50 Hz
         self.port.write(":OUTP%s:PROT ON" % self.channel)  # enables  over voltage / over current protection
 
-            
     def configure(self):
-    
-        
-        if self.source == "Voltage [V]":
+
+        if self.source.startswith("Voltage"):
             self.port.write(":SOUR%s:FUNC VOLT" % self.channel)                  
             # sourcemode = Voltage
             self.port.write(":SOUR%s:VOLT:MODE FIX" % self.channel)
@@ -122,9 +111,8 @@ class Device(EmptyDevice):
             # Protection with Imax
             self.port.write(":SENS%s:CURR:RANG:AUTO ON" % self.channel)
             # Autorange for current measurement
-           
-      
-        if self.source == "Current [A]":
+
+        if self.source.startswith("Current"):
             self.port.write(":SOUR%s:FUNC CURR" % self.channel)                  
             # sourcemode = Voltage
             self.port.write(":SOUR%s:CURR:MODE FIX" % self.channel)
@@ -146,14 +134,8 @@ class Device(EmptyDevice):
         self.port.write(":SENS%s:CURR:NPLC %s" % (self.channel, self.nplc))
         self.port.write(":SENS%s:VOLT:NPLC %s" % (self.channel, self.nplc))
         
-        self.port.write(":SENS%s:CURR:RANG:AUTO:MODE RES" % (self.channel))
-        
-        # ioObj.WriteString(":SENS:CURR:RANG:AUTO:MODE NORM") Normal
-        # ioObj.WriteString(":SENS:CURR:RANG:AUTO:THR 80")
-        # ioObj.WriteString(":SENS:CURR:RANG:AUTO:MODE RES") Resolution
-        # ioObj.WriteString(":SENS:CURR:RANG:AUTO:THR 80")
-        # ioObj.WriteString(":SENS:CURR:RANG:AUTO:MODE SPE") Speed
-        
+        self.port.write(":SENS%s:CURR:RANG:AUTO:MODE RES" % self.channel)
+
         # 4-wire sense
         if self.four_wire:
             self.port.write("SENS:REM ON")
@@ -171,7 +153,6 @@ class Device(EmptyDevice):
             self.port.write(":SENSe:AVER:COUN 1")  
         """
 
-           
         self.port.write(":OUTP%s:PROT ON" % self.channel)    
         #self.port.write(":OUTP:LOW GRO") # LowGround
         #self.port.write(":OUTP:HCAP ON") # High capacity On
@@ -182,9 +163,7 @@ class Device(EmptyDevice):
         
         self.port.write(":SENS%s:CURR:NPLC 1" % self.channel)
         self.port.write(":SENS%s:VOLT:NPLC 1" % self.channel)
-        
-       
-        
+
         # self.port.write(":SENS:AVER OFF")
         # self.port.write(":SENSe:AVER:COUN 1")  
 
@@ -196,28 +175,16 @@ class Device(EmptyDevice):
                         
     def apply(self):
     
-        self.port.write(":SOUR%s:%s %s" % (self.channel, self.commands[self.source], self.value))     # set source
-
-    def measure(self):    
-        pass                              
+        self.port.write(":SOUR%s:%s %s" % (self.channel, self.commands[self.source], self.value))  # set source
 
     def call(self):
         self.port.write(":MEAS? (@%s)" % self.channel) 
     
         answer = self.port.read()
-        
-        # print(answer)
-        
         values = answer.split(",")
         
         voltage = float(values[0])
-        current =  float(values[1])
+        current = float(values[1])
         
         return [voltage, current]
-    
-        
-    def finish(self):
-        pass
-        
-        
-        
+
