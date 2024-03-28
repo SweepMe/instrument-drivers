@@ -89,7 +89,7 @@ class Device(EmptyDevice):
         #     self.average = 100
             
         self.device = parameter['Device']      
-        self.channel = parameter['Channel'][-1]
+        self.channel = str(parameter['Channel'])[-1]
 
     def initialize(self):
         # once at the beginning of the measurement
