@@ -61,50 +61,34 @@ class Device(EmptyDevice):
         """Initializes the device class."""
         super().__init__()
 
-        self.plottype = [True, True, True, True]  # True to plot data
-        self.savetype = [True, True, True, True]  # True to save data
+        self.variables = ["R", "X", "Frequency", "Voltage bias"]
+        self.units = ["Ohm", "Ohm", "Hz", "V"]
+        self.plottype = [True, True, True, True]
+        self.savetype = [True, True, True, True]
 
-        if not RUNNING_ON_4200SCS:
-            self.port_types = ["GPIB", "TCPIP"]
+        # block below is needed if KXCI handling will be implemented in future
+        # where commands can be sent via GPIB or TCPIP
+        # if not RUNNING_ON_4200SCS:
+
+            # self.port_types = ["GPIB", "TCPIP"]
             # needed to make the code working with pysweepme where port_manager is only used from __init__
-            self.port_manager = True
+            # self.port_manager = True
 
-        self.port_properties = {
-            "EOL": "\r\n",
-            "timeout": 10.0,
-            "TCPIP_EOLwrite": "\x00",
-            "TCPIP_EOLread": "\x00",
-        }
+            # self.port_properties = {
+            #     "EOL": "\r\n",
+            #     "timeout": 10.0,
+            #     "TCPIP_EOLwrite": "\x00",
+            #     "TCPIP_EOLread": "\x00",
+            # }
 
         # unclear whether all ranges exist as the documentation does not get clear about it
         self.current_ranges = {
             "Auto": 0,
-            # "Fixed 10 mA": 1e-2,
-            # "Fixed 1 mA": 1e-3,
-            # "Fixed 100 µA": 1e-4,
-            # "Fixed 10 µA": 1e-5,
-            # "Fixed 1 µA": 1e-6,
-            # "Fixed 100 nA": 1e-7,
-            # "Fixed 10 nA": 1e-8,
-            # "Fixed 1 nA": 1e-9,
-            # "Fixed 100 pA": 1e-10,
-            # "Fixed 10 pA": 1e-11,
-            # "Fixed 1 pA": 1e-12,
-            # "Limited 10 mA": 1e-2,
-            # "Limited 1 mA": 1e-3,
-            # "Limited 100 µA": 1e-4,
-            # "Limited 10 µA": 1e-5,
-            # "Limited 1 µA": 1e-6,
-            # "Limited 100 nA": 1e-7,
-            # "Limited 10 nA": 1e-8,
-            # "Limited 1 nA": 1e-9,
-            # "Limited 100 pA": 1e-10,
-            # "Limited 10 pA": 1e-11,
-            # "Limited 1 pA": 1e-12,
         }
 
         self.operating_mode: str = ""
         self.operating_modes = {
+            # TODO: this must be changed to enums as defined in 'param', e.g self.param.KI_CVU_TYPE_ZTH
             "ZTH": "KI_CVU_TYPE_ZTH",
             "RjX": "KI_CVU_TYPE_RJX",
             "CpGp": "KI_CVU_TYPE_CPGP",
@@ -116,14 +100,21 @@ class Device(EmptyDevice):
 
         self.speed: str = ""
         self.speeds = {
+            # TODO: this must be changed to enums as defined in 'param', e.g self.param.KI_CVU_SPEED_FAST
             "Fast": "KI_CVU_SPEED_FAST",
             "Normal": "KI_CVU_SPEED_NORMAL",
-            "Qiet": "KI_CVU_SPEED_QUIET",
+            "Quiet": "KI_CVU_SPEED_QUIET",
             # "Custom"
         }
 
         # Device specific properties
         self.frequency: int = 0
+
+        self.card_id: int = 0  # placeholder value
+
+        # in case there is more than one CVU card possible, we need to use the option "Channel" which however
+        # does not yet exist for the LCRmeter module and needs to be added in this case
+        self.card_name = "CVU1"
 
         self.measured_dc_bias: float = 0.0
         self.measured_frequency: float = 0.0
@@ -136,11 +127,10 @@ class Device(EmptyDevice):
         self.ALC = None
         self.stepmode = None
         self.sweepmode = None
-        self.shortname = "Keithley_4200-SCS"
+        self.shortname = "Keithley 4200-SCS"
 
     def find_ports(self) -> list:
         """Finds the available ports for the Keithley 4200-SCS LCRmeter."""
-        # TODO: update SweepMe! to allow finding ports next to the automatically found one
 
         ports = ["LPTlib via xxx.xxx.xxx.xxx"]
 
@@ -153,30 +143,28 @@ class Device(EmptyDevice):
         """Set initial GUI parameter in SweepMe!."""
         return {
             # "Average": ["1", "2", "4", "8", "16", "32", "64"],  # TODO: check
-            "SweepMode": ["None", "Frequency in Hz", "Voltage bias in V", "Voltage level in V"],
-            "StepMode": ["None", "Frequency in Hz", "Voltage bias in V", "Voltage level in V"],
-            "ValueRMS": 0.02,
+            "SweepMode": ["None", "Frequency in Hz", "Voltage bias in V"],
+            "StepMode": ["None", "Frequency in Hz", "Voltage bias in V"],
+            "ValueRMS": 0.02,  # TODO: Is it the RMS value or the amplitude
             "ValueBias": 0.0,
             "Frequency": 1000.0,
             "Integration": list(self.speeds),
-            "TriggerDelay": "0.1",
             "ALC": ["Off"],  # TODO: check
             "Trigger": ["Internal"],
+            "TriggerDelay": "0.1",
             "Range": list(self.current_ranges),
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Update parameter from SweepMe! GUI."""
         self.port_string = parameter["Port"]
-        # TODO: Where does the card id come from?
-        self.card_id = 0
 
         # Copied from LCR example
         self.sweepmode = parameter["SweepMode"]
         self.stepmode = parameter["StepMode"]
 
-        self.ValueRMS = float(parameter["ValueRMS"])
-        self.ValueBias = float(parameter["ValueBias"])
+        self.value_level_rms = float(parameter["ValueRMS"])
+        self.value_bias = float(parameter["ValueBias"])
 
         self.frequency = float(parameter["Frequency"])
 
@@ -185,29 +173,21 @@ class Device(EmptyDevice):
         self.delay = float(parameter["TriggerDelay"])
 
         self.trigger_type = parameter["Trigger"]  # TODO: check
+        self.trigger_delay = parameter["TriggerDelay"]  # TODO: needs to be processed somewhere
         self.range = self.current_ranges[parameter["Range"]]
 
         # Only use Resistance and reactance measurement
         self.operating_mode = self.operating_modes["RjX"]
 
-    def handle_measurement_mode(self) -> None:
-        """Extract correct measurement mode and set variables and units accordingly."""
-        if self.stepmode != "None" and self.sweepmode == self.stepmode:
-            msg = "Sweep and step mode cannot be the same."
-            raise Exception(msg)
-
-        variable = "Voltage level" if self.sweepmode == "Voltage level in V" else "Voltage bias"
-
-        self.variables = ["R", "X", "Frequency", variable]
-        self.units = ["Ohm", "Ohm", "Hz", "V"]
-
     def connect(self) -> None:
-        """Connect to the Keithley 4200-SCS LCRmeter or the proxy."""
-        if self.port_manager:
-            self.command_set = "US"  # "US" user mode, "LPTlib", # check manual p. 677/1510
+        """Connect to the Keithley 4200-SCS LCRmeter"""
 
-            # very important, triggers a (DCL) in KXCI, seems to be essential to read correct values
-            self.port.port.clear()
+        if self.port_manager:
+            pass  # not used at the moment because KXCI communication is not supported yet
+            # self.command_set = "US"  # "US" user mode, "LPTlib", # check manual p. 677/1510
+            #
+            # # very important, triggers a (DCL) in KXCI, seems to be essential to read correct values
+            # self.port.port.clear()
 
         else:
             self.command_set = "LPTlib"  # "US" user mode, "LPTlib", # check manual p. 677/1510
@@ -236,7 +216,12 @@ class Device(EmptyDevice):
 
     def initialize(self) -> None:
         """Initialize the Keithley 4200-SCS LCRmeter or the proxy."""
-        self.handle_measurement_mode()
+
+        # check for correct use of sweep mode and step mode
+        if self.stepmode != "None" and self.sweepmode == self.stepmode:
+            msg = "Sweep and step mode cannot be the same."
+            raise Exception(msg)
+
         self.identifier = "Keithley_4200-SCS_" + self.port_string
 
         if self.identifier not in self.device_communication:
@@ -245,17 +230,18 @@ class Device(EmptyDevice):
                 self.lpt.devint()  # This command resets all active instruments in the system to their default states.
 
             elif self.command_set == "US":
-                # TODO: Check
-                if self.current_range != "Auto":
-                    msg = "When using KXCI only Auto current range is supported."
-                    raise Exception(msg)
-
-                # TODO: Check if needed, retrieve options?
-                self.clear_buffer()
-                self.set_to_4200()
-                self.set_command_mode("US")
-                self.set_data_service()
-                self.set_resolution(7)
+                pass  # not used at the moment because KXCI communication is not supported yet
+                # # TODO: Check
+                # if self.current_range != "Auto":
+                #     msg = "When using KXCI only Auto current range is supported."
+                #     raise Exception(msg)
+                #
+                # # TODO: Check if needed, retrieve options?
+                # self.clear_buffer()
+                # self.set_to_4200()
+                # self.set_command_mode("US")
+                # self.set_data_service()
+                # self.set_resolution(7)
 
             self.device_communication[self.identifier] = {}  # dictionary that can be filled with further information
 
@@ -273,8 +259,8 @@ class Device(EmptyDevice):
         self.set_ac_frequency(self.frequency)
         self.set_delay(self.delay)
 
-        self.set_dc_bias(self.ValueBias)
-        self.set_ac_voltage(self.ValueRMS)
+        self.set_dc_bias(self.value_bias)
+        self.set_ac_voltage(self.value_level_rms)
 
         self.set_measure_range()
 
@@ -292,17 +278,6 @@ class Device(EmptyDevice):
             step_value = float(self.stepvalue)
             self.handle_set_value(self.stepmode, step_value)
 
-    def handle_set_value(self, mode: str, value: float) -> None:
-        """Set value for sweep or step mode."""
-        if mode == "Voltage bias in V":
-            self.set_dc_bias(value)
-
-        elif mode == "Voltage level in V":
-            self.set_ac_voltage(value)
-
-        elif mode == "Frequency in Hz":
-            self.set_ac_frequency(value)
-
     def measure(self) -> None:
         """Retrieve Impedance results from device."""
         # Only measurement mode RjX is used
@@ -317,6 +292,18 @@ class Device(EmptyDevice):
         return [self.resistance, self.reactance, self.measured_frequency, self.measured_dc_bias]
 
     """ here, convenience functions start """
+
+    def handle_set_value(self, mode: str, value: float) -> None:
+        """Set value for sweep or step mode."""
+        if mode == "Voltage bias in V":
+            self.set_dc_bias(value)
+
+        elif mode == "Voltage level in V":
+            self.set_ac_voltage(value)
+
+        elif mode == "Frequency in Hz":
+            self.set_ac_frequency(value)
+
     def clear_buffer(self) -> None:
         """Clear buffer."""
         self.port.write("BC")
