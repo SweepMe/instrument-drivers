@@ -27,6 +27,8 @@
 
 # SweepMe! device class
 # Device: Keithley 4200-SCS
+from __future__ import annotations
+
 import os
 
 from pysweepme import FolderManager
@@ -55,7 +57,7 @@ if RUNNING_ON_4200SCS:
 class Device(EmptyDevice):
     """Device class for the Keithley 4200-SCS used as LCRmeter."""
 
-    descprition = "Keithley 4200-SCS LCRmeter"
+    description = "This driver supports two CVU card models: 4210-CVU and 4215-CVU"
 
     def __init__(self) -> None:
         """Initializes the device class."""
@@ -65,56 +67,53 @@ class Device(EmptyDevice):
         self.units = ["Ohm", "Ohm", "Hz", "V"]
         self.plottype = [True, True, True, True]
         self.savetype = [True, True, True, True]
+        self.identifier: str = ""
 
         # block below is needed if KXCI handling will be implemented in future
         # where commands can be sent via GPIB or TCPIP
         # if not RUNNING_ON_4200SCS:
 
-            # self.port_types = ["GPIB", "TCPIP"]
-            # needed to make the code working with pysweepme where port_manager is only used from __init__
-            # self.port_manager = True
+        # self.port_types = ["GPIB", "TCPIP"]
+        # needed to make the code working with pysweepme where port_manager is only used from __init__
+        # self.port_manager = True
 
-            # self.port_properties = {
-            #     "EOL": "\r\n",
-            #     "timeout": 10.0,
-            #     "TCPIP_EOLwrite": "\x00",
-            #     "TCPIP_EOLread": "\x00",
-            # }
+        # self.port_properties = {
+        #     "EOL": "\r\n",
+        #     "timeout": 10.0,
+        #     "TCPIP_EOLwrite": "\x00",
+        #     "TCPIP_EOLread": "\x00",
+        # }
 
-        # unclear whether all ranges exist as the documentation does not get clear about it
+        # Currently, only auto range is used
         self.current_ranges = {
             "Auto": 0,
         }
 
         self.operating_mode: str = ""
         self.operating_modes = {
-            # TODO: this must be changed to enums as defined in 'param', e.g self.param.KI_CVU_TYPE_ZTH
-            "ZTH": "KI_CVU_TYPE_ZTH",
-            "RjX": "KI_CVU_TYPE_RJX",
-            "CpGp": "KI_CVU_TYPE_CPGP",
-            "CsRs": "KI_CVU_TYPE_CSRS",
-            "CpD": "KI_CVU_TYPE_CPD",
-            "CsD": "KI_CVU_TYPE_CSD",
-            "YTH": "KI_CVU_TYPE_YTH",
+            "ZTH": 0,  # "KI_CVU_TYPE_ZTH"
+            "RjX": 1,  # "KI_CVU_TYPE_RJX"
+            "CpGp": 2,  # "KI_CVU_TYPE_CPGP"
+            "CsRs": 3,  # "KI_CVU_TYPE_CSRS"
+            "CpD": 4,  # "KI_CVU_TYPE_CPD"
+            "CsD": 5,  # "KI_CVU_TYPE_CSD"
+            "YTH": 7,  # "KI_CVU_TYPE_YTH"
         }
 
         self.speed: str = ""
         self.speeds = {
-            # TODO: this must be changed to enums as defined in 'param', e.g self.param.KI_CVU_SPEED_FAST
-            "Fast": "KI_CVU_SPEED_FAST",
-            "Normal": "KI_CVU_SPEED_NORMAL",
-            "Quiet": "KI_CVU_SPEED_QUIET",
-            # "Custom"
+            "Fast": 0,  # "KI_CVU_SPEED_FAST"
+            "Normal": 1,  # "KI_CVU_SPEED_NORMAL",
+            "Quiet": 2,  # "KI_CVU_SPEED_QUIET",
         }
 
         # Device specific properties
         self.frequency: int = 0
 
-        self.card_id: int = 0  # placeholder value
-
         # in case there is more than one CVU card possible, we need to use the option "Channel" which however
         # does not yet exist for the LCRmeter module and needs to be added in this case
         self.card_name = "CVU1"
+        self.card_id: int = 0  # placeholder value
 
         self.measured_dc_bias: float = 0.0
         self.measured_frequency: float = 0.0
@@ -131,7 +130,6 @@ class Device(EmptyDevice):
 
     def find_ports(self) -> list:
         """Finds the available ports for the Keithley 4200-SCS LCRmeter."""
-
         ports = ["LPTlib via xxx.xxx.xxx.xxx"]
 
         if RUNNING_ON_4200SCS:
@@ -139,7 +137,7 @@ class Device(EmptyDevice):
 
         return ports
 
-    def set_GUIparameter(self) -> dict[str, any]:  # noqa: N802
+    def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set initial GUI parameter in SweepMe!."""
         return {
             # "Average": ["1", "2", "4", "8", "16", "32", "64"],  # TODO: check
@@ -159,18 +157,13 @@ class Device(EmptyDevice):
         """Update parameter from SweepMe! GUI."""
         self.port_string = parameter["Port"]
 
-        # Copied from LCR example
         self.sweepmode = parameter["SweepMode"]
         self.stepmode = parameter["StepMode"]
 
         self.value_level_rms = float(parameter["ValueRMS"])
         self.value_bias = float(parameter["ValueBias"])
-
         self.frequency = float(parameter["Frequency"])
-
         self.integration = self.speeds[parameter["Integration"]]
-
-        self.delay = float(parameter["TriggerDelay"])
 
         self.trigger_type = parameter["Trigger"]  # TODO: check
         self.trigger_delay = parameter["TriggerDelay"]  # TODO: needs to be processed somewhere
@@ -180,8 +173,7 @@ class Device(EmptyDevice):
         self.operating_mode = self.operating_modes["RjX"]
 
     def connect(self) -> None:
-        """Connect to the Keithley 4200-SCS LCRmeter"""
-
+        """Connect to the Keithley 4200-SCS LCRmeter."""
         if self.port_manager:
             pass  # not used at the moment because KXCI communication is not supported yet
             # self.command_set = "US"  # "US" user mode, "LPTlib", # check manual p. 677/1510
@@ -215,8 +207,7 @@ class Device(EmptyDevice):
             self.card_id = self.lpt.getinstid(self.card_name)
 
     def initialize(self) -> None:
-        """Initialize the Keithley 4200-SCS LCRmeter or the proxy."""
-
+        """Initialize the Keithley 4200-SCS LCRmeter."""
         # check for correct use of sweep mode and step mode
         if self.stepmode != "None" and self.sweepmode == self.stepmode:
             msg = "Sweep and step mode cannot be the same."
@@ -231,12 +222,10 @@ class Device(EmptyDevice):
 
             elif self.command_set == "US":
                 pass  # not used at the moment because KXCI communication is not supported yet
-                # # TODO: Check
                 # if self.current_range != "Auto":
                 #     msg = "When using KXCI only Auto current range is supported."
                 #     raise Exception(msg)
                 #
-                # # TODO: Check if needed, retrieve options?
                 # self.clear_buffer()
                 # self.set_to_4200()
                 # self.set_command_mode("US")
@@ -250,14 +239,14 @@ class Device(EmptyDevice):
         if self.identifier in self.device_communication:
             if self.command_set == "LPTlib":
                 self.lpt.devint()  # restores default values
-                self.lpt.tstdsl()  # TODO: not implemented yet
+                self.lpt.tstdsl()  # deselects test station
 
             del self.device_communication[self.identifier]
 
     def configure(self) -> None:
         """Set bias and measurement parameters with start values from GUI."""
         self.set_ac_frequency(self.frequency)
-        self.set_delay(self.delay)
+        self.set_delay(self.trigger_delay)
 
         self.set_dc_bias(self.value_bias)
         self.set_ac_voltage(self.value_level_rms)
@@ -282,9 +271,8 @@ class Device(EmptyDevice):
         """Retrieve Impedance results from device."""
         # Only measurement mode RjX is used
         self.resistance, self.reactance = self.measure_impedance()
-        self.measured_frequency = self.measure_frequency()
 
-        # TODO: What about voltage level?
+        self.measured_frequency = self.measure_frequency()
         self.measured_dc_bias = self.measure_dc_bias()
 
     def call(self) -> list[float]:
@@ -303,43 +291,6 @@ class Device(EmptyDevice):
 
         elif mode == "Frequency in Hz":
             self.set_ac_frequency(value)
-
-    def clear_buffer(self) -> None:
-        """Clear buffer."""
-        self.port.write("BC")
-
-        if self.port_string.startswith("TCPIP"):
-            self.port.read()
-
-    def set_to_4200(self) -> None:
-        """Set to 4200 mode for this session."""
-        self.port.write("EM 1,0")
-
-        if self.port_string.startswith("TCPIP"):
-            self.port.read()
-
-    def set_command_mode(self, mode: str) -> None:
-        """Set mode as US (user mode) or UL (usrlib)."""
-        self.port.write(f"{mode}")
-
-        if self.port_string.startswith("TCPIP"):
-            self.port.read()
-
-    def set_data_service(self) -> None:
-        """Set data service request."""
-        if self.command_set == "US":
-            self.port.write("DR0")
-
-        if self.port_string.startswith("TCPIP"):
-            self.port.read()
-
-    def set_resolution(self, resolution: int) -> None:
-        """Set resolution for measurement."""
-        if self.command_set == "US":
-            self.port.write(f"RS {resolution}")
-
-        if self.port_string.startswith("TCPIP"):
-            self.port.read()
 
     """ here wrapped functions start """
 
@@ -361,6 +312,7 @@ class Device(EmptyDevice):
 
     def set_measure_range(self) -> None:
         """Set measure range."""
+        # Currently, only auto range is used
         if self.range == 0:
             self.lpt.setauto(self.card_id)
 
