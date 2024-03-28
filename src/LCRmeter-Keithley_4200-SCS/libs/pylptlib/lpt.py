@@ -1,17 +1,15 @@
 # MIT License
+from __future__ import annotations
 
 # Copyright (c) 2023 SweepMe! GmbH (sweep-me.net)
-
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,11 +17,9 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
 import ctypes as c
 
 from .error_codes import ERROR_CODES
-import param
 
 _dll_path = r"C:\s4200\sys\bin\lptlib.dll"
 _dll = None
@@ -275,7 +271,12 @@ def arb_array(instr_id: int, chan: int, time_per_pt: float, length: int, level_a
     c_name_p = make_char_pointer(fname)
 
     err = _dll.arb_array(
-        c.c_int32(instr_id), c.c_int32(chan), c.c_double(time_per_pt), len_c, voltages_array_p, c_name_p,
+        c.c_int32(instr_id),
+        c.c_int32(chan),
+        c.c_double(time_per_pt),
+        len_c,
+        voltages_array_p,
+        c_name_p,
     )
     check_error(err)
 
@@ -663,7 +664,11 @@ def pulse_meas_sm(
 def pulse_meas_timing(instr_id: int, chan: int, start_percent: float, stop_percent: float, num_pulses: int):
     """Set the measurements windows. see lpt manual."""
     err = _dll.pulse_meas_timing(
-        c.c_int32(instr_id), c.c_int32(chan), c.c_double(start_percent), c.c_double(stop_percent), c.c_int32(num_pulses),
+        c.c_int32(instr_id),
+        c.c_int32(chan),
+        c.c_double(start_percent),
+        c.c_double(stop_percent),
+        c.c_int32(num_pulses),
     )
     check_error(err)
 
@@ -697,7 +702,12 @@ def pulse_meas_wfm(
 
 
 def pulse_meas_rt(
-    instr_id: int, chan: int, v_meas_col_name: str, i_meas_col_name: str, time_stamp_col_name: str, status_col_name: str,
+    instr_id: int,
+    chan: int,
+    v_meas_col_name: str,
+    i_meas_col_name: str,
+    time_stamp_col_name: str,
+    status_col_name: str,
 ):
     """Configures channel to return pulse source and measure data in pseudo real time.
     As measurements are performed, the data is automatically placed in the Clarius Analyze sheet.
@@ -708,7 +718,12 @@ def pulse_meas_rt(
     status_meas_name = make_char_pointer(status_col_name)
 
     err = _dll.pulse_meas_rt(
-        c.c_int32(instr_id), c.c_int32(chan), v_meas_name, i_meas_name, timestamp_meas_name, status_meas_name,
+        c.c_int32(instr_id),
+        c.c_int32(chan),
+        v_meas_name,
+        i_meas_name,
+        timestamp_meas_name,
+        status_meas_name,
     )
     check_error(err)
 
@@ -946,7 +961,12 @@ def asweepv(instr_id: str, voltages: list[float], delay: float) -> None:
 
 
 def bsweepi(
-    instr_id: str, start_current: float, stop_current: float, number_of_points: int, delay: float, result: float,
+    instr_id: str,
+    start_current: float,
+    stop_current: float,
+    number_of_points: int,
+    delay: float,
+    result: float,
 ) -> None:
     """Supplies a series of ascending or descending currents and shuts down when result fits a trigger condition."""
     c_instr_id = c.c_int32(instr_id)
@@ -961,7 +981,12 @@ def bsweepi(
 
 
 def bsweepv(
-    instr_id: str, start_current: float, stop_current: float, number_of_points: int, delay: float, result: float,
+    instr_id: str,
+    start_current: float,
+    stop_current: float,
+    number_of_points: int,
+    delay: float,
+    result: float,
 ) -> None:
     """Supplies a series of ascending or descending voltage and shuts down when result fits a trigger condition."""
     c_instr_id = c.c_int32(instr_id)
@@ -1041,41 +1066,19 @@ def meass(instr_id: str) -> float:
     return float(meas_result.value)
 
 
-def measz(instr_id: str, model: str, speed: str) -> (float, float):
+def measz(instr_id: str, model: int, speed: int) -> (float, float):
     """Measure impedance."""
     c_instr_id = c.c_int32(instr_id)
 
     meas_result1 = c.c_double()
     meas_result2 = c.c_double()
-    c_model = handle_model(model)
-    c_speed = handle_speed(speed)
+    c_model = c.c_int32(model)
+    c_speed = c.c_int32(speed)
 
     err = _dll.measz(c_instr_id, c_model, c_speed, c.byref(meas_result1), c.byref(meas_result2))
     check_error(err)
 
     return float(meas_result1.value), float(meas_result2.value)
-
-def handle_model(model: str) -> c.c_int32:
-    """Handle model parameter."""
-    if model.startswith("KI_CVU_TYPE_"):
-        model = getattr(param, model)
-        c_model = c.c_int32(model)
-    else:
-        msg = "Model must be a valid CVU model of format KI_CVU_TYPE_XXX."
-        raise ValueError(msg)
-
-    return c_model
-
-def handle_speed(speed: str) -> c.c_int32:
-    """Handle speed parameter."""
-    if speed.startswith("KI_CVU_SPEED_"):
-        speed = getattr(param, speed)
-        c_speed = c.c_int32(speed)
-    else:
-        msg = "Speed must be a valid CVU speed of format KI_CVU_SPEED_XXX."
-        raise ValueError(msg)
-
-    return c_speed
 
 
 def rtfary(number_of_points: int) -> list[float]:
@@ -1189,14 +1192,15 @@ def smeasvRT(instr_id: int, array_size: int, column_name: str) -> list[float]:
     return c_voltages
 
 
-def smeasz(instr_id: int, model: str, speed: str, array_size: int) -> (list[float], list[float]):
+def smeasz(instr_id: int, model: int, speed: int, array_size: int) -> (list[float], list[float]):
     """Perform impedance measurements for a sweep."""
     c_instr_id = c.c_int32(instr_id)
+
     meas_result1 = make_double_array(array_size)
     meas_result2 = make_double_array(array_size)
 
-    c_model = handle_model(model)
-    c_speed = handle_speed(speed)
+    c_model = c.c_int32(model)
+    c_speed = c.c_int32(speed)
 
     err = _dll.smeasz(c_instr_id, c_model, c_speed, c.byref(meas_result1), c.byref(meas_result2))
     check_error(err)
@@ -1205,7 +1209,11 @@ def smeasz(instr_id: int, model: str, speed: str, array_size: int) -> (list[floa
 
 
 def smeaszRT(
-    instr_id: int, model: str, speed: str, number_of_points: int, column_name: str,
+    instr_id: int,
+    model: int,
+    speed: int,
+    number_of_points: int,
+    column_name: str,
 ) -> (list[float], list[float]):
     """Perform impedance measurement in real time for a sweep."""
     c_instr_id = c.c_int32(instr_id)
@@ -1213,8 +1221,8 @@ def smeaszRT(
     meas_result2 = make_double_array(number_of_points)
     c_column_name = make_char_pointer(column_name)
 
-    c_model = handle_model(model)
-    c_speed = handle_speed(speed)
+    c_model = c.c_int32(model)
+    c_speed = c.c_int32(speed)
 
     err = _dll.smeaszRT(c_instr_id, c_model, c_speed, c.byref(meas_result1), c.byref(meas_result2), c_column_name)
     check_error(err)
