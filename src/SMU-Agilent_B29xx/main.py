@@ -112,23 +112,23 @@ class Device(EmptyDevice):
             self.port.write(":SENS%s:CURR:RANG:AUTO ON" % self.channel)
             # Autorange for current measurement
 
-        if self.source.startswith("Current"):
+        elif self.source.startswith("Current"):
             self.port.write(":SOUR%s:FUNC CURR" % self.channel)                  
             # sourcemode = Voltage
             self.port.write(":SOUR%s:CURR:MODE FIX" % self.channel)
             # sourcemode fix		
             self.port.write(":SENS%s:FUNC \"VOLT\"" % self.channel)              
             # measurement mode
-            self.port.write(":SENS%s:VOLT:PROT " % (self.channel, self.protection))
+            self.port.write(":SENS%s:VOLT:PROT %s" % (self.channel, self.protection))
             # Protection with Imax
             self.port.write(":SENS%s:VOLT:RANG:AUTO ON" % self.channel)
             # Autorange for voltage measurement
                
         if self.speed == "Fast":
             self.nplc = "0.1"
-        if self.speed == "Medium":
+        elif self.speed == "Medium":
             self.nplc = "1.0"
-        if self.speed == "Slow":
+        elif self.speed == "Slow":
             self.nplc = "10.0"
  
         self.port.write(":SENS%s:CURR:NPLC %s" % (self.channel, self.nplc))
