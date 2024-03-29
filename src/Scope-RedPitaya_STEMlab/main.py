@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2022 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022, 2024 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -39,13 +39,12 @@
 import numpy as np
 import time
 
-from FolderManager import addFolderToPATH
+from pysweepme.FolderManager import addFolderToPATH
 addFolderToPATH()
 
 import redpitaya_scpi as scpi
-from ErrorMessage import error
-
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import error
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
 
@@ -55,45 +54,45 @@ class Device(EmptyDevice):
         self.shortname = "STEMlab"
                        
         self.commands = {
-                        "Channel 1": "CH1",
-                        "Channel 2": "CH2",
-                        "External": "EXT",
-                        "Software": "EXT",
-                        "Signal": "AWG",
-                        "Now": "NOW",
-                        "None": "DISABLED",
-                        "Rising": "_PE",
-                        "Falling": "_NE",
-                        "High voltage": "HV",
-                        "Low voltage": "LV",
-                        "Averaged decimation on": "ON", 
-                        "Averaged decimation off": "OFF",
-                        }
+            "Channel 1": "CH1",
+            "Channel 2": "CH2",
+            "External": "EXT",
+            "Software": "EXT",
+            "Signal": "AWG",
+            "Now": "NOW",
+            "None": "DISABLED",
+            "Rising": "_PE",
+            "Falling": "_NE",
+            "High voltage": "HV",
+            "Low voltage": "LV",
+            "Averaged decimation on": "ON", 
+            "Averaged decimation off": "OFF",
+            }
                         
         self.max_time = 10.0
                         
     def set_GUIparameter(self):
     
         GUIparameter = { 
-                         "SweepMode": ["None", "Time range in s", "Trigger delay in s"],
-                         
-                         "TriggerSlope": ["Rising", "Falling"],
-                         "TriggerSource": ["None", "Channel 1", "Channel 2", "External", "Software", "Signal"],
-                         "TriggerCoupling": ["DC"],
-                         "TriggerLevel": 0,
-                         "TriggerDelay": 0.0, 
-                         "TriggerTimeout": 5.0,
-                         "TriggerHysteresis": 0.0,
-                         
-                         "Acquisition": ["Averaged decimation on", "Averaged decimation off"],
-                         "Average": ["1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"],
-                         "SamplingRateType": ["Samples"],
-                         "SamplingRate": ["16384", "8192", "4096", "2048", "1024", "512", "256"],
-                         
-                         "TimeRange": ["Time range in s:"],
-                         "TimeRangeValue": ["131 µs", "262 µs", "524 µs", "1.04 ms", "2.09 ms", "4.19 ms", "8.38 ms", "16.7 ms", "33.5 ms", "67.1 ms", "134 ms", "268 ms", "536 ms", "1.07 s", "2.14 s", "4.29 s", "8.60 s"],
-                         "TimeOffsetValue": 0.0,
-                        }
+            "SweepMode": ["None", "Time range in s", "Trigger delay in s"],
+
+            "TriggerSlope": ["Rising", "Falling"],
+            "TriggerSource": ["None", "Channel 1", "Channel 2", "External", "Software", "Signal"],
+            "TriggerCoupling": ["DC"],
+            "TriggerLevel": 0,
+            "TriggerDelay": 0.0, 
+            "TriggerTimeout": 5.0,
+            "TriggerHysteresis": 0.0,
+
+            "Acquisition": ["Averaged decimation on", "Averaged decimation off"],
+            "Average": ["1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"],
+            "SamplingRateType": ["Samples"],
+            "SamplingRate": ["16384", "8192", "4096", "2048", "1024", "512", "256"],
+
+            "TimeRange": ["Time range in s:"],
+            "TimeRangeValue": ["131 µs", "262 µs", "524 µs", "1.04 ms", "2.09 ms", "4.19 ms", "8.38 ms", "16.7 ms", "33.5 ms", "67.1 ms", "134 ms", "268 ms", "536 ms", "1.07 s", "2.14 s", "4.29 s", "8.60 s"],
+            "TimeOffsetValue": 0.0,
+            }
         
         # Channel specific Gui parameter                
         for i in np.arange(2)+1:
@@ -160,6 +159,9 @@ class Device(EmptyDevice):
 
         # identification = self.get_identification()
         # print("Identification", identification)
+        
+        # system_version = self.get_system_version()
+        # print("System version:", system_version)
   
     def initialize(self): 
         pass
@@ -192,7 +194,7 @@ class Device(EmptyDevice):
 
         # check settings
         # self.settings_status()
-    
+        
     def apply(self):
         
         if self.sweepmode == "Time range in s":
@@ -206,18 +208,25 @@ class Device(EmptyDevice):
             self.send_settings()
         
     def trigger_ready(self):
-        # start acquistion
-        self.port.write("ACQ:START")
-        self.starttime = time.time()        # set starttime, required for filling buffer
-        # self.settings_status()              # print (optional) current status of settings
-        self.t1 = time.time()
-        # print("Time range:", self.timerange)
+        pass
         
     def measure(self):
         # creating data list
         self.channel_data = [None for i in self.channels]
         
         for avg in range(self.averages):
+        
+            # trigger settings
+            self.trigger_settings()
+            
+            # send settings to RedPitaya
+            self.send_settings()
+            
+            self.start_acquisition()
+            self.starttime = time.time()  # set starttime, required for filling buffer
+            # self.settings_status()  # print (optional) current status of settings
+            self.t1 = time.time()
+            # print("Time range:", self.timerange)
             
             #self.sleeptime = self.triggerdelay + self.starttime - time.time()  # wait for new trigger event -> fill buffer with data pre trigger data
             #print("sleeptime 1:", self.sleeptime)
@@ -225,39 +234,40 @@ class Device(EmptyDevice):
             self.tread = time.time()
             while True:
                 
-                self.port.write("ACQ:TRIG:STAT?")                           # check trigger status
-                if self.port.read() == "TD":
+                status = self.get_trigger_status()                           # check trigger status
+                if status == "TD":
                     # print("Settings time:", time.time()-self.tread)
                     # print("Scope Triggered! Average number: {0} from {1} time: {2}".format(avg+1, self.averages, time.time()-self.t1))
                     self.t1 = time.time()
                     self.starttime = time.time()
                     break
                 elif time.time()-self.starttime > self.triggertimeout:
-                    print("Scope Trigger timeout!")
-                    break
+                    msg = "Red Pitaya Scope Trigger timeout!"
+                    raise Exception(msg)
+                    
             #self.sleeptime = self.timerange - self.triggerdelay + self.starttime - time.time()
             #print("sleeptime 2:", self.sleeptime)
             #time.sleep(self.sleeptime if self.sleeptime > 0 else 0)         # wait for filling buffer
             
-
-            #self.port.write("ACQ:STOP")                                     # stopping acquistion
-            
             self.read_data()                                                # reading data
             
-            if avg < (self.averages-1):         # renew setting for next average
-                self.send_settings()
-                self.port.write("ACQ:START")
-                self.starttime = time.time()
+            self.stop_acquisition()
+            
+            # if avg < (self.averages-1):         # renew setting for next average
+                # self.send_settings()
+                # self.start_acquisition()
+                # self.starttime = time.time()
         
         for i in range(len(self.channels)):     # average data and add offsets
             self.channel_data[i] /= self.averages
             self.channel_data[i] += self.channel_offsets[self.channels[i]]
-        self.port.write("ACQ:STOP")
+            
+        self.stop_acquisition()
         # specify time values
-        self.Time_values = np.linspace(0, self.read_samples/self.real_samplerate, len(self.channel_data[0])) + self.triggerdelay + self.timeoffsetvalue
+        self.time_values = np.linspace(0, self.read_samples/self.real_samplerate, len(self.channel_data[0])) + self.triggerdelay + self.timeoffsetvalue
 
     def call(self):
-        return [self.Time_values] + self.channel_data
+        return [self.time_values] + self.channel_data
 
     # Functions
     
@@ -342,4 +352,35 @@ class Device(EmptyDevice):
 
     def get_identification(self):
         self.port.write("*IDN?")
+        return self.port.read()
+
+    def get_system_version(self):
+        self.port.write("SYST:VERS?")
+        return self.port.read()
+        
+    def start_acquisition(self):
+        self.port.write("ACQ:START")
+        
+    def stop_acquisition(self):
+        self.port.write("ACQ:STOP")
+        
+    def get_trigger_status(self):
+        """Returns the trigger status.        
+        
+        Returns:
+            status: 
+                -> "WAIT" if not trigger is received yet
+                -> "TD" if the measurement was triggered
+        """
+        
+        self.port.write("ACQ:TRIG:STAT?")
+        return self.port.read()
+        
+    def set_average(self, state):
+
+        self.port.write("ACQ:AVG %s" % str(state))
+        
+    def get_average(self):
+
+        self.port.write("ACQ:AVG?")
         return self.port.read()

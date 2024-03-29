@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2022 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022, 2024 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -32,20 +32,15 @@
 # Device: Red pitaya STEMlab
 
 
-# TODO:
-# -> arbitrary wavefunction implementation
-
 import numpy as np
 import time
 
-from FolderManager import addFolderToPATH
+from pysweepme.FolderManager import addFolderToPATH
 addFolderToPATH()
 
 import redpitaya_scpi as scpi
-from ErrorMessage import error
-from collections import OrderedDict
-
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import error
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -55,29 +50,30 @@ class Device(EmptyDevice):
         EmptyDevice.__init__(self)
         self.shortname = "STEMlab"
         
-        self.waveforms = OrderedDict([
-                           ("Sine", "SINE"),
-                           ("Square", "SQUARE"), 
-                           ("Triangle", "TRIANGLE"), 
-                           ("Saw up", "SAWU"), 
-                           ("Saw down", "SAWD"),
-                           ("PWM", "DC"),
-                           ("Arbitrary", "ARBITRARY"),
-                           ("DC", "PWM")
-                        ])
-        self.triggertypes = OrderedDict([
-                           ("External NE", "EXT_NE"), 
-                           ("External PE", "EXT_PE"), 
-                           ("Internal", "INT"), 
-                           ("Immediately", "IMM"), 
-                           ("Gated", "GATED")
-                        ])
+        self.waveforms = {
+            "Sine": "SINE",
+            "Square": "SQUARE", 
+            "Triangle": "TRIANGLE", 
+            "Saw up": "SAWU", 
+            "Saw down": "SAWD",
+            "PWM": "PWM",
+            "Arbitrary": "ARBITRARY",
+            "DC": "DC",
+            }
+            
+        self.triggertypes = {
+            "Internal": "INT", 
+            "External NE": "EXT_NE", 
+            "External PE": "EXT_PE", 
+            "Immediately": "IMM", 
+            "Gated": "GATED",
+            }
                         
-        self.operationmodes = OrderedDict([
-                           ("Continuous", "CONTINUOUS"), 
-                           ("Burst", "BURST"), 
-                           ("Stream", "STREAM")
-                        ])
+        self.operationmodes = {
+            "Continuous": "CONTINUOUS",
+            "Burst": "BURST",
+            "Stream": "STREAM",
+            }
                         
     def set_GUIparameter(self):
     
