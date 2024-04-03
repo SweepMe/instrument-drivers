@@ -28,7 +28,7 @@
 # SweepMe! device class
 # Type: Temperature
 # Device: Accretech UF series
-
+from __future__ import annotations
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.FolderManager import addFolderToPATH
@@ -64,11 +64,16 @@ class Device(EmptyDevice):
     def __init__(self):
         EmptyDevice.__init__(self)
 
+        self.instance_key = None
+        self.port_str = None
+        self.prober: accretech_uf.AccretechProber = None
+        self.temperature: float = 0.0
+
         self.shortname = "Accretech"
-        self.variables = ["Wafer ID", "Wafer", "Die x", "Die y", "X", "Y"]
-        self.units = ["", "", "", "", "", ""]  # unit of X and Y is either µm or inch, depending on system settings
-        self.plottype = [False, True, True, True, True, True]
-        self.savetype = [True, True, True, True, True, True]
+        self.variables = ["Temperature"]
+        self.units = [""]  # unit of X and Y is either µm or inch, depending on system settings
+        self.plottype = [True]
+        self.savetype = [True]
 
         self.port_manager = True
         self.port_types = ["GPIB"]
@@ -78,44 +83,44 @@ class Device(EmptyDevice):
             "GPIB_EOLread": "\r\n",
         }
 
-        # self.actual_wafer_text = ""
-        # self.actual_die_text = ""
-        # self.actual_subsite_text = "Not available"
-        # self.actual_xpos = "Not available"
-        # self.actual_ypos = "Not available"
-
         self.verbosemode = True
 
-    def set_GUIparameter(self):
-        gui_parameter = {
-            "SweepValueWafer": "Wafer table",
-            "SweepValueDie": "Die table",
-            "SweepValueSubsite": "Subsite table",
+    def set_GUIparameter(self) -> dict:  # noqa: N802
+        """Set initial GUI parameters."""
+        return {
+            "SweepMode": ["None", "Temperature"],
+            "Temperature unit": ["°C"],
         }
-        return gui_parameter
 
-    def get_GUIparameter(self, parameter):
-        self.sweep_value_wafer = parameter["SweepValueWafer"]
-        self.sweep_value_die = parameter["SweepValueDie"]
-        self.sweep_value_subsite = parameter["SweepValueSubsite"]
+    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
+        """Handle SweepMe GUI parameters."""
+        self.units[0] = parameter["Temperature unit"]
 
-    def connect(self):
+        self.port_str = parameter["Port"]
+
+    def connect(self) -> None:
+        """Connect to the device and handle multiple instances."""
         # creating an AccretechProber instance that handles all communication
+        # TODO: Handle multiple instances
+        self.instance_key = f"Accretech_UF_{self.port_str}"
+
+        if self.instance_key in self.device_communication:
+            self.port = self.device_communication[self.instance_key]
+        else:
+            self.device_communication[self.instance_key] = self.port
+
         self.prober = accretech_uf.AccretechProber(self.port)
+
         self.prober.set_verbose(self.verbosemode)
 
-    def disconnect(self):
+    def disconnect(self) -> None:
+        """Disconnect from the device."""
         del self.prober  # this makes sure the event mechanism is disabled
 
-    def initialize(self):
-        self.print_info()
-
-        self.print_status()
-
+    def initialize(self) -> None:
+        """Initialize the device."""
+        # TODO: Check
         self.prober.reset_alarm()
-
-    def deinitialize(self):
-        pass
 
     def configure(self):
         pass
@@ -123,15 +128,26 @@ class Device(EmptyDevice):
     def unconfigure(self):
         pass
 
-    def apply(self):
-        pass
+    def apply(self) -> None:
+        """Apply the given temperature."""
+        temperature = self.value
 
-    def call(self):
-        return [
-            self.last_wafer_id,
-            self.last_wafer_str,
-            self.die_x,
-            self.die_y,
-            self.last_position[0],
-            self.last_position[1],
-        ]
+        max_temperature = 200.0
+        min_temperature = -55.0
+        if temperature > max_temperature or temperature < min_temperature:
+            msg = f"Accretech UF series: Temperature must be between {min_temperature} and {max_temperature} °C."
+            raise Exception(msg)
+
+        status = self.prober.set_chuck_temperature(temperature)
+        successful_status = 93
+        if status != successful_status:
+            message_box("Error", "Could not set temperature")
+
+    def measure(self) -> None:
+        """Measure the temperature."""
+        # TODO: chuck_temperature or hot_chuck_temperature?
+        self.temperature, target_temperature = self.prober.get_temperature()
+
+    def call(self) -> list[float]:
+        """Return measured temperature to SweepMe GUI."""
+        return [self.temperature]

@@ -974,3 +974,44 @@ class AccretechProber:
     def reset_alarm(self) -> int:
         self.port.write("es")
         return self.wait_until_status_byte(119)
+
+    def request_chuck_temperature(self) -> tuple[float, float]:
+        """Returns the current and target chuck temperature in degree Celsius."""
+        answer = self.query("f")
+        if answer == "":
+            msg = "Accretech UF series: Chuck temperature is not controlled."
+            raise Exception(msg)
+
+        current_temperature = float(answer[:4]) * 0.1
+        target_temperature = float(answer[4:]) * 0.1
+
+        return current_temperature, target_temperature
+
+    def request_hot_chuck_temperature(self) -> float:
+        """Returns the current hot chuck temperature in degree Celsius."""
+        answer = self.query("f1")
+        return float(answer)
+
+    def set_chuck_temperature(self, temperature: float) -> int:
+        """Sets the chuck temperature to the given value in degree Celsius.
+
+        Allowed temperature range: -55 - 200°C
+
+        Returns:
+            int: status byte
+                # 93: Correct
+                # 99: Incorrect
+        """
+        max_temperature = 200.0
+        min_temperature = -55.0
+        if temperature > max_temperature or temperature < min_temperature:
+            msg = f"Accretech UF series: Temperature must be between {min_temperature} and {max_temperature} °C."
+            raise Exception(msg)
+
+        self.port.write("h" + str(int(temperature * 10)))
+        answer = self.wait_until_status_byte((93, 99))
+
+        if answer == 99:  # Abnormal end of command  # noqa: PLR2004
+            self.raise_error(answer)
+
+        return answer
