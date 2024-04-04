@@ -411,19 +411,19 @@ class AccretechProber:
         """
         return self.query("i%02d" % int(value))
 
-    def request_device_name(self) -> str:  # noqa: D102
+    def request_device_name(self) -> str:
         return self.request_parameter(0)
 
-    def request_wafer_size(self) -> str:  # noqa: D102
+    def request_wafer_size(self) -> str:
         return self.request_parameter(1)
 
-    def request_card_type(self) -> str:  # noqa: D102
+    def request_card_type(self) -> str:
         return self.request_parameter(20)
 
-    def request_wafer_thickness(self) -> str:  # noqa: D102
+    def request_wafer_thickness(self) -> str:
         return self.request_parameter(22)
 
-    def request_contact_height(self) -> str:  # noqa: D102
+    def request_contact_height(self) -> str:
         return self.request_parameter(24)
 
     def request_onwafer_info(self) -> tuple[int, int, int, int, int, int, int, int]:
@@ -546,18 +546,18 @@ class AccretechProber:
 
         return x, y
 
-    def is_chuck_contacted(self) -> bool:  # noqa: D102
+    def is_chuck_contacted(self) -> bool:
         return bool(self.request_current_status()[0])
 
-    def is_wafer_on_chuck(self) -> bool:  # noqa: D102
+    def is_wafer_on_chuck(self) -> bool:
         return bool(self.request_current_status()[1])
 
-    def is_last_wafer_on_chuck(self) -> bool:  # noqa: D102
+    def is_last_wafer_on_chuck(self) -> bool:
         self.query("LIW")
         answer = self.port.read()
         return answer == "1"
 
-    def is_alarm(self) -> bool:  # noqa: D102
+    def is_alarm(self) -> bool:
         return bool(self.request_current_status()[2])
 
     def get_device_parameters(self) -> str:
