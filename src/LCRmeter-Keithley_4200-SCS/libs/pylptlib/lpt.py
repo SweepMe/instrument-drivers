@@ -1,7 +1,6 @@
 # MIT License
-from __future__ import annotations
 
-# Copyright (c) 2023 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
@@ -17,6 +16,8 @@ from __future__ import annotations
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+
+from __future__ import annotations
 import ctypes as c
 
 from .error_codes import ERROR_CODES
@@ -949,6 +950,13 @@ def decode_pulse_status(status_bits: int) -> dict:
 
 
 # ### CVU
+def rdelay(delay: float):
+    """Set a user-programmable delay."""
+    c_delay = c.c_double(delay)
+    err = _dll.rdelay(c_delay)
+    check_error(err)
+
+
 def asweepv(instr_id: str, voltages: list[float], delay: float) -> None:
     """Generate a waveform based on user-defined forcing array (logarithmic sweep or other custom forcing commands)."""
     c_instr_id = c.c_int32(instr_id)

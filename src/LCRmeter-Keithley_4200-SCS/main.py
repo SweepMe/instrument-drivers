@@ -68,6 +68,7 @@ class Device(EmptyDevice):
         self.plottype = [True, True, True, True]
         self.savetype = [True, True, True, True]
         self.identifier: str = ""
+        self.port_string: str = ""
 
         # block below is needed if KXCI handling will be implemented in future
         # where commands can be sent via GPIB or TCPIP
@@ -85,6 +86,7 @@ class Device(EmptyDevice):
         # }
 
         # Currently, only auto range is used
+        self.range: str = ""
         self.current_ranges = {
             "Auto": 0,
         }
@@ -121,7 +123,11 @@ class Device(EmptyDevice):
         self.reactance: float = 0.0
 
         self.bias_mode: str = ""
+        self.value_level_rms = None
+        self.value_bias = None
+        self.trigger_type = None
 
+        self.trigger_delay: float = 0.0
         self.integration = None
         self.ALC = None
         self.stepmode = None
@@ -140,14 +146,13 @@ class Device(EmptyDevice):
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set initial GUI parameter in SweepMe!."""
         return {
-            # "Average": ["1", "2", "4", "8", "16", "32", "64"],  # TODO: check
             "SweepMode": ["None", "Frequency in Hz", "Voltage bias in V"],
             "StepMode": ["None", "Frequency in Hz", "Voltage bias in V"],
-            "ValueRMS": 0.02,  # TODO: Is it the RMS value or the amplitude
+            "ValueRMS": 0.02,
             "ValueBias": 0.0,
             "Frequency": 1000.0,
             "Integration": list(self.speeds),
-            "ALC": ["Off"],  # TODO: check
+            "ALC": ["Off"],  # Currently unused
             "Trigger": ["Internal"],
             "TriggerDelay": "0.1",
             "Range": list(self.current_ranges),
@@ -165,12 +170,12 @@ class Device(EmptyDevice):
         self.frequency = float(parameter["Frequency"])
         self.integration = self.speeds[parameter["Integration"]]
 
-        self.trigger_type = parameter["Trigger"]  # TODO: check
-        self.trigger_delay = parameter["TriggerDelay"]  # TODO: needs to be processed somewhere
+        self.trigger_type = parameter["Trigger"]  # currently unused
+        self.trigger_delay = float(parameter["TriggerDelay"])
         self.range = self.current_ranges[parameter["Range"]]
 
         # Only use Resistance and reactance measurement
-        self.operating_mode = self.operating_modes["RjX"]
+        self.operating_mode = "RjX"
 
     def connect(self) -> None:
         """Connect to the Keithley 4200-SCS LCRmeter."""
@@ -245,7 +250,7 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Set bias and measurement parameters with start values from GUI."""
-        self.set_ac_frequency(self.frequency)
+        self.set_frequency(self.frequency)
         self.set_delay(self.trigger_delay)
 
         self.set_dc_bias(self.value_bias)
@@ -290,7 +295,7 @@ class Device(EmptyDevice):
             self.set_ac_voltage(value)
 
         elif mode == "Frequency in Hz":
-            self.set_ac_frequency(value)
+            self.set_frequency(value)
 
     """ here wrapped functions start """
 
@@ -302,9 +307,17 @@ class Device(EmptyDevice):
         """Set AC voltage in Volt."""
         self.lpt.setlevel(self.card_id, ac_voltage)
 
-    def set_ac_frequency(self, ac_frequency: float) -> None:
+    def set_frequency(self, frequency: float) -> None:
         """Set AC frequency in Hz."""
-        self.lpt.setfreq(self.card_id, ac_frequency)
+        min_frequency = 1000
+        if round(frequency, 0) == min_frequency:
+            # Handle rounding errors like 999.999 Hz
+            frequency = min_frequency
+        elif frequency < min_frequency:
+            msg = f"Unsupported frequency value of {frequency}. Frequency must be greater than 1 kHz."
+            raise ValueError(msg)
+
+        self.lpt.setfreq(self.card_id, frequency)
 
     def set_delay(self, delay: float) -> None:
         """Set delay in seconds."""
@@ -313,12 +326,13 @@ class Device(EmptyDevice):
     def set_measure_range(self) -> None:
         """Set measure range."""
         # Currently, only auto range is used
-        if self.range == 0:
+        if self.range == "Auto":
             self.lpt.setauto(self.card_id)
 
     def measure_impedance(self) -> list[float]:
         """Measure impedance."""
-        result1, result2 = self.lpt.measz(self.card_id, self.operating_mode, self.speed)
+        _mode = self.operating_modes[self.operating_mode]
+        result1, result2 = self.lpt.measz(self.card_id, _mode, self.integration)
         return [result1, result2]
 
     def measure_frequency(self) -> float:
