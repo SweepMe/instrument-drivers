@@ -30,6 +30,8 @@
 # Device: Accretech UF series
 from __future__ import annotations
 
+import os
+
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.FolderManager import addFolderToPATH
 
@@ -41,10 +43,9 @@ addFolderToPATH()
 
 # direct import by path
 import imp
-import os
 
 accretech_uf = imp.load_source(
-    "accretech_uf",
+    "accretech_uf_temperature",
     os.path.dirname(os.path.abspath(__file__)) + os.sep + r"libs\accretech_uf.py",
 )
 
@@ -61,7 +62,10 @@ except ModuleNotFoundError:
 
 
 class Device(EmptyDevice):
-    def __init__(self):
+    """Device class for Accretech UF series."""
+
+    def __init__(self) -> None:
+        """Initialize the device."""
         EmptyDevice.__init__(self)
 
         self.instance_key = None
@@ -71,7 +75,7 @@ class Device(EmptyDevice):
 
         self.shortname = "Accretech"
         self.variables = ["Temperature"]
-        self.units = [""]  # unit of X and Y is either µm or inch, depending on system settings
+        self.units = [""]
         self.plottype = [True]
         self.savetype = [True]
 
@@ -101,13 +105,13 @@ class Device(EmptyDevice):
     def connect(self) -> None:
         """Connect to the device and handle multiple instances."""
         # creating an AccretechProber instance that handles all communication
-        # TODO: Handle multiple instances
-        self.instance_key = f"Accretech_UF_{self.port_str}"
-
-        if self.instance_key in self.device_communication:
-            self.port = self.device_communication[self.instance_key]
-        else:
-            self.device_communication[self.instance_key] = self.port
+        # TODO: Handle multiple instances/SRQ Events
+        # self.instance_key = f"Accretech_UF_{self.port_str}"
+        #
+        # if self.instance_key in self.device_communication:
+        #     self.port = self.device_communication[self.instance_key]
+        # else:
+        #     self.device_communication[self.instance_key] = self.port
 
         self.prober = accretech_uf.AccretechProber(self.port)
 
@@ -122,26 +126,9 @@ class Device(EmptyDevice):
         # TODO: Check
         self.prober.reset_alarm()
 
-    def configure(self):
-        pass
-
-    def unconfigure(self):
-        pass
-
     def apply(self) -> None:
         """Apply the given temperature."""
-        temperature = self.value
-
-        max_temperature = 200.0
-        min_temperature = -55.0
-        if temperature > max_temperature or temperature < min_temperature:
-            msg = f"Accretech UF series: Temperature must be between {min_temperature} and {max_temperature} °C."
-            raise Exception(msg)
-
-        status = self.prober.set_chuck_temperature(temperature)
-        successful_status = 93
-        if status != successful_status:
-            message_box("Error", "Could not set temperature")
+        self.prober.set_chuck_temperature(self.value)
 
     def measure(self) -> None:
         """Measure the temperature."""

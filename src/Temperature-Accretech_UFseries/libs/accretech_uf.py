@@ -857,7 +857,9 @@ class AccretechProber:
         return self.wait_until_status_byte((66, 67), timeout=30.0)
 
     def move_specified_subdie(self, x, y, s) -> int:
-        """Args:
+        """Move to specified sub die block coordinate value.
+
+        Args:
             x: sub die block coordinate in x-direction
             y: sub die block coordinate in y-direction
             s: sub die address
@@ -866,13 +868,14 @@ class AccretechProber:
             int: status byte
                 # 66: End of movement to coordinator value
                 # 67: Z UP (test start)
-
         """
         self.port.write("JSY%03dX%03dS%03d" % (int(y), int(x), int(s)))
         return self.wait_until_status_byte((66, 67), timeout=10.0)
 
     def move_contact_position(self, position) -> int:
-        """Args:
+        """XY travel (absolute distance).
+
+        Args:
             position:
 
         Returns:
@@ -880,7 +883,6 @@ class AccretechProber:
                 # 65: End of X/Y-axis movement
                 # 67: Z UP (test start)
                 # 74: Out of probing area
-
         """
         self.port.write("CM%02dX" % (int(position)))
         return self.wait_until_status_byte((65, 67, 74), timeout=10.0)
@@ -972,6 +974,7 @@ class AccretechProber:
         return self.wait_until_status_byte(101)
 
     def reset_alarm(self) -> int:
+        """Erase error message and clear alarm status."""
         self.port.write("es")
         return self.wait_until_status_byte(119)
 
@@ -992,7 +995,7 @@ class AccretechProber:
         answer = self.query("f1")
         return float(answer)
 
-    def set_chuck_temperature(self, temperature: float) -> int:
+    def set_chuck_temperature(self, temperature: float) -> None:
         """Sets the chuck temperature to the given value in degree Celsius.
 
         Allowed temperature range: -55 - 200°C
@@ -1011,7 +1014,6 @@ class AccretechProber:
         self.port.write("h" + str(int(temperature * 10)))
         answer = self.wait_until_status_byte((93, 99))
 
-        if answer == 99:  # Abnormal end of command  # noqa: PLR2004
+        correct_status = 93
+        if answer != correct_status:  # Abnormal end of command  # noqa: PLR2004
             self.raise_error(answer)
-
-        return answer
