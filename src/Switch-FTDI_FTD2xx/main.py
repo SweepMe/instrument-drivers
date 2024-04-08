@@ -51,15 +51,16 @@ class Device(EmptyDevice):
         The FTDI driver needs to be installed, which can be found <a href="https://ftdichip.com/drivers/">here</a>.
         </p>
         <h4>Parameters</h4>
-        <p>
-        The <em>Start Command </em>and <em>End command </em>are sent at the configure and unconfigure steps,
-        respectively.
-        </p>
-        <p>
-        The Readout length can be set if responses with a set length are expected.
-        Set Readout length = 0 to read out the full buffer.
-        </p>
-        <p><em>Timeout </em>is set for both reading and writing.</p>
+        <ul>
+        <li><em>Start Command</em> and <em>End command</em> are sent at the configure and unconfigure steps,
+        respectively. </li>
+        <li><em>Readout length</em> can be set if responses with a set length are expected.
+        Set Readout length = 0 to read out the full buffer.</li>
+        <li><em>Timeout</em> is set for both reading and writing.</li>
+        <li><em>Bit mode: Reset</em> is the standard mode.</li>
+        <li>If no <em>Baud rate</em> is given, the default device baud rate is used.
+        The clock for the Asynchronous Bit Band mode is actually 16 times the Baud rate.</li>
+        </ul>
     """
 
     def __init__(self) -> None:
@@ -83,6 +84,19 @@ class Device(EmptyDevice):
         self.end_command: str = ""
         self.readout_length: int = 0
         self.timeout_ms: int = 5000  # Read and write timeout in ms
+        self.baud_rate: int = 0
+
+        self.bit_mode: int = 0x00
+        self.bit_modes = {
+            "Reset": 0x00,
+            "Asynchronous Bit Bang": 0x01,
+            "MPSSE": 0x02,
+            "Sync Bit Bang": 0x04,
+            "MCU Host Bus Emulation Mode": 0x08,
+            "Fast Opto-Isolated Serial Mode": 0x10,
+            "CBUS Bit Bang Mode": 0x20,
+            "Single Channel Synchronous 245 FIFO Mode": 0x40,
+        }
 
         self.verbose = False  # Set to True to print out the sent and received strings for testing
 
@@ -100,6 +114,8 @@ class Device(EmptyDevice):
             "End command": "",
             "Readout length": 0,
             "Timeout in ms": 5000,
+            "Bit mode": list(self.bit_modes.keys()),
+            "Baud rate": "",
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -112,6 +128,10 @@ class Device(EmptyDevice):
 
         self.readout_length = int(parameter["Readout length"])
         self.timeout_ms = int(parameter["Timeout in ms"])
+        self.bit_mode = self.bit_modes[parameter["Bit mode"]]
+
+        if parameter["Baud rate"] != "":
+            self.baud_rate = int(parameter["Baud rate"])
 
         self.port_str = self.handle_bytestring(parameter["Port"])
         self.driver_name = parameter["Device"]
@@ -123,6 +143,7 @@ class Device(EmptyDevice):
         # Set Name/Number of COM Port as key
         self.instance_key = f"{self.driver_name}_{self.port_str}"
 
+        # If the device is already instantiated by another driver, use the existing instance
         if self.instance_key in self.device_communication:
             self.device = self.device_communication[self.instance_key]
         else:
@@ -146,11 +167,19 @@ class Device(EmptyDevice):
     def configure(self) -> None:
         """Handle device configurations and start command."""
         self.device.setTimeouts(self.timeout_ms, self.timeout_ms)
-        self.send_command(self.start_command)
+        self.set_bit_mode(0xFF, self.bit_mode)
+
+        # Set baud rate if given, otherwise use default
+        if self.baud_rate != 0:
+            self.set_baud_rate(self.baud_rate)
+
+        if self.start_command != "":
+            self.send_command(self.start_command)
 
     def unconfigure(self) -> None:
         """Handle device unconfigurations and end command."""
-        self.send_command(self.end_command)
+        if self.end_command != "":
+            self.send_command(self.end_command)
 
     def apply(self) -> None:
         """Send the command to the device."""
@@ -184,6 +213,14 @@ class Device(EmptyDevice):
             encoded_string = bytes(string, "utf-8")
 
         return encoded_string
+
+    def set_baud_rate(self, baud_rate: int) -> None:
+        """Set baud rate of the device."""
+        self.device.setBaudRate(baud_rate)
+
+    def set_bit_mode(self, mask: int, mode: int) -> None:
+        """Set bit mode of the device."""
+        self.device.setBitMode(mask, mode)
 
     @staticmethod
     def handle_bytestring(bytestring: str | bytes) -> str:
