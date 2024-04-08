@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2020 Axel Fischer (sweep-me.net)
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,8 +31,8 @@
 # Device: TDK-Lambda Genesys
 
 import time
-from ErrorMessage import error
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import error
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
 
@@ -43,30 +43,29 @@ class Device(EmptyDevice):
         self.shortname = "Genesys"
         
         self.variables = ["Voltage", "Current"]
-        self.units =     ["V", "A"]
-        self.plottype =  [True, True] # True to plot data
-        self.savetype =  [True, True] # True to save data
+        self.units = ["V", "A"]
+        self.plottype = [True, True] # True to plot data
+        self.savetype = [True, True] # True to save data
 
         self.port_manager = True
-        self.port_types = ["COM"] # can be both RS-232 or RS-485. It depends on the adapter used.
+        self.port_types = ["COM"]  # can be both RS-232 or RS-485. It depends on the used adapter.
         
-        self.port_properties = { "timeout": 1,
-                                 "EOL": "\r",
-                                 "baudrate": 9600, # factory default
-                                 # "delay": 0.1,
-                                 }
-                                 
-                                 
+        self.port_properties = {
+            "timeout": 1,
+            "EOL": "\r",
+            "baudrate": 9600,  # factory default
+            }
+
     def set_GUIparameter(self):
         
-        GUIparameter = {
-                        "SweepMode" : ["Voltage in V", "Current in A", "Manual control"],
+        gui_parameter = {
+                        "SweepMode": ["Voltage in V", "Current in A", "Manual control"],
                         "RouteOut": ["Rear"],
-                        "Channel": ["6"] + [str(x) for x in range(1,31,1)], # 6 is the default channel
+                        "Channel": ["6"] + [str(x) for x in range(1, 31, 1)],  # 6 is the default channel
                         "Compliance": 0.1,
                         }
                         
-        return GUIparameter
+        return gui_parameter
                                  
     def get_GUIparameter(self, parameter = {}):
         self.sweepmode = parameter['SweepMode']
@@ -89,7 +88,6 @@ class Device(EmptyDevice):
             self.set_remote_mode("REM")  # remote mode, alternative: RMT LLO (local lockout)
         else:
             self.set_remote_mode("LOC")
-        
 
     def deinitialize(self):
         pass
@@ -105,11 +103,7 @@ class Device(EmptyDevice):
         elif self.sweepmode.startswith("Current"):
             self.set_voltage(float(self.protection))
             if self.sweepmode != "Manual control":
-                self.set_current(0.0)   
-         
-           
-    def unconfigure(self):
-        pass
+                self.set_current(0.0)
 
     def poweron(self):
         if self.sweepmode != "Manual control":
@@ -127,7 +121,13 @@ class Device(EmptyDevice):
         elif self.sweepmode.startswith("Current"):
             self.set_current(float(self.value))
 
-         
+    def adapt(self):
+        if self.sweepmode != "Manual control":
+            # this is needed if the power supply is operated with an interlock. In case the interlock is removed again,
+            # the output would not be switched on again.
+            if self.get_output() == "OFF":
+                self.set_output_on()
+
     def measure(self):        
 
         self.v = self.get_measured_voltage()
@@ -135,27 +135,25 @@ class Device(EmptyDevice):
         
         # alternative (maybe faster)
         # MV, PV, MC, PC =  self.get_status()
-        
 
     def call(self):
         return [self.v, self.i]
-        
+
+    """ convenience functions """
         
     def change_address(self):
 
-        if not self.device_name + self.port_str + "Address" in self.device_communication or self.device_communication[self.device_name + self.port_str + "Address"] != self.channel:
+        if (not self.device_name + self.port_str + "Address" in self.device_communication or
+                self.device_communication[self.device_name + self.port_str + "Address"] != self.channel):
 
             self.port.write("ADR %i" % int(self.channel))
             ret = self.port.read()
             # print("Address ok?", ret)
         
             self.device_communication[self.device_name + self.port_str + "Address"] = self.channel
-        
 
+    """ wrapped communication commands """
 
-    """ setter/getter functions """
-    
-    
     def get_identification(self):
     
         self.change_address()  
