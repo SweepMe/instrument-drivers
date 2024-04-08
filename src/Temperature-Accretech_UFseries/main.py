@@ -151,3 +151,10 @@ class Device(EmptyDevice):
     def call(self) -> list[float]:
         """Return measured temperature to SweepMe GUI."""
         return [self.temperature]
+
+    """ Convenience functions. """
+
+    def measure_temperature(self) -> float:
+        """Measure the temperature."""
+        _temperature, _target_temperature = self.prober.get_temperature()
+        return _temperature
