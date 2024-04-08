@@ -143,7 +143,13 @@ class Device(EmptyDevice):
         self.port.read = self.port.rx_txt       # redefine scpi-read command
 
         # identification = self.get_identification()
-        # print("Identification", identification)
+        # print("Identification:", identification)
+        
+        # board_name = self.get_board_name()
+        # print("Board name:", board_name)
+        
+        # version = self.get_system_version()
+        # print("Version:", version)
   
     def initialize(self): 
         pass
@@ -337,3 +343,20 @@ class Device(EmptyDevice):
 
         self.port.write("*IDN?")
         return self.port.read()
+        
+    def get_board_name(self):
+        self.port.write("SYSTem:BRD:Name?")
+        return self.port.read()
+        
+    def get_board_id(self):
+        self.port.write("SYSTem:BRD:ID?")
+        return self.port.read()
+        
+    def get_system_help(self):
+        self.port.write("SYSTem:Help?")
+        return self.port.read()
+     
+    def get_system_version(self):
+        self.port.write("SYST:VERS?")
+        return self.port.read()
+    
