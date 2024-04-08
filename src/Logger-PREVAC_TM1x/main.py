@@ -38,7 +38,7 @@ class Device(EmptyDevice):
 
     description = """
     <h3>Prevac TMC1x</h3>
-    <p>This driver controls Prevac TM13 or TM14 thickness controller.</p>
+    <p>This driver controls Prevac TM13 or TM14 thickness monitor.</p>
     <p>Sample rate only for TM14</p>
     """
 
@@ -112,26 +112,70 @@ class Device(EmptyDevice):
         """Return the current frequency."""
         return self.get_frequency()
 
-    """ Getter Functions """
+    """ Device Functions """
 
     def get_frequency(self) -> float:
-        """Request current frequency in Hz."""
+        """Request current frequency in Hz.
+
+        response[:4]    frequency in Hz with 0.01 Hz resolution
+        response[4]     1 microbalance correction connected, 2 not
+        response[5]     measurements are numbered from 0 to 255
+        response[6:7]   duration of the measurement in ms
+        response[7]     13 for TM13, 14 for TM14
+        """
         command = 0x53
 
         _sample_rate = self.sample_rate_dict[self.sample_rate]
-        data = f"{_sample_rate}000"
+        data = f"{_sample_rate}000"  # Bytes 2-4 must be zero
 
         self.send_dataframe(command, data)
 
         response = self.get_dataframe()
-
         frequency = response[:4]
-        response[4]  # 1 microbalance correction connected, 2 not
-        response[5]  # measurements are numbered from 0 to 255
-        response[6:7]  # duration of the measurement in ms
-        response[7]  # 13 for TM13, 14 for TM14
 
         return frequency / 100
+
+    def set_device_address(self, address: int) -> None:
+        """Set the device address."""
+        command = 0x58
+        min_address = 1
+        max_address = 254
+        if address < min_address or address > max_address:
+            msg = f"PREVAC TM1x: Address must be between {min_address} and {max_address}."
+            raise ValueError(msg)
+
+        data = f"000{address}"
+        self.send_dataframe(command, data)
+
+    def set_logic_group(self, group: int) -> None:
+        """Set the logic group."""
+        command = 0x59
+        min_group = 0
+        max_group = 254
+        if group < min_group or group > max_group:
+            msg = f"PREVAC TM1x: Group must be between {min_group} and {max_group}."
+            raise ValueError(msg)
+
+        data = f"000{group}"
+        self.send_dataframe(command, data)
+
+    def get_product_number(self) -> int:
+        """Request the product number."""
+        command = 0xFD
+        data = "0000"
+        self.send_dataframe(command, data)
+
+        response = self.get_dataframe()
+        return response[:15]
+
+    def get_serial_number(self) -> int:
+        """Request the serial number."""
+        command = 0xFE
+        data = "0000"
+        self.send_dataframe(command, data)
+
+        response = self.get_dataframe()
+        return response[:13]
 
     """ Communication Functions """
 
@@ -190,7 +234,7 @@ class Device(EmptyDevice):
 
         data = self.port.read(length[0])
         received_checksum = self.port.read(1)[0]
-        calculated_checksum = self.generate_checksum([
+        calculated_checksum = self.calculate_checksum([
             driver_address,
             device_group,
             logic_group,
@@ -201,7 +245,7 @@ class Device(EmptyDevice):
         ])
 
         if received_checksum != calculated_checksum:
-            msg = f"PREVAC TM1x: Checksums do not match. {self.checksum} != {self.received_checksum}"
+            msg = f"PREVAC TM1x: Checksums do not match. {received_checksum} != {calculated_checksum}"
             raise Exception(msg)
 
         if self.port.in_waiting() > 0:
