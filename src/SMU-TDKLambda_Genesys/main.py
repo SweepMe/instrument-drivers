@@ -209,7 +209,6 @@ class Device(EmptyDevice):
         answer = self.port.read()
         return float(answer)
 
-        
     def set_current(self, value):
         
         self.change_address()  
@@ -233,6 +232,11 @@ class Device(EmptyDevice):
         self.port.read()
         
     def get_output(self):
+        """Queries the output state.
+
+        Returns:
+            str -> output "OFF" or "ON"
+        """
         
         self.change_address()  
         self.port.write("OUT?")
