@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2022 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022, 2024 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -32,20 +32,15 @@
 # Device: Red pitaya STEMlab
 
 
-# TODO:
-# -> arbitrary wavefunction implementation
-
 import numpy as np
 import time
 
-from FolderManager import addFolderToPATH
+from pysweepme.FolderManager import addFolderToPATH
 addFolderToPATH()
 
 import redpitaya_scpi as scpi
-from ErrorMessage import error
-from collections import OrderedDict
-
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import error
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -55,29 +50,30 @@ class Device(EmptyDevice):
         EmptyDevice.__init__(self)
         self.shortname = "STEMlab"
         
-        self.waveforms = OrderedDict([
-                           ("Sine", "SINE"),
-                           ("Square", "SQUARE"), 
-                           ("Triangle", "TRIANGLE"), 
-                           ("Saw up", "SAWU"), 
-                           ("Saw down", "SAWD"),
-                           ("PWM", "DC"),
-                           ("Arbitrary", "ARBITRARY"),
-                           ("DC", "PWM")
-                        ])
-        self.triggertypes = OrderedDict([
-                           ("External NE", "EXT_NE"), 
-                           ("External PE", "EXT_PE"), 
-                           ("Internal", "INT"), 
-                           ("Immediately", "IMM"), 
-                           ("Gated", "GATED")
-                        ])
+        self.waveforms = {
+            "Sine": "SINE",
+            "Square": "SQUARE", 
+            "Triangle": "TRIANGLE", 
+            "Saw up": "SAWU", 
+            "Saw down": "SAWD",
+            "PWM": "PWM",
+            "Arbitrary": "ARBITRARY",
+            "DC": "DC",
+            }
+            
+        self.triggertypes = {
+            "Internal": "INT", 
+            "External NE": "EXT_NE", 
+            "External PE": "EXT_PE", 
+            "Immediately": "IMM", 
+            "Gated": "GATED",
+            }
                         
-        self.operationmodes = OrderedDict([
-                           ("Continuous", "CONTINUOUS"), 
-                           ("Burst", "BURST"), 
-                           ("Stream", "STREAM")
-                        ])
+        self.operationmodes = {
+            "Continuous": "CONTINUOUS",
+            "Burst": "BURST",
+            "Stream": "STREAM",
+            }
                         
     def set_GUIparameter(self):
     
@@ -98,7 +94,7 @@ class Device(EmptyDevice):
                         "Trigger": list(self.triggertypes.keys()),
                         "OperationMode": list(self.operationmodes.keys()),
                         "BurstRepetitions": 1,
-                        'BurstSignalRepetitions': 3,
+                        "BurstSignalRepetitions": 3,
                         "BurstDelay": 0,
                         "ArbitraryWaveformFile": self.get_folder("CUSTOMFILES"),
                         }
@@ -147,11 +143,14 @@ class Device(EmptyDevice):
         self.port.read = self.port.rx_txt       # redefine scpi-read command
 
         # identification = self.get_identification()
-        # print("Identification", identification)
-  
-    def initialize(self): 
-        pass
+        # print("Identification:", identification)
         
+        # board_name = self.get_board_name()
+        # print("Board name:", board_name)
+        
+        # version = self.get_system_version()
+        # print("Version:", version)
+
     def configure(self):
         self.limits = 1.0       # +/- Voltage limit of frequency generator
         
@@ -220,12 +219,9 @@ class Device(EmptyDevice):
         
         # enable output
         self.port.write('OUTPUT{0}:STATE ON'.format(self.channel))
-        self.port.write('OUTPUT{0}:STATE?'.format(self.channel))        
-    
-    def measure(self):
-        pass
-        # self.settings_status()  # print status
-    
+        # self.port.write('OUTPUT{0}:STATE?'.format(self.channel))
+        # self.port.read()
+
     def call(self):
         if self.sweep_mode != "None":
             return [self.value]
@@ -341,3 +337,20 @@ class Device(EmptyDevice):
 
         self.port.write("*IDN?")
         return self.port.read()
+        
+    def get_board_name(self):
+        self.port.write("SYSTem:BRD:Name?")
+        return self.port.read()
+        
+    def get_board_id(self):
+        self.port.write("SYSTem:BRD:ID?")
+        return self.port.read()
+        
+    def get_system_help(self):
+        self.port.write("SYSTem:Help?")
+        return self.port.read()
+     
+    def get_system_version(self):
+        self.port.write("SYST:VERS?")
+        return self.port.read()
+    
