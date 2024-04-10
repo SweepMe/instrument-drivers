@@ -1,6 +1,6 @@
 import pysweepme
 
-COM_PORT = "COM16"  # Needs to be adjusted
+COM_PORT = "COM19"  # Needs to be adjusted
 DRIVER_PATH = r"C:\Code\instrument-drivers\src"  # Needs to be adjusted
 DRIVER_NAME = "Logger-PREVAC_TM1x"
 
@@ -13,7 +13,7 @@ class DeviceTest:
         self.device = pysweepme.get_driver(DRIVER_NAME, DRIVER_PATH, COM_PORT)
         self.device.set_parameters(
             {
-                "Device": "TM13",
+                "Model": "TM13",
                 "Sample rate in Hz": 1,
             },
         )

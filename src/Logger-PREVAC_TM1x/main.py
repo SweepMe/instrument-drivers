@@ -52,6 +52,7 @@ class Device(EmptyDevice):
         self.port_properties = {
             "baudrate": 57600,  # default
             "stopbits": 1,
+            # "parity": "N",
         }
 
         # SweepMe Parameters
@@ -65,33 +66,33 @@ class Device(EmptyDevice):
         self.device_version: str = ""
         self.sample_rate: int = 4
         self.sample_rate_dict = {
-            10: 1,
-            4: 2,
-            2: 3,
-            1: 4,
-            0.5: 5,
+            "10": 1,
+            "4": 2,
+            "2": 3,
+            "1": 4,
+            "0.5": 5,
         }
 
         # Default Communication Parameters
         self.header = 0xAA
         self.device_address = 0xC8
-        self.device_group = 0xA1
+        self.device_group = 0xA1  # 0xA1 for TM13 and TM14
         self.logic_group = 0xC8
         self.driver_address = 0x01
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Get parameters from the GUI and set them as attributes."""
         return {
-            "Device": ["TM13", "TM14"],
+            "Model": ["TM13", "TM14"],
             "Sample rate in Hz": [10, 4, 2, 1, 0.5],
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Get parameters from the GUI and set them as attributes."""
-        self.device_version = parameter["Device"]
+        self.device_version = parameter["Model"]
 
         if self.device_version == "TM14":
-            self.sample_rate = parameter["Sample rate in Hz"]
+            self.sample_rate = self.sample_rate_dict[parameter["Sample rate in Hz"]]
         else:
             self.sample_rate = 4  # TM13 standard sample rate
 
@@ -124,64 +125,25 @@ class Device(EmptyDevice):
         response[7]     13 for TM13, 14 for TM14
         """
         command = 0x53
-
-        _sample_rate = self.sample_rate_dict[self.sample_rate]
-        data = f"{_sample_rate}000"  # Bytes 2-4 must be zero
+        data = [self.sample_rate, 0, 0, 0]
 
         self.send_dataframe(command, data)
-
         response = self.get_dataframe()
-        frequency = response[:4]
+
+        frequency_bytes = response[:4].encode("latin-1")
+        frequency = int.from_bytes(frequency_bytes, "big")
 
         return frequency / 100
 
-    def set_device_address(self, address: int) -> None:
-        """Set the device address."""
-        command = 0x58
-        min_address = 1
-        max_address = 254
-        if address < min_address or address > max_address:
-            msg = f"PREVAC TM1x: Address must be between {min_address} and {max_address}."
-            raise ValueError(msg)
-
-        data = f"000{address}"
-        self.send_dataframe(command, data)
-
-    def set_logic_group(self, group: int) -> None:
-        """Set the logic group."""
-        command = 0x59
-        min_group = 0
-        max_group = 254
-        if group < min_group or group > max_group:
-            msg = f"PREVAC TM1x: Group must be between {min_group} and {max_group}."
-            raise ValueError(msg)
-
-        data = f"000{group}"
-        self.send_dataframe(command, data)
-
-    def get_product_number(self) -> int:
-        """Request the product number."""
-        command = 0xFD
-        data = "0000"
-        self.send_dataframe(command, data)
-
-        response = self.get_dataframe()
-        return response[:15]
-
-    def get_serial_number(self) -> int:
-        """Request the serial number."""
-        command = 0xFE
-        data = "0000"
-        self.send_dataframe(command, data)
-
-        response = self.get_dataframe()
-        return response[:13]
-
     """ Communication Functions """
 
-    def send_dataframe(self, function_code: int, data: str = "") -> None:
+    def send_dataframe(self, function_code: int, data: [int]) -> None:
         """Generate the data frame and send it to the device."""
+        # data_int = [int(symbol) for symbol in data]  # convert to [int]
+        data_int = data
         length = len(data)
+
+        # Calculate the checksum
         checksum = self.calculate_checksum(
             [
                 self.device_address,
@@ -190,11 +152,13 @@ class Device(EmptyDevice):
                 self.driver_address,
                 function_code,
                 length,
-                *data,  # Unpack the data field
+                *data_int,  # Unpack the data field
             ],
         )
 
-        message = [
+        # Generate the message as bytes
+        message = b""
+        for char in [
             self.header,
             length,
             self.device_address,
@@ -202,10 +166,12 @@ class Device(EmptyDevice):
             self.logic_group,
             self.driver_address,
             function_code,
-            *data,  # Unpack the data field
+            *data_int,  # Unpack the data field
             checksum,
-        ]
+        ]:
+            message += chr(char).encode("latin1")
 
+        # print(message)
         self.port.write(message)
 
     @staticmethod
@@ -217,39 +183,80 @@ class Device(EmptyDevice):
 
         return checksum % 256
 
-    def get_dataframe(self) -> bytes:
+    def get_dataframe(self) -> str:
         """Get the response from the device."""
-        header = self.port.read(1)[0]
-
-        if header != self.header:
+        message = self.port.read()
+        header = message[0]
+        if ord(header) != self.header:
             msg = f"PREVAC TM1x: Header does not match. {self.header} != {header}"
             raise Exception(msg)
 
-        length = self.port.read(1)[0]
-        driver_address = self.port.read(1)[0]
-        device_group = self.port.read(1)[0]
-        logic_group = self.port.read(1)[0]
-        device_address = self.port.read(1)[0]
-        function_code = self.port.read(1)[0]
+        length = ord(message[1])
 
-        data = self.port.read(length[0])
-        received_checksum = self.port.read(1)[0]
-        calculated_checksum = self.calculate_checksum([
-            driver_address,
-            device_group,
-            logic_group,
-            device_address,
-            function_code,
-            length,
-            *data,
-        ])
+        data = message[7:7+length]
 
-        if received_checksum != calculated_checksum:
-            msg = f"PREVAC TM1x: Checksums do not match. {received_checksum} != {calculated_checksum}"
-            raise Exception(msg)
+        # Checksum is not working, some commands do not return a checksum
+        # received_checksum = ord(message[-1])
+        # calculated_checksum = self.calculate_checksum([ord(char) for char in message[2:-2]])
+        #
+        # if received_checksum != calculated_checksum:
+        #     msg = f"PREVAC TM1x: Checksums do not match. {received_checksum} != {calculated_checksum}"
+        #     raise Exception(msg)
 
         if self.port.in_waiting() > 0:
-            msg = f"PREVAC TM1x: There are still Bytes in waiting: {self.port.in_waiting()}."
+            msg = f"PREVAC TM1x: There are still {self.port.in_waiting()} Bytes in waiting."
             raise Exception(msg)
 
         return data
+
+    """ Currently unused functions """
+
+    def set_device_address(self, address: int) -> None:
+        """Set the device address."""
+        command = 0x58
+        min_address = 1
+        max_address = 254
+        if address < min_address or address > max_address:
+            msg = f"PREVAC TM1x: Address must be between {min_address} and {max_address}."
+            raise ValueError(msg)
+
+        data = f"000{chr(address)}"
+        data = [0, 0, 0, address]
+        self.device_address = 0xFF
+        self.send_dataframe(command, data)
+        response = self.get_dataframe()
+        print(response)
+
+    def set_logic_group(self, group: int) -> None:
+        """Set the logic group."""
+        command = 0x59
+        min_group = 0
+        max_group = 254
+        if group < min_group or group > max_group:
+            msg = f"PREVAC TM1x: Group must be between {min_group} and {max_group}."
+            raise ValueError(msg)
+
+        data = f"000{group}"
+        data = [0, 0, 0, group]
+        self.send_dataframe(command, data)
+
+        response = self.get_dataframe()
+        print(response)
+
+    def get_product_number(self) -> str:
+        """Request the product number."""
+        command = 0xFD
+        data = "0000"
+        data = [0, 0, 0, 0]
+        self.send_dataframe(command, data)
+
+        return self.get_dataframe()
+
+    def get_serial_number(self) -> str:
+        """Request the serial number."""
+        command = 0xFE
+        data = "0000"
+        data = [0, 0, 0, 0]
+        self.send_dataframe(command, data)
+
+        return self.get_dataframe()
