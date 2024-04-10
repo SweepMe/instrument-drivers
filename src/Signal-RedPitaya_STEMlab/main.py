@@ -94,7 +94,7 @@ class Device(EmptyDevice):
                         "Trigger": list(self.triggertypes.keys()),
                         "OperationMode": list(self.operationmodes.keys()),
                         "BurstRepetitions": 1,
-                        'BurstSignalRepetitions': 3,
+                        "BurstSignalRepetitions": 3,
                         "BurstDelay": 0,
                         "ArbitraryWaveformFile": self.get_folder("CUSTOMFILES"),
                         }
@@ -150,10 +150,7 @@ class Device(EmptyDevice):
         
         # version = self.get_system_version()
         # print("Version:", version)
-  
-    def initialize(self): 
-        pass
-        
+
     def configure(self):
         self.limits = 1.0       # +/- Voltage limit of frequency generator
         
@@ -222,12 +219,9 @@ class Device(EmptyDevice):
         
         # enable output
         self.port.write('OUTPUT{0}:STATE ON'.format(self.channel))
-        self.port.write('OUTPUT{0}:STATE?'.format(self.channel))        
-    
-    def measure(self):
-        pass
-        # self.settings_status()  # print status
-    
+        # self.port.write('OUTPUT{0}:STATE?'.format(self.channel))
+        # self.port.read()
+
     def call(self):
         if self.sweep_mode != "None":
             return [self.value]
