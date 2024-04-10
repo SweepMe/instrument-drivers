@@ -86,7 +86,7 @@ class Device(EmptyDevice):
         # }
 
         # Currently, only auto range is used
-        self.range: str = ""
+        self.measure_range: str = ""
         self.current_ranges = {
             "Auto": 0,
         }
@@ -129,12 +129,12 @@ class Device(EmptyDevice):
 
         self.trigger_delay: float = 0.0
         self.integration = None
-        self.ALC = None
         self.stepmode = None
         self.sweepmode = None
         self.shortname = "Keithley 4200-SCS"
 
-    def find_ports(self) -> list:
+    @staticmethod
+    def find_ports() -> list:
         """Finds the available ports for the Keithley 4200-SCS LCRmeter."""
         ports = ["LPTlib via xxx.xxx.xxx.xxx"]
 
@@ -152,7 +152,6 @@ class Device(EmptyDevice):
             "ValueBias": 0.0,
             "Frequency": 1000.0,
             "Integration": list(self.speeds),
-            "ALC": ["Off"],  # Currently unused
             "Trigger": ["Internal"],
             "TriggerDelay": "0.1",
             "Range": list(self.current_ranges),
@@ -172,7 +171,7 @@ class Device(EmptyDevice):
 
         self.trigger_type = parameter["Trigger"]  # currently unused
         self.trigger_delay = float(parameter["TriggerDelay"])
-        self.range = self.current_ranges[parameter["Range"]]
+        self.measure_range = parameter["Range"]
 
         # Only use Resistance and reactance measurement
         self.operating_mode = "RjX"
@@ -256,7 +255,7 @@ class Device(EmptyDevice):
         self.set_dc_bias(self.value_bias)
         self.set_ac_voltage(self.value_level_rms)
 
-        self.set_measure_range()
+        self.set_measure_range(self.measure_range)
 
     def unconfigure(self) -> None:
         """Reset device."""
@@ -323,10 +322,10 @@ class Device(EmptyDevice):
         """Set delay in seconds."""
         self.lpt.rdelay(delay)
 
-    def set_measure_range(self) -> None:
+    def set_measure_range(self, measure_range: str) -> None:
         """Set measure range."""
-        # Currently, only auto range is used
-        if self.range == "Auto":
+        # Currently, only auto range is supported
+        if measure_range in ("Auto", ""):
             self.lpt.setauto(self.card_id)
 
     def measure_impedance(self) -> list[float]:
