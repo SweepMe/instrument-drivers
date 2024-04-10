@@ -93,13 +93,12 @@ class Device(EmptyDevice):
         """Set initial GUI parameters."""
         return {
             "SweepMode": ["None", "Temperature"],
-            "Temperature unit": ["°C"],
+            "TemperatureUnit": ["°C"],
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Handle SweepMe GUI parameters."""
-        self.units[0] = parameter["Temperature unit"]
-
+        self.units[0] = parameter["TemperatureUnit"]
         self.port_str = parameter["Port"]
 
     def connect(self) -> None:
