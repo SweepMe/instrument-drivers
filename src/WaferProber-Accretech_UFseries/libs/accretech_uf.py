@@ -30,10 +30,12 @@
 # Type: WaferProber
 # Device: Accretech UF series
 
+from __future__ import annotations
+
 import inspect
 from datetime import datetime
-from typing import List, Tuple
 
+import pysweepme.Ports
 from pysweepme.ErrorMessage import debug
 from pyvisa import constants
 
@@ -44,13 +46,14 @@ except ModuleNotFoundError:
     get_input = input
     print(
         "accretech_uf: Please use the latest version of SweepMe! to use this driver."
-        " Falling back to 'input' method that only works with pysweepme standalone scripts."
+        " Falling back to 'input' method that only works with pysweepme standalone scripts.",
     )
 
 
 class AccretechProber:
-    def __init__(self, port):
+    """This class is used to communicate with the Accretech UF series prober."""
 
+    def __init__(self, port: pysweepme.Ports.Port):
         self.port = port
 
         self._verbose = False
@@ -59,10 +62,8 @@ class AccretechProber:
         self.event_mech = constants.EventMechanism.queue
 
         if not self.port.port:
-            raise Exception(
-                "No connection established with Accretech UF prober. "
-                "Please check port address / instrument is connected"
-            )
+            msg = "No connection established with Accretech UF prober. Please check port address/instrument connection"
+            raise Exception(msg)
 
         self.register_srq_event()
 
@@ -181,38 +182,40 @@ class AccretechProber:
             "an error occurs in the driver software for the GPIB interface control on the prober side",
         }
 
-    def __del__(self):
+    def __del__(self) -> None:
+        """When the object is deleted, the SRQ event is unregistered."""
         self.unregister_srq_event()
 
-    def register_srq_event(self):
+    def register_srq_event(self) -> None:
+        """Register Service Request Events."""
         self.port.port.enable_event(self.event_type, self.event_mech)
 
-    def unregister_srq_event(self):
+    def unregister_srq_event(self) -> None:
+        """Unregister Service Request Events."""
         self.port.port.disable_event(self.event_type, self.event_mech)
 
-    def set_verbose(self, state=True):
-
+    def set_verbose(self, state: bool = True) -> None:
+        """Set the verbose mode."""
         self._verbose = state
 
-    def get_prober_status_message(self, prober_status):
-        """
+    def get_prober_status_message(self, prober_status: str) -> str:
+        """Return the content of the prober status.
 
         Args:
             prober_status:
-                str: 'I', 'C', 'R', or 'E'
+                str: 'I', 'C', 'R', or 'E'.
 
         Returns:
             str -> prober status message
         """
-
         if prober_status in self.prober_status_codes:
             return self.prober_status_codes[prober_status]
         else:
             raise ValueError("Prober status '%s' unknown." % str(prober_status))
 
     @staticmethod
-    def get_waferlist_from_status(wafer_status: str) -> List[Tuple[int, int]]:
-
+    def get_waferlist_from_status(wafer_status: str) -> list[tuple[int, int]]:
+        """Returns a list of tuples with the cassette and wafer numbers."""
         wafer_list = []
 
         # iterates through cassettes
@@ -228,18 +231,16 @@ class AccretechProber:
 
         return wafer_list
 
-    def wait_until_status_byte(self, stb_success, timeout=5.0):
-        """
+    def wait_until_status_byte(self, stb_success: int | tuple, timeout: float = 5.0) -> int:
+        """The function waits until one of the given status bytes has been acquired.
+
         Args:
-            stb_success: integer or tuple of integer. The function waits until one of the given
-              status bytes has been acquired.
+            stb_success: integer or tuple of integer.
             timeout: float, timeout in seconds to acquire a status byte until a Timeout Error is raised.
 
         Returns:
             int: status byte
-
         """
-
         # this is the name of the function calling acquire_status_byte
         function_calling_name = inspect.stack()[1].function
         now = datetime.now()  # current date and time
@@ -256,49 +257,36 @@ class AccretechProber:
 
         return stb
 
-    def acquire_status_byte(self, timeout=10.0):
-        """
+    def acquire_status_byte(self, timeout: float = 10.0) -> int:
+        """Read the status byte.
 
         Args:
             timeout:  Timeout value to wait for SRQ event in seconds
 
         Returns:
             int: status byte
-
         """
-
         # this is the name of the function calling acquire_status_byte
         function_calling_name = inspect.stack()[1].function
-        if (
-            function_calling_name != "wait_until_status_byte"
-            and function_calling_name != "acquire_status_byte"
-        ):
+        if function_calling_name != "wait_until_status_byte" and function_calling_name != "acquire_status_byte":
             now = datetime.now()  # current date and time
             if self._verbose:
                 print()
-                print(
-                    "-->", now.strftime("%H:%M:%S"), "Function:", function_calling_name
-                )
+                print("-->", now.strftime("%H:%M:%S"), "Function:", function_calling_name)
 
         # Wait for the SRQ event to occur
-        response = self.port.port.wait_on_event(
-            self.event_type, int(timeout * 1000)
-        )  # conversion from s to ms
+        response = self.port.port.wait_on_event(self.event_type, int(timeout * 1000))  # conversion from s to ms
 
         # The event mechanism was changed after pyvisa 1.9.0 and the WaitResponse structure is different
         if hasattr(response, "event"):
             # pyvisa default way, for version such as 1.12.0
-            assert response.event.event_type == self.event_type, (
-                "Wrong event type, " "expected service request (SRQ) event!"
-            )
+            assert (
+                response.event.event_type == self.event_type
+            ), "Wrong event type, expected service request (SRQ) event!"
         else:
             # pyvisa 1.9.0
-            assert response.event_type == self.event_type, (
-                "Wrong event type, " "expected service request (SRQ) event!"
-            )
-        assert (
-            response.timed_out is False
-        ), "Timeout expired during waiting for service request SRQ!"
+            assert response.event_type == self.event_type, "Wrong event type, expected service request (SRQ) event!"
+        assert response.timed_out is False, "Timeout expired during waiting for service request SRQ!"
 
         stb = self.port.port.read_stb()
         now = datetime.now()  # current date and time
@@ -319,9 +307,7 @@ class AccretechProber:
             error_type = self.error_status_codes[error_status]
             error_message = self.request_error_message()
             print()
-            print(
-                error_type, "(%s):" % error_code, error_message, "after status byte 76"
-            )
+            print(error_type, "(%s):" % error_code, error_message, "after status byte 76")
 
             # If an error occurs that cannot be handled, we stop the program by throwing an exception
             if error_code in list(self.error_codes.keys()):
@@ -351,51 +337,40 @@ class AccretechProber:
 
         return stb
 
-    def query(self, cmd):
-
+    def query(self, cmd: str) -> str:
+        """Write command cmd to the prober and read the response."""
         self.port.write(cmd)
         answer = self.port.read()
         return answer[len(cmd) :]
 
-    def raise_error(self, stb: int):
+    def raise_error(self, stb: int) -> None:
         function_calling_name = inspect.stack()[1].function
         stb_message = self.stb_codes[stb]
-        raise Exception(
-            f"Accretech UF series function '{function_calling_name}' did not succeed: "
-            f"STB {stb} ('{stb_message}')"
-        )
+        msg = f"Accretech UF series function '{function_calling_name}' did not succeed: STB {stb} ('{stb_message}')"
+        raise Exception(msg)
 
     def request_prober_id(self):
-
         return self.query("B")
 
     def request_wafer_id(self):
-
         return self.query("b")
 
     def request_prober_type(self):
-
         answer = self.query("PV")
-        prober_type = answer[:6]
-        return prober_type
+        return answer[:6]
 
     def request_system_version(self):
-
         answer = self.query("PV")
-        system_version = answer[6:]
-        return system_version
+        return answer[6:]
 
     def request_error_code(self):
-
         return self.query("E")
 
     def request_error_message(self):
-
         return self.query("e")
 
-    def request_wafer_status(self):
-        """
-        queries the wafer status
+    def request_wafer_status(self) -> str:
+        """Queries the wafer status.
 
         Returns: str with 53 characters
             Position:
@@ -406,12 +381,10 @@ class AccretechProber:
             29-53 -> Wafer statuses of cassette 2
 
         """
-
         return self.query("w")
 
     def request_cassette_status(self):
-        """
-        Position
+        """Position
         1 + 2: slot number in the cassette that stores the wafer on the chuck
         3 + 4: Number of wafers in the cassette for which the probing has not been performed
         5:     Information that shows the status of the cassette in load port 1 or elevator 1
@@ -419,15 +392,13 @@ class AccretechProber:
         Returns:
             int, Status byte code
         """
-
         return self.query("x")
 
     def request_prober_status(self):
-
         return self.query("ms")
 
-    def request_parameter(self, value):
-        """
+    def request_parameter(self, value: int) -> str:
+        """Request a parameter from the prober.
 
         Args:
             value:  00 Device name
@@ -436,57 +407,55 @@ class AccretechProber:
                     22 Wafer thickness
                     24 Contact height
 
-        Returns:
+        Returns: str
         """
-
         return self.query("i%02d" % int(value))
 
-    def request_device_name(self):
+    def request_device_name(self) -> str:
         return self.request_parameter(0)
 
-    def request_wafer_size(self):
+    def request_wafer_size(self) -> str:
         return self.request_parameter(1)
 
-    def request_card_type(self):
+    def request_card_type(self) -> str:
         return self.request_parameter(20)
 
-    def request_wafer_thickness(self):
+    def request_wafer_thickness(self) -> str:
         return self.request_parameter(22)
 
-    def request_contact_height(self):
+    def request_contact_height(self) -> str:
         return self.request_parameter(24)
 
-    def request_onwafer_info(self):
-        """
-        Retrieves on-wafer information by returning status integer (0 or 1) for sites 1-8
+    def request_onwafer_info(self) -> tuple[int, int, int, int, int, int, int, int]:
+        """Retrieves on-wafer information by returning status integer (0 or 1) for sites 1-8.
+
         Returns:
             tuple of integers: status 1 or 0 for site 1-8
         """
         answer = self.query("O")
-        bit_list = tuple(map(int, '{:016b}'.format(ord(answer))))
-        return (bit_list[7],  # site 1
-                bit_list[6],  # site 2
-                bit_list[5],  # site 3
-                bit_list[4],  # site 4
-                bit_list[15],  # site 5
-                bit_list[14],  # site 6
-                bit_list[13],  # site 7
-                bit_list[12])  # site 8
+        bit_list = tuple(map(int, f"{ord(answer):016b}"))
+        return (
+            bit_list[7],  # site 1
+            bit_list[6],  # site 2
+            bit_list[5],  # site 3
+            bit_list[4],  # site 4
+            bit_list[15],  # site 5
+            bit_list[14],  # site 6
+            bit_list[13],  # site 7
+            bit_list[12],  # site 8
+        )
 
-    def request_onwafer_info_with_marking(self):
+    def request_onwafer_info_with_marking(self) -> str:
         return self.query("o")
 
-    def request_operator_name(self):
+    def request_operator_name(self) -> str:
         return self.query("OP")
 
-    def request_die_coordinate(self):
+    def request_die_coordinate(self) -> tuple[int, int]:
+        """Returns:
+        int: x coordinate of the current die
+        int: y coordinate of the current die
         """
-
-        Returns:
-            int: x coordinate of the current die
-            int: y coordinate of the current die
-        """
-
         answer = self.query("Q")
         yindex = answer.find("Y")
         xindex = answer.find("X")
@@ -496,14 +465,11 @@ class AccretechProber:
 
         return x, y
 
-    def request_first_die_coordinate(self):
+    def request_first_die_coordinate(self) -> tuple[int, int]:
+        """Returns:
+        int: x coordinate of the current die
+        int: y coordinate of the current die
         """
-
-        Returns:
-            int: x coordinate of the current die
-            int: y coordinate of the current die
-        """
-
         answer = self.query("q")
         yindex = answer.find("Y")
         xindex = answer.find("X")
@@ -513,14 +479,12 @@ class AccretechProber:
 
         return x, y
 
-    def request_subdie_coordinate(self):
+    def request_subdie_coordinate(self) -> tuple[int, int, int]:
+        """Returns:
+        int: x coordinate of the current subdie
+        int: y coordinate of the current subdie
+        int: s index of the current subdie
         """
-        Returns:
-            int: x coordinate of the current subdie
-            int: y coordinate of the current subdie
-            int: s index of the current subdie
-        """
-
         answer = self.query("QS")
 
         yindex = answer.find("Y")
@@ -533,22 +497,18 @@ class AccretechProber:
 
         return x, y, s
 
-    def request_cassette_slot(self):
+    def request_cassette_slot(self) -> tuple[int, int]:
+        """Returns:
+        int: cassette index
+        int: slot index
         """
-
-        Returns:
-            int: cassette index
-            int: slot index
-        """
-
         answer = self.query("X")
         cassette_index = int(answer[2])
         slot_index = int(answer[:2])
         return cassette_index, slot_index
 
-    def request_current_status(self):
-        """
-        requests z-axis status, wafer status, and alarm status
+    def request_current_status(self) -> tuple[int, int, int]:
+        """Requests z-axis status, wafer status, and alarm status.
 
         Returns:
             int: z-axis status -> 0 = Other than contact status, 1 = Contact status
@@ -556,24 +516,22 @@ class AccretechProber:
             int: alarm status  -> 0 = No alarm occurs, 1 = Alarm is occuring
 
         """
-
         answer = self.query("S1")
 
-        zaxis_status = int(answer[1])
+        z_axis_status = int(answer[1])
         wafer_status = int(answer[3])
         alarm_status = int(answer[5])
 
-        return zaxis_status, wafer_status, alarm_status
+        return z_axis_status, wafer_status, alarm_status
 
-    def request_position(self):
-        """
-        get the current absolute position
+    def request_position(self) -> tuple[float, float]:
+        """Get the current absolute position.
 
         Caution: Unit depends on system settings. Using 'Metric' unit is 1e-1 µm. Using 'English' unit is 1e-5 inch.
 
         Attention:
         The command 'R' was designed for 200 mm wafer and might not work with 300 mm wafer
-        In future, one could use the command ur11401 und ur11402 to read x and y position. The 'ur' command is used
+        In the future, one could use the command ur11401 und ur11402 to read x and y position. The 'ur' command is used
         to read parameter values. However, the coordinate system of ur11401 und ur11402 is different with respect to
         the 'R' command
 
@@ -581,156 +539,120 @@ class AccretechProber:
             int: x coordinate in µm
             int: y coordinate in µm
         """
-
         self.port.write("R")
         answer = self.port.read()
-        x = int(answer[-7:])*0.1
-        y = int(answer[2:9])*0.1
+        x = int(answer[-7:]) * 0.1
+        y = int(answer[2:9]) * 0.1
 
         return x, y
 
-    def is_chuck_contacted(self):
+    def is_chuck_contacted(self) -> bool:
         return bool(self.request_current_status()[0])
 
-    def is_wafer_on_chuck(self):
+    def is_wafer_on_chuck(self) -> bool:
         return bool(self.request_current_status()[1])
 
-    def is_last_wafer_on_chuck(self):
+    def is_last_wafer_on_chuck(self) -> bool:
         self.query("LIW")
         answer = self.port.read()
         return answer == "1"
 
-    def is_alarm(self):
+    def is_alarm(self) -> bool:
         return bool(self.request_current_status()[2])
 
-    def get_device_parameters(self):
-        """
-        makes the device parameters available
-
-        Returns:
-
-        """
-
+    def get_device_parameters(self) -> str:
+        """Makes the device parameters available."""
         return self.query("ku")
 
-    def check_status_byte(self, status_byte):
-        """
-
-        Args:
+    def check_status_byte(self, status_byte) -> int:
+        """Args:
             status_byte: integer between 64 and 127 that is used to check the status byte communication
 
         Returns:
             int: returned status byte that was sent to the prober
 
         """
-
         status_byte = int(status_byte)
         self.port.write("STB%03d" % status_byte)
-        stb = self.wait_until_status_byte(status_byte, timeout=10.0)
-        return stb
+        return self.wait_until_status_byte(status_byte, timeout=10.0)
 
     def start(self):
+        """Returns:
+        int: status byte
+            # 120
+            # 121 Abnormal end
         """
-
-        Returns:
-            int: status byte
-                # 120
-                # 121 Abnormal end
-        """
-
         self.port.write("st")
         stb = self.wait_until_status_byte((120, 121), timeout=300.0)
         if stb == 121:
             self.raise_error(stb)
         return stb
 
-    def stop(self):
-        """
-        This command stops the probing and return status byte 90.
+    def stop(self) -> int:
+        """This command stops the probing and return status byte 90.
+
         If the operator resets the alarm a status byte 85 is sent, that is not handled by this function
 
         Returns:
             int: status byte
                 # 90 Probing stop
         """
-
         self.port.write("K")
-        stb = self.wait_until_status_byte(
-            90, timeout=600.0
-        )
-        return stb
+        return self.wait_until_status_byte(90, timeout=600.0)
 
-    def terminate_lot_process_forcibly(self):
-        """
-        forces to terminate the the lot process
+    def terminate_lot_process_forcibly(self) -> int:
+        """Forces to terminate the lot process.
 
         Returns:
             int: status byte
                 # 98
                 # 99
         """
-
         self.port.write("le")
         stb = self.wait_until_status_byte((98, 99), timeout=180.0)
         if stb == 99:
             self.raise_error(stb)
         return stb
 
-    def terminate_lot_process_immediately(self):
+    def terminate_lot_process_immediately(self) -> int:
+        """Returns:
+        int: status byte
+            # 94
+            # 99
         """
-
-        Returns:
-            int: status byte
-                # 94
-                # 99
-        """
-
         self.port.write("jv")
         stb = self.wait_until_status_byte((94, 99), timeout=180.0)
         if stb == 99:
             self.raise_error(stb)
         return stb
 
-    def unload(self):
+    def unload(self) -> int:
+        """Returns:
+        int: status  byte
+            # 71
         """
-
-        Returns:
-            int: status  byte
-                # 71
-        """
-
         self.port.write("U")
-        stb = self.wait_until_status_byte(71, timeout=180.0)
-        return stb
+        return self.wait_until_status_byte(71, timeout=180.0)
 
-    def unload_all_wafers(self):
+    def unload_all_wafers(self) -> int:
+        """Returns:
+        int: status byte
+            # 94
         """
-
-        Returns:
-            int: status byte
-                # 94
-        """
-
         self.port.write("U0")
-        stb = self.wait_until_status_byte(94, timeout=30.0)
-        return stb
+        return self.wait_until_status_byte(94, timeout=30.0)
 
-    def unload_to_inspection_tray(self):
+    def unload_to_inspection_tray(self) -> int:
+        """Returns:
+        int: status  byte
+            # 71
         """
-
-        Returns:
-            int: status  byte
-                # 71
-        """
-
         self.port.write("U9")
-        stb = self.wait_until_status_byte(71, timeout=120.0)
-        return stb
+        return self.wait_until_status_byte(71, timeout=120.0)
 
-    def load_specified_wafer(self, cassette, slot):
-        """
-        This command can be use to load a wafer from a cassette. It indirectly starts
-         a lot process and is not used with 'start'.
+    def load_specified_wafer(self, cassette, slot) -> int:
+        """This command can be used to load a wafer from a cassette. It indirectly starts a lot process and is not used with 'start'.
+
         You can terminate the lot process by using cassette = 9 and slot = 99
 
         Args:
@@ -751,31 +673,25 @@ class AccretechProber:
                 # 94 -> end of lot process
                 # 70 -> First chip (End of wafer loading)
         """
-
         if int(cassette) == 9 and int(slot) != 99:
-            raise Exception(
-                "Accretech UF series: slot id must be 99 if cassette id is 9."
-            )
+            msg = "Accretech UF series: slot id must be 99 if cassette id is 9."
+            raise Exception(msg)
         elif int(slot) == 99 and int(cassette) != 9:
-            raise Exception(
-                "Accretech UF series: cassette id must be 9 if slot id is 99."
-            )
+            msg = "Accretech UF series: cassette id must be 9 if slot id is 99."
+            raise Exception(msg)
 
         self.port.write("j2%i%02d" % (int(cassette), int(slot)))
-        stb = self.wait_until_status_byte((70, 94), timeout=600.0)
+        return self.wait_until_status_byte((70, 94), timeout=600.0)
 
-        return stb
+    def preload_specified_wafer(self, cassette, slot) -> int:
+        """This command ("j3") can be used to preload a wafer from a cassette to the subchuck.
 
-    def preload_specified_wafer(self, cassette, slot):
-        """
-        This command ("j3") can be use to preload a wafer from a cassette to the subchuck.
         If there is a wafer on the chuck, it is unloaded to the cassette.
         If there is already a wafer on the subchuck, it gets loaded to the chuck.
         You can terminate a lot process by using cassette = 9 and slot = 99
         A wafer can be loaded back from the chuck to the subchuck using cassette = 0 and slot = 0.
         This command is typically used in conjunction with 'load_preload_wafer' ("j4") in order to load the chuck and
         preload the subchuck at the first step of the lot process.
-
 
         Args:
             cassette: id of the cassette, being
@@ -797,31 +713,23 @@ class AccretechProber:
                 # 94 -> end of lot process
                 # 70 -> First chip (End of wafer loading)
         """
-
         if int(cassette) == 9 and int(slot) != 99:
-            raise Exception(
-                "Accretech UF series: slot id must be 99 if cassette id is 9."
-            )
+            msg = "Accretech UF series: slot id must be 99 if cassette id is 9."
+            raise Exception(msg)
         elif int(slot) == 99 and int(cassette) != 9:
-            raise Exception(
-                "Accretech UF series: cassette id must be 9 if slot id is 99."
-            )
+            msg = "Accretech UF series: cassette id must be 9 if slot id is 99."
+            raise Exception(msg)
 
         if int(cassette) == 0 and int(slot) != 0:
-            raise Exception(
-                "Accretech UF series: slot id must be 0 if cassette id is 0."
-            )
+            msg = "Accretech UF series: slot id must be 0 if cassette id is 0."
+            raise Exception(msg)
 
         self.port.write("j3%i%02d" % (int(cassette), int(slot)))
-        stb = self.wait_until_status_byte((94, 70), timeout=300.0)
-        return stb
+        return self.wait_until_status_byte((94, 70), timeout=300.0)
 
-    def load_and_preload_specified_wafers(
-        self, cassette, slot, preload_cassette, preload_slot
-    ):
-        """
-        This command ("j4") is used at the beginning of a lot process to load a wafer on the chuck and
-        preload another wafer on the subchuck.
+    def load_and_preload_specified_wafers(self, cassette, slot, preload_cassette, preload_slot) -> int:
+        """This command ("j4") is used at the beginning of a lot process to load a wafer on the chuck and preload another wafer on the subchuck.
+
         Afterwards one can continue with the command 'preload_specified_wafer' ("j3").
 
         Args:
@@ -834,80 +742,51 @@ class AccretechProber:
             int: status byte
                 # 70: First chip (End of wafer loading)
         """
+        self.port.write("j4%i%02d%i%02d" % (int(cassette), int(slot), int(preload_cassette), int(preload_slot)))
+        return self.wait_until_status_byte(70, timeout=300.0)
 
-        self.port.write(
-            "j4%i%02d%i%02d"
-            % (int(cassette), int(slot), int(preload_cassette), int(preload_slot))
-        )
-        stb = self.wait_until_status_byte(70, timeout=300.0)
-
-        return stb
-
-    def load_wafer_aligned(self):
+    def load_wafer_aligned(self) -> int:
+        """Returns:
+        int: status byte
+            # 70: First chip (End of wafer loading)
+            # 94: End of lot process
         """
-
-        Returns:
-            int: status byte
-                # 70: First chip (End of wafer loading)
-                # 94: End of lot process
-        """
-
         self.port.write("L")
-        stb = self.wait_until_status_byte((70, 94), timeout=180.0)
+        return self.wait_until_status_byte((70, 94), timeout=180.0)
 
-        return stb
-
-    def load_wafer_unaligned(self):
-        """
-
-        Returns:
-            int: status byte
-                # 118: End of wafer loading
-        """
-
-        self.port.write("L1")
-        stb = self.wait_until_status_byte(118, timeout=60.0)
-
-        return stb
-
-    def preload_wafer(self):
-        """
-
-        Returns:
-            int: status byte
+    def load_wafer_unaligned(self) -> int:
+        """Returns:
+        int: status byte
             # 118: End of wafer loading
-
         """
+        self.port.write("L1")
+        return self.wait_until_status_byte(118, timeout=60.0)
 
-        self.port.write("L8")
-        stb = self.wait_until_status_byte(118, timeout=60.0)
-
-        return stb
-
-    def load_inspection_wafer_aligned(self):
-        """
-
-        Returns:
-            int: status byte
-                # 70: First chip (End of wafer loading)
-                # 94: End of lot process
-        """
-
-        self.port.write("LI")
-        stb = self.wait_until_status_byte((70, 94), timeout=300.0)
-
-        return stb
-
-    def load_inspection_wafer_unaligned(self):
-
-        self.port.write("L9")
-        stb = self.wait_until_status_byte(118, timeout=120.0)
+    def preload_wafer(self) -> int:
+        """Returns:
+        int: status byte
         # 118: End of wafer loading
-        return stb
 
-    def move_position(self, x, y):
         """
-        relative move at the current position.
+        self.port.write("L8")
+        return self.wait_until_status_byte(118, timeout=60.0)
+
+    def load_inspection_wafer_aligned(self) -> int:
+        """Returns:
+        int: status byte
+            # 70: First chip (End of wafer loading)
+            # 94: End of lot process
+        """
+        self.port.write("LI")
+        return self.wait_until_status_byte((70, 94), timeout=300.0)
+
+    def load_inspection_wafer_unaligned(self) -> int:
+        self.port.write("L9")
+        # 118: End of wafer loading
+        return self.wait_until_status_byte(118, timeout=120.0)
+
+    def move_position(self, x, y) -> int:
+        """Relative move at the current position.
 
         Caution: Unit depends on system settings. Using 'Metric' unit is µm. Using 'English' unit is 0.1 mil.
 
@@ -921,31 +800,22 @@ class AccretechProber:
                 # 67: Z UP (test start)
                 # 74: Out of probing area
         """
+        self.port.write(f"AY{int(y):+07}X{int(x):+07}")
 
-        self.port.write("AY{:+07}X{:+07}".format(int(y), int(x)))
+        return self.wait_until_status_byte((65, 67), timeout=30.0)
 
-        stb = self.wait_until_status_byte((65, 67), timeout=30.0)
-
-
-        return stb
-
-    def move_next_die(self):
-        """
-        moves to the next die, the chuck remains in the position as it was beforehand.
+    def move_next_die(self) -> int:
+        """Moves to the next die, the chuck remains in the position as it was beforehand.
 
         # 66: End of movement to coordinator value
         # 67: Z UP (test start)
         # 81: Wafer end -> just signals that there will be no further die on that wafer (not forwarded here)
         """
-
         self.port.write("J")
-        stb = self.wait_until_status_byte((67, 66), timeout=30.0)
+        return self.wait_until_status_byte((67, 66), timeout=30.0)
 
-        return stb
-
-    def move_specified_die(self, x, y):
-        """
-        Move to specified die coordinate value
+    def move_specified_die(self, x, y) -> int:
+        """Move to specified die coordinate value.
 
         Args:
             x: index coordinate of the x axis
@@ -957,7 +827,6 @@ class AccretechProber:
                 # 67: Z UP (test start)
                 # 74: Out of probing area
         """
-
         self.port.write("JY%04dX%04d" % (int(y), int(x)))
 
         stb = self.wait_until_status_byte((66, 67, 74), timeout=30.0)
@@ -966,37 +835,29 @@ class AccretechProber:
 
         return stb
 
-    def move_next_subdie_block(self):
-        """
-        moves to next subdie block
+    def move_next_subdie_block(self) -> int:
+        """Moves to next subdie block.
 
-            # 66: End of movement to coordinator value
-            # 67: Z UP (test start)
-            # 81: Wafer end
-            # 127: End of all sub dies -> just signals that there will be no further sub die (not forwarded here)
+        # 66: End of movement to coordinator value
+        # 67: Z UP (test start)
+        # 81: Wafer end
+        # 127: End of all sub dies -> just signals that there will be no further sub die (not forwarded here)
         """
-
         self.port.write("JJ")
-        stb = self.wait_until_status_byte((66, 67), timeout=30.0)
+        return self.wait_until_status_byte((66, 67), timeout=30.0)
 
-        return stb
-
-    def move_next_subdie(self):
-        """
-        chuck is automatically put to Z DOWN before movement to next die
+    def move_next_subdie(self) -> int:
+        """Chuck is automatically put to Z DOWN before movement to next die.
 
         # 66: End of movement to coordinator value
         # 67: Z UP (test start)
         # 81: End of sub die -> just signals that there will be no further sub die on that die (not forwarded here)
         """
-
         self.port.write("JS")
-        stb = self.wait_until_status_byte((66, 67), timeout=30.0)
+        return self.wait_until_status_byte((66, 67), timeout=30.0)
 
-        return stb
-
-    def move_specified_subdie(self, x, y, s):
-        """
+    def move_specified_subdie(self, x, y, s) -> int:
+        """Move to specified sub die block coordinate value.
 
         Args:
             x: sub die block coordinate in x-direction
@@ -1007,16 +868,12 @@ class AccretechProber:
             int: status byte
                 # 66: End of movement to coordinator value
                 # 67: Z UP (test start)
-
         """
-
         self.port.write("JSY%03dX%03dS%03d" % (int(y), int(x), int(s)))
-        stb = self.wait_until_status_byte((66, 67), timeout=10.0)
+        return self.wait_until_status_byte((66, 67), timeout=10.0)
 
-        return stb
-
-    def move_contact_position(self, position):
-        """
+    def move_contact_position(self, position) -> int:
+        """XY travel (absolute distance).
 
         Args:
             position:
@@ -1026,17 +883,12 @@ class AccretechProber:
                 # 65: End of X/Y-axis movement
                 # 67: Z UP (test start)
                 # 74: Out of probing area
-
         """
-
         self.port.write("CM%02dX" % (int(position)))
-        stb = self.wait_until_status_byte((65, 67, 74), timeout=10.0)
+        return self.wait_until_status_byte((65, 67, 74), timeout=10.0)
 
-        return stb
-
-    def sense_wafers(self, cassette="") -> int:
-        """
-        sense all wafer in all cassettes or a specific cassette
+    def sense_wafers(self, cassette: str = "") -> int:
+        """Sense all wafer in all cassettes or a specific cassette.
 
         Args:
             cassette: 1 or 2
@@ -1045,112 +897,123 @@ class AccretechProber:
             int: status byte
                 # 98
         """
-
         self.port.write("jw" + str(cassette))
-        stb = self.wait_until_status_byte(98, timeout=30.0)
-        return stb
+        return self.wait_until_status_byte(98, timeout=30.0)
 
-    def align_wafer(self):
-        """
-        This commands re-executes the wafer alignment process if a wafer is on the chuck.
-         If there is no wafer on the chuck it loads the next the wafer
-         first, before doing the alignment process.
+    def align_wafer(self) -> int:
+        """This commands re-executes the wafer alignment process if a wafer is on the chuck.
+
+        If there is no wafer on the chuck it loads the next the wafer first, before doing the alignment process.
 
         Returns:
             int: status byte
                 # 70: First chip (End of wafer loading)
         """
-
         self.port.write("N")
-        stb = self.wait_until_status_byte(70, timeout=60.0)
+        return self.wait_until_status_byte(70, timeout=60.0)
 
-        return stb
+    def align_wafer_only(self) -> int:
+        """This commands re-executes the wafer alignment process if a wafer is on the chuck.
 
-    def align_wafer_only(self):
-        """
-        This commands re-executes the wafer alignment process if a wafer is on the chuck. It does not succeed if there
-        is no wafer on the chuck.
+        It does not succeed if there is no wafer on the chuck.
 
         Returns:
             int: status byte
                 # 113: End of re-execution of wafer alignment process
         """
-
         self.port.write("N1")
-        stb = self.wait_until_status_byte(113, timeout=60.0)
+        return self.wait_until_status_byte(113, timeout=60.0)
 
-        return stb
-
-    def align_needle(self):
-        """
-        This commands re-executes the needle alignment process for a wafer that has already been aligned.
+    def align_needle(self) -> int:
+        """This commands re-executes the needle alignment process for a wafer that has already been aligned.
 
         Returns:
             int: status byte
                 # 114: Normal end of auto needle alignment process
                 # 115: Abnormal end of auto needle alignment process
         """
-
         self.port.write("N2")
-        stb = self.wait_until_status_byte((114, 115), timeout=60.0)
+        return self.wait_until_status_byte((114, 115), timeout=60.0)
 
-        return stb
-
-    def align_wafer_from_inspection_tray(self):
-        """
-        This commands performs a wafer and needle alignment and should be used in conjunction with
-        load_inspection_wafer_unaligned ("L9")
+    def align_wafer_from_inspection_tray(self) -> int:
+        """This commands performs a wafer and needle alignment and should be used in conjunction with load_inspection_wafer_unaligned ("L9").
 
         Returns:
             int: status byte
                 # 119: Centering
         """
-
         self.port.write("N9")
-        stb = self.wait_until_status_byte(119, timeout=300.0)
-
-        return stb
+        return self.wait_until_status_byte(119, timeout=300.0)
 
     def z_up(self) -> int:
-        """
-        moves the chuck up in order to contact the wafer
+        """Moves the chuck up in order to contact the wafer.
 
         Returns:
              int: status byte
                 # 67
         """
-
         self.port.write("Z")
-        stb = self.wait_until_status_byte(67)
-        return stb
+        return self.wait_until_status_byte(67)
 
     def z_down(self) -> int:
-        """
-        moves the chuck down in order to not contact the wafer
+        """Moves the chuck down in order to not contact the wafer.
 
         Returns:
              int: status byte code
                 # 68
         """
-
         self.port.write("D")
-        stb = self.wait_until_status_byte(68)
-        return stb
+        return self.wait_until_status_byte(68)
 
-    def set_alarm(self, message):
-
+    def set_alarm(self, message: str) -> int:
         if len(message) > 20:
             message = message[:20]  # restrict to 20 characters
-            debug(
-                "Accretech UF series function 'set_alarm': No more than 20 characters are allowed!"
-            )
+            debug("Accretech UF series function 'set_alarm': No more than 20 characters are allowed!")
 
         self.port.write("em" + str(message))
-        stb = self.wait_until_status_byte(101)
-        return stb
+        return self.wait_until_status_byte(101)
 
-    def reset_alarm(self):
-
+    def reset_alarm(self) -> int:
+        """Erase error message and clear alarm status."""
         self.port.write("es")
-        stb = self.wait_until_status_byte(119)
-        return stb
+        return self.wait_until_status_byte(119)
+
+    def request_chuck_temperature(self) -> tuple[float, float]:
+        """Returns the current and target chuck temperature in degree Celsius."""
+        answer = self.query("f")
+        if answer == "":
+            msg = "Accretech UF series: Chuck temperature is not controlled."
+            raise Exception(msg)
+
+        current_temperature = float(answer[:4]) * 0.1
+        target_temperature = float(answer[4:]) * 0.1
+
+        return current_temperature, target_temperature
+
+    def request_hot_chuck_temperature(self) -> float:
+        """Returns the current hot chuck temperature in degree Celsius."""
+        answer = self.query("f1")
+        return float(answer)
+
+    def set_chuck_temperature(self, temperature: float) -> None:
+        """Sets the chuck temperature to the given value in degree Celsius.
+
+        Allowed temperature range: -55 - 200°C
+
+        Returns:
+            int: status byte
+                # 93: Correct
+                # 99: Incorrect
+        """
+        max_temperature = 200.0
+        min_temperature = -55.0
+        if temperature > max_temperature or temperature < min_temperature:
+            msg = f"Accretech UF series: Temperature must be between {min_temperature} and {max_temperature} °C."
+            raise Exception(msg)
+
+        self.port.write("h" + str(int(temperature * 10)))
+        answer = self.wait_until_status_byte((93, 99))
+
+        correct_status = 93
+        if answer != correct_status:  # Abnormal end of command  # noqa: PLR2004
+            self.raise_error(answer)
