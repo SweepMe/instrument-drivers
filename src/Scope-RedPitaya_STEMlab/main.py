@@ -168,7 +168,9 @@ class Device(EmptyDevice):
 
     def configure(self):
         # general settings
-        self.port.write("ACQ:RST")                          # Reset Device
+
+        self.reset_acquisition()  # Reset Device
+
         self.port.write("ACQ:DATA:UNITS VOLTS")             # set Units
         
         self.port.write("ACQ:BUF:SIZE?")                    # get buffersize from device
@@ -211,6 +213,7 @@ class Device(EmptyDevice):
         pass
         
     def measure(self):
+
         # creating data list
         self.channel_data = [None for i in self.channels]
         
@@ -221,50 +224,53 @@ class Device(EmptyDevice):
             
             # send settings to RedPitaya
             self.send_settings()
+
+            # check settings
+            # self.settings_status()
             
             self.start_acquisition()
             self.starttime = time.time()  # set starttime, required for filling buffer
-            # self.settings_status()  # print (optional) current status of settings
-            self.t1 = time.time()
-            # print("Time range:", self.timerange)
-            
+
             #self.sleeptime = self.triggerdelay + self.starttime - time.time()  # wait for new trigger event -> fill buffer with data pre trigger data
             #print("sleeptime 1:", self.sleeptime)
             #time.sleep(self.sleeptime if self.sleeptime > 0 else 0)
-            self.tread = time.time()
+
             while True:
-                
-                status = self.get_trigger_status()                           # check trigger status
+                status = self.get_trigger_status()  # check trigger status
+                print("Trigger status:", status)
                 if status == "TD":
-                    # print("Settings time:", time.time()-self.tread)
-                    # print("Scope Triggered! Average number: {0} from {1} time: {2}".format(avg+1, self.averages, time.time()-self.t1))
-                    self.t1 = time.time()
                     self.starttime = time.time()
                     break
                 elif time.time()-self.starttime > self.triggertimeout:
                     msg = "Red Pitaya Scope Trigger timeout!"
                     raise Exception(msg)
-                    
-            #self.sleeptime = self.timerange - self.triggerdelay + self.starttime - time.time()
-            #print("sleeptime 2:", self.sleeptime)
-            #time.sleep(self.sleeptime if self.sleeptime > 0 else 0)         # wait for filling buffer
-            
-            self.read_data()                                                # reading data
+
+            # Waiting for the buffer to fill
+            self.sleeptime = self.timerange - self.triggerdelay + self.starttime - time.time()
+            print("Sleeptime2:", self.sleeptime)
+            time.sleep(max(self.sleeptime, 0))  # wait for filling buffer
+
+            status = self.get_trigger_status()  # check trigger status
+            print("Trigger status:", status)
+
+            self.read_data()  # reading data
             
             self.stop_acquisition()
             
-            # if avg < (self.averages-1):         # renew setting for next average
+            # if avg < (self.averages-1):  # renew setting for next average
                 # self.send_settings()
                 # self.start_acquisition()
                 # self.starttime = time.time()
         
-        for i in range(len(self.channels)):     # average data and add offsets
+        for i in range(len(self.channels)):  # average data and add offsets
             self.channel_data[i] /= self.averages
             self.channel_data[i] += self.channel_offsets[self.channels[i]]
             
         self.stop_acquisition()
+
         # specify time values
-        self.time_values = np.linspace(0, self.read_samples/self.real_samplerate, len(self.channel_data[0])) + self.triggerdelay + self.timeoffsetvalue
+        self.time_values = (np.linspace(0, self.read_samples/self.real_samplerate, len(self.channel_data[0])) +
+                            self.triggerdelay + self.timeoffsetvalue)
 
     def call(self):
         return [self.time_values] + self.channel_data
@@ -280,7 +286,7 @@ class Device(EmptyDevice):
             except:
                 self.data = list(map(float, self.buffer.strip('{}ERR!\n\r').replace("  ", "").split(',')))
                 print("Error in Readout!")
-            if type(self.channel_data[i]) == type(None):
+            if self.channel_data[i] is None:
                 self.channel_data[i] = np.array(self.data)
             else:
                 self.channel_data[i] += np.array(self.data)
@@ -295,7 +301,7 @@ class Device(EmptyDevice):
 
     def time_settings(self):
         # calculates decimation and read samples parameters
-        if type(self.timerange) == type("s"):
+        if isinstance(self.timerange, str):
             try:
                 self.timerange = float(self.timerange.replace("ms", "e-3").replace("µs", "e-6").replace("ns", "e-9").replace("us", "e-6").replace("s", "").replace(" ", ""))
             except:
@@ -306,7 +312,7 @@ class Device(EmptyDevice):
         self.decimation = 2**(int(2 + np.log((self.timerange*self.samplerate)/self.samples)/(np.log(2)))-1)
         
         # set upper limit for decimation
-        if (self.decimation > 2**16):
+        if self.decimation > 2**16:
             self.decimation = 2**16
         
         # samples per second
@@ -363,6 +369,9 @@ class Device(EmptyDevice):
         
     def stop_acquisition(self):
         self.port.write("ACQ:STOP")
+
+    def reset_acquisition(self):
+        self.port.write("ACQ:RST")
         
     def get_trigger_status(self):
         """Returns the trigger status.        
