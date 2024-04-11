@@ -30,6 +30,8 @@
 # Device: PREVAC TM1x
 from __future__ import annotations
 
+import time
+
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -52,7 +54,7 @@ class Device(EmptyDevice):
         self.port_properties = {
             "baudrate": 57600,  # default
             "stopbits": 1,
-            # "parity": "N",
+            "parity": "N",
         }
 
         # SweepMe Parameters
@@ -98,7 +100,6 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Enable Remote Control on the device."""
-        # TODO: Add device address and set_device_address command
 
     def disconnect(self) -> None:
         """End the remote control mode on the device."""
@@ -139,7 +140,6 @@ class Device(EmptyDevice):
 
     def send_dataframe(self, function_code: int, data: [int]) -> None:
         """Generate the data frame and send it to the device."""
-        # data_int = [int(symbol) for symbol in data]  # convert to [int]
         data_int = data
         length = len(data)
 
@@ -171,7 +171,6 @@ class Device(EmptyDevice):
         ]:
             message += chr(char).encode("latin1")
 
-        # print(message)
         self.port.write(message)
 
     @staticmethod
@@ -209,10 +208,34 @@ class Device(EmptyDevice):
 
         return data
 
-    """ Currently unused functions """
+    """ Currently unused functions. """
 
-    def set_device_address(self, address: int) -> None:
-        """Set the device address."""
+    def get_product_number(self) -> str:
+        """Request the product number. Works without connected crystal head."""
+        command = 0xFD
+        data = [0, 0, 0, 0]
+        self.send_dataframe(command, data)
+
+        return self.get_dataframe()
+
+    def get_serial_number(self) -> str:
+        """Request the serial number. Works without connected crystal head."""
+        command = 0xFE
+        data = [0, 0, 0, 0]
+        self.send_dataframe(command, data)
+
+        return self.get_dataframe()
+
+    """ 
+    WARNING: The following functions to change device address and logic group should be used with caution. They enable 
+    serial communication with multiple devices.
+    Changing the device address or logic group can lead to communication problems with the device, as future sent 
+    commands are not received by the device. If by accident the device address or logic group is changed, use the
+    detect_logic_group function to find the correct logic group.
+    """
+
+    def set_device_address(self, address: int) -> bool:
+        """Set the device address. Only use if you know what you are doing."""
         command = 0x58
         min_address = 1
         max_address = 254
@@ -220,15 +243,23 @@ class Device(EmptyDevice):
             msg = f"PREVAC TM1x: Address must be between {min_address} and {max_address}."
             raise ValueError(msg)
 
-        data = f"000{chr(address)}"
         data = [0, 0, 0, address]
         self.device_address = 0xFF
         self.send_dataframe(command, data)
-        response = self.get_dataframe()
-        print(response)
 
-    def set_logic_group(self, group: int) -> None:
-        """Set the logic group."""
+        # Timeout might be needed
+        time.sleep(1)
+
+        # If it worked, the device should respond
+        if self.port.in_waiting() > 0:
+            self.port.read()  # Clear the buffer
+            self.device_address = address
+            return True
+
+        return False
+
+    def set_logic_group(self, group: int) -> bool:
+        """Set the logic group. Only use if you know what you are doing."""
         command = 0x59
         min_group = 0
         max_group = 254
@@ -236,27 +267,39 @@ class Device(EmptyDevice):
             msg = f"PREVAC TM1x: Group must be between {min_group} and {max_group}."
             raise ValueError(msg)
 
-        data = f"000{group}"
         data = [0, 0, 0, group]
         self.send_dataframe(command, data)
 
-        response = self.get_dataframe()
-        print(response)
+        # Timeout might be needed
+        time.sleep(1)
 
-    def get_product_number(self) -> str:
-        """Request the product number."""
-        command = 0xFD
-        data = "0000"
-        data = [0, 0, 0, 0]
-        self.send_dataframe(command, data)
+        # If it worked, the device should respond
+        if self.port.in_waiting() > 0:
+            self.port.read()  # Clear the buffer
+            self.logic_group = group
+            return True
 
-        return self.get_dataframe()
+        return False
 
-    def get_serial_number(self) -> str:
-        """Request the serial number."""
-        command = 0xFE
-        data = "0000"
-        data = [0, 0, 0, 0]
-        self.send_dataframe(command, data)
+    def detect_logic_group(self, timeout: float = 0.1) -> int:
+        """If the logic group has been changed, this function checks which logic group responds.
 
-        return self.get_dataframe()
+        Change this function if a search for the device address is needed.
+        """
+        for logic_group in range(254):
+            # self.logic_group is changed to generate the message. Might be needed to change back afterward.
+            self.logic_group = logic_group
+            self.port.clear_internal()
+
+            # Create a dummy request to check if the device responds
+            command = 0xFE
+            data = [0, 0, 0, 0]
+            self.send_dataframe(command, data)
+
+            # Timeout is important, otherwise the response might be detected at a later logic group
+            time.sleep(timeout)
+            if self.port.in_waiting() > 0:
+                self.port.read()
+                return logic_group
+
+        return -1
