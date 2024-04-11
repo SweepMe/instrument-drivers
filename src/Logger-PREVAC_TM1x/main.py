@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import time
 
+import numpy as np
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -43,6 +44,8 @@ class Device(EmptyDevice):
     <p>This driver controls Prevac TM13 or TM14 thickness monitor.</p>
     <p>Sample rate only for TM14</p>
     """
+
+    actions = ["reset_thickness"]  # Enables the reset_thickness action in the GUI
 
     def __init__(self) -> None:
         """Initialize the device class."""
@@ -59,8 +62,8 @@ class Device(EmptyDevice):
 
         # SweepMe Parameters
         self.shortname = "TM1x"
-        self.variables = ["Frequency"]
-        self.units = ["Hz"]
+        self.variables = ["Frequency", "Thickness"]
+        self.units = ["Hz", "nm"]
         self.plottype = [True]
         self.savetype = [True]
 
@@ -82,11 +85,18 @@ class Device(EmptyDevice):
         self.logic_group = 0xC8
         self.driver_address = 0x01
 
+        # Material Properties
+        self.initial_frequency: int = 0
+        self.material_density: float = 0  # g/cm^3
+        self.impedance_ratio: float = 1.0
+
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Get parameters from the GUI and set them as attributes."""
         return {
             "Model": ["TM13", "TM14"],
             "Sample rate in Hz": [10, 4, 2, 1, 0.5],
+            "Material density in g/cm^3": 0.0,
+            "Impedance ratio": 1.0,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -98,6 +108,9 @@ class Device(EmptyDevice):
         else:
             self.sample_rate = 4  # TM13 standard sample rate
 
+        self.material_density = float(parameter["Material density in g/cm^3"])
+        self.impedance_ratio = float(parameter["Impedance ratio"])
+
     def connect(self) -> None:
         """Enable Remote Control on the device."""
 
@@ -105,14 +118,23 @@ class Device(EmptyDevice):
         """End the remote control mode on the device."""
 
     def initialize(self) -> None:
-        """Get frequency range."""
+        """Get initial frequency."""
+        self.reset_thickness()
 
     def configure(self) -> None:
         """Reset thickness if needed and set material properties."""
 
-    def call(self) -> float:
+    def call(self) -> (float, float):
         """Return the current frequency."""
-        return self.get_frequency()
+        frequency = self.get_frequency()
+        thickness = self.calculate_thickness(
+            frequency,
+            self.initial_frequency,
+            self.material_density,
+            self.impedance_ratio,
+        )
+
+        return [frequency, thickness]
 
     """ Device Functions """
 
@@ -135,6 +157,30 @@ class Device(EmptyDevice):
         frequency = int.from_bytes(frequency_bytes, "big")
 
         return frequency / 100
+
+    @staticmethod
+    def calculate_thickness(
+        frequency: float,
+        initial_frequency: float,
+        density_material: float,
+        impedance_ratio: float,
+    ) -> float:
+        """Calculate the thickness from the frequency using Sauerbreys equation."""
+        freq_constant = 1.668e5  # Hz * cm
+        density_quartz = 2.648  # g/cm^3
+
+        normalization = (
+            density_quartz * freq_constant / (np.pi * density_material * impedance_ratio * initial_frequency)
+        )
+        ratio = np.arctan(impedance_ratio * np.tan(np.pi * (frequency - initial_frequency) / frequency))
+
+        # TODO: Check unit
+        # Convert from cm to nm
+        return normalization * ratio * 1e7
+
+    def reset_thickness(self) -> None:
+        """Reset thickness by updating initial frequency."""
+        self.initial_frequency = self.get_frequency()
 
     """ Communication Functions """
 
@@ -192,7 +238,7 @@ class Device(EmptyDevice):
 
         length = ord(message[1])
 
-        data = message[7:7+length]
+        data = message[7 : 7 + length]
 
         # Checksum is not working, some commands do not return a checksum
         # received_checksum = ord(message[-1])
@@ -226,10 +272,10 @@ class Device(EmptyDevice):
 
         return self.get_dataframe()
 
-    """ 
-    WARNING: The following functions to change device address and logic group should be used with caution. They enable 
+    """
+    WARNING: The following functions to change device address and logic group should be used with caution. They enable
     serial communication with multiple devices.
-    Changing the device address or logic group can lead to communication problems with the device, as future sent 
+    Changing the device address or logic group can lead to communication problems with the device, as future sent
     commands are not received by the device. If by accident the device address or logic group is changed, use the
     detect_logic_group function to find the correct logic group.
     """
