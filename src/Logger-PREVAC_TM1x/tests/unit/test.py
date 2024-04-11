@@ -15,10 +15,11 @@ def test_checksum():
 def test_sauerbreys_equation():
     device = pysweepme.get_driver(DRIVER_NAME, DRIVER_PATH, COM_PORT)
 
-    initial_frequency = 6E6
-    frequency = 5.99e6
-    density_material = 2.7  # Al
+    initial_frequency = 5E6
+    frequency = initial_frequency - 5.7
+    density_material = 1  # Al
     impedance_ratio = 1.0
 
     thickness = device.calculate_thickness(frequency, initial_frequency, density_material, impedance_ratio)
-    print(thickness)
+    expected_thickness = 1.0
+    assert thickness - expected_thickness < 1E-2

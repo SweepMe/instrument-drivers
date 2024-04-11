@@ -41,8 +41,11 @@ class Device(EmptyDevice):
 
     description = """
     <h3>Prevac TMC1x</h3>
-    <p>This driver controls Prevac TM13 or TM14 thickness monitor.</p>
-    <p>Sample rate only for TM14</p>
+    <p>This driver controls Prevac TM13 or TM14 thickness monitors.</p>
+    <h4>Parameters</h4>
+    <ul>
+    <li>The sample rate can only be set for TM14.</li>
+    </ul>
     """
 
     actions = ["reset_thickness"]  # Enables the reset_thickness action in the GUI
@@ -62,10 +65,10 @@ class Device(EmptyDevice):
 
         # SweepMe Parameters
         self.shortname = "TM1x"
-        self.variables = ["Frequency", "Thickness"]
-        self.units = ["Hz", "nm"]
-        self.plottype = [True]
-        self.savetype = [True]
+        self.variables = ["Frequency", "Thickness", "Rate"]
+        self.units = ["Hz", "nm", "A/s"]
+        self.plottype = [True, True, True]
+        self.savetype = [True, True, True]
 
         # Device Parameter
         self.device_version: str = ""
@@ -89,14 +92,18 @@ class Device(EmptyDevice):
         self.initial_frequency: int = 0
         self.material_density: float = 0  # g/cm^3
         self.impedance_ratio: float = 1.0
+        self.tooling_factor: float = 1.0
+        self.previous_thickness: float = 0
+        self.previous_time: float = 0
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Get parameters from the GUI and set them as attributes."""
         return {
             "Model": ["TM13", "TM14"],
             "Sample rate in Hz": [10, 4, 2, 1, 0.5],
-            "Material density in g/cm^3": 0.0,
+            "Material density in g/cm^3": 1.0,
             "Impedance ratio": 1.0,
+            "Tooling factor": 1.0,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -110,31 +117,29 @@ class Device(EmptyDevice):
 
         self.material_density = float(parameter["Material density in g/cm^3"])
         self.impedance_ratio = float(parameter["Impedance ratio"])
-
-    def connect(self) -> None:
-        """Enable Remote Control on the device."""
-
-    def disconnect(self) -> None:
-        """End the remote control mode on the device."""
+        self.tooling_factor = float(parameter["Tooling factor"])
 
     def initialize(self) -> None:
         """Get initial frequency."""
         self.reset_thickness()
-
-    def configure(self) -> None:
-        """Reset thickness if needed and set material properties."""
+        if self.initial_frequency == 0:
+            msg = "PREVAC TM1x: Initial frequency is 0. Check the connection to crystal head."
+            raise Exception(msg)
 
     def call(self) -> (float, float):
         """Return the current frequency."""
         frequency = self.get_frequency()
+
         thickness = self.calculate_thickness(
             frequency,
             self.initial_frequency,
             self.material_density,
             self.impedance_ratio,
         )
+        thickness *= self.tooling_factor
 
-        return [frequency, thickness]
+        rate = self.calculate_rate(thickness)
+        return [frequency, thickness, rate]
 
     """ Device Functions """
 
@@ -176,11 +181,25 @@ class Device(EmptyDevice):
 
         # TODO: Check unit
         # Convert from cm to nm
-        return normalization * ratio * 1e7
+        return normalization * ratio * 1e7 * -1
 
     def reset_thickness(self) -> None:
         """Reset thickness by updating initial frequency."""
         self.initial_frequency = self.get_frequency()
+
+    def calculate_rate(self, thickness: float) -> float:
+        """Calculate the rate of the thickness change in A/s."""
+        time_stamp = time.time()
+        if self.previous_thickness == 0 or self.previous_time == 0:
+            rate = 0
+        else:
+            rate = (thickness - self.previous_thickness) / (time_stamp - self.previous_time)
+
+        self.previous_thickness = thickness
+        self.previous_time = time_stamp
+
+        # Return in A/s
+        return rate * 10
 
     """ Communication Functions """
 
