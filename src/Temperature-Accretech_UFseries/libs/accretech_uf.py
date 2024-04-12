@@ -1011,7 +1011,8 @@ class AccretechProber:
             msg = f"Accretech UF series: Temperature must be between {min_temperature} and {max_temperature} °C."
             raise Exception(msg)
 
-        self.port.write("h" + str(int(temperature * 10)))
+        print("h%04d" % (temperature * 10))
+        self.port.write("h%04d" % (temperature * 10))
         answer = self.wait_until_status_byte((93, 99))
 
         correct_status = 93

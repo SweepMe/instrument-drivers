@@ -94,12 +94,14 @@ class Device(EmptyDevice):
         return {
             "SweepMode": ["None", "Temperature"],
             "TemperatureUnit": ["°C"],
+            "IdleTemperature": 25,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Handle SweepMe GUI parameters."""
         self.units[0] = parameter["TemperatureUnit"]
         self.port_str = parameter["Port"]
+        self.idle_temperature = parameter["IdleTemperature"]
 
     def connect(self) -> None:
         """Connect to the device and handle multiple instances."""
@@ -122,9 +124,15 @@ class Device(EmptyDevice):
 
     def initialize(self) -> None:
         """Initialize the device."""
-        # TODO: Check
         self.prober.reset_alarm()
 
+    def deinitialize(self):
+        pass
+
+    def unconfigure(self):
+        if self.idle_temperature != "":
+            self.prober.set_chuck_temperature(float(self.idle_temperature))
+        
     def apply(self) -> None:
         """Apply the given temperature."""
         self.prober.set_chuck_temperature(self.value)
@@ -132,7 +140,7 @@ class Device(EmptyDevice):
     def measure(self) -> None:
         """Measure the temperature."""
         # TODO: chuck_temperature or hot_chuck_temperature?
-        self.temperature, target_temperature = self.prober.get_temperature()
+        self.temperature, target_temperature = self.prober.request_chuck_temperature()
 
     def call(self) -> list[float]:
         """Return measured temperature to SweepMe GUI."""
@@ -142,5 +150,5 @@ class Device(EmptyDevice):
 
     def measure_temperature(self) -> float:
         """Measure the temperature."""
-        _temperature, _target_temperature = self.prober.get_temperature()
+        _temperature, _target_temperature = self.prober.request_chuck_temperature()
         return _temperature
