@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2022-2024 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022-2023 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -172,7 +172,22 @@ class Device(EmptyDevice):
         current_subsite = ""
 
         return current_subsite
+    
+    def load_wafer(self, wafer_str):
 
+        if not self.prober.is_wafer_on_chuck():
+            wafer = wafer_str.replace("C", "").split("W")  # creates a list, e.g. [1,3]
+            self.prober.load_specified_wafer(*wafer)
+        else:
+            message_box("There is already a wafer on the chuck!", blocking=False)
+        
+    def unload_wafer(self):
+
+        if self.prober.is_wafer_on_chuck():
+            self.prober.terminate_lot_process_immediately()
+        else:
+            message_box("There is no wafer on the chuck, that can be unloaded!", blocking=False)
+        
     def connect(self):
 
         # creating an AccretechProber instance that handles all communication
@@ -265,7 +280,7 @@ class Device(EmptyDevice):
             if hasattr(self, "is_run_stopped") and self.is_run_stopped():
                 message_box("Lot process will be finished which takes 1-2 minutes.\n\n"
                             "Do not terminate the run and please wait until the program finishes."
-                            "You can close this message when the run has completed normally.")
+                            "You can close this message when the run has completed normally.", blocking=False)
 
             self.prober.terminate_lot_process_immediately()
 
