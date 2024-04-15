@@ -211,20 +211,14 @@ class Device(EmptyDevice):
                     "There is no wafer on the chuck, although 'Current wafer' is selected as Sweep value."
                 )
         else:
+
+            if self.sweep_value_die == "Current die":
+                raise Exception(
+                    "Performing a wafer variation for the current die is not possible as the current die is"
+                    "not defined for a wafer variation.")
+
             if self.prober.is_wafer_on_chuck():
-                raise Exception(
-                    "There is already a wafer on the chuck. Please terminate the ongoing lot process or "
-                    "remove the wafer.")
-
-            if self.sweep_value_die == "Current die":
-                raise Exception(
-                    "Performing a wafer variation for the current die is not possible as the current die is"
-                    "not defined when no wafer is on the chuck.")
-
-            if self.sweep_value_die == "Current die":
-                raise Exception(
-                    "Performing a wafer variation for the current die is not possible as the current die is"
-                    "not defined when no wafer is on the chuck.")
+                self.prober.terminate_lot_process_immediately()
 
             cassette_status = self.prober.request_cassette_status()
             if cassette_status == "000000":
