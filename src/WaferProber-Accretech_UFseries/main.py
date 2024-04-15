@@ -342,6 +342,8 @@ class Device(EmptyDevice):
                         # forwarded to the main chuck according to command "j3"
                         self.prober.preload_specified_wafer(*preload_wafer)
 
+                self.last_position = (None, None)
+
             self.last_wafer = wafer
             self.last_wafer_str = wafer_str
 
@@ -371,6 +373,7 @@ class Device(EmptyDevice):
                 self.last_die = die
                 self.last_die_str = die_str
                 self.last_sub = (0, 0)
+                self.last_position = (None, None)
 
         if subsite_str is not None:
 
@@ -403,7 +406,11 @@ class Device(EmptyDevice):
                 self.last_sub_str = subsite_str
                 self.last_sub = new_sub
 
-        self.last_position = self.prober.request_position()
+        # Retrieving position and check whether position has indeed changed
+        position = self.prober.request_position()
+        if position != self.last_position:
+            msg = "Subsite position did not change for unknown reason"
+        self.last_position = position
 
         self.die_x, self.die_y = self.prober.request_die_coordinate()
 
