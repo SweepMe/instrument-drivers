@@ -85,6 +85,7 @@ class Device(EmptyDevice):
         self.port_types = ["USBTMC"]
         self.port_properties = {
             "timeout": 10,  # in seconds
+            "clear": False,  # there are problems if the port of the PM100 is cleared
         }
 
         self._target_wavelength = None  # correction wavelength from user interface
