@@ -51,35 +51,41 @@ class Device(EmptyDevice):
 
         # Acquisition Parameters
         self.trigger_source: str
-        self.gain_auto: str
-        self.gain = None
-        self.exposure_auto: str
+#old        self.gain_auto: str
+        self.gain: float
+#old        self.exposure_auto: str
         self.exposure_time: float
         self.file_format: str
+        self.image_width: int       #new
+        self.image_height: int      #new
+        self.offset_x: int          #new
+        self.offset_y: int          #new
 
         # Image Parameters
         self.preset: str
-        self.gamma = None
-        self.balance_ratio_red = None
-        self.balance_ratio_green = None
-        self.balance_ratio_blue = None
+        self.gamma: float
+        self.balance_ratio_red: float
+        self.balance_ratio_green: float
+        self.balance_ratio_blue: float
 
         # Camera parameters
         self.tlf = pylon.TlFactory.GetInstance()
         self.cameras_dict: dict = {}
         self.camera = None
+        
+        
 
     def set_GUIparameter(self) -> dict:
         # These are the parameters of the previous version of the driver
         gui_parameter = {
-            "SweepMode": ["None", "Exposure time in s"],
+            "SweepMode" : ["None", "Exposure time in ms" , "Gain"],
             "Trigger": ["Software"],
-            "GainAuto": ["Off", "Once", "Continuous"],
-            "ExposureAuto": ["Off", "Once", "Continuous"],
-            # "PixelFormat": list(self.PixelBytes.keys()),
+#old            "GainAuto": ["Off", "Once", "Continuous"],
+#old            "ExposureAuto": ["Off", "Once", "Continuous"],
+#old            "PixelFormat": list(self.PixelBytes.keys()),
             "FileFormat": ["tiff", "tiff + jpg", "tiff + png", "jpg", "png"],
             "Gamma": 1,
-            "ExposureTime": 0.1,
+            "ExposureTime": 10,
             "Gain": 1,
             "Preset": [
                 "Off",
@@ -87,9 +93,13 @@ class Device(EmptyDevice):
                 "Daylight6500K (Gamma * 0.45)",
                 "Tungsten2800K (Gamma * 0.45)",
             ],
-            "BalanceRatioRed": 1.0,
+            "ImageWidth": 1920,     #new
+            "ImageHeight": 1080,    #new
+            "OffsetX": 0,           #new
+            "OffsetY": 0,           #new
+            "BalanceRatioRed": 2.1731,
             "BalanceRatioGreen": 1.0,
-            "BalanceRatioBlue": 1.0,
+            "BalanceRatioBlue": 1.94409,
         }
 
         return gui_parameter
@@ -100,40 +110,50 @@ class Device(EmptyDevice):
 
         # These are the parameters of the previous version of the driver
         self.sweepmode = parameter["SweepMode"]
-        if self.sweepmode == "Exposure time in s":
+        if self.sweepmode == "Exposure time in ms":
             self.variables.append("Exposure time")
-            self.units.append("s")
+            self.units.append("ms")
+            self.plottype.append(True)
+            self.savetype.append(True)
+        if self.sweepmode == "Gain":
+            self.variables.append("Gain")
+            self.units.append("")
             self.plottype.append(True)
             self.savetype.append(True)
 
         # Acquisition Parameters
         self.trigger_source = str(parameter["Trigger"])
-        self.gain_auto = str(parameter["GainAuto"])
-        self.gain = parameter["Gain"]
-        self.exposure_auto = str(parameter["ExposureAuto"])
+#old        self.gain_auto = str(parameter["GainAuto"])
+        self.gain = float(parameter["Gain"])
+#old        self.exposure_auto = str(parameter["ExposureAuto"])
         self.exposure_time = float(parameter["ExposureTime"])
-        self.file_format = parameter["FileFormat"]
+        self.image_width = int(parameter["ImageWidth"])     #new
+        self.image_height = int(parameter["ImageHeight"])   #new
+        self.offset_x = int(parameter["OffsetX"])           #new
+        self.offset_y = int(parameter["OffsetY"])           #new
+        self.file_format = parameter["FileFormat"]          #broken
 
         # Image Parameters
         self.preset = str(parameter["Preset"])
-        self.gamma = parameter["Gamma"]
-        self.balance_ratio_red = parameter["BalanceRatioRed"]
-        self.balance_ratio_green = parameter["BalanceRatioGreen"]
-        self.balance_ratio_blue = parameter["BalanceRatioBlue"]
+        self.gamma = float(parameter["Gamma"])
+        self.balance_ratio_red = float(parameter["BalanceRatioRed"])
+        self.balance_ratio_green = float(parameter["BalanceRatioGreen"])
+        self.balance_ratio_blue = float(parameter["BalanceRatioBlue"])
 
-        # self.SelectedFileFormats = parameter["FileFormat"]
-        # for key in self.FileFormats.keys():
-        #     if key in self.SelectedFileFormats:
-        #         self.variables.append("%s image path" % key)
-        #         self.units.append("")
-        #         self.plottype.append(False)
-        #         self.savetype.append(False)
+        self.SelectedFileFormats = parameter["FileFormat"]
+        for key in self.FileFormats.keys():
+            if key in self.SelectedFileFormats:
+                self.variables.append("%s image path" % key)
+                self.units.append("")
+                self.plottype.append(False)
+                self.savetype.append(False)
 
     def find_ports(self) -> list[str]:
         self.get_cameras_dict()
         return list(self.cameras_dict.keys())
 
     def connect(self) -> None:
+    
         self.get_cameras_dict()
 
         try:
@@ -155,7 +175,8 @@ class Device(EmptyDevice):
             raise Exception(msg) from e
 
     def disconnect(self) -> None:
-        if self.camera is not None:
+        if self.instance_key in self.device_communication:
+#        if self.camera is not None:
             self.camera.Close()
 
             # Unregister camera in device_communication
@@ -165,9 +186,19 @@ class Device(EmptyDevice):
         pass
 
     def configure(self) -> None:
-        pass
+        self.set_gain(self.gain)
+        self.set_exposure(self.exposure_time)
+        self.set_gamma(self.gamma)
+        self.set_roi(self.image_width, self.image_height, self.offset_x, self.offset_y) #new
+        
+        self.camera.BalanceRatioSelector.Value = "Red"
+        self.camera.BalanceRatio.Value = self.balance_ratio_red
+        self.camera.BalanceRatioSelector.Value = "Green"
+        self.camera.BalanceRatio.Value = self.balance_ratio_green
+        self.camera.BalanceRatioSelector.Value = "Blue"
+        self.camera.BalanceRatio.Value = self.balance_ratio_blue
 
-    def unconfigure(self) -> None:
+    def unconfigure(self) -> dict:
         pass
 
     def measure(self) -> None:
@@ -196,8 +227,86 @@ class Device(EmptyDevice):
 
     def call(self) -> None:
         return self.filename
-
+    
+    def apply(self):
+        self.value = float(self.value)
+        
+        if self.sweepmode == "Exposure time in s":
+            self.set_exposure(self.value)
+        
+        elif self.sweepmode == "Gain":
+            self.set_gain(self.value)
+        
     "--- Convenience Functions ---"
+
+    def set_gain(self, gain):       
+        # Make sure Auto Function is off to write values:
+        self.camera.GainAuto.Value = "Off"
+        
+        # Set limits and transfer parameter to the camera:
+        gainMin = 0
+        gainMax = 24
+        if gain < gainMin:
+            gain = gainMin
+            self.message_Box("The gain was set to its lower limit: gain = " + str(gainMin))
+        elif gain > gainMax:
+            gain = gainMax
+            self.message_Box("The gain was set to its upper limit: gain = " + str(gainMax))
+        self.camera.Gain.Value = gain
+    
+    def set_exposure(self, exposure):
+        # Make sure Auto Function is off to write values:
+        self.camera.ExposureAuto.Value = "Off"
+        
+        # Set limits and transfer parameter to the camera:
+        exposure *= 1000 # microseconds
+        exposureMin = 34
+        exposureMax = 2000000
+        
+        if exposure < exposureMin:
+            exposure = exposureMin
+            self.message_Box("The exposure time was set to its lower limit: exposure time = " + str(exposureMin / 1000) + " ms")
+        elif exposure > exposureMax:
+            exposure = exposureMax
+            self.message_Box("The exposure time was set to its upper limit: exposure time = " + str(exposureMax / 1000) + " ms")
+        self.camera.ExposureTime.Value = exposure
+
+    def set_gamma(self, gamma):
+        # Set limits and transfer parameter to the camera:
+        gammaMin = 0
+        gammaMax = 3.99998
+        
+        if gamma < gammaMin:
+            gamma = gammaMin
+            self.message_Box("The gamma factor was set to its lower limit: gamma = " + str(gammaMin))
+        elif gamma > gammaMax:
+            gamma = gammaMax
+            self.message_Box("The gamma factor was set to its upper limit: gamma = " + str(gammaMax))        
+        self.camera.Gamma.Value = gamma
+        
+    def set_roi(self, image_width, image_height, offset_x, offset_y):
+        # Set limits and transfer parameter to the camera:
+        WidthMax = 1920
+        HeightMax = 1080
+        
+        if image_width + offset_x > WidthMax:
+            if image_width > WidthMax:
+                image_width = WidthMax
+                self.message_Box("The image width was changed to the maximal size of " + str(WidthMax) + " pixels.")
+            offset_x = WidthMax - image_width
+            self.message_Box("Image width and x-offset cant exceed the maximal image width of " + str(WidthMax) + " pixels. The offset was reduced accordingly.")
+            
+        if image_height + offset_y > HeightMax:
+            if image_height > HeightMax:
+                image_height = HeightMax
+                self.message_Box("The image height was changed to the maximal size of " + str(HeightMax) + " pixels.")
+            offset_y = HeightMax - image_height
+            self.message_Box("Image height and y-offset cant exceed the maximal image height of " + str(HeightMax) + "pixels. The offset was reduced accordingly.")
+        
+        self.camera.Width.Value = image_width
+        self.camera.Height.Value = image_height
+        self.camera.OffsetX.Value = offset_x
+        self.camera.OffsetY.Value = offset_y
 
     def get_cameras_dict(self):
         cameras = self.tlf.EnumerateDevices()
