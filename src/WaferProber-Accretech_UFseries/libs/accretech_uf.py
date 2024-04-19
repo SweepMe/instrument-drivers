@@ -690,8 +690,8 @@ class AccretechProber:
         If there is already a wafer on the subchuck, it gets loaded to the chuck.
         You can terminate a lot process by using cassette = 9 and slot = 99
         A wafer can be loaded back from the chuck to the subchuck using cassette = 0 and slot = 0.
-        This command is typically used in conjunction with 'load_preload_wafer' ("j4") in order to load the chuck and
-        preload the subchuck at the first step of the lot process.
+        This command is typically used in conjunction with 'lload_and_preload_specified_wafers' ("j4") in order to
+        load the chuck and preload the subchuck at the first step of the lot process.
 
         Args:
             cassette: id of the cassette, being
