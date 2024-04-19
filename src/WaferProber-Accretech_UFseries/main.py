@@ -121,7 +121,7 @@ class Device(EmptyDevice):
                 debug("Empty wafer list, please make sure the cassette is filled and "
                       "you have sensed the wafer before you try again.")
 
-        wafers = [f"C{i}W{j}" for i, j in wafer_list]
+        wafers = [f"C{i}W{j}" for i, j, k in wafer_list]
 
         # Dies
         die_list = self.read_controlmap(probeplan_path)
@@ -175,13 +175,40 @@ class Device(EmptyDevice):
     
     def load_wafer(self, wafer_str):
 
-        if not self.prober.is_wafer_on_chuck():
-            wafer = wafer_str.replace("C", "").split("W")  # creates a list, e.g. [1,3]
+        self.print_info()
+
+        self.print_status()
+
+        self.prober.reset_alarm()
+
+        wafer_status = self.prober.request_wafer_status()
+        # a list of tuples containing cassette and wafer id
+        wafer_list = self.prober.get_waferlist_from_status(wafer_status)
+
+        # independent whether there is a wafer on the chuck we can use 
+        # load_specified_wafer after check for sensed wafers
+        # If there is a wafer on the chuck, it will automatically be unloaded
+        cassette_status = self.prober.request_cassette_status()
+        if cassette_status == "000000":
+            self.prober.sense_wafers()  # Wafer sensing "jw" command
+
+        wafer = wafer_str.replace("C", "").split("W")  # creates a list, e.g. [1,3]
+        wafer = tuple(map(int, wafer))
+
+        # wafer is a tuple with cassette number and wafer number.
+        # adding (3,) extends this tuple with the status where 3 means wafer on chuck 
+        if wafer + (3,) not in wafer_list:
             self.prober.load_specified_wafer(*wafer)
         else:
-            message_box("There is already a wafer on the chuck!", blocking=False)
+            message_box(f"Wafer {wafer_str} is already on the chuck!", blocking=False)
         
     def unload_wafer(self):
+
+        self.print_info()
+
+        self.print_status()
+
+        self.prober.reset_alarm()
 
         if self.prober.is_wafer_on_chuck():
             self.prober.terminate_lot_process_immediately()
@@ -217,8 +244,8 @@ class Device(EmptyDevice):
                     "Performing a wafer variation for the current die is not possible as the current die is"
                     "not defined for a wafer variation.")
 
-            if self.prober.is_wafer_on_chuck():
-                self.prober.terminate_lot_process_immediately()
+            # if self.prober.is_wafer_on_chuck():
+            #     self.prober.terminate_lot_process_immediately()
 
             cassette_status = self.prober.request_cassette_status()
             if cassette_status == "000000":
@@ -325,18 +352,17 @@ class Device(EmptyDevice):
 
                     # it must be the last wafer of multiple wafers
                     else:
-                        self.prober.preload_specified_wafer(
-                            0, 0)  # command to transfer last wafer from subchuck to chuck
+                        # command to transfer last wafer from subchuck to chuck
+                        self.prober.preload_specified_wafer(0, 0)  
 
                 # this is the case if there is a next wafer
                 else:
-                    preload_wafer = preload_wafer_str.replace("C", "").split(
-                        "W")  # creates a list, e.g. [1,3]
+                     # creates a list, e.g. [1,3]
+                    preload_wafer = preload_wafer_str.replace("C", "").split("W") 
 
                     # must be the first wafer of several, so need to load and preload ("j4" command)
                     if self.last_wafer is None:
                         self.prober.load_and_preload_specified_wafers(*wafer, *preload_wafer)
-                    # it is a wafer in the middle of at least three wafers
                     else:
                         # we only need to preload the next wafer, the current wafer on the subchuck is automatically
                         # forwarded to the main chuck according to command "j3"
@@ -405,6 +431,22 @@ class Device(EmptyDevice):
 
                 self.last_sub_str = subsite_str
                 self.last_sub = new_sub
+
+                position = self.prober.request_position()
+
+                # we subtract the position from the origin to inverte the sign of the rel_sub
+                # this way the difference can directly be compared with new_sub
+                # Please note that A command (new_sub) has different coordinate system than
+                # R command (rel_sub)
+                rel_sub = tuple(np.array(self.current_die_position) - np.array(position))
+
+                # Check whether new position is not more than 5um away in each coordinate direction
+                # from the requested move
+
+                if abs(new_sub[0] - rel_sub[0]) > 5 or abs(new_sub[1] - rel_sub[1]) > 5:
+                    msg = (f"Relative subsite position after move {rel_sub} is not in "
+                           f"agreement with requested subsite position {new_sub}.")
+                    raise Exception(msg)
 
         # Retrieving position and check whether position has indeed changed
         position = self.prober.request_position()
