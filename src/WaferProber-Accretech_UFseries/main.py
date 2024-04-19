@@ -373,6 +373,12 @@ class Device(EmptyDevice):
             self.last_wafer = wafer
             self.last_wafer_str = wafer_str
 
+            # we need to set back the last die information in case to trigger a new move to
+            # the first requested die of this new wafer even if the die is the same like
+            # the last one of the previous wafer
+            self.last_die = None
+            self.last_die_str = ""
+
         self.last_wafer_id = self.prober.request_wafer_id()
 
         self.print_status()
@@ -398,6 +404,9 @@ class Device(EmptyDevice):
 
                 self.last_die = die
                 self.last_die_str = die_str
+
+                # we reset the last subsite position as the position always starts at (0,0) after
+                # going to the die
                 self.last_sub = (0, 0)
                 self.last_position = (None, None)
 
@@ -434,10 +443,11 @@ class Device(EmptyDevice):
 
                 position = self.prober.request_position()
 
-                # we subtract the position from the origin to inverte the sign of the rel_sub
+                # we subtract the position from the origin to invert the sign of the rel_sub
                 # this way the difference can directly be compared with new_sub
-                # Please note that A command (new_sub) has different coordinate system than
+                # Please note that A command (new_sub) has opposite coordinate system than
                 # R command (rel_sub)
+                # A command is a relative move towards while R command returns a global
                 rel_sub = tuple(np.array(self.current_die_position) - np.array(position))
 
                 # Check whether new position is not more than 5um away in each coordinate direction
