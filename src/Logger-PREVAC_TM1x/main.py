@@ -95,6 +95,7 @@ class Device(EmptyDevice):
         self.tooling_factor: float = 1.0
         self.previous_thickness: float = 0
         self.previous_time: float = 0
+        self.previous_rate: float = 0
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Get parameters from the GUI and set them as attributes."""
@@ -189,17 +190,34 @@ class Device(EmptyDevice):
 
     def calculate_rate(self, thickness: float) -> float:
         """Calculate the rate of the thickness change in A/s."""
+        # TODO: Check if the device measures without given command at every sample rate interval.
+        # If yes, the rate should be calculated using the sample rate instead of the time stamp if time stamp is smaller
         time_stamp = time.time()
+
+        # First measurement or after reset_thickness
         if self.previous_thickness == 0 or self.previous_time == 0:
             rate = 0
+            self.previous_time = time_stamp
+
+        # Time stamp is the same as the previous time stamp, would give division by 0 error.
+        elif time_stamp == self.previous_time:  # noqa: SIM114
+            rate = self.previous_rate
+
+        # If calculate_rate is called faster than the sampling rate of the device, the thickness does not change.
+        # This would lead to a rate of 0. To avoid this, the rate is set to the previous rate.
+        elif thickness == self.previous_thickness and time_stamp - self.previous_time < 1 / self.sample_rate:
+            rate = self.previous_rate
+
+        #  Standard case. Set previous_time to the time stamp of the current measurement.
         else:
             rate = (thickness - self.previous_thickness) / (time_stamp - self.previous_time)
+            rate *= 10  # nm/s -> A/s
+            self.previous_time = time_stamp
 
         self.previous_thickness = thickness
-        self.previous_time = time_stamp
+        self.previous_rate = rate
 
-        # Return in A/s
-        return rate * 10
+        return rate
 
     """ Communication Functions """
 
