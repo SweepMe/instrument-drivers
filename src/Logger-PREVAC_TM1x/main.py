@@ -72,7 +72,7 @@ class Device(EmptyDevice):
 
         # Device Parameter
         self.device_version: str = ""
-        self.sample_rate: int = 4
+        self.sample_rate: float = 1.
         self.sample_rate_dict = {
             "10": 1,
             "4": 2,
@@ -112,9 +112,9 @@ class Device(EmptyDevice):
         self.device_version = parameter["Model"]
 
         if self.device_version == "TM14":
-            self.sample_rate = self.sample_rate_dict[parameter["Sample rate in Hz"]]
+            self.sample_rate = float(parameter["Sample rate in Hz"])
         else:
-            self.sample_rate = 4  # TM13 standard sample rate
+            self.sample_rate = 1  # TM13 standard sample rate
 
         self.material_density = float(parameter["Material density in g/cm^3"])
         self.impedance_ratio = float(parameter["Impedance ratio"])
@@ -154,7 +154,8 @@ class Device(EmptyDevice):
         response[7]     13 for TM13, 14 for TM14
         """
         command = 0x53
-        data = [self.sample_rate, 0, 0, 0]
+        _rate = self.sample_rate_dict[str(self.sample_rate)]
+        data = [_rate, 0, 0, 0]
 
         self.send_dataframe(command, data)
         response = self.get_dataframe()
