@@ -165,8 +165,12 @@ class Device(EmptyDevice):
     def get_shutter_state(self) -> int:
         """Return the current state of the shutter."""
         command = 0x0207
-        channel, shutter_state = self.prevac_interface.get_byte_value_and_channel(command)
-        return shutter_state
+
+        data = f"{self.channel}0"
+        self.prevac_interface.send_data_frame(command, data)
+        answer = self.prevac_interface.receive_data_frame()
+
+        return int(answer)
 
     def set_shutter_state(self, target_state: str | int | float | bool) -> None:
         """Set the state of the shutter.
