@@ -74,10 +74,10 @@ class Device(EmptyDevice):
         self.device_version: str = ""
         self.sample_rate: float = 1.0
         self.sample_rate_dict = {
-            "10": 1,
-            "4": 2,
-            "2": 3,
-            "1": 4,
+            "10.0": 1,
+            "4.0": 2,
+            "2.0": 3,
+            "1.0": 4,
             "0.5": 5,
         }
 
@@ -104,7 +104,7 @@ class Device(EmptyDevice):
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Get parameters from the GUI and set them as attributes."""
         return {
-            "Sample rate in Hz": list(self.sample_rate_dict),
+            "TM14 sample rate in Hz": list(self.sample_rate_dict),
             "Material density in g/cm^3": 1.0,
             "Impedance ratio": 1.0,
             "Tooling factor": 1.0,
@@ -114,7 +114,7 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Get parameters from the GUI and set them as attributes."""
-        self.sample_rate = float(parameter["Sample rate in Hz"])
+        self.sample_rate = float(parameter["TM14 sample rate in Hz"])
 
         self.material_density = float(parameter["Material density in g/cm^3"])
         self.impedance_ratio = float(parameter["Impedance ratio"])
@@ -126,12 +126,8 @@ class Device(EmptyDevice):
     def initialize(self) -> None:
         """Get initial frequency."""
         self.device_version = self.get_device_version()
-
-        # TM13 only supports a sample rate of 1 Hz
-        if self.device_version == 13:
-            self.sample_rate = 1.0
-
         self.reset_thickness()
+
         if self.initial_frequency == 0:
             msg = "PREVAC TM1x: Initial frequency is 0. Check the connection to crystal head."
             raise Exception(msg)
@@ -164,6 +160,7 @@ class Device(EmptyDevice):
 
         self.send_dataframe(command, data)
         response = self.get_dataframe()
+        print(f"Device version response: {response}")
         print(f"Device version: {response[7]}")
 
         return response[7]
@@ -180,8 +177,8 @@ class Device(EmptyDevice):
         command = 0x53
 
         tm14 = 14
-        standard_rate_key = 4
-        _rate = self.sample_rate_dict[str(self.sample_rate)] if self.device_version == tm14 else standard_rate_key
+        standard_rate = 4  # Byte value key for 1 Hz standard rate
+        _rate = self.sample_rate_dict[str(self.sample_rate)] if self.device_version == tm14 else standard_rate
         data = [_rate, 0, 0, 0]
 
         self.send_dataframe(command, data)
@@ -249,7 +246,8 @@ class Device(EmptyDevice):
 
     def calculate_crysta_life(self, frequency: float) -> float:
         """Calculate the crystal life in %."""
-        life = (frequency - self.frequency_min) / (self.frequency_max - self.frequency_min) * 100.0
+        frequency_mhz = frequency / 1e6
+        life = (frequency_mhz - self.frequency_min) / (self.frequency_max - self.frequency_min) * 100.0
 
         return round(life, 2)
 
@@ -303,25 +301,27 @@ class Device(EmptyDevice):
 
     def get_dataframe(self) -> str:
         """Get the response from the device."""
-        message = self.port.read()
-        print(f"Received message: {message}")
-
-        header = message[0]
+        header = self.port.read(1)[0]
         if ord(header) != self.header:
             msg = f"PREVAC TM1x: Header does not match. {self.header} != {header}"
             raise Exception(msg)
 
-        length = ord(message[1])
+        length = ord(self.port.read(1)[0])
+        remaining_header = self.port.read(4)
+        function_code = self.port.read(1)
 
-        data = message[7 : 7 + length]
+        data = self.port.read(length)[:]
+        print(f"Received data: {data}")
+
+        received_checksum = ord(self.port.read(1)[0])
 
         # Checksum is not working, some commands do not return a checksum
         # received_checksum = ord(message[-1])
-        # calculated_checksum = self.calculate_checksum([ord(char) for char in message[2:-2]])
-        #
-        # if received_checksum != calculated_checksum:
-        #     msg = f"PREVAC TM1x: Checksums do not match. {received_checksum} != {calculated_checksum}"
-        #     raise Exception(msg)
+        calculated_checksum = self.calculate_checksum([ord(char) for char in [*remaining_header, function_code, *data]])
+
+        if received_checksum != calculated_checksum:
+            msg = f"PREVAC TM1x: Checksums do not match. {received_checksum} != {calculated_checksum}"
+            raise Exception(msg)
 
         if self.port.in_waiting() > 0:
             msg = f"PREVAC TM1x: There are still {self.port.in_waiting()} Bytes in waiting."
