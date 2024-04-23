@@ -215,7 +215,7 @@ class AccretechProber:
 
     @staticmethod
     def get_waferlist_from_status(wafer_status: str) -> list[tuple[int, int]]:
-        """Returns a list of tuples with the cassette and wafer numbers."""
+        """Returns a list of tuples with cassette number, wafer number, and status value."""
         wafer_list = []
 
         # iterates through cassettes
@@ -227,7 +227,7 @@ class AccretechProber:
                 for wafer_id, val in enumerate(wafers):
                     if val != "0":
                         # adding a tuple of cassette and wafer number
-                        wafer_list.append((cassette_id + 1, wafer_id + 1))
+                        wafer_list.append((cassette_id + 1, wafer_id + 1, int(val)))
 
         return wafer_list
 
@@ -320,7 +320,8 @@ class AccretechProber:
 
             while True:
                 msg = "Accretech: " + error_type + " (%s): " % error_code + error_message + " after status byte 76"
-                answer = get_input(msg + "\n\nDo you like to continue y/n?")
+                answer = get_input(msg + "\n\nTo continue please confirm with 'y' and then handle the problem at the "
+                                    "prober\nDo you like to continue y/n?")
 
                 if answer.lower() == "y":
                     # we call this function again to make sure a new status byte is retrieved
@@ -690,8 +691,8 @@ class AccretechProber:
         If there is already a wafer on the subchuck, it gets loaded to the chuck.
         You can terminate a lot process by using cassette = 9 and slot = 99
         A wafer can be loaded back from the chuck to the subchuck using cassette = 0 and slot = 0.
-        This command is typically used in conjunction with 'lload_and_preload_specified_wafers' ("j4") in order to
-        load the chuck and preload the subchuck at the first step of the lot process.
+        This command is typically used in conjunction with 'load_preload_wafer' ("j4") in order to load the chuck and
+        preload the subchuck at the first step of the lot process.
 
         Args:
             cassette: id of the cassette, being
