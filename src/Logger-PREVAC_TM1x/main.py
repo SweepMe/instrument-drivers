@@ -65,14 +65,14 @@ class Device(EmptyDevice):
 
         # SweepMe Parameters
         self.shortname = "TM1x"
-        self.variables = ["Frequency", "Thickness", "Rate"]
-        self.units = ["Hz", "nm", "A/s"]
-        self.plottype = [True, True, True]
-        self.savetype = [True, True, True]
+        self.variables = ["Frequency", "Thickness", "Rate", "XTAL life"]
+        self.units = ["Hz", "nm", "A/s", "%"]
+        self.plottype = [True, True, True, True]
+        self.savetype = [True, True, True, True]
 
         # Device Parameter
         self.device_version: str = ""
-        self.sample_rate: float = 1.
+        self.sample_rate: float = 1.0
         self.sample_rate_dict = {
             "10": 1,
             "4": 2,
@@ -80,6 +80,9 @@ class Device(EmptyDevice):
             "1": 4,
             "0.5": 5,
         }
+        self.frequency_max: float = 6.0
+        self.frequency_min: float = 5.2
+        self.tooling_factor: float = 1.0
 
         # Default Communication Parameters
         self.header = 0xAA
@@ -92,7 +95,7 @@ class Device(EmptyDevice):
         self.initial_frequency: int = 0
         self.material_density: float = 0  # g/cm^3
         self.impedance_ratio: float = 1.0
-        self.tooling_factor: float = 1.0
+
         self.previous_thickness: float = 0
         self.previous_time: float = 0
         self.previous_rate: float = 0
@@ -105,6 +108,8 @@ class Device(EmptyDevice):
             "Material density in g/cm^3": 1.0,
             "Impedance ratio": 1.0,
             "Tooling factor": 1.0,
+            "Max frequency in GHz": 6.0,
+            "Min frequency in GHz": 5.2,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -119,6 +124,8 @@ class Device(EmptyDevice):
         self.material_density = float(parameter["Material density in g/cm^3"])
         self.impedance_ratio = float(parameter["Impedance ratio"])
         self.tooling_factor = float(parameter["Tooling factor"])
+        self.frequency_max = float(parameter["Max frequency in GHz"])
+        self.frequency_min = float(parameter["Min frequency in GHz"])
 
     def initialize(self) -> None:
         """Get initial frequency."""
@@ -140,7 +147,9 @@ class Device(EmptyDevice):
         thickness *= self.tooling_factor
 
         rate = self.calculate_rate(thickness)
-        return [frequency, thickness, rate]
+        crysta_life = self.calculate_crysta_life(frequency)
+
+        return [frequency, thickness, rate, crysta_life]
 
     """ Device Functions """
 
@@ -220,6 +229,12 @@ class Device(EmptyDevice):
 
         return rate
 
+    def calculate_crysta_life(self, frequency: float) -> float:
+        """Calculate the crystal life in %."""
+        life = (frequency - self.frequency_min) / (self.frequency_max - self.frequency_min) * 100.0
+
+        return round(life, 2)
+
     """ Communication Functions """
 
     def send_dataframe(self, function_code: int, data: [int]) -> None:
@@ -255,6 +270,8 @@ class Device(EmptyDevice):
         ]:
             message += chr(char).encode("latin1")
 
+        print(f"Sent message: {message}")
+
         self.port.write(message)
 
     @staticmethod
@@ -269,6 +286,8 @@ class Device(EmptyDevice):
     def get_dataframe(self) -> str:
         """Get the response from the device."""
         message = self.port.read()
+        print(f"Received message: {message}")
+
         header = message[0]
         if ord(header) != self.header:
             msg = f"PREVAC TM1x: Header does not match. {self.header} != {header}"
