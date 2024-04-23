@@ -29,6 +29,7 @@
 
 from pysweepme import addFolderToPATH
 from pysweepme.EmptyDeviceClass import EmptyDevice
+import os
 
 addFolderToPATH()
 
@@ -45,6 +46,7 @@ class Device(EmptyDevice):
 
         self.shortname = "Basler"  # short name will be shown in the sequencer
         self.instance_key: str
+        self.folder = os.path.dirname(__file__)
         self.variables = ["path"]
         self.units = [""]
         self.plottype = [False]
@@ -81,12 +83,12 @@ class Device(EmptyDevice):
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Define options for GUI parameter."""
         return {
-            "SweepMode": ["None", "Exposure time in ms", "Gain"],
+            "SweepMode": ["None", "Exposure time in s", "Gain"],
             "Trigger": ["Software"],
             # "GainAuto": ["Off"],  # not needed
             # "ExposureAuto": ["Off"],  # not needed
             "PixelFormat": "",
-            "FileFormat": ["jpeg"],  # currently only jpeg
+            "FileFormat": ["jpeg", "png"],
             "Gamma": 1,
             "ExposureTime": 10,
             "Gain": 1,
@@ -112,9 +114,9 @@ class Device(EmptyDevice):
         # These are the parameters of the previous version of the driver
         self.sweepmode = parameter["SweepMode"]
 
-        if self.sweepmode == "Exposure time in ms":
+        if self.sweepmode == "Exposure time in s":
             self.variables.append("Exposure time")
-            self.units.append("ms")
+            self.units.append("s")
             self.plottype.append(True)
             self.savetype.append(True)
 
@@ -177,8 +179,9 @@ class Device(EmptyDevice):
             # Unregister camera in device_communication
             self.device_communication.pop(self.instance_key)
 
-    def initialize(self) -> None:
-        pass
+    def initialize(self):
+        self.progress = 0
+        self.progress_digits = 3
 
     def configure(self) -> None:
         self.set_gain(self.gain)
@@ -197,8 +200,11 @@ class Device(EmptyDevice):
         pass
 
     def measure(self) -> None:
+        self.progress += 1
         images_to_grab = 1
-        self.filename = r"C:\Users\Public\Documents\SweepMe!\Measurement\saved_pypylon_img.jpeg"
+        #self.filename = r"C:\Users\Public\Documents\SweepMe!\Measurement\saved_pypylon_img.jpeg"
+        self.filename = self.tempfolder + os.sep + "BASLER" + "_%0" + str(self.progress_digits) + "d." + self.file_format
+        self.path = self.filename % (self.progress)
         img = pylon.PylonImage()
 
         try:
@@ -211,7 +217,7 @@ class Device(EmptyDevice):
                     img.AttachGrabResultBuffer(grabResult)
 
                     # Save the image data.
-                    img.Save(pylon.ImageFileFormat_Jpeg, self.filename)
+                    img.Save(pylon.ImageFileFormat_Jpeg, self.path)
                 else:
                     print("Error: ", grabResult.ErrorCode, grabResult.ErrorDescription)
                 grabResult.Release()
@@ -220,7 +226,14 @@ class Device(EmptyDevice):
             raise Exception(msg) from e
 
     def call(self) -> None:
-        return self.filename
+        if self.sweepmode == "Exposure time in s":
+            return self.path, self.camera.ExposureTime.Value/1000000
+
+        elif self.sweepmode == "Gain":
+            return self.path, self.camera.Gain.Value
+        
+        else:
+            return self.path
 
     def apply(self):
         self.value = float(self.value)
@@ -254,19 +267,19 @@ class Device(EmptyDevice):
         self.camera.ExposureAuto.Value = "Off"
 
         # Set limits and transfer parameter to the camera:
-        exposure = exposure_s * 1000  # microseconds
+        exposure = exposure_s * 1000000  # microseconds
         exposureMin = 34
         exposureMax = 2000000
 
         if exposure < exposureMin:
             exposure = exposureMin
             self.message_Box(
-                "The exposure time was set to its lower limit: exposure time = " + str(exposureMin / 1000) + " ms",
+                "The exposure time was set to its lower limit: exposure time = " + str(exposureMin / 1000000) + " s",
             )
         elif exposure > exposureMax:
             exposure = exposureMax
             self.message_Box(
-                "The exposure time was set to its upper limit: exposure time = " + str(exposureMax / 1000) + " ms",
+                "The exposure time was set to its upper limit: exposure time = " + str(exposureMax / 1000000) + " s",
             )
         self.camera.ExposureTime.Value = exposure
 
@@ -309,11 +322,16 @@ class Device(EmptyDevice):
                 + str(HeightMax)
                 + "pixels. The offset was reduced accordingly.",
             )
-
+        
+        # Reset camera to avoid errors during parameter handover
+        self.camera.OffsetX.Value = 0
+        self.camera.OffsetY.Value = 0
+            
         self.camera.Width.Value = image_width
         self.camera.Height.Value = image_height
         self.camera.OffsetX.Value = offset_x
         self.camera.OffsetY.Value = offset_y
+
 
     def get_cameras_dict(self):
         cameras = self.tlf.EnumerateDevices()
