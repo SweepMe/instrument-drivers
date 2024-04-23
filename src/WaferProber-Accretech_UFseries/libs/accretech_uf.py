@@ -746,6 +746,13 @@ class AccretechProber:
         self.port.write("j4%i%02d%i%02d" % (int(cassette), int(slot), int(preload_cassette), int(preload_slot)))
         return self.wait_until_status_byte(70, timeout=300.0)
 
+    def enable_reexecution(self):
+        """
+        Enables the re-execution of a lot process.
+        """
+        self.port.write("ji")
+        return self.wait_until_status_byte((98, 99), timeout=60.0)
+
     def load_wafer_aligned(self) -> int:
         """Returns:
         int: status byte
