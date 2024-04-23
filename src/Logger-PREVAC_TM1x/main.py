@@ -80,6 +80,7 @@ class Device(EmptyDevice):
             "1": 4,
             "0.5": 5,
         }
+
         self.frequency_max: float = 6.0
         self.frequency_min: float = 5.2
         self.tooling_factor: float = 1.0
@@ -103,32 +104,33 @@ class Device(EmptyDevice):
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Get parameters from the GUI and set them as attributes."""
         return {
-            "Model": ["TM13", "TM14"],
-            "Sample rate in Hz": [10, 4, 2, 1, 0.5],
+            "Sample rate in Hz": list(self.sample_rate_dict),
             "Material density in g/cm^3": 1.0,
             "Impedance ratio": 1.0,
             "Tooling factor": 1.0,
-            "Max frequency in GHz": 6.0,
-            "Min frequency in GHz": 5.2,
+            "Max frequency in MHz": 6.0,
+            "Min frequency in MHz": 5.2,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Get parameters from the GUI and set them as attributes."""
-        self.device_version = parameter["Model"]
-
-        if self.device_version == "TM14":
-            self.sample_rate = float(parameter["Sample rate in Hz"])
-        else:
-            self.sample_rate = 1  # TM13 standard sample rate
+        self.sample_rate = float(parameter["Sample rate in Hz"])
 
         self.material_density = float(parameter["Material density in g/cm^3"])
         self.impedance_ratio = float(parameter["Impedance ratio"])
         self.tooling_factor = float(parameter["Tooling factor"])
-        self.frequency_max = float(parameter["Max frequency in GHz"])
-        self.frequency_min = float(parameter["Min frequency in GHz"])
+
+        self.frequency_max = float(parameter["Max frequency in MHz"])
+        self.frequency_min = float(parameter["Min frequency in MHz"])
 
     def initialize(self) -> None:
         """Get initial frequency."""
+        self.device_version = self.get_device_version()
+
+        # TM13 only supports a sample rate of 1 Hz
+        if self.device_version == 13:
+            self.sample_rate = 1.0
+
         self.reset_thickness()
         if self.initial_frequency == 0:
             msg = "PREVAC TM1x: Initial frequency is 0. Check the connection to crystal head."
@@ -153,6 +155,19 @@ class Device(EmptyDevice):
 
     """ Device Functions """
 
+    def get_device_version(self) -> int:
+        """Get the device version from the response to get_frequency."""
+        # Send a dummy request for the sample rate to get the device version
+        command = 0x53
+        _rate = self.sample_rate_dict[str(self.sample_rate)]
+        data = [_rate, 0, 0, 0]
+
+        self.send_dataframe(command, data)
+        response = self.get_dataframe()
+        print(f"Device version: {response[7]}")
+
+        return response[7]
+
     def get_frequency(self) -> float:
         """Request current frequency in Hz.
 
@@ -163,7 +178,10 @@ class Device(EmptyDevice):
         response[7]     13 for TM13, 14 for TM14
         """
         command = 0x53
-        _rate = self.sample_rate_dict[str(self.sample_rate)]
+
+        tm14 = 14
+        standard_rate_key = 4
+        _rate = self.sample_rate_dict[str(self.sample_rate)] if self.device_version == tm14 else standard_rate_key
         data = [_rate, 0, 0, 0]
 
         self.send_dataframe(command, data)
