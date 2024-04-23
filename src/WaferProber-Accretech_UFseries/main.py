@@ -211,7 +211,8 @@ class Device(EmptyDevice):
         self.prober.reset_alarm()
 
         if self.prober.is_wafer_on_chuck():
-            self.prober.terminate_lot_process_immediately()
+            self.prober.preload_specified_wafer(9, 99)
+            #self.prober.terminate_lot_process_immediately()
         else:
             message_box("There is no wafer on the chuck, that can be unloaded!", blocking=False)
         
@@ -245,6 +246,7 @@ class Device(EmptyDevice):
                     "not defined for a wafer variation.")
 
             # if self.prober.is_wafer_on_chuck():
+            #     self.prober.preload_specified_wafer(9, 99)
             #     self.prober.terminate_lot_process_immediately()
 
             cassette_status = self.prober.request_cassette_status()
@@ -303,7 +305,8 @@ class Device(EmptyDevice):
                             "Do not terminate the run and please wait until the program finishes."
                             "You can close this message when the run has completed normally.", blocking=False)
 
-            self.prober.terminate_lot_process_immediately()
+            self.prober.preload_specified_wafer(9, 99)
+            # self.prober.terminate_lot_process_immediately()
 
     def apply(self):
 
