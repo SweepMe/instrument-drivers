@@ -61,6 +61,7 @@ class Device(EmptyDevice):
             "baudrate": 57600,  # default
             "stopbits": 1,
             "parity": "N",
+            "timeout": 2.5,  # in case sampling rate is 0.5 Hz
         }
 
         # SweepMe Parameters
@@ -301,27 +302,30 @@ class Device(EmptyDevice):
 
     def get_dataframe(self) -> str:
         """Get the response from the device."""
-        header = self.port.read(1)[0]
+
+        # Problem is that self.port.read() uses rstrip to remove trailing whitespaces, LF/CR or tab characters
+        # TODO: use of self.port.read_raw() instead of self.port.read()
+        # TODO: or use of self.port_properties["rstrip"] = False
+        # TODO: or use of self.port_properties["raw_read"] = True
+        # TODO: bytewise reading of the protocol
+
+        header = self.port.read_raw(1)
         if ord(header) != self.header:
             msg = f"PREVAC TM1x: Header does not match. {self.header} != {header}"
             raise Exception(msg)
 
-        length = ord(self.port.read(1)[0])
-        remaining_header = self.port.read(4)
-        function_code = self.port.read(1)
+        length = self.port.read_raw()
+        length = ord(length)
 
-        data = self.port.read(length)[:]
-        print(f"Received data: {data}")
-
-        received_checksum = ord(self.port.read(1)[0])
+        data = self.port.read_raw(length)
 
         # Checksum is not working, some commands do not return a checksum
         # received_checksum = ord(message[-1])
-        calculated_checksum = self.calculate_checksum([ord(char) for char in [*remaining_header, function_code, *data]])
-
-        if received_checksum != calculated_checksum:
-            msg = f"PREVAC TM1x: Checksums do not match. {received_checksum} != {calculated_checksum}"
-            raise Exception(msg)
+        # calculated_checksum = self.calculate_checksum([ord(char) for char in message[2:-2]])
+        #
+        # if received_checksum != calculated_checksum:
+        #     msg = f"PREVAC TM1x: Checksums do not match. {received_checksum} != {calculated_checksum}"
+        #     raise Exception(msg)
 
         if self.port.in_waiting() > 0:
             msg = f"PREVAC TM1x: There are still {self.port.in_waiting()} Bytes in waiting."
