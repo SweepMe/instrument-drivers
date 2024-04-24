@@ -26,9 +26,9 @@
 # SOFTWARE.
 
 
-# SweepMe! device class
-# * Type: Logger
-# * Device: Template
+# SweepMe! driver
+# * Module: Logger
+# * Instrument: Template
 
 
 ### !!! Change the above license to your case and needs. !!!

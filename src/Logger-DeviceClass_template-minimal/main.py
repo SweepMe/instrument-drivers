@@ -26,9 +26,9 @@
 # SOFTWARE.
 
 
-# SweepMe! device class
-# * Type: Logger
-# * Device: Template
+# SweepMe! driver
+# * Module: Logger
+# * Instrument: Template
 
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
