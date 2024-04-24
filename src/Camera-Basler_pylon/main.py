@@ -24,12 +24,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# SweepMe! device class
-# Device: Basler pylon
+# SweepMe! driver
+# * Module: Camera
+# * Instrument: Basler pylon
+
+from __future__ import annotations
+
+import os
 
 from pysweepme import addFolderToPATH
 from pysweepme.EmptyDeviceClass import EmptyDevice
-import os
 
 addFolderToPATH()
 
@@ -37,20 +41,20 @@ from pypylon import pylon
 
 
 class Device(EmptyDevice):
-    description = """
-    This device class is a wrapper for the Basler pylon camera. It is based on the pypylon library.
-    """
+    """This device class for the Basler pylon camera."""
 
     def __init__(self) -> None:
+        """Declare device parameter."""
         EmptyDevice.__init__(self)
 
         self.shortname = "Basler"  # short name will be shown in the sequencer
-        self.instance_key: str
+        self.instance_key: str = ""
         self.folder = os.path.dirname(__file__)
         self.variables = ["path"]
         self.units = [""]
         self.plottype = [False]
         self.savetype = [True]
+        self.sweepmode: str = ""
 
         # Acquisition Parameters
         self.trigger_source = None
@@ -63,22 +67,21 @@ class Device(EmptyDevice):
         self.file_format: str = ""
 
         # Image Parameters
-        self.preset: str
-        self.gamma: float
-        self.balance_ratio_red: float
-        self.balance_ratio_green: float
-        self.balance_ratio_blue: float
-
-        # Camera parameters
-        self.tlf = pylon.TlFactory.GetInstance()
-        self.cameras_dict: dict = {}
-        self.camera = None
-
         self.preset: str = ""
         self.gamma: float = 0
         self.balance_ratio_red: float = 0
         self.balance_ratio_green: float = 0
         self.balance_ratio_blue: float = 0
+
+        self.save_path: str = ""
+        self.progress: int = 0
+        self.progress_digits: int = 3
+
+        # Camera parameters
+        self.camera_name: str = ""
+        self.tlf = pylon.TlFactory.GetInstance()
+        self.cameras_dict: dict = {}
+        self.camera = None
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Define options for GUI parameter."""
@@ -110,8 +113,6 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Parse and store GUI options."""
         self.camera_name = parameter["Port"]
-
-        # These are the parameters of the previous version of the driver
         self.sweepmode = parameter["SweepMode"]
 
         if self.sweepmode == "Exposure time in s":
@@ -130,11 +131,11 @@ class Device(EmptyDevice):
         self.trigger_source = str(parameter["Trigger"])
         self.gain = float(parameter["Gain"])
         self.exposure_time_s = float(parameter["ExposureTime"])
-        self.image_width = int(parameter["ImageWidth"])  # new
-        self.image_height = int(parameter["ImageHeight"])  # new
-        self.offset_x = int(parameter["ImageOffsetX"])  # new
-        self.offset_y = int(parameter["ImageOffsetY"])  # new
-        self.file_format = parameter["FileFormat"]  # broken
+        self.image_width = int(parameter["ImageWidth"])
+        self.image_height = int(parameter["ImageHeight"])
+        self.offset_x = int(parameter["ImageOffsetX"])
+        self.offset_y = int(parameter["ImageOffsetY"])
+        self.file_format = parameter["FileFormat"]
 
         # Image Parameters
         self.preset = str(parameter["Preset"])
@@ -143,19 +144,18 @@ class Device(EmptyDevice):
         self.balance_ratio_green = float(parameter["BalanceRatioGreen"])
         self.balance_ratio_blue = float(parameter["BalanceRatioBlue"])
 
-        # Currently saving as jpeg is hard coded in self.measure()
-        self.SelectedFileFormats = parameter["FileFormat"]
-
     def find_ports(self) -> list[str]:
+        """Return list of available cameras."""
         self.get_cameras_dict()
         return list(self.cameras_dict.keys())
 
     def connect(self) -> None:
+        """Instantiate camera object."""
         self.get_cameras_dict()
+        self.instance_key = f"{self.shortname}_{self.camera_name}"
 
         try:
             # Check if camera is already registered by SweepMe
-            self.instance_key = f"{self.shortname}_{self.camera_name}"
             if self.instance_key not in self.device_communication:
                 _camera = self.cameras_dict[self.camera_name]
                 self.camera = pylon.InstantCamera(self.tlf.CreateDevice(_camera))
@@ -168,22 +168,24 @@ class Device(EmptyDevice):
             self.camera.Open()  # Might need to be moved to the initialize function
 
         except Exception as e:
-            msg = f"Error opening connection to camera: {e!s}"
+            msg = f"Error opening connection to camera: {self.camera_name}"
             raise Exception(msg) from e
 
     def disconnect(self) -> None:
+        """Close camera connection and unregister element in device communication."""
         if self.instance_key in self.device_communication:
-            #        if self.camera is not None:
             self.camera.Close()
 
             # Unregister camera in device_communication
             self.device_communication.pop(self.instance_key)
 
-    def initialize(self):
+    def initialize(self) -> None:
+        """Initialize image counter."""
         self.progress = 0
         self.progress_digits = 3
 
     def configure(self) -> None:
+        """Configure camera settings."""
         self.set_gain(self.gain)
         self.set_exposure(self.exposure_time_s)
         self.set_gamma(self.gamma)
@@ -196,15 +198,12 @@ class Device(EmptyDevice):
         self.camera.BalanceRatioSelector.Value = "Blue"
         self.camera.BalanceRatio.Value = self.balance_ratio_blue
 
-    def unconfigure(self) -> dict:
-        pass
-
     def measure(self) -> None:
+        """Capture image and save."""
         self.progress += 1
         images_to_grab = 1
-        #self.filename = r"C:\Users\Public\Documents\SweepMe!\Measurement\saved_pypylon_img.jpeg"
-        self.filename = self.tempfolder + os.sep + "BASLER" + "_%0" + str(self.progress_digits) + "d." + self.file_format
-        self.path = self.filename % (self.progress)
+
+        self.save_path = f"{self.tempfolder}{os.sep}BASLER_{self.progress:0{self.progress_digits}d}.{self.file_format}"
         img = pylon.PylonImage()
 
         try:
@@ -212,30 +211,32 @@ class Device(EmptyDevice):
             self.camera.StartGrabbingMax(images_to_grab)
             while self.camera.IsGrabbing():
                 # Wait for an image and then retrieve it. A timeout of 5000 ms is used.
-                grabResult = self.camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-                if grabResult.GrabSucceeded():
-                    img.AttachGrabResultBuffer(grabResult)
+                grab_result = self.camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+                if grab_result.GrabSucceeded():
+                    img.AttachGrabResultBuffer(grab_result)
 
                     # Save the image data.
-                    img.Save(pylon.ImageFileFormat_Jpeg, self.path)
+                    img.Save(pylon.ImageFileFormat_Jpeg, self.save_path)
                 else:
-                    print("Error: ", grabResult.ErrorCode, grabResult.ErrorDescription)
-                grabResult.Release()
+                    print("Error: ", grab_result.ErrorCode, grab_result.ErrorDescription)
+                grab_result.Release()
         except Exception as e:
             msg = f"Error capturing image: {e!s}"
             raise Exception(msg) from e
 
-    def call(self) -> None:
+    def call(self) -> str | tuple[str, float]:
+        """Return the path to the saved image and optional sweep values."""
         if self.sweepmode == "Exposure time in s":
-            return self.path, self.camera.ExposureTime.Value/1000000
+            return self.save_path, self.camera.ExposureTime.Value / 1000000
 
         elif self.sweepmode == "Gain":
-            return self.path, self.camera.Gain.Value
-        
-        else:
-            return self.path
+            return self.save_path, self.camera.Gain.Value
 
-    def apply(self):
+        else:
+            return self.save_path
+
+    def apply(self) -> None:
+        """Apply the sweep values to exposure or gain."""
         self.value = float(self.value)
 
         if self.sweepmode == "Exposure time in s":
@@ -247,18 +248,19 @@ class Device(EmptyDevice):
     "--- Convenience Functions ---"
 
     def set_gain(self, gain: float) -> None:
+        """Set the camera gain value."""
         # Make sure Auto Function is off to write values:
         self.camera.GainAuto.Value = "Off"
 
-        # Set limits and transfer parameter to the camera:
-        gainMin = 0
-        gainMax = 24
-        if gain < gainMin:
-            gain = gainMin
-            self.message_Box("The gain was set to its lower limit: gain = " + str(gainMin))
-        elif gain > gainMax:
-            gain = gainMax
-            self.message_Box("The gain was set to its upper limit: gain = " + str(gainMax))
+        gain_min = 0
+        gain_max = 24
+        if gain < gain_min:
+            gain = gain_min
+            self.message_Box("The gain was set to its lower limit: gain = " + str(gain_min))
+        elif gain > gain_max:
+            gain = gain_max
+            self.message_Box("The gain was set to its upper limit: gain = " + str(gain_max))
+
         self.camera.Gain.Value = gain
 
     def set_exposure(self, exposure_s: float) -> None:
@@ -268,72 +270,72 @@ class Device(EmptyDevice):
 
         # Set limits and transfer parameter to the camera:
         exposure = exposure_s * 1000000  # microseconds
-        exposureMin = 34
-        exposureMax = 2000000
+        exposure_min = 34
+        exposure_max = 2000000
 
-        if exposure < exposureMin:
-            exposure = exposureMin
+        if exposure < exposure_min:
+            exposure = exposure_min
             self.message_Box(
-                "The exposure time was set to its lower limit: exposure time = " + str(exposureMin / 1000000) + " s",
+                "The exposure time was set to its lower limit: exposure time = " + str(exposure_min / 1000000) + " s",
             )
-        elif exposure > exposureMax:
-            exposure = exposureMax
+        elif exposure > exposure_max:
+            exposure = exposure_max
             self.message_Box(
-                "The exposure time was set to its upper limit: exposure time = " + str(exposureMax / 1000000) + " s",
+                "The exposure time was set to its upper limit: exposure time = " + str(exposure_max / 1000000) + " s",
             )
         self.camera.ExposureTime.Value = exposure
 
-    def set_gamma(self, gamma):
-        # Set limits and transfer parameter to the camera:
-        gammaMin = 0
-        gammaMax = 3.99998
+    def set_gamma(self, gamma: float) -> None:
+        """Set the gamma factor."""
+        gamma_min = 0
+        gamma_max = 3.99998
 
-        if gamma < gammaMin:
-            gamma = gammaMin
-            self.message_Box("The gamma factor was set to its lower limit: gamma = " + str(gammaMin))
-        elif gamma > gammaMax:
-            gamma = gammaMax
-            self.message_Box("The gamma factor was set to its upper limit: gamma = " + str(gammaMax))
+        if gamma < gamma_min:
+            gamma = gamma_min
+            self.message_Box("The gamma factor was set to its lower limit: gamma = " + str(gamma_min))
+        elif gamma > gamma_max:
+            gamma = gamma_max
+            self.message_Box("The gamma factor was set to its upper limit: gamma = " + str(gamma_max))
         self.camera.Gamma.Value = gamma
 
-    def set_roi(self, image_width, image_height, offset_x, offset_y):
-        # Set limits and transfer parameter to the camera:
-        WidthMax = 1920
-        HeightMax = 1080
+    def set_roi(self, image_width: int, image_height: int, offset_x: int, offset_y: int) -> None:
+        """Set the region of interest."""
+        width_max = 1920
+        height_max = 1080
 
-        if image_width + offset_x > WidthMax:
-            if image_width > WidthMax:
-                image_width = WidthMax
-                self.message_Box("The image width was changed to the maximal size of " + str(WidthMax) + " pixels.")
-            offset_x = WidthMax - image_width
+        if image_width + offset_x > width_max:
+            if image_width > width_max:
+                image_width = width_max
+                self.message_Box(f"The image width was changed to the maximal size of {width_max} pixels.")
+
+            offset_x = width_max - image_width
             self.message_Box(
-                "Image width and x-offset cant exceed the maximal image width of "
-                + str(WidthMax)
-                + " pixels. The offset was reduced accordingly.",
+                f"Image width and x-offset cant exceed the maximal image width of {width_max} pixels. "
+                f"The offset was reduced accordingly.",
             )
 
-        if image_height + offset_y > HeightMax:
-            if image_height > HeightMax:
-                image_height = HeightMax
-                self.message_Box("The image height was changed to the maximal size of " + str(HeightMax) + " pixels.")
-            offset_y = HeightMax - image_height
+        if image_height + offset_y > height_max:
+            if image_height > height_max:
+                image_height = height_max
+                self.message_Box(f"The image height was changed to the maximal size of {height_max} pixels.")
+
+            offset_y = height_max - image_height
             self.message_Box(
-                "Image height and y-offset cant exceed the maximal image height of "
-                + str(HeightMax)
-                + "pixels. The offset was reduced accordingly.",
+                f"Image height and y-offset cant exceed the maximal image height of {height_max} pixels."
+                f"The offset was reduced accordingly.",
             )
-        
+
         # Reset camera to avoid errors during parameter handover
         self.camera.OffsetX.Value = 0
         self.camera.OffsetY.Value = 0
-            
+
         self.camera.Width.Value = image_width
         self.camera.Height.Value = image_height
         self.camera.OffsetX.Value = offset_x
         self.camera.OffsetY.Value = offset_y
 
-
-    def get_cameras_dict(self):
+    def get_cameras_dict(self) -> None:
+        """Get available cameras and set self.cameras_dict, so it also works for find_ports()."""
         cameras = self.tlf.EnumerateDevices()
         for cam in cameras:
             name = cam.GetModelName()
