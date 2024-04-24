@@ -88,7 +88,7 @@ class Device(EmptyDevice):
         self.verbosemode = True
 
         # Variable that is set != "" in case an exception happens in the apply phase.
-        # In this case, the wafer is not unloaded and the exception steps tells the user whether the exceptio happened
+        # In this case, the wafer is not unloaded and the exception steps tells the user whether the exception happened
         # when the wafer, the die, or the subsite was changed.
         self.exception_step_during_apply = ""
 
@@ -399,9 +399,9 @@ class Device(EmptyDevice):
 
             self.print_status()
 
-        except Exception as e:
+        except Exception:
             self.exception_step_during_apply = "Wafer"
-            raise e
+            raise
 
         # Die
         try:
@@ -433,9 +433,9 @@ class Device(EmptyDevice):
                     self.last_sub = (0, 0)
                     self.last_position = (None, None)
 
-        except Exception as e:
+        except Exception:
             self.exception_step_during_apply = "Die"
-            raise e
+            raise
 
         # Subsite
         try:
@@ -488,9 +488,9 @@ class Device(EmptyDevice):
                                f"agreement with requested subsite position {new_sub}.")
                         raise Exception(msg)
 
-        except Exception as e:
+        except Exception:
             self.exception_step_during_apply = "Subsite"
-            raise e
+            raise
 
         # Retrieving position and check whether position has indeed changed
         position = self.prober.request_position()
