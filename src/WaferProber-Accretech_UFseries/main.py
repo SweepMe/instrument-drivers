@@ -87,6 +87,11 @@ class Device(EmptyDevice):
 
         self.verbosemode = True
 
+        # Variable that is set != "" in case an exception happens in the apply phase.
+        # In this case, the wafer is not unloaded and the exception steps tells the user whether the exceptio happened
+        # when the wafer, the die, or the subsite was changed.
+        self.exception_step_during_apply = ""
+
     def set_GUIparameter(self):
 
         gui_parameter = {
@@ -299,167 +304,193 @@ class Device(EmptyDevice):
         self.prober.z_down()
 
         if self.sweep_value_wafer != "Current wafer":
-            # Terminating the lot process bringing all wafers back to cassette
-            if hasattr(self, "is_run_stopped") and self.is_run_stopped():
-                message_box("Lot process will be finished which takes 1-2 minutes.\n\n"
-                            "Do not terminate the run and please wait until the program finishes."
-                            "You can close this message when the run has completed normally.", blocking=False)
 
-            self.prober.preload_specified_wafer(9, 99)
-            # self.prober.terminate_lot_process_immediately()
+            if self.exception_step_during_apply != "":
+                message_box("Accretech wafer prober failed to change to the next %s. Wafer remains on the chuck."
+                            % self.exception_step_during_apply.lower(), blocking=False)
+            else:
+                # Terminating the lot process bringing all wafers back to cassette
+                if hasattr(self, "is_run_stopped") and self.is_run_stopped():
+                    message_box("Lot process will be finished which takes 1-2 minutes.\n\n"
+                                "Do not terminate the run and please wait until the program finishes."
+                                "You can close this message when the run has completed normally.", blocking=False)
+
+                self.prober.preload_specified_wafer(9, 99)
+                # self.prober.terminate_lot_process_immediately()
 
     def apply(self):
 
-        # print()
-        # print("New setvalue to apply:", self.value)
-        # print(self.sweepvalues)
+        # Wafer
+        try:
 
-        # self.skip_wafer handed over from WaferProber module when user clicks "Go to next wafer"
-        if self.skip_wafer:
-            return
+            # print()
+            # print("New setvalue to apply:", self.value)
+            # print(self.sweepvalues)
 
-        wafer_str = self.sweepvalues["Wafer"]
-        die_str = self.sweepvalues["Die"]
-        subsite_str = self.sweepvalues["Subsite"]
-        die = die_str.split(",")  # create a list of x and y coordinates, e.g "1,3" -> [1,3]
-        preload_wafer_str = self.sweepvalues["NextWafer"]
+            # self.skip_wafer handed over from WaferProber module when user clicks "Go to next wafer"
+            if self.skip_wafer:
+                return
 
-        if wafer_str is None:
-            raise Exception(
-                "You need to specify at least one wafer or use 'Current wafer' as sweep value!")
+            wafer_str = self.sweepvalues["Wafer"]
+            die_str = self.sweepvalues["Die"]
+            subsite_str = self.sweepvalues["Subsite"]
+            die = die_str.split(",")  # create a list of x and y coordinates, e.g "1,3" -> [1,3]
+            preload_wafer_str = self.sweepvalues["NextWafer"]
 
-        if die_str is None:
-            raise Exception(
-                "You need to specify at least one die or use 'Current die' as sweep value!")
+            if wafer_str is None:
+                raise Exception(
+                    "You need to specify at least one wafer or use 'Current wafer' as sweep value!")
 
-        # We do not check whether subsites are None because in that case no subsite was defined and the prober
-        # stays at the start position of the die
+            if die_str is None:
+                raise Exception(
+                    "You need to specify at least one die or use 'Current die' as sweep value!")
 
-        # only if we vary the wafer, we need to load it. Otherwise, we just need to go the die
-        if self.sweep_value_wafer != "Current wafer":
+            # We do not check whether subsites are None because in that case no subsite was defined and the prober
+            # stays at the start position of the die
 
-            wafer = wafer_str.replace("C", "").split("W")  # creates a list, e.g. [1,3]
+            # only if we vary the wafer, we need to load it. Otherwise, we just need to go the die
+            if self.sweep_value_wafer != "Current wafer":
 
-            if wafer != self.last_wafer:
+                wafer = wafer_str.replace("C", "").split("W")  # creates a list, e.g. [1,3]
+
+                if wafer != self.last_wafer:
+
+                    # We always separate if not already the case
+                    if self.prober.is_chuck_contacted():
+                        self.prober.z_down()
+
+                    # this can be the case if only one wafer has to be tested or we reached the last one
+                    if preload_wafer_str is None:
+
+                        # it must be the first wafer and the only one
+                        if self.last_wafer is None:
+                            self.prober.load_specified_wafer(*wafer)
+
+                        # it must be the last wafer of multiple wafers
+                        else:
+                            # command to transfer last wafer from subchuck to chuck
+                            self.prober.preload_specified_wafer(0, 0)
+
+                    # this is the case if there is a next wafer
+                    else:
+                         # creates a list, e.g. [1,3]
+                        preload_wafer = preload_wafer_str.replace("C", "").split("W")
+
+                        # must be the first wafer of several, so need to load and preload ("j4" command)
+                        if self.last_wafer is None:
+                            self.prober.load_and_preload_specified_wafers(*wafer, *preload_wafer)
+                        else:
+                            # we only need to preload the next wafer, the current wafer on the subchuck is automatically
+                            # forwarded to the main chuck according to command "j3"
+                            self.prober.preload_specified_wafer(*preload_wafer)
+
+                    self.last_position = (None, None)
+
+                self.last_wafer = wafer
+                self.last_wafer_str = wafer_str
+
+                # we need to set back the last die information in case to trigger a new move to
+                # the first requested die of this new wafer even if the die is the same like
+                # the last one of the previous wafer
+                self.last_die = None
+                self.last_die_str = ""
+
+            self.last_wafer_id = self.prober.request_wafer_id()
+
+            self.print_status()
+
+        except Exception as e:
+            self.exception_step_during_apply = "Wafer"
+            raise e
+
+        # Die
+        try:
+
+            # self.skip_die is handed over from the WaferProber module when the user clicks "Go to next die"
+            if self.skip_die:
+                return
+
+            if self.sweep_value_die != "Current die":
+
+                if die != self.last_die:
+
+                    # We always separate if not already the case
+                    if self.prober.is_chuck_contacted():
+                        self.prober.z_down()
+
+                    # In any case, the die must have changed, and we need to move to it
+                    self.prober.move_specified_die(*die)  # die at index x,y
+
+                    # once we approach a die, we save the current absolute position at the start position of the die
+                    # This position is then used to navigate to the correct position
+                    self.current_die_position = self.prober.request_position()
+
+                    self.last_die = die
+                    self.last_die_str = die_str
+
+                    # we reset the last subsite position as the position always starts at (0,0) after
+                    # going to the die
+                    self.last_sub = (0, 0)
+                    self.last_position = (None, None)
+
+        except Exception as e:
+            self.exception_step_during_apply = "Die"
+            raise e
+
+        # Subsite
+        try:
+
+            if subsite_str is not None:
 
                 # We always separate if not already the case
                 if self.prober.is_chuck_contacted():
                     self.prober.z_down()
 
-                # this can be the case if only one wafer has to be tested or we reached the last one
-                if preload_wafer_str is None:
+                if subsite_str.startswith("A"):
+                    # xy_subsite_pos is defined with respect to the initial start position of the die
+                    # xy_move is the relative move from the current position to the next subsite position
+                    # current_die_position is the absolute reference to start position of a die
+                    # position_die_ref is the last position with respect to start position of the die
 
-                    # it must be the first wafer and the only one
-                    if self.last_wafer is None:
-                        self.prober.load_specified_wafer(*wafer)
+                    # Extracting the coordinates relative to the die start position
+                    new_sub = tuple(map(int, subsite_str.replace("A", "").split(",")))
 
-                    # it must be the last wafer of multiple wafers
-                    else:
-                        # command to transfer last wafer from subchuck to chuck
-                        self.prober.preload_specified_wafer(0, 0)  
+                    """
+                    # Alternative Code to calculate relative move based on measured absolute position based on R command
+                    # Calculating the last position with respect to the current die position
+                    position_die_ref = np.array(self.last_position) - np.array(self.current_die_position)
+    
+                    # Calculating the relative from the current position to the new position
+                    xy_move = np.array(new_sub) - position_die_ref
+                    """
 
-                # this is the case if there is a next wafer
-                else:
-                     # creates a list, e.g. [1,3]
-                    preload_wafer = preload_wafer_str.replace("C", "").split("W") 
+                    xy_move = np.array(new_sub) - np.array(self.last_sub)
 
-                    # must be the first wafer of several, so need to load and preload ("j4" command)
-                    if self.last_wafer is None:
-                        self.prober.load_and_preload_specified_wafers(*wafer, *preload_wafer)
-                    else:
-                        # we only need to preload the next wafer, the current wafer on the subchuck is automatically
-                        # forwarded to the main chuck according to command "j3"
-                        self.prober.preload_specified_wafer(*preload_wafer)
+                    self.prober.move_position(*xy_move)
 
-                self.last_position = (None, None)
+                    self.last_sub_str = subsite_str
+                    self.last_sub = new_sub
 
-            self.last_wafer = wafer
-            self.last_wafer_str = wafer_str
+                    position = self.prober.request_position()
 
-            # we need to set back the last die information in case to trigger a new move to
-            # the first requested die of this new wafer even if the die is the same like
-            # the last one of the previous wafer
-            self.last_die = None
-            self.last_die_str = ""
+                    # we subtract the position from the origin to invert the sign of the rel_sub
+                    # this way the difference can directly be compared with new_sub
+                    # Please note that A command (new_sub) has opposite coordinate system than
+                    # R command (rel_sub)
+                    # A command is a relative move towards while R command returns a global
+                    rel_sub = tuple(np.array(self.current_die_position) - np.array(position))
 
-        self.last_wafer_id = self.prober.request_wafer_id()
+                    # Check whether new position is not more than 5um away in each coordinate direction
+                    # from the requested move
 
-        self.print_status()
+                    if abs(new_sub[0] - rel_sub[0]) > 5 or abs(new_sub[1] - rel_sub[1]) > 5:
+                        msg = (f"Relative subsite position after move {rel_sub} is not in "
+                               f"agreement with requested subsite position {new_sub}.")
+                        raise Exception(msg)
 
-        # self.skip_die is handed over from the WaferProber module when the user clicks "Go to next die"
-        if self.skip_die:
-            return
-
-        if self.sweep_value_die != "Current die":
-
-            if die != self.last_die:
-
-                # We always separate if not already the case
-                if self.prober.is_chuck_contacted():
-                    self.prober.z_down()
-
-                # In any case, the die must have changed, and we need to move to it
-                self.prober.move_specified_die(*die)  # die at index x,y
-
-                # once we approach a die, we save the current absolute position at the start position of the die
-                # This position is then used to navigate to the correct position
-                self.current_die_position = self.prober.request_position()
-
-                self.last_die = die
-                self.last_die_str = die_str
-
-                # we reset the last subsite position as the position always starts at (0,0) after
-                # going to the die
-                self.last_sub = (0, 0)
-                self.last_position = (None, None)
-
-        if subsite_str is not None:
-
-            # We always separate if not already the case
-            if self.prober.is_chuck_contacted():
-                self.prober.z_down()
-
-            if subsite_str.startswith("A"):
-                # xy_subsite_pos is defined with respect to the initial start position of the die
-                # xy_move is the relative move from the current position to the next subsite position
-                # current_die_position is the absolute reference to start position of a die
-                # position_die_ref is the last position with respect to start position of the die
-
-                # Extracting the coordinates relative to the die start position
-                new_sub = tuple(map(int, subsite_str.replace("A", "").split(",")))
-
-                """
-                # Alternative Code to calculate relative move based on measured absolute position based on R command
-                # Calculating the last position with respect to the current die position
-                position_die_ref = np.array(self.last_position) - np.array(self.current_die_position)
-
-                # Calculating the relative from the current position to the new position
-                xy_move = np.array(new_sub) - position_die_ref
-                """
-
-                xy_move = np.array(new_sub) - np.array(self.last_sub)
-
-                self.prober.move_position(*xy_move)
-
-                self.last_sub_str = subsite_str
-                self.last_sub = new_sub
-
-                position = self.prober.request_position()
-
-                # we subtract the position from the origin to invert the sign of the rel_sub
-                # this way the difference can directly be compared with new_sub
-                # Please note that A command (new_sub) has opposite coordinate system than
-                # R command (rel_sub)
-                # A command is a relative move towards while R command returns a global
-                rel_sub = tuple(np.array(self.current_die_position) - np.array(position))
-
-                # Check whether new position is not more than 5um away in each coordinate direction
-                # from the requested move
-
-                if abs(new_sub[0] - rel_sub[0]) > 5 or abs(new_sub[1] - rel_sub[1]) > 5:
-                    msg = (f"Relative subsite position after move {rel_sub} is not in "
-                           f"agreement with requested subsite position {new_sub}.")
-                    raise Exception(msg)
+        except Exception as e:
+            self.exception_step_during_apply = "Subsite"
+            raise e
 
         # Retrieving position and check whether position has indeed changed
         position = self.prober.request_position()
