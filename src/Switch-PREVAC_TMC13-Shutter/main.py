@@ -137,6 +137,8 @@ class Device(EmptyDevice):
         self.unique_identifier = "PREVAC_TMC13 - " + self.port_string
         if self.unique_identifier not in self.device_communication:
             self.assign_master()
+            self.device_communication[self.unique_identifier] = None
+            
         self.get_master_status()
 
     def disconnect(self) -> None:
