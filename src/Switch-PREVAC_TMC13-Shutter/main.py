@@ -115,7 +115,6 @@ class Device(EmptyDevice):
         self.port_string = parameter["Port"]
         
         # Channel number must be of \x01 format
-        # TODO: Check if channel num is needed for Shutter Control commands
         channel = parameter["Channel"]
         self.channel = int(channel).to_bytes(1, byteorder="big").decode("latin1")
 
@@ -127,7 +126,7 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Enable Remote Control on the device."""
-        # TODO: Check if communication is working if another SweepMe instance of TMC is running
+
         self.prevac_interface = PrevacCommunication.PrevacCommunicationInterface(
             self.port,
             self.host_address,
@@ -174,8 +173,6 @@ class Device(EmptyDevice):
     def get_shutter_state(self) -> int:
         """Return the current state of the shutter."""
         command = 0x0207
-        #channel, shutter_state = self.prevac_interface.get_byte_value_and_channel(command)
-        
         data = f"{self.channel}0"
         self.prevac_interface.send_data_frame(command, data)
         answer = self.prevac_interface.receive_data_frame()
