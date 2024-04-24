@@ -41,7 +41,9 @@ class Device(EmptyDevice):
 
     description = """
     <h3>Prevac TMC1x</h3>
-    <p>This driver controls Prevac TM13 or TM14 thickness monitors.</p>
+    <p>This driver controls Prevac TM13 or TM14 thickness monitors.
+    This driver currently supports only single read out of the crystal frequency and might crash if too many requests 
+    are sent.</p>
     <h4>Parameters</h4>
     <ul>
     <li>The sample rate can only be set for TM14.</li>
@@ -153,7 +155,10 @@ class Device(EmptyDevice):
     """ Device Functions """
 
     def get_device_version(self) -> int:
-        """Get the device version from the response to get_frequency."""
+        """Get the device version from the response to get_frequency.
+
+        TODO: Not working as expected yet. The answer needs to be formatted correctly.
+        """
         # Send a dummy request for the sample rate to get the device version
         command = 0x53
         _rate = self.sample_rate_dict[str(self.sample_rate)]
@@ -164,7 +169,8 @@ class Device(EmptyDevice):
         print(f"Device version response: {response}")
         print(f"Device version: {response[7]}")
 
-        return response[7]
+        # For now, always return TM13
+        return 13
 
     def get_frequency(self) -> float:
         """Request current frequency in Hz.
@@ -206,7 +212,6 @@ class Device(EmptyDevice):
         )
         ratio = np.arctan(impedance_ratio * np.tan(np.pi * (frequency - initial_frequency) / frequency))
 
-        # TODO: Check unit
         # Convert from cm to nm
         return normalization * ratio * 1e7 * -1
 
@@ -287,8 +292,6 @@ class Device(EmptyDevice):
         ]:
             message += chr(char).encode("latin1")
 
-        print(f"Sent message: {message}")
-
         self.port.write(message)
 
     @staticmethod
@@ -302,22 +305,25 @@ class Device(EmptyDevice):
 
     def get_dataframe(self) -> str:
         """Get the response from the device."""
-
         # Problem is that self.port.read() uses rstrip to remove trailing whitespaces, LF/CR or tab characters
         # TODO: use of self.port.read_raw() instead of self.port.read()
         # TODO: or use of self.port_properties["rstrip"] = False
         # TODO: or use of self.port_properties["raw_read"] = True
         # TODO: bytewise reading of the protocol
+        # header = self.port.read_raw(1)
+        # length = self.port.read_raw()
+        # length = ord(length)
+        #
+        # data = self.port.read_raw(length)
 
-        header = self.port.read_raw(1)
+        message = self.port.read()
+        header = message[0]
         if ord(header) != self.header:
             msg = f"PREVAC TM1x: Header does not match. {self.header} != {header}"
             raise Exception(msg)
 
-        length = self.port.read_raw()
-        length = ord(length)
-
-        data = self.port.read_raw(length)
+        length = ord(message[1])
+        data = message[7: 7 + length]
 
         # Checksum is not working, some commands do not return a checksum
         # received_checksum = ord(message[-1])
