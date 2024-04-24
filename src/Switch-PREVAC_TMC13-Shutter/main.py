@@ -56,6 +56,8 @@ class Device(EmptyDevice):
         <li>Set the channel number according to your hardware.</li>
     </ul>
     """
+    
+    actions = ["close_shutter", "open_shutter"]
 
     def __init__(self) -> None:
         """Initialize the device class."""
@@ -76,10 +78,10 @@ class Device(EmptyDevice):
 
         # SweepMe Parameters
         self.shortname = "TMC13 Shutter"
-        self.variables = ["State"]
-        self.units = [""]
-        self.plottype = [True]
-        self.savetype = [True]
+        self.variables = ["State", "Open"]
+        self.units = ["", ""]
+        self.plottype = [False, True]
+        self.savetype = [True, True]
 
         # Shutter Properties
         self.shutter_number: int = 1
@@ -101,7 +103,7 @@ class Device(EmptyDevice):
         """Get parameters from the GUI and set them as attributes."""
         return {
             "Channel": ["1", "2", "3", "4", "5", "6"],
-            "SweepMode": ["State", "None"],
+            "SweepMode": ["None", "State"],
             "Shutter number": ["1", "2"],
             "State at start": ["As is", "Open", "Closed"],
             "State at end": ["As is", "Open", "Closed"],
@@ -109,6 +111,9 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Get parameters from the GUI and set them as attributes."""
+        
+        self.port_string = parameter["Port"]
+        
         # Channel number must be of \x01 format
         # TODO: Check if channel num is needed for Shutter Control commands
         channel = parameter["Channel"]
@@ -130,12 +135,16 @@ class Device(EmptyDevice):
         )
 
         self.register_host()
-        self.assign_master()
+        self.unique_identifier = "PREVAC_TMC13 - " + self.port_string
+        if self.unique_identifier not in self.device_communication:
+            self.assign_master()
         self.get_master_status()
 
     def disconnect(self) -> None:
         """End the remote control mode on the device."""
-        self.release_master()
+        if self.unique_identifier in self.device_communication:
+            self.release_master()
+            del self.device_communication[self.unique_identifier]
 
     def configure(self) -> None:
         """Set initial state."""
@@ -158,19 +167,26 @@ class Device(EmptyDevice):
 
     def call(self) -> str:
         """Return the current state of the device."""
-        return self.shutter_state_dict[self.shutter_state]
+        return self.shutter_state_dict[self.shutter_state], bool(self.shutter_state)
 
     """ TMC13 Shutter Control Functions """
 
     def get_shutter_state(self) -> int:
         """Return the current state of the shutter."""
         command = 0x0207
-
+        #channel, shutter_state = self.prevac_interface.get_byte_value_and_channel(command)
+        
         data = f"{self.channel}0"
         self.prevac_interface.send_data_frame(command, data)
         answer = self.prevac_interface.receive_data_frame()
-
-        return int(answer)
+        shutter_state =  bool(ord(answer))
+        return shutter_state
+    
+    def close_shutter(self):
+        self.set_shutter_state(0)
+        
+    def open_shutter(self):
+        self.set_shutter_state(1)
 
     def set_shutter_state(self, target_state: str | int | float | bool) -> None:
         """Set the state of the shutter.
@@ -183,20 +199,21 @@ class Device(EmptyDevice):
         The shutter channel is probably different from the Thickness control channel, which was used in the Logger driver.
         It might need another input in the GUI to set the shutter channel.
         """
-        target_state = self.handle_set_state_input(target_state)
+        target_state = chr(self.handle_set_state_input(target_state))
 
         command = 0x8207  # +8 in MSB for write command
 
         # TODO: I am unsure if this is the correct way to define the data
         # data is needed in str format
         data = f"{self.channel}{target_state}"
-
+        
         self.prevac_interface.send_data_frame(command, data)
         self.prevac_interface.check_response_for_errors()
 
     @staticmethod
     def handle_set_state_input(target_state: str | int | float | bool) -> int:
         """Handle the input for the set_shutter_state function."""
+                
         if isinstance(target_state, str):
             if target_state.lower() == "open":
                 target_state = 1
@@ -206,12 +223,13 @@ class Device(EmptyDevice):
                 msg = f"Invalid state input {target_state}. Use 'open' or 'closed'."
                 raise ValueError(msg)
 
-        elif isinstance(target_state, bool):
+        elif isinstance(target_state, (bool, float)):
             target_state = int(target_state)
 
-        elif isinstance(target_state, (int, float)) and target_state not in [0, 1]:
-            msg = f"Invalid state input {target_state}. Use 0 or 1."
-            raise ValueError(msg)
+        elif isinstance(target_state, int):
+            if target_state not in [0, 1]:
+                msg = f"Invalid state input {target_state}. Use 0 or 1."
+                raise ValueError(msg)
 
         else:
             msg = f"Invalid state input {target_state}. Use 'open', 'closed', 0 or 1."
