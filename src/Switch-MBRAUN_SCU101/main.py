@@ -45,8 +45,8 @@ class Device(EmptyDevice):
         <p>In the SCU 101 menu:</p>
         <ul>
         <li>E0: Set the MB Address</li>
-        <li>E1-E2: Check baudrate (19200) and parity (E)</li>
-        <li>E4: Set MB Type to RS 232 or RS485, depending on your connector.</li>
+        <li>E1-E2: Check baudrate (19200) and parity (Even)</li>
+        <li>E4: Set MB Type to RS 232or RS485 depending on your adapter</li>
         </ul>
         <h4>Parameters</h4>
         <ul>
@@ -55,15 +55,17 @@ class Device(EmptyDevice):
         <li>The SweepValue that sets the shutter state can be either int (1 = open,&nbsp;&ne;1 = close), boolean (True = open, False = close), or string ("open", &ne;"open" = close).</li>
         </ul>
     """
+    
+    actions = ["close_shutter", "open_shutter"]
 
     def __init__(self) -> None:
         super().__init__()
 
         self.shortname = "SCU101"  # short name will be shown in the sequencer
-        self.variables = ["State"]  # define as many variables you need
-        self.units = [""]  # make sure that you have as many units as you have variables
-        self.plottype = [True]  # True to plot data, corresponding to self.variables
-        self.savetype = [True]  # True to save data, corresponding to self.variables
+        self.variables = ["State", "Open"]  # define as many variables you need
+        self.units = ["", ""]  # make sure that you have as many units as you have variables
+        self.plottype = [False, True]  # True to plot data, corresponding to self.variables
+        self.savetype = [True, True]  # True to save data, corresponding to self.variables
 
         self.port_types = ["COM"]
 
@@ -189,7 +191,7 @@ class Device(EmptyDevice):
 
     def call(self) -> str:
         """Return the current state of the device."""
-        return self.shutter_state_dict[self.shutter_state]
+        return self.shutter_state_dict[self.shutter_state], True if self.shutter_state == 1 else False
 
     """ SCU101 specific functions"""
 
@@ -204,6 +206,15 @@ class Device(EmptyDevice):
         mask = 0x000F
 
         return self.read_register(register_address, mask)
+        
+    def close_shutter(self):
+        self.set_shutter_state(self.command_close)
+        self.await_shutter_movement_completion()
+        
+    def open_shutter(self):
+        self.set_shutter_state(self.command_open)
+        self.await_shutter_movement_completion()
+        
 
     def read_register(self, address: int, mask: hex) -> int:
         """Read a register from the device."""
