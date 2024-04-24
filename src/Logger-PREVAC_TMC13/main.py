@@ -176,6 +176,7 @@ class Device(EmptyDevice):
         self.unique_identifier = "PREVAC_TMC13 - " + self.port_string
         if self.unique_identifier not in self.device_communication:
             self.assign_master()
+            self.device_communication[self.unique_identifier] = None
 
     def disconnect(self) -> None:
         """End the remote control mode on the device."""
