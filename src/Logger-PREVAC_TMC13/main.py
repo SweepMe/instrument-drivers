@@ -131,6 +131,9 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Get parameters from the GUI and set them as attributes."""
+        
+        self.port_string = parameter["Port"]
+        
         # Channel number must be of \x01 format
         channel = parameter["Channel"]
         self.channel = int(channel).to_bytes(1, byteorder="big").decode("latin1")
@@ -170,11 +173,15 @@ class Device(EmptyDevice):
         )
 
         self.register_host()
-        self.assign_master()
+        self.unique_identifier = "PREVAC_TMC13 - " + self.port_string
+        if self.unique_identifier not in self.device_communication:
+            self.assign_master()
 
     def disconnect(self) -> None:
         """End the remote control mode on the device."""
-        self.release_master()
+        if self.unique_identifier in self.device_communication:
+            self.release_master()
+            del self.device_communication[self.unique_identifier]
 
     def initialize(self) -> None:
         """Get frequency range."""
