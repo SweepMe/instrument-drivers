@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2018 Axel Fischer (sweep-me.net)
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,15 +25,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# SweepMe! driver
+# * Module: Logger
+# * Instrument: PCsensor HidTEMPer
 
-# SweepMe! device class
-# Type: Logger
-# Device: PCsensor HidTEMPer
-
-from EmptyDeviceClass import EmptyDevice
 import time
 import ctypes
 import os
+
+import pysweepme.FolderManager as FoMa
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -46,54 +47,65 @@ class Device(EmptyDevice):
         
         self.variables = ["Temperature"]
         self.units = ["°C"]
-        self.plottype = [True] # define if it can be plotted
-        self.savetype = [True] # define if it can be plotted
+        self.plottype = [True]  # define if it can be plotted
+        self.savetype = [True]  # define if it can be plotted
         
-
-    def find_Ports(self):
+        extlibs_path = FoMa.get_path("EXTLIBS")
+        self.dll_file_path = extlibs_path + os.sep + "HidFTDll.dll"
+        
+    def find_ports(self):
     
-        self.connect()
-    
-        return [str(i) for i in range(self.NrDevices)]
+        self.lib = ctypes.cdll.LoadLibrary(self.dll_file_path)
+       
+        n_devices = self.detect_devices()
+        ports = [str(i) for i in range(n_devices)]
+        return ports
         
     def get_GUIparameter(self, parameter):
         
-        self.port = int(parameter["Port"])
+        self.port = parameter["Port"]
         
     def connect(self):
-        
-        try:
-            self.lib = ctypes.cdll.LoadLibrary("HidFTDll.dll")
-            self.lib.EMyReadHUM.restype = ctypes.c_double
-            self.lib.EMyReadTemp.restype = ctypes.c_double
-            self.lib.EMyInitConfig.restype = ctypes.c_int
+    
+        if os.path.exists(self.dll_file_path):
+            self.lib = ctypes.cdll.LoadLibrary(self.dll_file_path)
+        else:
+            msg = ("No HidFTDll.dll found. Please put the file into the folder 'External libraries' of the public "
+                   "SweepMe! folder.")
+            raise Exception(msg)
             
-            self.NrDevices = self.lib.EMyDetectDevice(ctypes.c_int(0))
-        except:
-
-            self.stopMeasurement = "No HidFTDll.dll found. Please put the file into the folder 'External libraries' of the public SweepMe! folder."
-
+        self.lib.EMyReadHUM.restype = ctypes.c_double
+        self.lib.EMyReadTemp.restype = ctypes.c_double
+        self.lib.EMyInitConfig.restype = ctypes.c_int
         
-    def disconnect(self):
-        self.lib.EMyCloseDevice()
-        
+        # must be always used at the start
+        self.detect_devices()
+                
     def initialize(self):
-        self.lib.EMySetCurrentDev(ctypes.c_int(self.port))
+    
+        self.lib.EMySetCurrentDev(ctypes.c_int(int(self.port)))
         self.lib.EMyInitConfig(ctypes.c_bool(True))
+    
+    def deinitialize(self):
+        self.lib.EMyCloseDevice()
                
     def call(self):
 
-        T = self.lib.EMyReadTemp(ctypes.c_bool(True))
+        temperature = self.lib.EMyReadTemp(ctypes.c_bool(True))
 
-        if T == 888.0 or T == 999.0:
-            self.stopMeasurement = "Connection lost"
-            T = float('nan')
+        if temperature == 888.0 or temperature == 999.0:
+            msg = "Incorrect temperature reading, connection lost"
+            raise ValueError(msg)
         
-        return T
+        return temperature
 
         # temp = ctypes.c_double()
         # hum = ctypes.c_double()
-
         # print(lib.EMyReadHUM(ctypes.byref(temp), ctypes.byref(hum)))
         # print(temp.value, hum.value)
 
+    def detect_devices(self):
+            
+        n_devices = self.lib.EMyDetectDevice(ctypes.c_int(0))
+        
+        return n_devices
