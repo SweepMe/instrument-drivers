@@ -30,10 +30,11 @@
 # Device: Arduino AllPins
 
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
+    """Base class to read out Arduino pins."""
     description = """
         <h3>Arduino AllPins</h3>
         <p>This driver allows to read out given digital and analog pins.</p>
@@ -42,25 +43,26 @@ class Device(EmptyDevice):
         <ul>
         <li>Before the first start, please upload the .ino file that comes with this driver to the Arduino using the
          Arduino IDE.</li>
-        <li>Type in the digital channels and analog channels as analog channels. For example "A0, A1, A4" for 
-        analog inputs.</li>
-        <li>If you select "Volt" as unit, the values will be returned between 0-5 V assuming the given 
+        <li>Type in the digital channels and analog channels as analog channels. For example "A0, A1, A4" for analog
+        inputs.</li>
+        <li>If you select "Volt" as unit, the values will be returned between 0-5 V assuming the given
         resolution in Bit. Most Arduino boards come with a resolution of 10 bit (4096 steps)</li>
-        <li>If you select "Numerical", an integer value will be returned independent from the resolution or the 
+        <li>If you select "Numerical", an integer value will be returned independent from the resolution or the
         voltage range of the Arduino board.</li>
         </ul>
         <p>&nbsp;</p>
         <p><strong>Known issues:</strong></p>
         <ul>
-        <li>If you select analog or digitial pins that do no exist at your Arduino board, the driver still reads out 
+        <li>If you select analog or digital pins that do no exist at your Arduino board, the driver still reads out
         a value and returns it. So please check yourself whether the requested pins exist.</li>
         </ul>
-        <p>&nbsp;</p>
     """
 
     def __init__(self) -> None:
+        """Initialize the device class."""
         EmptyDevice.__init__(self)
 
+        self.instance_key: str = ""
         self.shortname = "Arduino AllPins"
 
         self.variables = []
@@ -69,6 +71,7 @@ class Device(EmptyDevice):
         self.plottype = [True for x in self.variables]  # True to plot data
         self.savetype = [True for x in self.variables]  # True to save data
 
+        # Communication Parameter
         self.port_manager = True
         self.port_types = ["COM"]
         self.port_properties = {
@@ -76,15 +79,19 @@ class Device(EmptyDevice):
             "EOL": "\n",
             "baudrate": 115200,
         }
+        self.port_str: str = ""
+        self.driver_name: str = ""
 
+        # Device Parameter
         self.max_voltage = 5.0
-
+        self.resolution: int = 4096  # number of steps for 10 bit resolution
         self.unit_dict = {
             "Volt": "V",
             "Numerical": "",
         }
 
-    def set_GUIparameter(self):
+    def set_GUIparameter(self) -> dict:  # noqa: N802
+        """Set standard GUI parameter."""
         return {
             "Digital channels": "2,3,4,5,6,7,8,9,10,11,12,13",
             "Analog channels": "0,1,2,3,4,5,6,7",
@@ -92,7 +99,8 @@ class Device(EmptyDevice):
             "Resolution in Bit": 10,
         }
 
-    def get_GUIparameter(self, parameter={}):
+    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
+        """Handle input from GUI."""
         self.variables = []
         self.units = []
 
@@ -121,8 +129,8 @@ class Device(EmptyDevice):
         self.port_str = parameter["Port"]
         self.driver_name = parameter["Device"]
 
-    def initialize(self):
-
+    def initialize(self) -> None:
+        """Register device in the communication manager."""
         # Set Name/Number of COM Port as key
         self.instance_key = f"{self.driver_name}_{self.port_str}"
 
@@ -131,11 +139,13 @@ class Device(EmptyDevice):
             self.port.read()
             self.device_communication[self.instance_key] = "Connected"
 
-    def deinitialize(self):
+    def deinitialize(self) -> None:
+        """Unregister device from the communication manager."""
         if self.instance_key in self.device_communication:
             self.device_communication.pop(self.instance_key)
 
-    def measure(self):
+    def measure(self) -> None:
+        """Read out the values from the Arduino."""
         command_string = "R"
         for var in self.variables:
             if "Digital" in var:
@@ -147,11 +157,12 @@ class Device(EmptyDevice):
 
         self.port.write(command_string)
 
-    def call(self):
-        self.answer = self.port.read()[:-1]
+    def call(self) -> list:
+        """Read out Arduino response and calculate voltages."""
+        answer = self.port.read()[:-1]
 
         ret = []
-        for n, val in enumerate(self.answer.split(",")):
+        for n, val in enumerate(answer.split(",")):
             value = float(val)
 
             if self.units[n] == "V":
