@@ -46,7 +46,7 @@ class Device(EmptyDevice):
         <li>Type in the digital channels and analog channels as analog channels. For example "A0, A1, A4" for analog
         inputs.</li>
         <li>If you select "Volt" as unit, the values will be returned between 0-5 V assuming the given
-        resolution in Bit. Most Arduino boards come with a resolution of 10 bit (4096 steps)</li>
+        resolution in Bit. Most Arduino boards come with a resolution of 10 bit (1024 steps)</li>
         <li>If you select "Numerical", an integer value will be returned independent from the resolution or the
         voltage range of the Arduino board.</li>
         </ul>
@@ -55,6 +55,7 @@ class Device(EmptyDevice):
         <ul>
         <li>If you select analog or digital pins that do no exist at your Arduino board, the driver still reads out
         a value and returns it. So please check yourself whether the requested pins exist.</li>
+        <li>The .ino script skips the digital pins D0 and D1, as on most boards these pins are reserved for </li>
         </ul>
     """
 
@@ -84,7 +85,7 @@ class Device(EmptyDevice):
 
         # Device Parameter
         self.max_voltage = 5.0
-        self.resolution: int = 4096  # number of steps for 10 bit resolution
+        self.resolution: int = 1023  # 10 bit resolution: 0-1023
         self.unit_dict = {
             "Volt": "V",
             "Numerical": "",
@@ -145,7 +146,7 @@ class Device(EmptyDevice):
             self.device_communication.pop(self.instance_key)
 
     def measure(self) -> None:
-        """Read out the values from the Arduino."""
+        """Send the command to read out the Arduino pins."""
         command_string = "R"
         for var in self.variables:
             if "Digital" in var:

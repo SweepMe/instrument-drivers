@@ -5,8 +5,8 @@ String EOL;
 
 void setup() {
 
-   for (int i=0; i <= NUM_DIGITAL_PINS; i++){
-    pinMode(i, INPUT);
+   for (int pin=2; pin < NUM_DIGITAL_PINS; pin++){
+    pinMode(pin, INPUT);
    }
 
    Serial.begin(115200);
