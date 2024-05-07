@@ -5,16 +5,9 @@ String EOL;
 
 void setup() {
 
-   for (int i=2; i <= 13; i++){
-  
-    pinMode(i, INPUT);
+   for (int pin=2; pin < NUM_DIGITAL_PINS; pin++){
+    pinMode(pin, INPUT);
    }
-
-   pinMode(LED_BUILTIN, OUTPUT);
-
-   digitalWrite(LED_BUILTIN, HIGH);
-   delay(100);
-   digitalWrite(LED_BUILTIN, LOW);
 
    Serial.begin(115200);
    Serial.setTimeout(100);
