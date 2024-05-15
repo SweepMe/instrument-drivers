@@ -55,11 +55,14 @@ class Device(EmptyDevice):
     <ul>
         <li>Set the channel number according to your hardware.</li>
         <li>Reset thickness: If set True, the thickness will be set to 0 at the start of the measurement.</li>
-        <li>Set tooling/density/acoustic impedance: If set True, the given parameters will be set to the device.
-            Otherwise, the parameters set in the device GUI will be used. In general, the device does not save the
-            changes in the material properties after the measurement.
+        <li>Custom tooling: If enabled, the tooling factor can be set from the SweepMe! GUI. Otherwise, the value
+            set in the TMC13 menu will be used.
         </li>
-        <li>Read pressure 1/2: Enables readout of pressure sensors in channel 1 and 2.</li>
+        <li>Custom material: If enabled, the values for name, density, and acoustic impedance can be set from the
+            SweepMe! GUI. Otherwise, the parameters set in the TMC13 menu will be used. In general, the TMC13 device
+            does not save the changes in the material properties after the measurement.
+        </li>
+        <li>Read pressure 1/2: Enables readout of pressure sensors in channel 1 and/or 2.</li>
     </ul>
     """
 
@@ -131,22 +134,23 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Get parameters from the GUI and set them as attributes."""
-        
         self.port_string = parameter["Port"]
-        
+
         # Channel number must be of \x01 format
         channel = parameter["Channel"]
         self.channel = int(channel).to_bytes(1, byteorder="big").decode("latin1")
 
         self.should_reset_thickness = bool(parameter["Reset thickness"])
         self.should_set_tooling = bool(parameter["Set tooling"])
-        self.tooling_factor = float(parameter["Tooling in %"])
+        if self.should_set_tooling:
+            self.tooling_factor = float(parameter["Tooling in %"])
 
         # Custom Material Properties
         self.use_custom_material = bool(parameter["Custom material"])
-        self.material_name = str(parameter["Name"])
-        self.density = float(parameter["Density in g/cm^3"])
-        self.acoustic_impedance = float(parameter["Acoustic impedance in 1e5 g/cm²/s"])
+        if self.use_custom_material:
+            self.material_name = str(parameter["Name"])
+            self.density = float(parameter["Density in g/cm^3"])
+            self.acoustic_impedance = float(parameter["Acoustic impedance in 1e5 g/cm²/s"])
 
         # Pressure Readings
         self.should_read_pressure_1 = bool(parameter["Read pressure 1"])
