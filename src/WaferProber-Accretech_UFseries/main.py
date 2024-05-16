@@ -79,6 +79,8 @@ class Device(EmptyDevice):
             "GPIB_EOLread": "\r\n",
         }
 
+        self.port_str = "undefined_port"
+
         # self.actual_wafer_text = ""
         # self.actual_die_text = ""
         # self.actual_subsite_text = "Not available"
@@ -103,6 +105,7 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter):
 
+        self.port_str = parameter["Port"]
         self.sweep_value_wafer = parameter["SweepValueWafer"]
         self.sweep_value_die = parameter["SweepValueDie"]
         self.sweep_value_subsite = parameter["SweepValueSubsite"]
@@ -115,18 +118,21 @@ class Device(EmptyDevice):
         # a list of tuples containing cassette and wafer id
         wafer_list = self.prober.get_waferlist_from_status(wafer_status)
 
+        self.check_and_sense_wafers()
+
+        wafer_status = self.prober.request_wafer_status()
+        # a list of tuples containing cassette and wafer id
+        wafer_list = self.prober.get_waferlist_from_status(wafer_status)
+
         if len(wafer_list) == 0:
-            self.prober.sense_wafers()  # Wafer sensing "jw" command
-
-            wafer_status = self.prober.request_wafer_status()
-            # a list of tuples containing cassette and wafer id
-            wafer_list = self.prober.get_waferlist_from_status(wafer_status)
-
-            if len(wafer_list) == 0:
+            if self.prober.is_wafer_on_chuck():
+                wafers = ["inspection tray"]
+            else:
                 debug("Empty wafer list, please make sure the cassette is filled and "
-                      "you have sensed the wafer before you try again.")
-
-        wafers = [f"C{i}W{j}" for i, j, k in wafer_list]
+                        "you have sensed the wafer before you try again.")
+                wafers = []
+        else:
+            wafers = [f"C{i}W{j}" for i, j, k in wafer_list]
 
         # Dies
         die_list = self.read_controlmap(probeplan_path)
@@ -186,16 +192,11 @@ class Device(EmptyDevice):
 
         self.prober.reset_alarm()
 
+        self.check_and_sense_wafers()
+
         wafer_status = self.prober.request_wafer_status()
         # a list of tuples containing cassette and wafer id
         wafer_list = self.prober.get_waferlist_from_status(wafer_status)
-
-        # independent whether there is a wafer on the chuck we can use 
-        # load_specified_wafer after check for sensed wafers
-        # If there is a wafer on the chuck, it will automatically be unloaded
-        cassette_status = self.prober.request_cassette_status()
-        if cassette_status == "000000":
-            self.prober.sense_wafers()  # Wafer sensing "jw" command
 
         wafer = wafer_str.replace("C", "").split("W")  # creates a list, e.g. [1,3]
         wafer = tuple(map(int, wafer))
@@ -203,6 +204,9 @@ class Device(EmptyDevice):
         # wafer is a tuple with cassette number and wafer number.
         # adding (3,) extends this tuple with the status where 3 means wafer on chuck 
         if wafer + (3,) not in wafer_list:
+            # independent whether there is a wafer on the chuck we can use
+            # load_specified_wafer after check for sensed wafers
+            # If there is a wafer on the chuck, it will automatically be unloaded
             self.prober.load_specified_wafer(*wafer)
         else:
             message_box(f"Wafer {wafer_str} is already on the chuck!", blocking=False)
@@ -217,7 +221,6 @@ class Device(EmptyDevice):
 
         if self.prober.is_wafer_on_chuck():
             self.prober.preload_specified_wafer(9, 99)
-            #self.prober.terminate_lot_process_immediately()
         else:
             message_box("There is no wafer on the chuck, that can be unloaded!", blocking=False)
         
@@ -227,8 +230,16 @@ class Device(EmptyDevice):
         self.prober = accretech_uf.AccretechProber(self.port)
         self.prober.set_verbose(self.verbosemode)
 
+        self.unique_identifier = "Driver_Accretech_UFseries_" + self.port_str
+        if not self.unique_identifier in self.device_communication:
+            self.device_communication[self.unique_identifier] = None
+
     def disconnect(self):
-        del self.prober  # this makes sure the event mechanism is disabled
+
+        if self.unique_identifier in self.device_communication:
+            self.prober.unregister_srq_event()  # this makes sure the event mechanism is disabled
+            del self.device_communication[self.unique_identifier]
+        del self.prober  
 
     def initialize(self):
 
@@ -244,20 +255,17 @@ class Device(EmptyDevice):
                     "There is no wafer on the chuck, although 'Current wafer' is selected as Sweep value."
                 )
         else:
-
             if self.sweep_value_die == "Current die":
                 raise Exception(
                     "Performing a wafer variation for the current die is not possible as the current die is"
                     "not defined for a wafer variation.")
+            
+            if self.prober.is_wafer_on_chuck():
+                self.prober.unload_all_wafers()
 
-            # if self.prober.is_wafer_on_chuck():
-            #     self.prober.preload_specified_wafer(9, 99)
-            #     self.prober.terminate_lot_process_immediately()
+            self.check_and_sense_wafers()
 
-            cassette_status = self.prober.request_cassette_status()
-            if cassette_status == "000000":
-                self.prober.sense_wafers()  # Wafer sensing "jw" command
-
+            """
             # Get cassettes and wafers
             wafer_status = self.prober.request_wafer_status()
             # a list of tuples containing cassette and wafer id
@@ -273,6 +281,7 @@ class Device(EmptyDevice):
                 if len(wafer_list) == 0:
                     raise Exception("Empty wafer list, please make sure the cassette is filled and "
                                     "you have sensed the wafer before you try again.")
+            """
 
         if self.sweep_value_subsite == "Current subsite":
             raise Exception("Option 'Current subsite' is not supported yet.")
@@ -284,13 +293,13 @@ class Device(EmptyDevice):
 
         self.last_wafer = None
         self.last_wafer_str = ""
-        self.last_wafer_id = None
+        self.last_wafer_id = ""
 
         self.last_die = None
         self.last_die_str = ""
 
-        self.last_sub_str = None
         self.last_sub = (0, 0)
+        self.last_sub_str = ""
 
         # absolute position of the current die starting position
         self.current_die_position = (None, None)
@@ -316,7 +325,9 @@ class Device(EmptyDevice):
                                 "You can close this message when the run has completed normally.", blocking=False)
 
                 self.prober.preload_specified_wafer(9, 99)
-                # self.prober.terminate_lot_process_immediately()
+
+    def signout(self):
+        pass
 
     def apply(self):
 
@@ -376,6 +387,17 @@ class Device(EmptyDevice):
                          # creates a list, e.g. [1,3]
                         preload_wafer = preload_wafer_str.replace("C", "").split("W")
 
+                        # if there is a iteration of a higher module in the sequencer
+                        # it can happen that the wafer on the chuck needs to be preloaded
+                        # in this case, we need to bring back the wafer on the chuck first.
+                        if preload_wafer == self.last_wafer:
+                            self.prober.unload_all_wafers()
+                            # we set last wafer to None because in this case the preload and chuck wafer
+                            # are loaded in the code below
+                            self.last_wafer = None
+                            self.last_wafer_str = ""
+                            self.last_wafer_id = ""
+
                         # must be the first wafer of several, so need to load and preload ("j4" command)
                         if self.last_wafer is None:
                             self.prober.load_and_preload_specified_wafers(*wafer, *preload_wafer)
@@ -386,14 +408,14 @@ class Device(EmptyDevice):
 
                     self.last_position = (None, None)
 
-                self.last_wafer = wafer
-                self.last_wafer_str = wafer_str
+                    self.last_wafer = wafer
+                    self.last_wafer_str = wafer_str
 
-                # we need to set back the last die information in case to trigger a new move to
-                # the first requested die of this new wafer even if the die is the same like
-                # the last one of the previous wafer
-                self.last_die = None
-                self.last_die_str = ""
+                    # we need to set back the last die information in case to trigger a new move to
+                    # the first requested die of this new wafer even if the die is the same like
+                    # the last one of the previous wafer
+                    self.last_die = None
+                    self.last_die_str = ""
 
             self.last_wafer_id = self.prober.request_wafer_id()
 
@@ -548,11 +570,10 @@ class Device(EmptyDevice):
         print("Cassette status:", cassette_status)
 
         prober_status = self.prober.request_prober_status()
-        print(
-            "Prober status:",
-            prober_status,
-            self.prober.get_prober_status_message(prober_status),
-        )
+        print("Prober status:", prober_status, self.prober.get_prober_status_message(prober_status))
+
+        lock_status = self.prober.request_cassette_lock_status()
+        print("Cassette lock status:", lock_status)
 
         chuck_status = self.prober.is_chuck_contacted()
         print("Chuck in contact:", chuck_status)
@@ -589,8 +610,45 @@ class Device(EmptyDevice):
         position = self.prober.request_position()
         print("Absolute position:", position)
 
-    def read_controlmap(self, controlmap) -> List[str]:
+    def check_and_sense_wafers(self):
+
+        if not self.prober.is_wafer_on_chuck():
+            # in case of an inspection wafer on the chuck or a lot process was already started,
+            # there is no need to sense the wafers
+
+            cassette_status = self.prober.request_cassette_status()
+
+            # if none of the two cassettes has a status yet
+            if "00" == cassette_status[-2:]:
+                self.prober.sense_wafers()  # Wafer sensing "jw" command
+
+    def get_wafer_on_chuck(self):
+        """ Returns the current wafer on the chuck
+
+        Returns:
+            tuple of cassette id and wafer id, (None, None) in case there is no wafer on the chuck
+
         """
+
+        wafer = (None, None)
+        if self.prober.is_wafer_on_chuck():
+
+            # Get cassettes and wafers
+            wafer_status = self.prober.request_wafer_status()
+            # a list of tuples containing cassette and wafer id
+            wafer_list = self.prober.get_waferlist_from_status(wafer_status)
+
+            wafer_during_test_status = 3
+            for wafer_ in wafer_list:
+                if wafer_[2] == wafer_during_test_status:  # wafer during testing -> wafer on chuck
+                    wafer = (wafer_[0], wafer_[1])
+                    break
+
+        return wafer
+
+    def read_controlmap(self, controlmap) -> List[str]:
+        """Reads a given controlmap file
+
         Args:
             controlmap: path to the Control Map .MDF file. 
             Control map files can be exported using Device Commander software

@@ -34,10 +34,12 @@ from __future__ import annotations
 
 import inspect
 from datetime import datetime
+import time
 
 import pysweepme.Ports
-from pysweepme.ErrorMessage import debug
+from pysweepme.ErrorMessage import debug, error
 from pyvisa import constants
+import pyvisa
 
 try:
     from pysweepme.UserInterface import get_input
@@ -184,7 +186,8 @@ class AccretechProber:
 
     def __del__(self) -> None:
         """When the object is deleted, the SRQ event is unregistered."""
-        self.unregister_srq_event()
+        pass
+        # self.unregister_srq_event()
 
     def register_srq_event(self) -> None:
         """Register Service Request Events."""
@@ -254,7 +257,8 @@ class AccretechProber:
         stb = None
         while stb not in stb_success:
             stb = self.acquire_status_byte(timeout)
-
+            if stb == 99:  # Abnormal end always indicate that we can break here
+                break
         return stb
 
     def acquire_status_byte(self, timeout: float = 10.0) -> int:
@@ -275,7 +279,19 @@ class AccretechProber:
                 print("-->", now.strftime("%H:%M:%S"), "Function:", function_calling_name)
 
         # Wait for the SRQ event to occur
-        response = self.port.port.wait_on_event(self.event_type, int(timeout * 1000))  # conversion from s to ms
+        starttime = time.time()
+        while True: 
+            if time.time()-starttime < timeout:
+                try:
+                    # response = self.port.port.wait_on_event(self.event_type, int(timeout * 1000))  # conversion from s to ms
+                    response = self.port.port.wait_on_event(self.event_type, int(1000))  # waiting 1000 ms
+                    break
+                except pyvisa.errors.VisaIOError:
+                    # Timeout error
+                    pass
+            else:
+                msg = "Timeout reached during waiting for status byte"
+                raise Exception(msg)
 
         # The event mechanism was changed after pyvisa 1.9.0 and the WaitResponse structure is different
         if hasattr(response, "event"):
@@ -633,7 +649,7 @@ class AccretechProber:
             # 71
         """
         self.port.write("U")
-        return self.wait_until_status_byte(71, timeout=180.0)
+        return self.wait_until_status_byte(71, timeout=300.0)
 
     def unload_all_wafers(self) -> int:
         """Returns:
@@ -641,7 +657,7 @@ class AccretechProber:
             # 94
         """
         self.port.write("U0")
-        return self.wait_until_status_byte(94, timeout=30.0)
+        return self.wait_until_status_byte((71, 94), timeout=300.0)
 
     def unload_to_inspection_tray(self) -> int:
         """Returns:
@@ -652,7 +668,9 @@ class AccretechProber:
         return self.wait_until_status_byte(71, timeout=120.0)
 
     def load_specified_wafer(self, cassette, slot) -> int:
-        """This command can be used to load a wafer from a cassette. It indirectly starts a lot process and is not used with 'start'.
+        """This command can be used to load a wafer from a cassette.
+
+        It indirectly starts a lot process and is not used with 'start'.
 
         You can terminate the lot process by using cassette = 9 and slot = 99
 
@@ -682,7 +700,7 @@ class AccretechProber:
             raise Exception(msg)
 
         self.port.write("j2%i%02d" % (int(cassette), int(slot)))
-        return self.wait_until_status_byte((70, 94), timeout=600.0)
+        return self.wait_until_status_byte((70, 94), timeout=300.0)
 
     def preload_specified_wafer(self, cassette, slot) -> int:
         """This command ("j3") can be used to preload a wafer from a cassette to the subchuck.
@@ -1019,10 +1037,34 @@ class AccretechProber:
             msg = f"Accretech UF series: Temperature must be between {min_temperature} and {max_temperature} °C."
             raise Exception(msg)
 
-        print("h%04d" % (temperature * 10))
         self.port.write("h%04d" % (temperature * 10))
         answer = self.wait_until_status_byte((93, 99))
 
         correct_status = 93
         if answer != correct_status:  # Abnormal end of command  # noqa: PLR2004
             self.raise_error(answer)
+
+    def request_device_name_list(self, storage="c"):
+        """Requests the list of names of saved device parameter sets
+
+        Args:
+            storage: str
+
+        Returns:
+            str: list of all available device parameter set names
+        """
+        
+        answer = self.query("d" + storage)
+        return answer
+
+    def request_cassette_lock_status(self):
+        """Requests cassette lock status
+
+        Returns:
+            int:
+                0: cassette is in the unlock status
+                1: cassette is in the lock status
+        """
+        
+        answer = self.query("cls")
+        return int(answer)
