@@ -215,7 +215,7 @@ class AccretechProber:
 
     @staticmethod
     def get_waferlist_from_status(wafer_status: str) -> list[tuple[int, int]]:
-        """Returns a list of tuples with the cassette and wafer numbers."""
+        """Returns a list of tuples with cassette number, wafer number, and status value."""
         wafer_list = []
 
         # iterates through cassettes
@@ -227,7 +227,7 @@ class AccretechProber:
                 for wafer_id, val in enumerate(wafers):
                     if val != "0":
                         # adding a tuple of cassette and wafer number
-                        wafer_list.append((cassette_id + 1, wafer_id + 1))
+                        wafer_list.append((cassette_id + 1, wafer_id + 1, int(val)))
 
         return wafer_list
 
@@ -320,7 +320,8 @@ class AccretechProber:
 
             while True:
                 msg = "Accretech: " + error_type + " (%s): " % error_code + error_message + " after status byte 76"
-                answer = get_input(msg + "\n\nDo you like to continue y/n?")
+                answer = get_input(msg + "\n\nTo continue please confirm with 'y' and then handle the problem at the "
+                                    "prober\nDo you like to continue y/n?")
 
                 if answer.lower() == "y":
                     # we call this function again to make sure a new status byte is retrieved
@@ -744,6 +745,13 @@ class AccretechProber:
         """
         self.port.write("j4%i%02d%i%02d" % (int(cassette), int(slot), int(preload_cassette), int(preload_slot)))
         return self.wait_until_status_byte(70, timeout=300.0)
+
+    def enable_reexecution(self):
+        """
+        Enables the re-execution of a lot process.
+        """
+        self.port.write("ji")
+        return self.wait_until_status_byte((98, 99), timeout=60.0)
 
     def load_wafer_aligned(self) -> int:
         """Returns:
