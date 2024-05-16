@@ -184,7 +184,8 @@ class AccretechProber:
 
     def __del__(self) -> None:
         """When the object is deleted, the SRQ event is unregistered."""
-        self.unregister_srq_event()
+        pass
+        # self.unregister_srq_event()
 
     def register_srq_event(self) -> None:
         """Register Service Request Events."""
