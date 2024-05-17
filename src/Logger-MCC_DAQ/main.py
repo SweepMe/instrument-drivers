@@ -26,23 +26,24 @@
 
 # Contribution: We like to thank TU Dresden/Shayan Miri for providing the initial version of this driver.
 
-# SweepMe! device class
+# SweepMe! driver
 # *Module: Logger
-# *Device: Measurement Computing Corporation DAQ devices
+# *Instrument: Measurement Computing Corporation DAQ devices
 
 from pysweepme import addFolderToPATH
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 addFolderToPATH()
 
-# this driver needs libraries installed by the manufacturer software InstaCal
+# this driver needs libraries installed by the manufacturer software package Universal Library™
+# The ImportError is raised in the find_ports method to allow loading the driver in the GUI
+mcculw_library_missing = False
 try:
     from mcculw import ul
     from mcculw.device_info import DaqDeviceInfo
     from mcculw.enums import AnalogInputMode, InterfaceType, ULRange
-except FileNotFoundError as e:
-    msg = "MCC DAQ Software missing. Install InstaCal and Universal Library (UL)."
-    raise ImportError(msg) from e
+except FileNotFoundError:
+    mcculw_library_missing = True
 
 
 class Device(EmptyDevice):
@@ -50,7 +51,7 @@ class Device(EmptyDevice):
     description = """
                 <h4>MCC High-Speed Multifunction DAQ</h4>
 
-                <p>To use this driver, installation of MCC DAQ Software, including Universal Library™ is needed.
+                <p>To use this driver, installation of Universal Library™ from the MCC DAQ Software package is needed.
                 Please download it from the <a href="https://www.mccdaq.com/Software-Downloads">MCC Homepage</a></p>
 
                 <p>If your device supports additional AI ranges, they can be added by extending the
@@ -60,6 +61,9 @@ class Device(EmptyDevice):
     def __init__(self) -> None:
         """Initialize driver parameters."""
         EmptyDevice.__init__(self)
+        if mcculw_library_missing:
+            msg = "MCC DAQ Software missing. Install Universal Library (UL)."
+            raise ImportError(msg)
 
         self.shortname = "MCC-DAQ"  # short name will be shown in the sequencer
         self.variables = []
