@@ -25,9 +25,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# SweepMe! driver
+# *Module: Switch
+# *Instrument: Arduino MCP4728
 
-# SweepMe! device class
-# Device: Arduino MCP4728
 from __future__ import annotations
 
 from pysweepme import EmptyDevice
@@ -209,9 +210,11 @@ class Device(EmptyDevice):
     def apply(self) -> None:
         """Set the voltages to the pins."""
         if self.multi_pins:
-            # Receive values as list, split by ":" and convert to float
-            split_values = self.value.split(":")
-            self.value_list = list(map(float, split_values))
+            # Replace , with . to enable float conversion
+            dot_separated_values = self.value.replace(",", ".")
+            # Input values are separated by colons
+            sweep_values = dot_separated_values.split(":")
+            self.value_list = list(map(float, sweep_values))
 
             # Adjust number of channels depending on number of boards and pins
             number_of_channels = 4 * len(self.addresses) if self.multi_mcp else 4
