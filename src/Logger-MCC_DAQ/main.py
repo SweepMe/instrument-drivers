@@ -42,7 +42,7 @@ try:
     from mcculw import ul
     from mcculw.device_info import DaqDeviceInfo
     from mcculw.enums import AnalogInputMode, InterfaceType, ULRange
-except FileNotFoundError:
+except:
     mcculw_library_missing = True
 
 
@@ -61,9 +61,6 @@ class Device(EmptyDevice):
     def __init__(self) -> None:
         """Initialize driver parameters."""
         EmptyDevice.__init__(self)
-        if mcculw_library_missing:
-            msg = "MCC DAQ Software missing. Install Universal Library (UL)."
-            raise ImportError(msg)
 
         self.shortname = "MCC-DAQ"  # short name will be shown in the sequencer
         self.variables = []
@@ -84,12 +81,15 @@ class Device(EmptyDevice):
         self.daq_info = None
 
         # AI Range
-        self.available_ai_ranges = {
-            "10 V": ULRange.BIP10VOLTS,
-            "5 V": ULRange.BIP5VOLTS,
-            "2 V": ULRange.BIP2VOLTS,
-            "1 V": ULRange.BIP1VOLTS,
-        }
+        if mcculw_library_missing:
+            self.available_ai_ranges = {}
+        else:
+            self.available_ai_ranges = {
+                "10 V": ULRange.BIP10VOLTS,
+                "5 V": ULRange.BIP5VOLTS,
+                "2 V": ULRange.BIP2VOLTS,
+                "1 V": ULRange.BIP1VOLTS,
+            }
         self.ai_range = None
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
@@ -115,6 +115,7 @@ class Device(EmptyDevice):
 
     def find_ports(self) -> list:
         """Find ports of available DAQ devices."""
+        self.check_mcculw()
         ul.ignore_instacal()
         ul.release_daq_device(self.board_num)
 
@@ -127,6 +128,7 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Connect to the selected port."""
+        self.check_mcculw()
         ul.ignore_instacal()
 
         inventory = ul.get_daq_device_inventory(InterfaceType.ANY)
@@ -200,3 +202,10 @@ class Device(EmptyDevice):
                 device_list.append(str(device) + "_" + device.unique_id)
 
         return device_list
+
+    @staticmethod
+    def check_mcculw() -> None:
+        """Check if the mcculw library is installed."""
+        if mcculw_library_missing:
+            msg = "MCC DAQ Software missing. Install Universal Library (UL)."
+            raise ImportError(msg)
