@@ -48,15 +48,21 @@ except:
 
 class Device(EmptyDevice):
     """Driver to read out MCC DAQ devices."""
+
     description = """
-                <h4>MCC High-Speed Multifunction DAQ</h4>
-
-                <p>To use this driver, installation of Universal Library™ from the MCC DAQ Software package is needed.
-                Please download it from the <a href="https://www.mccdaq.com/Software-Downloads">MCC Homepage</a></p>
-
-                <p>If your device supports additional AI ranges, they can be added by extending the
-                <code>available_ai_ranges</code> dictionary.</p>
-                """
+    <h3>MCC High-Speed Multifunction DAQ</h3>
+    <h4>Setup</h4>
+    <p>To use this driver, installation of Universal Library&trade; from the MCC DAQ Software package is needed. Please
+    download it from the <a href="https://digilent.com/reference/software/universal-library/windows/start">Digilent Reference</a></p>
+    <h4>Parameters</h4>
+    <ul>
+    <li>For Single-Ended measurements, the High-Pins (CH0H-CHXH) correspond to the first 0-X Analog Channels and the Low
+    -Pins (CH0L-CHXL) correspond to the remaining X+1 - 2X Analog Inputs.</li>
+    <li>For Differential measurements, the difference between High and Low Pin of the same number (CH0H-CH0L) is 
+    measured.</li>
+    <li>The Analog Input Channels should be set as colon-separated integers according to the CH.</li>
+    </ul>
+    """
 
     def __init__(self) -> None:
         """Initialize driver parameters."""
@@ -96,7 +102,7 @@ class Device(EmptyDevice):
         """Set standard GUI parameter."""
         return {
             "Analog input mode": list(self.measurement_modes.keys()),
-            "Analog input channels": "1, 2",
+            "Analog input channels": "0, 1",
             "Analog input range": list(self.available_ai_ranges.keys()),
         }
 
