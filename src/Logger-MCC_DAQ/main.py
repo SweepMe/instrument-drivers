@@ -42,28 +42,31 @@ try:
     from mcculw import ul
     from mcculw.device_info import DaqDeviceInfo
     from mcculw.enums import AnalogInputMode, InterfaceType, ULRange
-except FileNotFoundError:
+except:
     mcculw_library_missing = True
 
 
 class Device(EmptyDevice):
     """Driver to read out MCC DAQ devices."""
+
     description = """
-                <h4>MCC High-Speed Multifunction DAQ</h4>
-
-                <p>To use this driver, installation of Universal Library™ from the MCC DAQ Software package is needed.
-                Please download it from the <a href="https://www.mccdaq.com/Software-Downloads">MCC Homepage</a></p>
-
-                <p>If your device supports additional AI ranges, they can be added by extending the
-                <code>available_ai_ranges</code> dictionary.</p>
-                """
+    <h3>MCC High-Speed Multifunction DAQ</h3>
+    <h4>Setup</h4>
+    <p>To use this driver, installation of Universal Library&trade; from the MCC DAQ Software package is needed. Please
+    download it from the <a href="https://digilent.com/reference/software/universal-library/windows/start">Digilent Reference</a></p>
+    <h4>Parameters</h4>
+    <ul>
+    <li>For Single-Ended measurements, the High-Pins (CH0H-CHXH) correspond to the first 0-X Analog Channels and the Low
+    -Pins (CH0L-CHXL) correspond to the remaining X+1 - 2X Analog Inputs.</li>
+    <li>For Differential measurements, the difference between High and Low Pin of the same number (CH0H-CH0L) is 
+    measured.</li>
+    <li>The Analog Input Channels should be set as colon-separated integers according to the CH.</li>
+    </ul>
+    """
 
     def __init__(self) -> None:
         """Initialize driver parameters."""
         EmptyDevice.__init__(self)
-        if mcculw_library_missing:
-            msg = "MCC DAQ Software missing. Install Universal Library (UL)."
-            raise ImportError(msg)
 
         self.shortname = "MCC-DAQ"  # short name will be shown in the sequencer
         self.variables = []
@@ -84,19 +87,22 @@ class Device(EmptyDevice):
         self.daq_info = None
 
         # AI Range
-        self.available_ai_ranges = {
-            "10 V": ULRange.BIP10VOLTS,
-            "5 V": ULRange.BIP5VOLTS,
-            "2 V": ULRange.BIP2VOLTS,
-            "1 V": ULRange.BIP1VOLTS,
-        }
+        if mcculw_library_missing:
+            self.available_ai_ranges = {}
+        else:
+            self.available_ai_ranges = {
+                "10 V": ULRange.BIP10VOLTS,
+                "5 V": ULRange.BIP5VOLTS,
+                "2 V": ULRange.BIP2VOLTS,
+                "1 V": ULRange.BIP1VOLTS,
+            }
         self.ai_range = None
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set standard GUI parameter."""
         return {
             "Analog input mode": list(self.measurement_modes.keys()),
-            "Analog input channels": "1, 2",
+            "Analog input channels": "0, 1",
             "Analog input range": list(self.available_ai_ranges.keys()),
         }
 
@@ -115,6 +121,7 @@ class Device(EmptyDevice):
 
     def find_ports(self) -> list:
         """Find ports of available DAQ devices."""
+        self.check_mcculw()
         ul.ignore_instacal()
         ul.release_daq_device(self.board_num)
 
@@ -127,6 +134,7 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Connect to the selected port."""
+        self.check_mcculw()
         ul.ignore_instacal()
 
         inventory = ul.get_daq_device_inventory(InterfaceType.ANY)
@@ -200,3 +208,10 @@ class Device(EmptyDevice):
                 device_list.append(str(device) + "_" + device.unique_id)
 
         return device_list
+
+    @staticmethod
+    def check_mcculw() -> None:
+        """Check if the mcculw library is installed."""
+        if mcculw_library_missing:
+            msg = "MCC DAQ Software missing. Install Universal Library (UL)."
+            raise ImportError(msg)
