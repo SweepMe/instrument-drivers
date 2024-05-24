@@ -29,9 +29,22 @@
 # SweepMe! driver
 # * Module: LCRmeter
 # * Instrument: Metrohm Autolab PGSTAT
+from __future__ import annotations
 
+
+import clr
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+
+autolab_sdk_path = r"C:\Program Files\Metrohm Autolab\Autolab SDK 2.1\EcoChemie.Autolab.Sdk.dll"
+import_failed = False
+try:
+    clr.AddReference(autolab_sdk_path)
+    from EcoChemie.Autolab.Sdk import Instrument
+except:
+    # TODO: Handle import error
+    import_failed = True
 
 
 class Device(EmptyDevice):
@@ -50,6 +63,15 @@ class Device(EmptyDevice):
         self.identifier: str = ""
         self.port_string: str = ""
 
+        # Device Parameter
+        self.autolab = None
+        self.adx_path = ""
+        self.hardware_setup_file = ""
+
+        # Sweep Parameter
+        self.sweepmode = None
+        self.stepmode = None
+
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set initial GUI parameter in SweepMe!."""
         return {
@@ -58,36 +80,71 @@ class Device(EmptyDevice):
             "ValueRMS": 0.02,
             "ValueBias": 0.0,
             "Frequency": 1000.0,
-            "Integration": list(self.speeds),
+            # "Integration": list(self.speeds),
             "Trigger": ["Internal"],
             "TriggerDelay": "0.1",
-            "Range": list(self.current_ranges),
+            # "Range": list(self.current_ranges),
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Update parameter from SweepMe! GUI."""
         self.port_string = parameter["Port"]
 
+        self.sweepmode = parameter["SweepMode"]
+        self.stepmode = parameter["StepMode"]
+
+        self.adx_path = r"C:\Program Files\Metrohm Autolab\Autolab SDK 2.1\Hardware Setup Files\Adk.x"
+        self.hardware_setup_file = r"C:\Program Files\Metrohm Autolab\Autolab SDK 2.1\Hardware Setup Files\PGSTAT302N\HardwareSetup.FRA2.xml"
+
     def connect(self) -> None:
-        """Connect to the Keithley 4200-SCS LCRmeter."""
+        """Connect to the Metrohm Autolab LCRmeter."""
+        if import_failed:
+            msg = "Could not import required libraries."
+            raise ImportError(msg)
+
+        self.autolab = Instrument()
+        self.autolab.AutolabConnection.EmbeddedExeFileToStart = self.adx_path
+        self.autolab.set_HardwareSetupFile(self.hardware_setup_file)
+
+        self.autolab.Connect()
 
     def initialize(self) -> None:
-        """Initialize the Keithley 4200-SCS LCRmeter."""
+        """Initialize the Metrohm Autolab LCRmeter."""
 
     def deinitialize(self) -> None:
         """Reset device and close connection."""
 
     def configure(self) -> None:
         """Set bias and measurement parameters with start values from GUI."""
+        self.set_frequency(self.frequency)
+        self.set_delay(self.trigger_delay)
+
+        self.set_dc_bias(self.value_bias)
+        self.set_ac_voltage(self.value_level_rms)
+
+        self.set_measure_range(self.measure_range)
 
     def unconfigure(self) -> None:
         """Reset device."""
+        # TODO: Set everything to 0
 
     def apply(self) -> None:
         """Apply settings."""
+        if self.sweepmode != "None":
+            sweep_value = float(self.value)
+            self.handle_set_value(self.sweepmode, sweep_value)
+
+        if self.stepmode != "None":
+            step_value = float(self.stepvalue)
+            self.handle_set_value(self.stepmode, step_value)
 
     def measure(self) -> None:
         """Retrieve Impedance results from device."""
+        # Only measurement mode RjX is used
+        self.resistance, self.reactance = self.measure_impedance()
+
+        self.measured_frequency = self.measure_frequency()
+        self.measured_dc_bias = self.measure_dc_bias()
 
     def call(self) -> list[float]:
         """Return ["R", "X", "Frequency", "Voltage bias" or "Voltage level"]."""
@@ -96,3 +153,49 @@ class Device(EmptyDevice):
     """ here, convenience functions start """
 
     """ here wrapped functions start """
+
+    def set_frequency(self, frequency: float) -> None:
+        """Set the frequency in Hz."""
+        self.autolab.Fra.Frequency = frequency
+
+    def set_delay(self, trigger_delay: float) -> None:
+        """Set the trigger delay in seconds."""
+
+    def set_dc_bias(self, dc_bias: float) -> None:
+        """Set the DC bias in V."""
+        self.autolab.Ei.Setpoint = dc_bias
+
+    def set_ac_voltage(self, ac_voltage: float) -> None:
+        """Set the AC voltage level in V."""
+
+    def set_measure_range(self, measure_range: float) -> None:
+        """Set the measurement range."""
+        # TODO: Get the stuff
+        self.autolab.Ei.CurrenRange = EI.EICurrentRange.CR10_1mA
+
+    def handle_set_value(self, mode: str, value: float) -> None:
+        """Depending on the mode, set the value."""
+        if mode == "Voltage bias in V":
+            self.set_dc_bias(value)
+
+        elif mode == "Voltage level in V":
+            self.set_ac_voltage(value)
+
+        elif mode == "Frequency in Hz":
+            self.set_frequency(value)
+
+    def measure_impedance(self) -> tuple[float, float]:
+        """Measure the impedance in Ohm."""
+        # TODO: Is this the correct impedance value?
+        impedance = self.autolab.Fra.Modulus[0]
+        phase = self.autolab.Fra.Phase[0]
+        return impedance, phase
+
+    def measure_dc_bias(self):
+        # TODO: Is this possible?
+        return self.value_bias
+
+    def measure_frequency(self) -> float:
+        """Measure the frequency in Hz."""
+        # TODO: Is it possible to get the frequency from the device?
+        return self.frequency
