@@ -105,7 +105,7 @@ class Device(EmptyDevice):
             # sourcemode = Voltage
             self.port.write(":SOUR%s:VOLT:MODE FIX" % self.channel)
             # sourcemode fix
-            self.port.write(":SENS%s:FUNC \"CURR\"" % self.channel)              
+            self.port.write(":SENS%s:FUNC:MODE \"CURR\"" % self.channel)
             # measurement mode
             self.port.write(":SENS%s:CURR:PROT %s" % (self.channel, self.protection))
             # Protection with Imax
@@ -117,7 +117,7 @@ class Device(EmptyDevice):
             # sourcemode = Voltage
             self.port.write(":SOUR%s:CURR:MODE FIX" % self.channel)
             # sourcemode fix		
-            self.port.write(":SENS%s:FUNC \"VOLT\"" % self.channel)              
+            self.port.write(":SENS%s:FUNC:MODE \"VOLT\"" % self.channel)
             # measurement mode
             self.port.write(":SENS%s:VOLT:PROT %s" % (self.channel, self.protection))
             # Protection with Imax
@@ -141,7 +141,8 @@ class Device(EmptyDevice):
             self.port.write("SENS:REM ON")
         else:
             self.port.write("SENS:REM OFF")
-        
+
+        # Averaging is not yet supported but the below code might help to implement
         """
         # averaging
         self.port.write(":SENS:AVER:TCON REP")   # repeatedly take average
@@ -153,9 +154,9 @@ class Device(EmptyDevice):
             self.port.write(":SENSe:AVER:COUN 1")  
         """
 
-        self.port.write(":OUTP%s:PROT ON" % self.channel)    
-        #self.port.write(":OUTP:LOW GRO") # LowGround
-        #self.port.write(":OUTP:HCAP ON") # High capacity On
+        # These lines remain here in case somebody needs them in future, e.g. to test something
+        # self.port.write(":OUTP:LOW GRO") # LowGround
+        # self.port.write(":OUTP:HCAP ON") # High capacity On
      
     def deinitialize(self):
         if self.four_wire:
@@ -187,4 +188,3 @@ class Device(EmptyDevice):
         current = float(values[1])
         
         return [voltage, current]
-
