@@ -10,10 +10,11 @@ def load_autolab_sdk(sdk_path: str) -> None:
 
     print(dir(AutolabSDK))
     sdk = AutolabSDK
-    print(sdk.GetInstruments())
+    # print(sdk.GetInstruments())
 
     global Instrument
     from EcoChemie.Autolab.Sdk import Instrument
+    print(dir(Instrument))
 
 
 def get_hardware_setup_file(device: str) -> str:
