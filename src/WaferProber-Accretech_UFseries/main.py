@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2022-2023 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022-2024 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,9 +25,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# SweepMe! device class
-# Type: WaferProber
-# Device: Accretech UF series
+# SweepMe! driver
+# * Module: WaferProber
+# * Instrument: Accretech UF series
 
 import importlib
 from typing import List, Tuple
@@ -230,8 +230,9 @@ class Device(EmptyDevice):
         self.prober = accretech_uf.AccretechProber(self.port)
         self.prober.set_verbose(self.verbosemode)
 
+        # This identifier must be equal with the identifier used by the Temperature_Accretech_UFseries driver
         self.unique_identifier = "Driver_Accretech_UFseries_" + self.port_str
-        if not self.unique_identifier in self.device_communication:
+        if self.unique_identifier not in self.device_communication:
             self.device_communication[self.unique_identifier] = None
 
     def disconnect(self):
@@ -251,43 +252,22 @@ class Device(EmptyDevice):
 
         if self.sweep_value_wafer == "Current wafer":
             if not self.prober.is_wafer_on_chuck():
-                raise Exception(
-                    "There is no wafer on the chuck, although 'Current wafer' is selected as Sweep value."
-                )
+                msg = "There is no wafer on the chuck, although 'Current wafer' is selected as Sweep value."
+                raise Exception(msg)
         else:
             if self.sweep_value_die == "Current die":
-                raise Exception(
-                    "Performing a wafer variation for the current die is not possible as the current die is"
-                    "not defined for a wafer variation.")
+                msg = ("Performing a wafer variation for the current die is not possible as the current die is not "
+                       "defined for a wafer variation.")
+                raise Exception(msg)
             
             if self.prober.is_wafer_on_chuck():
                 self.prober.unload_all_wafers()
 
             self.check_and_sense_wafers()
 
-            """
-            # Get cassettes and wafers
-            wafer_status = self.prober.request_wafer_status()
-            # a list of tuples containing cassette and wafer id
-            wafer_list = self.prober.get_waferlist_from_status(wafer_status)
-
-            if len(wafer_list) == 0:
-                self.prober.sense_wafers()  # Wafer sensing "jw" command
-
-                wafer_status = self.prober.request_wafer_status()
-                # a list of tuples containing cassette and wafer id
-                wafer_list = self.prober.get_waferlist_from_status(wafer_status)
-
-                if len(wafer_list) == 0:
-                    raise Exception("Empty wafer list, please make sure the cassette is filled and "
-                                    "you have sensed the wafer before you try again.")
-            """
-
         if self.sweep_value_subsite == "Current subsite":
-            raise Exception("Option 'Current subsite' is not supported yet.")
-
-    def deinitialize(self):
-        pass
+            msg = "Option 'Current subsite' is not supported yet."
+            raise Exception(msg)
 
     def configure(self):
 
@@ -326,14 +306,27 @@ class Device(EmptyDevice):
 
                 self.prober.preload_specified_wafer(9, 99)
 
-    def signout(self):
-        pass
-
     def apply(self):
+        """
+        Applies the new wafer, die or subsite.
+
+        The function takes the self.sweepvalues dictionary and checks whether wafer, die, or subsite have changed by
+        comparing with the last wafer, last, or last subsite.
+
+        It starts with processing the wafer, then the die and at the end the subsite.
+
+        In case a wafer is changed, the last die is reset.
+        In case a die is changed, the last subsite is reset.
+
+        The driver support the handling preloading the next wafer. Because of preloading, different commands need to be
+        used for loading the first wafer loading the last wafer, or loading a wafer inbetween. This is why there are
+        several if-else to handle these situations.
+        """
 
         # Wafer
         try:
 
+            # Code to check the new sweep values
             # print()
             # print("New setvalue to apply:", self.value)
             # print(self.sweepvalues)

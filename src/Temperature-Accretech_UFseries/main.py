@@ -25,9 +25,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# SweepMe! device class
-# Type: Temperature
-# Device: Accretech UF series
+# SweepMe! driver
+# * Module: Temperature
+# * Instrument: Accretech UF series
+
 from __future__ import annotations
 
 import os
@@ -104,25 +105,18 @@ class Device(EmptyDevice):
         """Handle SweepMe GUI parameters."""
         self.port_str = parameter["Port"]
         self.units[0] = parameter["TemperatureUnit"]
-        self.port_str = parameter["Port"]
         self.idle_temperature = parameter["IdleTemperature"]
 
     def connect(self) -> None:
         """Connect to the device and handle multiple instances."""
-        # creating an AccretechProber instance that handles all communication
-        # TODO: Handle multiple instances/SRQ Events
-        # self.instance_key = f"Accretech_UF_{self.port_str}"
-        #
-        # if self.instance_key in self.device_communication:
-        #     self.port = self.device_communication[self.instance_key]
-        # else:
-        #     self.device_communication[self.instance_key] = self.port
 
+        # creating an AccretechProber instance that handles all communication
         self.prober = accretech_uf.AccretechProber(self.port)
         self.prober.set_verbose(self.verbosemode)
 
+        # This identifier must be equal with the identifier used by the WaferProber_Accretech_UFseries driver
         self.unique_identifier = "Driver_Accretech_UFseries_" + self.port_str
-        if not self.unique_identifier in self.device_communication:
+        if self.unique_identifier not in self.device_communication:
             self.device_communication[self.unique_identifier] = None
 
     def disconnect(self) -> None:
@@ -145,7 +139,7 @@ class Device(EmptyDevice):
             if target_temperature != float(self.idle_temperature):
                 self.prober.set_chuck_temperature(float(self.idle_temperature))
             else:
-                debug("Target temperature already set.")
+                debug("Idle temperature already set.")
         
     def apply(self) -> None:
         """Apply the given temperature."""

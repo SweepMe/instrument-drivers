@@ -26,10 +26,6 @@
 # SOFTWARE.
 
 
-# SweepMe! device class
-# Type: WaferProber
-# Device: Accretech UF series
-
 from __future__ import annotations
 
 import inspect
@@ -184,11 +180,6 @@ class AccretechProber:
             "an error occurs in the driver software for the GPIB interface control on the prober side",
         }
 
-    def __del__(self) -> None:
-        """When the object is deleted, the SRQ event is unregistered."""
-        pass
-        # self.unregister_srq_event()
-
     def register_srq_event(self) -> None:
         """Register Service Request Events."""
         self.port.port.enable_event(self.event_type, self.event_mech)
@@ -279,15 +270,16 @@ class AccretechProber:
                 print("-->", now.strftime("%H:%M:%S"), "Function:", function_calling_name)
 
         # Wait for the SRQ event to occur
+        # A while-loop is used to be able to stop the waiting for the event in future
         starttime = time.time()
         while True: 
             if time.time()-starttime < timeout:
                 try:
-                    # response = self.port.port.wait_on_event(self.event_type, int(timeout * 1000))  # conversion from s to ms
                     response = self.port.port.wait_on_event(self.event_type, int(1000))  # waiting 1000 ms
                     break
                 except pyvisa.errors.VisaIOError:
                     # Timeout error
+                    # Todo: figure out whether the VisIOError is a Timeout error
                     pass
             else:
                 msg = "Timeout reached during waiting for status byte"
