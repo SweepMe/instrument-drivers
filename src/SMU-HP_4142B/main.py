@@ -41,9 +41,9 @@ class Device(EmptyDevice):
         EmptyDevice.__init__(self)
 
         self.variables = ["Voltage", "Current"]
-        self.units     = ["V", "A"]
-        self.plottype  = [True, True] # True to plot data
-        self.savetype  = [True, True] # True to save data
+        self.units = ["V", "A"]
+        self.plottype = [True, True]  # True to plot data
+        self.savetype = [True, True]  # True to save data
         
         self.port_manager = True
         self.port_types = ['GPIB']
@@ -83,9 +83,7 @@ class Device(EmptyDevice):
         return GUIparameter
 
     def get_GUIparameter(self, parameter={}):
-        
-        self.device = parameter['Device']
-        self.four_wire = parameter['4wire']
+
         self.route_out = parameter['RouteOut']
         self.source = parameter['SweepMode']
         self.port_string = parameter['Port']

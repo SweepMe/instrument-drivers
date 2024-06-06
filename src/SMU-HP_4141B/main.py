@@ -80,8 +80,6 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter={}):
 
-        self.device = parameter['Device']
-        self.four_wire = parameter['4wire']
         self.route_out = parameter['RouteOut']
         self.source = parameter['SweepMode']
         self.port_string = parameter['Port']
@@ -157,6 +155,7 @@ class Device(EmptyDevice):
         self.port.write("CL")  # switches all channels off
         # TODO: "CL" is called for each channel so more often than needed. In future, we can add a mechanism to do it
         # only once by using self.device_communication dictionary.
+
         # Please note that because CL takes no channel number and switches off all channel, also channels are powered
         # off that should stay if they are even present in the next active branch of SweepMe! sequencer.
 
