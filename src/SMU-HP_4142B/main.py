@@ -26,12 +26,13 @@
 # SOFTWARE.
 
 
-# SweepMe! instrument driver
+# SweepMe! driver
 # * Module: SMU
 # * Instrument: HP 4142B
 
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
 
 class Device(EmptyDevice):
 

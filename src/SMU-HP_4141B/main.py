@@ -26,7 +26,7 @@
 # SOFTWARE.
 
 
-# SweepMe! instrument driver
+# SweepMe! driver
 # * Module: SMU
 # * Instrument: HP 4141B
 
