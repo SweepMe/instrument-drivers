@@ -28,61 +28,58 @@
 
 # SweepMe! instrument driver
 # * Module: SMU
-# * Instrument: HP 4142B
+# * Instrument: HP 4141B
 
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
+
 class Device(EmptyDevice):
 
     def __init__(self):
-    
+
         EmptyDevice.__init__(self)
 
         self.variables = ["Voltage", "Current"]
-        self.units     = ["V", "A"]
-        self.plottype  = [True, True] # True to plot data
-        self.savetype  = [True, True] # True to save data
-        
+        self.units = ["V", "A"]
+        self.plottype = [True, True]  # True to plot data
+        self.savetype = [True, True]  # True to save data
+
         self.port_manager = True
-        self.port_types = ['GPIB']
-        self.port_properties = {    
-            "timeout": 5,
+        self.port_types = ["GPIB"]
+        self.port_properties = {
+            "timeout": 3,
         }
 
         self.current_ranges = {
             "Auto": "0",
-            "1 pA limited auto": "8",
-            "10 pA limited auto": "9",
-            "100 pA limited auto": "10",
-            "1 nA limited auto": "11",
-            "10 nA limited auto": "12",
-            "100 nA limited auto": "13",
-            "1 μA limited auto": "14",
-            "10 μA limited auto": "15",
-            "100 μA limited auto": "16",
-            "1 mA limited auto": "17",
-            "10 mA limited auto": "18",
-            "100 mA limited auto": "19",
-            "1 A limited auto": "20",
+            "1 nA limited auto": "1",
+            "10 nA limited auto": "2",
+            "100 nA limited auto": "3",
+            "1 μA limited auto": "4",
+            "10 μA limited auto": "5",
+            "100 μA limited auto": "6",
+            "1 mA limited auto": "7",
+            "10 mA limited auto": "8",
+            "100 mA limited auto": "9",
         }
 
     def set_GUIparameter(self):
-        
+
         GUIparameter = {
             "SweepMode": ["Voltage in V", "Current in A"],
-            "Channel": ["CH1", "CH2", "CH3", "CH4", "CH5", "CH6"],
+            "Channel": ["CH1", "CH2", "CH3", "CH4"],
             "RouteOut": ["Rear"],
             # "Speed": ["Fast", "Medium", "Slow"],
             "Range": list(self.current_ranges.keys()),
             "Compliance": 100e-6,
             "Average": 1,
         }
-                        
+
         return GUIparameter
 
     def get_GUIparameter(self, parameter={}):
-        
+
         self.device = parameter['Device']
         self.four_wire = parameter['4wire']
         self.route_out = parameter['RouteOut']
@@ -90,48 +87,47 @@ class Device(EmptyDevice):
         self.port_string = parameter['Port']
 
         self.irange = self.current_ranges[parameter['Range']]
-        
+
         self.protection = parameter['Compliance']
         # self.speed = parameter['Speed']
-        
+
         self.average = int(parameter['Average'])
-        
+
         self.channel = parameter['Channel'][-1]
-        
-        self.shortname = "HP4142B CH%s" % self.channel
-        
-        # voltage autoranging 
+
+        self.shortname = "HP4141B CH%s" % self.channel
+
+        # voltage autoranging
         self.vrange = "0"
 
     def initialize(self):
-    
-        unique_DC_port_string = "HP4142B_" + self.port_string
+
+        unique_DC_port_string = "HP4141B_" + self.port_string
 
         # initialize commands only need to be sent once, so we check here whether another instance of the same
         # driver AND same port did it already. If not, this instance is the first and has to do it.
         if unique_DC_port_string not in self.device_communication:
-        
-            self.port.write("*IDN?") # identification
+            self.port.write("ID")  # identification
             identifier = self.port.read()
             # print("Identifier:", identifier)
-            
-            self.port.write("*RST")  # reset to initial settings
-                       
+
+            self.port.write("*RST?")  # reset to initial settings
+
             self.port.write("BC")  # buffer clear
-            
+
             self.port.write("FMT 2")  # use to change the output format
-         
+
             # if initialize commands have been sent, we can add the unique_DC_port_string to the dictionary that
             # is seen by all drivers
             self.device_communication[unique_DC_port_string] = True
-          
+
     def configure(self):
-    
+
         # The command CN has to be sent at the beginning as it resets certain parameters
         # If the command CN would be used later, e.g. during 'poweron', it would overwrite parameters that are
         # defined during 'configure'
-        self.port.write("CN " + self.channel) # switches the channel on
-    
+        self.port.write("CN " + self.channel)  # switches the channel on
+
         """
         if self.speed == "Fast": # 1 Short (0.1 PLC) preconfigured selection Fast
             self.port.write("AIT 0,0,1")
@@ -143,23 +139,7 @@ class Device(EmptyDevice):
             self.port.write("AIT 1,2,10")
             self.port.write("AAD %s,1" % self.channel)
         """
-        
-        #command syntax for DV and DI slightly different than B1500     
-        if self.source.startswith("Voltage"):
-            self.port.write("DV " + self.channel + "," + self.vrange + "," + "0.0" + "," + self.protection + ", 0")
 
-        if self.source.startswith("Current"):
-            self.port.write("DI " + self.channel + "," + self.irange + "," + "0.0" + "," + self.protection + ", 0")
-
-        #RI and RV #comments to adjust the range, autorange is default
-        
-        self.port.write("AV %i" % self.average)
-
-        # *LRN? is a function to ask for current status of certain parameters,
-        # 0 = output on or off
-        # self.port.write("*LRN? 0")
-        # print(self.port.read())
-        
     def unconfigure(self):
         self.port.write("IN" + self.channel)
         # resets to zero volt
@@ -170,41 +150,44 @@ class Device(EmptyDevice):
         # In a previous version, the CN command was sent here. However, this leads to a reset of all parameters
         # previously changed during 'configure'
         # Therefore, the CN command should not be used here, but has been moved to the beginning of 'configure'
-    
+
     def poweroff(self):
-        self.port.write("CL " + self.channel)  # switches the channel off
-      
+
+        # do not supply channel numbers as arguments, will not work on HP4141B otherwise
+        self.port.write("CL")  # switches all channels off
+        # TODO: "CL" is called for each channel so more often than needed. In future, we can add a mechanism to do it
+        # only once by using self.device_communication dictionary.
+        # Please note that because CL takes no channel number and switches off all channel, also channels are powered
+        # off that should stay if they are even present in the next active branch of SweepMe! sequencer.
+
     def apply(self):
 
         value = str(self.value)
-        
+
         if self.source.startswith("Voltage"):
-            self.port.write("DV " + self.channel + "," + self.vrange + "," + value)
+            self.port.write("DV " + self.channel + "," + self.vrange + "," + value + "," + self.protection)
 
         if self.source.startswith("Current"):
-            self.port.write("DI " + self.channel + "," + self.irange + "," + value)
+            self.port.write("DI " + self.channel + "," + self.irange + "," + value + "," + self.protection)
 
     def measure(self):
-        self.port.write("TI" + self.channel + ",0")      
-        self.port.write("TV" + self.channel + ",0")  
-        
+
+        # Current
+        self.port.write("TI " + self.channel)
+        answer = self.port.read()
+        # removes first three characters (can be "NAI", "NAV", "XAI", "XAV") and converts value to float
+        self.i = float(answer_CH1[3:])
+
+        # Voltage
+        self.port.write("TV " + self.channel)
+        answer = self.port.read()
+        # removes first three characters (can be "NAI", "NAV", "XAI", "XAV") and converts value to float
+        self.v = float(answer_CH1[3:])
+
     def call(self):
-        
-        answer = self.port.read()
-        # print("Current:", answer)
-        
-        # If NAI comes first, we have to strip it. Please toggle the lines, if needed.
-        i = float(answer)
-        # i = float(answer[3:])
-        
-        answer = self.port.read()
-        # print("Voltage:", answer)
-        
-        # If NAV comes first, we have to strip it. Please toggle the lines, if needed.
-        v = float(answer)
-        # v = float(answer[3:])
-    
-        return [v,i]
+
+        return [self.v, self.i]
+
 
     """
     Enables channels CN [chnum ... [,chnum] ... ]
