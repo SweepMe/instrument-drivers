@@ -25,14 +25,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# SweepMe! device class
-# Type: Temperature
-# Device: Accretech UF series
+# SweepMe! driver
+# * Module: Temperature
+# * Instrument: Accretech UF series
+
 from __future__ import annotations
 
 import os
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import debug
 from pysweepme.FolderManager import addFolderToPATH
 
 addFolderToPATH()
@@ -87,6 +89,8 @@ class Device(EmptyDevice):
             "GPIB_EOLread": "\r\n",
         }
 
+        self.port_str = "undefined_port"
+
         self.verbosemode = True
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
@@ -94,45 +98,61 @@ class Device(EmptyDevice):
         return {
             "SweepMode": ["None", "Temperature"],
             "TemperatureUnit": ["°C"],
+            "IdleTemperature": 30,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Handle SweepMe GUI parameters."""
-        self.units[0] = parameter["TemperatureUnit"]
         self.port_str = parameter["Port"]
+        self.units[0] = parameter["TemperatureUnit"]
+        self.idle_temperature = parameter["IdleTemperature"]
 
     def connect(self) -> None:
         """Connect to the device and handle multiple instances."""
+
         # creating an AccretechProber instance that handles all communication
-        # TODO: Handle multiple instances/SRQ Events
-        # self.instance_key = f"Accretech_UF_{self.port_str}"
-        #
-        # if self.instance_key in self.device_communication:
-        #     self.port = self.device_communication[self.instance_key]
-        # else:
-        #     self.device_communication[self.instance_key] = self.port
-
         self.prober = accretech_uf.AccretechProber(self.port)
-
         self.prober.set_verbose(self.verbosemode)
+
+        # This identifier must be equal with the identifier used by the WaferProber_Accretech_UFseries driver
+        self.unique_identifier = "Driver_Accretech_UFseries_" + self.port_str
+        if self.unique_identifier not in self.device_communication:
+            self.device_communication[self.unique_identifier] = None
 
     def disconnect(self) -> None:
         """Disconnect from the device."""
-        del self.prober  # this makes sure the event mechanism is disabled
+        if self.unique_identifier in self.device_communication:
+            self.prober.unregister_srq_event()  # this makes sure the event mechanism is disabled
+            del self.device_communication[self.unique_identifier]
+        del self.prober  
 
     def initialize(self) -> None:
         """Initialize the device."""
-        # TODO: Check
         self.prober.reset_alarm()
 
+    def deinitialize(self):
+        pass
+
+    def unconfigure(self):
+        if self.idle_temperature != "":
+            _, target_temperature = self.prober.request_chuck_temperature()
+            if target_temperature != float(self.idle_temperature):
+                self.prober.set_chuck_temperature(float(self.idle_temperature))
+            else:
+                debug("Idle temperature already set.")
+        
     def apply(self) -> None:
         """Apply the given temperature."""
-        self.prober.set_chuck_temperature(self.value)
+        _, target_temperature = self.prober.request_chuck_temperature()
+        if target_temperature != float(self.value):
+            self.prober.set_chuck_temperature(self.value)
+        else:
+            debug("Target temperature already set.")
 
     def measure(self) -> None:
         """Measure the temperature."""
         # TODO: chuck_temperature or hot_chuck_temperature?
-        self.temperature, target_temperature = self.prober.get_temperature()
+        self.temperature, target_temperature = self.prober.request_chuck_temperature()
 
     def call(self) -> list[float]:
         """Return measured temperature to SweepMe GUI."""
@@ -142,5 +162,5 @@ class Device(EmptyDevice):
 
     def measure_temperature(self) -> float:
         """Measure the temperature."""
-        _temperature, _target_temperature = self.prober.get_temperature()
+        _temperature, _target_temperature = self.prober.request_chuck_temperature()
         return _temperature

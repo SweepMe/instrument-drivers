@@ -25,9 +25,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# SweepMe! device class
-# Type: WaferProber
-# Device: Accretech UF series
+# SweepMe! driver
+# * Module: WaferProber
+# * Instrument: Accretech UF series
 
 import importlib
 from typing import List, Tuple
@@ -79,6 +79,8 @@ class Device(EmptyDevice):
             "GPIB_EOLread": "\r\n",
         }
 
+        self.port_str = "undefined_port"
+
         # self.actual_wafer_text = ""
         # self.actual_die_text = ""
         # self.actual_subsite_text = "Not available"
@@ -86,6 +88,11 @@ class Device(EmptyDevice):
         # self.actual_ypos = "Not available"
 
         self.verbosemode = True
+
+        # Variable that is set != "" in case an exception happens in the apply phase.
+        # In this case, the wafer is not unloaded and the exception steps tells the user whether the exception happened
+        # when the wafer, the die, or the subsite was changed.
+        self.exception_step_during_apply = ""
 
     def set_GUIparameter(self):
 
@@ -98,6 +105,7 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter):
 
+        self.port_str = parameter["Port"]
         self.sweep_value_wafer = parameter["SweepValueWafer"]
         self.sweep_value_die = parameter["SweepValueDie"]
         self.sweep_value_subsite = parameter["SweepValueSubsite"]
@@ -110,18 +118,21 @@ class Device(EmptyDevice):
         # a list of tuples containing cassette and wafer id
         wafer_list = self.prober.get_waferlist_from_status(wafer_status)
 
+        self.check_and_sense_wafers()
+
+        wafer_status = self.prober.request_wafer_status()
+        # a list of tuples containing cassette and wafer id
+        wafer_list = self.prober.get_waferlist_from_status(wafer_status)
+
         if len(wafer_list) == 0:
-            self.prober.sense_wafers()  # Wafer sensing "jw" command
-
-            wafer_status = self.prober.request_wafer_status()
-            # a list of tuples containing cassette and wafer id
-            wafer_list = self.prober.get_waferlist_from_status(wafer_status)
-
-            if len(wafer_list) == 0:
+            if self.prober.is_wafer_on_chuck():
+                wafers = ["inspection tray"]
+            else:
                 debug("Empty wafer list, please make sure the cassette is filled and "
-                      "you have sensed the wafer before you try again.")
-
-        wafers = [f"C{i}W{j}" for i, j in wafer_list]
+                        "you have sensed the wafer before you try again.")
+                wafers = []
+        else:
+            wafers = [f"C{i}W{j}" for i, j, k in wafer_list]
 
         # Dies
         die_list = self.read_controlmap(probeplan_path)
@@ -172,15 +183,64 @@ class Device(EmptyDevice):
         current_subsite = ""
 
         return current_subsite
+    
+    def load_wafer(self, wafer_str):
 
+        self.print_info()
+
+        self.print_status()
+
+        self.prober.reset_alarm()
+
+        self.check_and_sense_wafers()
+
+        wafer_status = self.prober.request_wafer_status()
+        # a list of tuples containing cassette and wafer id
+        wafer_list = self.prober.get_waferlist_from_status(wafer_status)
+
+        wafer = wafer_str.replace("C", "").split("W")  # creates a list, e.g. [1,3]
+        wafer = tuple(map(int, wafer))
+
+        # wafer is a tuple with cassette number and wafer number.
+        # adding (3,) extends this tuple with the status where 3 means wafer on chuck 
+        if wafer + (3,) not in wafer_list:
+            # independent whether there is a wafer on the chuck we can use
+            # load_specified_wafer after check for sensed wafers
+            # If there is a wafer on the chuck, it will automatically be unloaded
+            self.prober.load_specified_wafer(*wafer)
+        else:
+            message_box(f"Wafer {wafer_str} is already on the chuck!", blocking=False)
+        
+    def unload_wafer(self):
+
+        self.print_info()
+
+        self.print_status()
+
+        self.prober.reset_alarm()
+
+        if self.prober.is_wafer_on_chuck():
+            self.prober.preload_specified_wafer(9, 99)
+        else:
+            message_box("There is no wafer on the chuck, that can be unloaded!", blocking=False)
+        
     def connect(self):
 
         # creating an AccretechProber instance that handles all communication
         self.prober = accretech_uf.AccretechProber(self.port)
         self.prober.set_verbose(self.verbosemode)
 
+        # This identifier must be equal with the identifier used by the Temperature_Accretech_UFseries driver
+        self.unique_identifier = "Driver_Accretech_UFseries_" + self.port_str
+        if self.unique_identifier not in self.device_communication:
+            self.device_communication[self.unique_identifier] = None
+
     def disconnect(self):
-        del self.prober  # this makes sure the event mechanism is disabled
+
+        if self.unique_identifier in self.device_communication:
+            self.prober.unregister_srq_event()  # this makes sure the event mechanism is disabled
+            del self.device_communication[self.unique_identifier]
+        del self.prober  
 
     def initialize(self):
 
@@ -192,62 +252,34 @@ class Device(EmptyDevice):
 
         if self.sweep_value_wafer == "Current wafer":
             if not self.prober.is_wafer_on_chuck():
-                raise Exception(
-                    "There is no wafer on the chuck, although 'Current wafer' is selected as Sweep value."
-                )
+                msg = "There is no wafer on the chuck, although 'Current wafer' is selected as Sweep value."
+                raise Exception(msg)
         else:
+            if self.sweep_value_die == "Current die":
+                msg = ("Performing a wafer variation for the current die is not possible as the current die is not "
+                       "defined for a wafer variation.")
+                raise Exception(msg)
+            
             if self.prober.is_wafer_on_chuck():
-                raise Exception(
-                    "There is already a wafer on the chuck. Please terminate the ongoing lot process or "
-                    "remove the wafer.")
+                self.prober.unload_all_wafers()
 
-            if self.sweep_value_die == "Current die":
-                raise Exception(
-                    "Performing a wafer variation for the current die is not possible as the current die is"
-                    "not defined when no wafer is on the chuck.")
-
-            if self.sweep_value_die == "Current die":
-                raise Exception(
-                    "Performing a wafer variation for the current die is not possible as the current die is"
-                    "not defined when no wafer is on the chuck.")
-
-            cassette_status = self.prober.request_cassette_status()
-            if cassette_status == "000000":
-                self.prober.sense_wafers()  # Wafer sensing "jw" command
-
-            # Get cassettes and wafers
-            wafer_status = self.prober.request_wafer_status()
-            # a list of tuples containing cassette and wafer id
-            wafer_list = self.prober.get_waferlist_from_status(wafer_status)
-
-            if len(wafer_list) == 0:
-                self.prober.sense_wafers()  # Wafer sensing "jw" command
-
-                wafer_status = self.prober.request_wafer_status()
-                # a list of tuples containing cassette and wafer id
-                wafer_list = self.prober.get_waferlist_from_status(wafer_status)
-
-                if len(wafer_list) == 0:
-                    raise Exception("Empty wafer list, please make sure the cassette is filled and "
-                                    "you have sensed the wafer before you try again.")
+            self.check_and_sense_wafers()
 
         if self.sweep_value_subsite == "Current subsite":
-            raise Exception("Option 'Current subsite' is not supported yet.")
-
-    def deinitialize(self):
-        pass
+            msg = "Option 'Current subsite' is not supported yet."
+            raise Exception(msg)
 
     def configure(self):
 
         self.last_wafer = None
         self.last_wafer_str = ""
-        self.last_wafer_id = None
+        self.last_wafer_id = ""
 
         self.last_die = None
         self.last_die_str = ""
 
-        self.last_sub_str = None
         self.last_sub = (0, 0)
+        self.last_sub_str = ""
 
         # absolute position of the current die starting position
         self.current_die_position = (None, None)
@@ -261,140 +293,225 @@ class Device(EmptyDevice):
         self.prober.z_down()
 
         if self.sweep_value_wafer != "Current wafer":
-            # Terminating the lot process bringing all wafers back to cassette
-            if hasattr(self, "is_run_stopped") and self.is_run_stopped():
-                message_box("Lot process will be finished which takes 1-2 minutes.\n\n"
-                            "Do not terminate the run and please wait until the program finishes."
-                            "You can close this message when the run has completed normally.")
 
-            self.prober.terminate_lot_process_immediately()
+            if self.exception_step_during_apply != "":
+                message_box("Accretech wafer prober failed to change to the next %s. Wafer remains on the chuck."
+                            % self.exception_step_during_apply.lower(), blocking=False)
+            else:
+                # Terminating the lot process bringing all wafers back to cassette
+                if hasattr(self, "is_run_stopped") and self.is_run_stopped():
+                    message_box("Lot process will be finished which takes 1-2 minutes.\n\n"
+                                "Do not terminate the run and please wait until the program finishes."
+                                "You can close this message when the run has completed normally.", blocking=False)
+
+                self.prober.preload_specified_wafer(9, 99)
 
     def apply(self):
+        """
+        Applies the new wafer, die or subsite.
 
-        # print()
-        # print("New setvalue to apply:", self.value)
-        # print(self.sweepvalues)
+        The function takes the self.sweepvalues dictionary and checks whether wafer, die, or subsite have changed by
+        comparing with the last wafer, last, or last subsite.
 
-        # self.skip_wafer handed over from WaferProber module when user clicks "Go to next wafer"
-        if self.skip_wafer:
-            return
+        It starts with processing the wafer, then the die and at the end the subsite.
 
-        wafer_str = self.sweepvalues["Wafer"]
-        die_str = self.sweepvalues["Die"]
-        subsite_str = self.sweepvalues["Subsite"]
-        die = die_str.split(",")  # create a list of x and y coordinates, e.g "1,3" -> [1,3]
-        preload_wafer_str = self.sweepvalues["NextWafer"]
+        In case a wafer is changed, the last die is reset.
+        In case a die is changed, the last subsite is reset.
 
-        if wafer_str is None:
-            raise Exception(
-                "You need to specify at least one wafer or use 'Current wafer' as sweep value!")
+        The driver support the handling preloading the next wafer. Because of preloading, different commands need to be
+        used for loading the first wafer loading the last wafer, or loading a wafer inbetween. This is why there are
+        several if-else to handle these situations.
+        """
 
-        if die_str is None:
-            raise Exception(
-                "You need to specify at least one die or use 'Current die' as sweep value!")
+        # Wafer
+        try:
 
-        # We do not check whether subsites are None because in that case no subsite was defined and the prober
-        # stays at the start position of the die
+            # Code to check the new sweep values
+            # print()
+            # print("New setvalue to apply:", self.value)
+            # print(self.sweepvalues)
 
-        # only if we vary the wafer, we need to load it. Otherwise, we just need to go the die
-        if self.sweep_value_wafer != "Current wafer":
+            # self.skip_wafer handed over from WaferProber module when user clicks "Go to next wafer"
+            if self.skip_wafer:
+                return
 
-            wafer = wafer_str.replace("C", "").split("W")  # creates a list, e.g. [1,3]
+            wafer_str = self.sweepvalues["Wafer"]
+            die_str = self.sweepvalues["Die"]
+            subsite_str = self.sweepvalues["Subsite"]
+            die = die_str.split(",")  # create a list of x and y coordinates, e.g "1,3" -> [1,3]
+            preload_wafer_str = self.sweepvalues["NextWafer"]
 
-            if wafer != self.last_wafer:
+            if wafer_str is None:
+                raise Exception(
+                    "You need to specify at least one wafer or use 'Current wafer' as sweep value!")
+
+            if die_str is None:
+                raise Exception(
+                    "You need to specify at least one die or use 'Current die' as sweep value!")
+
+            # We do not check whether subsites are None because in that case no subsite was defined and the prober
+            # stays at the start position of the die
+
+            # only if we vary the wafer, we need to load it. Otherwise, we just need to go the die
+            if self.sweep_value_wafer != "Current wafer":
+
+                wafer = wafer_str.replace("C", "").split("W")  # creates a list, e.g. [1,3]
+
+                if wafer != self.last_wafer:
+
+                    # We always separate if not already the case
+                    if self.prober.is_chuck_contacted():
+                        self.prober.z_down()
+
+                    # this can be the case if only one wafer has to be tested or we reached the last one
+                    if preload_wafer_str is None:
+
+                        # it must be the first wafer and the only one
+                        if self.last_wafer is None:
+                            self.prober.load_specified_wafer(*wafer)
+
+                        # it must be the last wafer of multiple wafers
+                        else:
+                            # command to transfer last wafer from subchuck to chuck
+                            self.prober.preload_specified_wafer(0, 0)
+
+                    # this is the case if there is a next wafer
+                    else:
+                         # creates a list, e.g. [1,3]
+                        preload_wafer = preload_wafer_str.replace("C", "").split("W")
+
+                        # if there is a iteration of a higher module in the sequencer
+                        # it can happen that the wafer on the chuck needs to be preloaded
+                        # in this case, we need to bring back the wafer on the chuck first.
+                        if preload_wafer == self.last_wafer:
+                            self.prober.unload_all_wafers()
+                            # we set last wafer to None because in this case the preload and chuck wafer
+                            # are loaded in the code below
+                            self.last_wafer = None
+                            self.last_wafer_str = ""
+                            self.last_wafer_id = ""
+
+                        # must be the first wafer of several, so need to load and preload ("j4" command)
+                        if self.last_wafer is None:
+                            self.prober.load_and_preload_specified_wafers(*wafer, *preload_wafer)
+                        else:
+                            # we only need to preload the next wafer, the current wafer on the subchuck is automatically
+                            # forwarded to the main chuck according to command "j3"
+                            self.prober.preload_specified_wafer(*preload_wafer)
+
+                    self.last_position = (None, None)
+
+                    self.last_wafer = wafer
+                    self.last_wafer_str = wafer_str
+
+                    # we need to set back the last die information in case to trigger a new move to
+                    # the first requested die of this new wafer even if the die is the same like
+                    # the last one of the previous wafer
+                    self.last_die = None
+                    self.last_die_str = ""
+
+            self.last_wafer_id = self.prober.request_wafer_id()
+
+            self.print_status()
+
+        except Exception:
+            self.exception_step_during_apply = "Wafer"
+            raise
+
+        # Die
+        try:
+
+            # self.skip_die is handed over from the WaferProber module when the user clicks "Go to next die"
+            if self.skip_die:
+                return
+
+            if self.sweep_value_die != "Current die":
+
+                if die != self.last_die:
+
+                    # We always separate if not already the case
+                    if self.prober.is_chuck_contacted():
+                        self.prober.z_down()
+
+                    # In any case, the die must have changed, and we need to move to it
+                    self.prober.move_specified_die(*die)  # die at index x,y
+
+                    # once we approach a die, we save the current absolute position at the start position of the die
+                    # This position is then used to navigate to the correct position
+                    self.current_die_position = self.prober.request_position()
+
+                    self.last_die = die
+                    self.last_die_str = die_str
+
+                    # we reset the last subsite position as the position always starts at (0,0) after
+                    # going to the die
+                    self.last_sub = (0, 0)
+                    self.last_position = (None, None)
+
+        except Exception:
+            self.exception_step_during_apply = "Die"
+            raise
+
+        # Subsite
+        try:
+
+            if subsite_str is not None:
 
                 # We always separate if not already the case
                 if self.prober.is_chuck_contacted():
                     self.prober.z_down()
 
-                # this can be the case if only one wafer has to be tested or we reached the last one
-                if preload_wafer_str is None:
+                if subsite_str.startswith("A"):
+                    # xy_subsite_pos is defined with respect to the initial start position of the die
+                    # xy_move is the relative move from the current position to the next subsite position
+                    # current_die_position is the absolute reference to start position of a die
+                    # position_die_ref is the last position with respect to start position of the die
 
-                    # it must be the first wafer and the only one
-                    if self.last_wafer is None:
-                        self.prober.load_specified_wafer(*wafer)
+                    # Extracting the coordinates relative to the die start position
+                    new_sub = tuple(map(int, subsite_str.replace("A", "").split(",")))
 
-                    # it must be the last wafer of multiple wafers
-                    else:
-                        self.prober.preload_specified_wafer(
-                            0, 0)  # command to transfer last wafer from subchuck to chuck
+                    """
+                    # Alternative Code to calculate relative move based on measured absolute position based on R command
+                    # Calculating the last position with respect to the current die position
+                    position_die_ref = np.array(self.last_position) - np.array(self.current_die_position)
+    
+                    # Calculating the relative from the current position to the new position
+                    xy_move = np.array(new_sub) - position_die_ref
+                    """
 
-                # this is the case if there is a next wafer
-                else:
-                    preload_wafer = preload_wafer_str.replace("C", "").split(
-                        "W")  # creates a list, e.g. [1,3]
+                    xy_move = np.array(new_sub) - np.array(self.last_sub)
 
-                    # must be the first wafer of several, so need to load and preload ("j4" command)
-                    if self.last_wafer is None:
-                        self.prober.load_and_preload_specified_wafers(*wafer, *preload_wafer)
-                    # it is a wafer in the middle of at least three wafers
-                    else:
-                        # we only need to preload the next wafer, the current wafer on the subchuck is automatically
-                        # forwarded to the main chuck according to command "j3"
-                        self.prober.preload_specified_wafer(*preload_wafer)
+                    self.prober.move_position(*xy_move)
 
-            self.last_wafer = wafer
-            self.last_wafer_str = wafer_str
+                    self.last_sub_str = subsite_str
+                    self.last_sub = new_sub
 
-        self.last_wafer_id = self.prober.request_wafer_id()
+                    position = self.prober.request_position()
 
-        self.print_status()
+                    # we subtract the position from the origin to invert the sign of the rel_sub
+                    # this way the difference can directly be compared with new_sub
+                    # Please note that A command (new_sub) has opposite coordinate system than
+                    # R command (rel_sub)
+                    # A command is a relative move towards while R command returns a global
+                    rel_sub = tuple(np.array(self.current_die_position) - np.array(position))
 
-        # self.skip_die is handed over from the WaferProber module when the user clicks "Go to next die"
-        if self.skip_die:
-            return
+                    # Check whether new position is not more than 5um away in each coordinate direction
+                    # from the requested move
 
-        if self.sweep_value_die != "Current die":
+                    if abs(new_sub[0] - rel_sub[0]) > 5 or abs(new_sub[1] - rel_sub[1]) > 5:
+                        msg = (f"Relative subsite position after move {rel_sub} is not in "
+                               f"agreement with requested subsite position {new_sub}.")
+                        raise Exception(msg)
 
-            if die != self.last_die:
+        except Exception:
+            self.exception_step_during_apply = "Subsite"
+            raise
 
-                # We always separate if not already the case
-                if self.prober.is_chuck_contacted():
-                    self.prober.z_down()
-
-                # In any case, the die must have changed, and we need to move to it
-                self.prober.move_specified_die(*die)  # die at index x,y
-
-                # once we approach a die, we save the current absolute position at the start position of the die
-                # This position is then used to navigate to the correct position
-                self.current_die_position = self.prober.request_position()
-
-                self.last_die = die
-                self.last_die_str = die_str
-                self.last_sub = (0, 0)
-
-        if subsite_str is not None:
-
-            # We always separate if not already the case
-            if self.prober.is_chuck_contacted():
-                self.prober.z_down()
-
-            if subsite_str.startswith("A"):
-                # xy_subsite_pos is defined with respect to the initial start position of the die
-                # xy_move is the relative move from the current position to the next subsite position
-                # current_die_position is the absolute reference to start position of a die
-                # position_die_ref is the last position with respect to start position of the die
-
-                # Extracting the coordinates relative to the die start position
-                new_sub = tuple(map(int, subsite_str.replace("A", "").split(",")))
-
-                """
-                # Alternative Code to calculate relative move based on measured absolute position based on R command
-                # Calculating the last position with respect to the current die position
-                position_die_ref = np.array(self.last_position) - np.array(self.current_die_position)
-
-                # Calculating the relative from the current position to the new position
-                xy_move = np.array(new_sub) - position_die_ref
-                """
-
-                xy_move = np.array(new_sub) - np.array(self.last_sub)
-
-                self.prober.move_position(*xy_move)
-
-                self.last_sub_str = subsite_str
-                self.last_sub = new_sub
-
-        self.last_position = self.prober.request_position()
+        # Retrieving position and check whether position has indeed changed
+        position = self.prober.request_position()
+        if position != self.last_position:
+            msg = "Subsite position did not change for unknown reason"
+        self.last_position = position
 
         self.die_x, self.die_y = self.prober.request_die_coordinate()
 
@@ -446,11 +563,10 @@ class Device(EmptyDevice):
         print("Cassette status:", cassette_status)
 
         prober_status = self.prober.request_prober_status()
-        print(
-            "Prober status:",
-            prober_status,
-            self.prober.get_prober_status_message(prober_status),
-        )
+        print("Prober status:", prober_status, self.prober.get_prober_status_message(prober_status))
+
+        lock_status = self.prober.request_cassette_lock_status()
+        print("Cassette lock status:", lock_status)
 
         chuck_status = self.prober.is_chuck_contacted()
         print("Chuck in contact:", chuck_status)
@@ -487,8 +603,45 @@ class Device(EmptyDevice):
         position = self.prober.request_position()
         print("Absolute position:", position)
 
-    def read_controlmap(self, controlmap) -> List[str]:
+    def check_and_sense_wafers(self):
+
+        if not self.prober.is_wafer_on_chuck():
+            # in case of an inspection wafer on the chuck or a lot process was already started,
+            # there is no need to sense the wafers
+
+            cassette_status = self.prober.request_cassette_status()
+
+            # if none of the two cassettes has a status yet
+            if "00" == cassette_status[-2:]:
+                self.prober.sense_wafers()  # Wafer sensing "jw" command
+
+    def get_wafer_on_chuck(self):
+        """ Returns the current wafer on the chuck
+
+        Returns:
+            tuple of cassette id and wafer id, (None, None) in case there is no wafer on the chuck
+
         """
+
+        wafer = (None, None)
+        if self.prober.is_wafer_on_chuck():
+
+            # Get cassettes and wafers
+            wafer_status = self.prober.request_wafer_status()
+            # a list of tuples containing cassette and wafer id
+            wafer_list = self.prober.get_waferlist_from_status(wafer_status)
+
+            wafer_during_test_status = 3
+            for wafer_ in wafer_list:
+                if wafer_[2] == wafer_during_test_status:  # wafer during testing -> wafer on chuck
+                    wafer = (wafer_[0], wafer_[1])
+                    break
+
+        return wafer
+
+    def read_controlmap(self, controlmap) -> List[str]:
+        """Reads a given controlmap file
+
         Args:
             controlmap: path to the Control Map .MDF file. 
             Control map files can be exported using Device Commander software
