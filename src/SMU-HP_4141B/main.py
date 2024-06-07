@@ -175,13 +175,13 @@ class Device(EmptyDevice):
         self.port.write("TI " + self.channel)
         answer = self.port.read()
         # removes first three characters (can be "NAI", "NAV", "XAI", "XAV") and converts value to float
-        self.i = float(answer_CH1[3:])
+        self.i = float(answer[3:])
 
         # Voltage
         self.port.write("TV " + self.channel)
         answer = self.port.read()
         # removes first three characters (can be "NAI", "NAV", "XAI", "XAV") and converts value to float
-        self.v = float(answer_CH1[3:])
+        self.v = float(answer[3:])
 
     def call(self):
 
