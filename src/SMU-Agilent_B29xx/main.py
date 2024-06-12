@@ -110,7 +110,7 @@ class Device(EmptyDevice):
             # sourcemode = Voltage
             self.port.write(":SOUR%s:VOLT:MODE FIX" % self.channel)
             # sourcemode fix
-            self.port.write(":SENS%s:FUNC:MODE CURR" % self.channel)
+            self.port.write(":SENS%s:FUNC \"CURR\"" % self.channel)
             # measurement mode
             self.port.write(":SENS%s:CURR:PROT %s" % (self.channel, self.protection))
             # Protection with Imax
@@ -123,7 +123,7 @@ class Device(EmptyDevice):
             # sourcemode = Voltage
             self.port.write(":SOUR%s:CURR:MODE FIX" % self.channel)
             # sourcemode fix
-            self.port.write(":SENS%s:FUNC:MODE VOLT" % self.channel)
+            self.port.write(":SENS%s:FUNC \"VOLT\"" % self.channel)
             # measurement mode
             self.port.write(":SENS%s:VOLT:PROT %s" % (self.channel, self.protection))
             # Protection with Imax
