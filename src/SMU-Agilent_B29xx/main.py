@@ -101,8 +101,6 @@ class Device(EmptyDevice):
 
         self.port.write(":SYST:LFR 50")  # LineFrequency = 50 Hz
 
-        self.port.write(":OUTP%s:PROT ON" % self.channel)  # enables  over voltage / over current protection
-
     def configure(self):
 
         if self.source.startswith("Voltage"):
@@ -196,3 +194,25 @@ class Device(EmptyDevice):
         current = float(values[1])
 
         return [voltage, current]
+
+    # here functions wrapping communication commands start
+
+    def enable_output_protection(self, state: str|bool) -> None:
+        """Enables  over voltage / over current protection.
+
+        If the SMU hits the compliance the output will be switched off. This features is a safety feature to prevent
+        further voltage or current being applied to the device under test.
+
+        The output protection does not change whether the compliance is active.
+
+        The default after a reset (*RST) of the device is OFF.
+        """
+        if state is True or state == "ON":
+            state = "ON"
+        elif state is False or state == "OFF":
+            state = "OFF"
+        else:
+            msg = "State '%s' unknown and cannot be handled." % str(state)
+            raise Exception(msg)
+
+        self.port.write(f":OUTP{self.channel}:PROT {state}")
