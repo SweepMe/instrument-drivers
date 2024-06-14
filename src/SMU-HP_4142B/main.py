@@ -175,7 +175,7 @@ class Device(EmptyDevice):
       
     def apply(self):
 
-        value = str(self.value)
+        value = str("{:.4E}".format(self.value))
         
         if self.source.startswith("Voltage"):
             self.port.write("DV " + self.channel + "," + self.vrange + "," + value)

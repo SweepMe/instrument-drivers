@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2018-2020 Axel Fischer (sweep-me.net)
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,30 +26,23 @@
 # SOFTWARE.
 
 
-# SweepMe! device class
-# Type: SMU
-# Device: HP 4145
+# SweepMe! driver
+# * Module: SMU
+# * Instrument: HP 4145
 
-import numpy as np
-import time
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
-from EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
-    
-    multichannel = [" CH1", " CH2", " CH3", " CH4"]
 
     def __init__(self):
     
         EmptyDevice.__init__(self)
-       
-        # remains here for compatibility with v1.5.3       
-        self.multichannel = [" CH1", " CH2", " CH3", " CH4"]
 
         self.variables = ["Voltage", "Current"]
-        self.units     = ["V", "A"]
-        self.plottype  = [True, True] # True to plot data
-        self.savetype  = [True, True] # True to save data
+        self.units = ["V", "A"]
+        self.plottype = [True, True] # True to plot data
+        self.savetype = [True, True] # True to save data
         
         self.port_manager = True
         self.port_types = ['GPIB']
@@ -60,17 +53,16 @@ class Device(EmptyDevice):
         
     def set_GUIparameter(self):
         
-        GUIparameter = {
-                        "SweepMode": ["Voltage in V", "Current in A"],
-                        # "Channel": ["CH1", "CH2", "CH3", "CH4"],  # preferred way starting from 1.5.5
-                        "RouteOut": ["Rear"],
-                        "Speed": ["Fast", "Medium", "Slow"],
-                        "Compliance": 1,
-                        }
+        gui_parameter = {
+            "SweepMode": ["Voltage in V", "Current in A"],
+            "Channel": ["CH1", "CH2", "CH3", "CH4"],
+            "RouteOut": ["Rear"],
+            "Speed": ["Fast", "Medium", "Slow"],
+            "Compliance": 1,
+        }
                         
-        return GUIparameter
-        
-        
+        return gui_parameter
+
     def get_GUIparameter(self, parameter={}):
         
         self.device = parameter['Device']
@@ -89,25 +81,23 @@ class Device(EmptyDevice):
         # self.pulse_meas_time = parameter['PulseMeasTime']
         
         # self.average = int(parameter['Average'])
-        
-        self.channel = self.device[-1]
-        
+
+        self.channel = parameter['Channel'][-1]
+
         self.shortname = "HP 4145 CH%s" % self.channel
         
         self.port_string = parameter["Port"]
-              
-        
+
     def initialize(self):
-    
-    
+
         unique_DC_port_string = "HP4145_" + self.port_string
 
         # initialize commands only need to be sent once, so we check here whether another instance of the same Device Class AND same port did it already. If not, this instance is the first and has to do it.
-        if not unique_DC_port_string in self.device_communication:
-        
-    
+        if unique_DC_port_string  not in self.device_communication:
+
             self.port.write("*IDN?")
-            print(self.port.read())
+            identifier = self.port.read()
+            #print("Identification:", identifier)
         
             # self.port.write("*OPT?")
             # print(self.port.read())
@@ -120,7 +110,6 @@ class Device(EmptyDevice):
             
             self.device_communication[unique_DC_port_string] = True
 
-                    
     def configure(self):
     
         self.range = "0"
@@ -142,8 +131,6 @@ class Device(EmptyDevice):
         = 9 100 mA range
         '''                                             
 
-
-    
         if self.speed == "Fast": # 1 Short (0.1 PLC) preconfigured selection Fast
             self.nplc = 1
         elif self.speed == "Medium": # 2 Medium (1.0 PLC) preconfigured selection Normal
@@ -153,22 +140,13 @@ class Device(EmptyDevice):
         
         self.port.write("IT" + str(self.nplc))
         
-    def unconfigure(self):
-        pass
-        # self.port.write(self.source + self.channel)
-    
-    def deinitialize(self):
-        pass
-    
-    def poweron(self):
-        pass
-    
     def poweroff(self):
         self.port.write(self.source + self.channel)
         
     def apply(self):
-        self.port.write(self.source + self.channel + ", " + self.range + ", " + f"{self.value:1.4E}" + ", " + self.protection) # value needs to be formated this way to avoid str conversion errors
-
+        # value needs to be formated this way to avoid str conversion errors
+        self.port.write(self.source + self.channel + ", " + self.range + ", " + f"{self.value:1.4E}" + ", " +
+                        self.protection)
 
     def measure(self):
         pass
