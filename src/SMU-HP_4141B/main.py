@@ -70,7 +70,7 @@ class Device(EmptyDevice):
             "SweepMode": ["Voltage in V", "Current in A"],
             "Channel": ["CH1", "CH2", "CH3", "CH4"],
             "RouteOut": ["Rear"],
-            # "Speed": ["Fast", "Medium", "Slow"],
+            "Speed": ["Fast", "Medium", "Slow"],
             "Range": list(self.current_ranges.keys()),
             "Compliance": 100e-6,
             "Average": 1,
@@ -87,7 +87,7 @@ class Device(EmptyDevice):
         self.irange = self.current_ranges[parameter['Range']]
 
         self.protection = parameter['Compliance']
-        # self.speed = parameter['Speed']
+        self.speed = parameter['Speed']
 
         self.average = int(parameter['Average'])
 
@@ -126,17 +126,15 @@ class Device(EmptyDevice):
         # defined during 'configure'
         self.port.write("CN " + self.channel)  # switches the channel on
 
-        """
-        if self.speed == "Fast": # 1 Short (0.1 PLC) preconfigured selection Fast
-            self.port.write("AIT 0,0,1")
-            self.port.write("AAD %s,0" % self.channel)
-        elif self.speed == "Medium": # 2 Medium (1.0 PLC) preconfigured selection Normal
-            self.port.write("AIT 1,0,1")
-            self.port.write("AAD %s,1" % self.channel)
-        elif self.speed == "Slow": # 3 Long (10 PLC) preconfigured selection Quiet
-            self.port.write("AIT 1,2,10")
-            self.port.write("AAD %s,1" % self.channel)
-        """
+        if self.speed == "Fast":  # 1 Short (4 measurements with 4 per PLC) preconfigured selection Fast
+            self.port.write("IT 1")
+            # self.port.write("AAD %s,0" % self.channel)
+        elif self.speed == "Medium":  # 2 Medium (16 measurements with 16 per PLC) preconfigured selection Normal
+            self.port.write("IT 2")
+            # self.port.write("AAD %s,1" % self.channel)
+        elif self.speed == "Slow":  # 3 Long (256 measurements with 16 per PLC) preconfigured selection Quiet
+            self.port.write("IT 3")
+            # self.port.write("AAD %s,1" % self.channel)
 
     def unconfigure(self):
         self.port.write("IN" + self.channel)
@@ -161,7 +159,7 @@ class Device(EmptyDevice):
 
     def apply(self):
 
-        value = str(self.value)
+        value = str("{:.4E}".format(self.value))
 
         if self.source.startswith("Voltage"):
             self.port.write("DV " + self.channel + "," + self.vrange + "," + value + "," + self.protection)
@@ -186,7 +184,6 @@ class Device(EmptyDevice):
     def call(self):
 
         return [self.v, self.i]
-
 
     """
     Enables channels CN [chnum ... [,chnum] ... ]
