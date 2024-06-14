@@ -30,6 +30,9 @@
 # Type: SMU
 # Device: Agilent 29xx
 
+
+from __future__ import annotations
+
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -197,7 +200,7 @@ class Device(EmptyDevice):
 
     # here functions wrapping communication commands start
 
-    def enable_output_protection(self, state: str|bool) -> None:
+    def enable_output_protection(self, state: str | bool) -> None:
         """Enables  over voltage / over current protection.
 
         If the SMU hits the compliance the output will be switched off. This features is a safety feature to prevent
