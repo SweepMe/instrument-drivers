@@ -66,7 +66,7 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter={}):
         
         self.device = parameter['Device']
-        self.four_wire = parameter['4wire']
+        # self.four_wire = parameter['4wire']
         self.route_out = parameter['RouteOut']
         self.source = parameter['SweepMode']
         
