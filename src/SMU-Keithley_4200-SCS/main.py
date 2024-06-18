@@ -266,7 +266,7 @@ class Device(EmptyDevice):
                 raise ValueError("Delay must be 20 ns or larger (not clear why)!")
 
         if self.identifier not in self.device_communication:
-                 
+
             if self.command_set == "LPTlib":
                 if self.pulse_mode:
                     self.lpt.dev_abort()  # stops executed pulses
@@ -453,7 +453,7 @@ class Device(EmptyDevice):
     def trigger_ready(self):
 
         if self.pulse_mode:
-
+            print("Trigger Ready")
             # needed because of bug in SweepMe! that changes type of
             # self.value to float64
             self.value = float(self.value)
@@ -481,11 +481,12 @@ class Device(EmptyDevice):
 
             # TODO: only the master driver instance needs to execute
             self.lpt.pulse_exec(
-                pulse_mode=1,  # 0 = basic, 1 = advanced
+                # mode=self.param.PULSE_MODE_ADVANCED,  # Alternatively PULSE_MODE_SIMPLE
+                mode=self.param.PULSE_MODE_SIMPLE
             )
 
     def request_result(self):
-
+        # print("Request result", self.pulse_mode, self.pulse_master)
         if self.pulse_mode and self.pulse_master:
 
             timeout = 30.0
@@ -495,12 +496,12 @@ class Device(EmptyDevice):
                 print("Execution status:", status, "Time elapsed:", elapsed_time)
 
                 if status != self.param.PMU_TEST_STATUS_RUNNING:
+                    print(f"break: {status}, {self.param.PMU_TEST_STATUS_RUNNING}")
                     break
                 if elapsed_time > timeout:
                     self.lpt.dev_abort()
 
     def read_result(self):
-
         if self.pulse_mode:
 
             buffer_size = self.lpt.pulse_chan_status(
@@ -510,9 +511,9 @@ class Device(EmptyDevice):
             print("Buffer size:", buffer_size)
 
             # fetch results
-            status_dict, timestamp, v_meas, i_meas = self.lpt.pulse_fetch(
-                self.card_id,
-                self.pulse_channel,
+            v_meas, i_meas, timestamp, status_dict = self.lpt.pulse_fetch(
+                instr_id=self.card_id,
+                chan=self.pulse_channel,
                 start_index=0,
                 stop_index=buffer_size,
                 )
@@ -526,7 +527,7 @@ class Device(EmptyDevice):
             self.i = np.average(i_meas)
 
     def call(self):
-
+        print(f"Call {self.v, self.i}")
         if not self.pulse_mode:
     
             if self.command_set == "LPTlib":
@@ -556,25 +557,30 @@ class Device(EmptyDevice):
 
     """ here, convenience functions start """
 
-    def configure_pulse(self):
+    def configure_pulse(self) -> None:
+        """Configure pulses for pulse mode."""
+        self.lpt.pg2_init(
+            instr_id=self.card_id,
+            mode_id=0,  # Standard pulse mode
+        )
 
         self.lpt.rpm_config(
-            self.card_id,
-            self.pulse_channel,
+            instr_id=self.card_id,
+            chan=self.pulse_channel,
             modifier=self.param.KI_RPM_PATHWAY,
-            modify_value=self.param.KI_RPM_PULSE,
+            value=self.param.KI_RPM_PULSE,
         )
 
         self.lpt.pulse_meas_sm(
-            self.card_id,
-            self.pulse_channel,
+            instr_id=self.card_id,
+            chan=self.pulse_channel,
             acquire_type=0,
-            acquire_meas_V_amp=1,
-            acquire_meas_V_base=0,
-            acquire_meas_I_amp=1,
-            aquire_meas_I_base=0,
-            aquire_time_stamp=1,
-            load_line_effect_comp=1,
+            acquire_meas_v_ampl=1,
+            acquire_meas_v_base=0,
+            acquire_meas_i_ampl=1,
+            acquire_meas_i_base=0,
+            acquire_time_stamp=1,
+            llecomp=1,
         )
 
         self.lpt.pulse_ranges(
@@ -592,7 +598,7 @@ class Device(EmptyDevice):
             self.pulse_channel,
             v_limit=5.0,
             i_limit=1.0,
-            power_limit=10.0
+            power_limit=10.0,
         )
 
         self.lpt.pulse_meas_timing(
