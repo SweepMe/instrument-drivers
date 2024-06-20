@@ -109,7 +109,7 @@ class Device(EmptyDevice):
 
         self.port_properties = {
             "baudrate": 115200,
-            "timeout:": 5,
+            "timeout": 5,
         }
 
         self.module_type_dict = {
