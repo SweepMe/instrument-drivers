@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2023 SweepMe! (sweep-me.net)
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,67 +28,65 @@
 # Author: Shayan Miri A. S.
 # Contribution: We like to thank TU Dresden/Shayan Miri A. S. for contributing the initial version of this driver.
 
-# SweepMe! device class
-# Type: Robot
-# Device: CNC Grbl
+# SweepMe! driver
+# * Module: Robot
+# * Instrument: CNC Grbl
 
 
 import time
 import serial
 
-from ErrorMessage import error, debug
-
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
 
     description = """
-                    <p>This SweepMe! driver can be used to control x, y, z and feed rate of a CNC machine which is using 
-                    the open-source platform Grbl as G-code parser and motion controller. Grbl is a common G-code parser
-                     for affordable CNC machines and can be flashed to various microcontroller boards like Arduino and 
-                     Raspberry Pi Pico. The driver is tested on FoxAlien Masuter Pro CNC machine, but might even work 
-                     with CNC machines that do not use Grbl.</p>
-                    <p><strong>Usage:</strong></p>
-                    <ul>
-                    <li>Insert numbers into the Axes fields x, y, z and feed. For more complex procedures, use the 
-                    parameter syntax {...} to handover values from other fields like an ReadValue module's outputs.</li>
-                    </ul>
-                    <p><strong>Coordinates:</strong></p>
-                    <ul>
-                    <li>Home position: x = 0.0 mm, y = 0.0 mm, z = 0.0 mm;</li>
-                    </ul>
-                    <p><strong>Parameters:</strong></p>
-                    <ul>
-                    <li>'Go home at start' is always checked as the machine has to be homed in the beginning of the 
-                    run.</li>
-                    <li>'Go hame at end' move the robot at the end of a run to the fixed home position.</li>
-                    <li>The driver has a normal and jump operation modes. When jump mode is activated, the z sweep value
-                     is irrelevant and the robot will always go the (x, y) position in the safe height plate and then go
-                      down to the touch height. However, when jump mode is deactivated, (x, y, z) values can be passed 
-                      to the driver.</li>
-                    </ul>
-                    <p><strong>Warning:</strong></p>
-                    <ul>
-                    <li>The user must make sure that the coordinates are reachable for the machine. In some cases, the limit 
-                    switches just stop the movement, and passing the next coordinates can crash the machine.</li>
-                    </ul>
-                    """
+        <p>This SweepMe! driver can be used to control x, y, z and feed rate of a CNC machine which is using 
+        the open-source platform Grbl as G-code parser and motion controller. Grbl is a common G-code parser
+         for affordable CNC machines and can be flashed to various microcontroller boards like Arduino and 
+         Raspberry Pi Pico. The driver is tested on FoxAlien Master Pro CNC machine, but might even work 
+         with CNC machines that do not use Grbl.</p>
+        <p><strong>Usage:</strong></p>
+        <ul>
+        <li>Insert numbers into the Axes fields x, y, z and feed. For more complex procedures, use the 
+        parameter syntax {...} to handover values from other modules like ReadValues.</li>
+        </ul>
+        <p><strong>Coordinates:</strong></p>
+        <ul>
+        <li>Home position: x = 0.0 mm, y = 0.0 mm, z = 0.0 mm;</li>
+        </ul>
+        <p><strong>Parameters:</strong></p>
+        <ul>
+        <li>'Go home at start' is always checked as the machine has to be homed in the beginning of the 
+        run.</li>
+        <li>'Go home at end' move the robot at the end of a run to the fixed home position.</li>
+        <li>The driver has a normal and jump operation modes. When jump mode is activated, the z sweep value
+         is irrelevant and the robot will always go the (x, y) position in the safe height plate and then go
+          down to the touch height. However, when jump mode is deactivated, (x, y, z) values can be passed 
+          to the driver.</li>
+        </ul>
+        <p><strong>Warning:</strong></p>
+        <ul>
+        <li>The user must make sure that the coordinates are reachable for the machine. In some cases, the limit 
+        switches just stop the movement, and passing the next coordinates can crash the machine.</li>
+        </ul>
+        """
                     
     axes = {
-            "x": {
-                "Value": 0.0
-                },
-            "y": {
-                "Value": 0.0
-                },
-            "z": {
-                "Value": 0.0
-                },
-            "feed rate": {
-                "Value": 2000
-                },
-            }
+        "x": {
+            "Value": 0.0
+        },
+        "y": {
+            "Value": 0.0
+        },
+        "z": {
+            "Value": 0.0
+        },
+        "feed rate": {
+            "Value": 2000
+        },
+    }
 
     def __init__(self):
     
@@ -165,8 +163,6 @@ class Device(EmptyDevice):
 
     def unconfigure(self):
         pass
-        # print(self.get_position())
-        # print(self.get_state())
 
     def apply(self):
     
