@@ -373,11 +373,13 @@ class Device(EmptyDevice):
         answer = self.port.read()
         
         # This time reference to wait several time constants.
-        self.time_ref = time.clock()
+        self.time_ref = time.perf_counter()
 
     def trigger_ready(self):
         # make sure that at least several time constants have passed since 'Auto sensitivity' was called
-        delta_time = (self.waittimeconstants * self.unit_to_float(self.timeconstant)) - (time.clock()-self.time_ref)
+        delta_time = (
+            self.waittimeconstants * self.unit_to_float(self.timeconstant)
+        ) - (time.perf_counter() - self.time_ref)
         if delta_time > 0.0:
             # wait several time constants to allow for a renewal of the result
             time.sleep(delta_time)
