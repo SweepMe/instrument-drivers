@@ -241,7 +241,10 @@ class Device(EmptyDevice):
         answer = self.port.read()  # here we read the response from the "READ?" request in 'measure'
         #print("Response to READ? command:", answer)
 
-        return [float(answer)] 
+        return [float(answer)]
+
+    def disconnect(self):
+        self.port.close() 
         
         
     """
