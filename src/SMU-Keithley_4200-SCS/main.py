@@ -240,7 +240,7 @@ class Device(EmptyDevice):
             except ConnectionRefusedError as e:
                 debug("Unable to connect to a lptlib server application running on the 4200-SCS. Please check your"
                       "network settings and make sure the server application is running.")
-                raise e
+                raise
   
             self.card_id = self.lpt.getinstid(self.card_name)
 
