@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2023 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2023-2024 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -37,7 +37,7 @@ import numpy as np
 import time
 import os
 
-import FolderManager
+from pysweepme import FolderManager
 FolderManager.addFolderToPATH()
 
 import importlib
@@ -96,12 +96,11 @@ class Device(EmptyDevice):
         }
 
     def find_ports(self):
-        # TODO: update SweepMe! to allow finding ports next to the automatically found one
-
-        ports = ["LPTlib via xxx.xxx.xxx.xxx"]
 
         if RUNNING_ON_4200SCS:
-            ports.insert(0, "LPTlib control - no port required")
+            ports = ["LPTlib"]
+        else:
+            ports = ["LPTlib via xxx.xxx.xxx.xxx"]
 
         return ports
         
@@ -198,7 +197,12 @@ class Device(EmptyDevice):
                 # not supported yet with pylptlib -> # self.inst = inst
                 self.param = param
 
-            ret = self.lpt.initialize()
+            try:
+                ret = self.lpt.initialize()
+            except ConnectionRefusedError as e:
+                debug("Unable to connect to a lptlib server application running on the 4200-SCS. Please check your "
+                      "network settings and make sure the server application is running.")
+                raise
             
             self.card_id = self.lpt.getinstid(self.card_name)
 

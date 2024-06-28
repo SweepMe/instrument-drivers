@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2018-2019, 2022-2023 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022-2024 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -37,7 +37,7 @@ import numpy as np
 import time
 import os
 
-import FolderManager
+from pysweepme import FolderManager
 FolderManager.addFolderToPATH()
 
 import importlib
@@ -111,12 +111,11 @@ class Device(EmptyDevice):
         }
         
     def find_ports(self):
-        # TODO: update SweepMe! to allow finding ports next to the automatically found one
-
-        ports = ["LPTlib via xxx.xxx.xxx.xxx"]
 
         if RUNNING_ON_4200SCS:
-            ports.insert(0, "LPTlib control - no port required")
+            ports = ["LPTlib"]
+        else:
+            ports = ["LPTlib via xxx.xxx.xxx.xxx"]
 
         return ports
         
@@ -166,10 +165,16 @@ class Device(EmptyDevice):
 
         self.channel = parameter["Channel"]
 
+        # Card name
+        # The channel can be either "SMU1", "SMU2", "PMU1 - CH1" or "PMU1 - CH2"
+        # It means that in case of PMU the pulse channel is additionally added after the card name
+        # The card name is now always "SMU1", "SMU2", or "PMU1" etc.
         if "PMU" not in self.channel:
             if "SMU" in self.channel:
                 self.card_name = self.channel
             else:
+                # This is a fallback, when channels have been just "1", "2", "3", "4". After adding PMU, it became
+                # necessary to distinguish between SMU and PMU
                 self.card_name = "SMU" + self.channel[-1]
             self.pulse_channel = None
         else:
@@ -236,8 +241,13 @@ class Device(EmptyDevice):
                 # not supported yet with pylptlib -> # self.inst = inst
                 self.param = param
 
-            ret = self.lpt.initialize()
-            
+            try:
+                ret = self.lpt.initialize()
+            except ConnectionRefusedError as e:
+                debug("Unable to connect to a lptlib server application running on the 4200-SCS. Please check your "
+                      "network settings and make sure the server application is running.")
+                raise
+  
             self.card_id = self.lpt.getinstid(self.card_name)
 
     def initialize(self):
@@ -372,11 +382,12 @@ class Device(EmptyDevice):
                 # Current Range
                 if "Limited" in self.current_range:
                     current_range = self.current_ranges[self.current_range]
-                    self.set_current_range_limited(self.card_name, current_range)  # low range current
+                    self.set_current_range_limited(self.card_name[-1], current_range)  # low range current
 
-            # range = 1e-1
-            # compliance = 1e1
-            # self.set_current_range(self.card_name, range, compliance)
+                # TODO: needs to be tested how to see a fixed current range
+                # range = 1e-1
+                # compliance = 1e1
+                # self.set_current_range(self.card_name[-1], range, compliance)
 
         else:  # pulse mode
 
@@ -408,7 +419,7 @@ class Device(EmptyDevice):
                 self.lpt.forcev(self.card_id, 0.0)
 
             elif self.command_set == "US":
-                self.switch_off(self.card_name)
+                self.switch_off(self.card_name[-1])
 
         else:
             self.lpt.pulse_output(
@@ -435,9 +446,9 @@ class Device(EmptyDevice):
                 current_range = 0  # auto
 
                 if self.source == "Voltage in V":
-                    self.set_voltage(self.card_name, voltage_range, self.value, self.protection)
+                    self.set_voltage(self.card_name[-1], voltage_range, self.value, self.protection)
                 elif self.source == "Current in A":
-                    self.set_current(self.card_name, current_range, self.value, self.protection)
+                    self.set_current(self.card_name[-1], current_range, self.value, self.protection)
 
     def trigger_ready(self):
 
@@ -527,8 +538,8 @@ class Device(EmptyDevice):
                 time.sleep(0.001)
 
             elif self.command_set == "US":
-                self.v = self.get_voltage(self.card_name)
-                self.i = self.get_current(self.card_name)
+                self.v = self.get_voltage(self.card_name[-1])
+                self.i = self.get_current(self.card_name[-1])
 
             '''
             X Y Z +-N.NNNN E+-NN
