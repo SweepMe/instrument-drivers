@@ -165,10 +165,16 @@ class Device(EmptyDevice):
 
         self.channel = parameter["Channel"]
 
+        # Card name
+        # The channel can be either "SMU1", "SMU2", "PMU1 - CH1" or "PMU1 - CH2"
+        # It means that in case of PMU the pulse channel is additionally added after the card name
+        # The card name is now always "SMU1", "SMU2", or "PMU1" etc.
         if "PMU" not in self.channel:
             if "SMU" in self.channel:
                 self.card_name = self.channel
             else:
+                # This is a fallback, when channels have been just "1", "2", "3", "4". After adding PMU, it became
+                # necessary to distinguish between SMU and PMU
                 self.card_name = "SMU" + self.channel[-1]
             self.pulse_channel = None
         else:
@@ -378,9 +384,10 @@ class Device(EmptyDevice):
                     current_range = self.current_ranges[self.current_range]
                     self.set_current_range_limited(self.card_name[-1], current_range)  # low range current
 
-            # range = 1e-1
-            # compliance = 1e1
-            # self.set_current_range(self.card_name, range, compliance)
+                # TODO: needs to be tested how to see a fixed current range
+                # range = 1e-1
+                # compliance = 1e1
+                # self.set_current_range(self.card_name[-1], range, compliance)
 
         else:  # pulse mode
 
