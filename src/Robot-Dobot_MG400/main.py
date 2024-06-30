@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2022 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022-2024 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,9 +26,9 @@
 # SOFTWARE.
 
 
-# SweepMe! device class
-# Type: Robot
-# Device: Dobot MG400
+# SweepMe! driver
+# * Module: Robot
+# * Instrument: Dobot MG400
 
 from FolderManager import addFolderToPATH
 addFolderToPATH()
@@ -40,9 +40,9 @@ import dobot_api
 import time
 import select
 
-from ErrorMessage import error, debug
+from pysweepme.ErrorMessage import error, debug
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -125,6 +125,11 @@ class Device(EmptyDevice):
                         "Payload x offset": 0.0,
                         "Payload y offset": 0.0,
                         # "Payload z offset": 0.0,
+                        " ": None,
+                        "Jump": None,
+                        "Use jump mode": False,
+                        "Movement height": 0.0,
+                        "  ": None,
 
                         "GoHomeStart": True,
                         "GoHomeEnd": True,
@@ -151,6 +156,9 @@ class Device(EmptyDevice):
         self.acceleration_factor = parameter["Acceleration factor"]
         self.global_speed_factor = parameter["Global speed factor"]
         self.speed_factor = parameter["Speed factor"]
+
+        self.use_jump_mode = parameter["Use jump mode"]
+        self.movement_height = parameter["Movement height"]
         
         self.variables = ["x", "y", "z", "r"] 
         self.units = [self.length_unit] * 3 + ["°"]
@@ -195,10 +203,21 @@ class Device(EmptyDevice):
 
     def configure(self):
 
+        self.movement_height = float(self.movement_height)
         self.set_acceleration_linear(self.acceleration_factor)  # Linear acceleration factor 1-100
         self.set_speed_global(self.global_speed_factor)  # Global speed factor 1-100
         self.set_speed_linear(self.speed_factor)  # Linear speed factor 1-100
-        self._last_xyzr = (None, None, None, None)
+        # self._last_xyzr = (None, None, None, None)
+        self._last_xyzr = self.get_position()
+
+    def unconfigure(self):
+
+        if self.use_jump_mode:
+            self.move_linear(self._last_xyzr[0], self._last_xyzr[1], self.movement_height, self._last_xyzr[3])
+            self.sync(self.reach_position_timeout)
+
+        mode = self.get_robot_mode()
+        # todo: check for errors
 
     def reconfigure(self, parameters, keys):
 
@@ -207,11 +226,6 @@ class Device(EmptyDevice):
         if "Speed factor" in keys:
             self.speed_factor = parameters["Speed factor"]
             self.set_speed_linear(self.speed_factor)  # Linear speed factor 1-100
-
-    def unconfigure(self):
-
-        mode = self.get_robot_mode()
-        # todo: check for errors
 
     def apply(self):
     
@@ -241,15 +255,29 @@ class Device(EmptyDevice):
         # print(x,y,z,r)
                     
         if self._last_xyzr != (x, y, z, r):
-            self._last_xyzr = (x, y, z, r)
+
+            if self.use_jump_mode:
+
+                # we only move to movement height if x, y, or r change
+                # in case of a z scan, we do not need to go back to movement height
+                if self._last_xyzr[0, 2] != (x, y) or self._last_xyzr[3] != r:
+
+                    # vertical move to movement height
+                    self.move_linear(self._last_xyzr[0], self._last_xyzr[1], self.movement_height, self._last_xyzr[3])
+                    self.sync(self.reach_position_timeout)
+
+                    # lateral move at movement height
+                    self.move_linear(x, y, self.movement_height, r)
+                    self.sync(self.reach_position_timeout)
+
             self.move_linear(x, y, z, r)
+            self._last_xyzr = (x, y, z, r)
 
     def reach(self):
         # if self.reach_position:
         self.sync(self.reach_position_timeout)  # wait to finish all commands in queue
                     
     def call(self):
-    
         x,y,z,r = self.get_position()
         return x,y,z,r
 
