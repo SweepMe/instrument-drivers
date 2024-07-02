@@ -47,44 +47,46 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
 
-    description =   """
-                    <p>This driver can be used to control x, y, z and r (rotation) of a Dobot MG400 tabletop robot.</p>
-                    <p>&nbsp;</p>
-                    <p><strong>Requirements</strong>:</p>
-                    <ul>
-                    <li>To use this driver, you need to update the robot firmware to 1.5.4 or higher. The driver has been tested with firmware version 1.5.6.</li>
-                    <li>The MG400 has two Ethernet ports. The first one uses fixed IP address being 192.168.1.6 and the second one has a variable IP address that is 192.168.2.6 as factory default.<br />To connect with the robot your computer needs a static IP address that can be set via Windows network connetions. Right click on your Ethernet network adapter -&gt; 'Properties' -&gt; Tab 'Network' -&gt; 'Internet protocol version 4 (TCP/IPv4) -&gt; button 'Properties'. Select static IP address and 255.255.255.0 as subnet mask. Use an address that is different from the one of the robot but in the same sub net mask, e.g. "192.168.1.5" if you use the first ethernet port.<br /><br /></li>
-                    </ul>
-                    <p><strong>Usage:</strong></p>
-                    <ul>
-                    <li>Insert numbers into the Axes fields x, y, z, r. For more complex procedures, use the parameter syntax {...} to handover values from other fields.</li>
-                    <li>If the object attached to robot is heavy, one should set the payload mass and eventually the eccentric distance of the object.</li>
-                    <li>The Robot module works best in combination with add-on modules such as "ReadValues" or "TableValues" where you create a list of x, y, z, r values that you handover to the Robot module using the parameter syntax {...}</li>
-                    <li>Home position is fixed at x = 350 mm, y = 0 mm, z = 0 mm, r = 0 mm<br />&nbsp;</li>
-                    </ul>
-                    <p><strong>Coordinates:</strong></p>
-                    <ul>
-                    <li>Home position: x = 350.0 mm, y = 0.0 mm, z = 0.0 mm, r = 0&deg;</li>
-                    <li>x: horizonal direction of the robot arm in the home position</li>
-                    <li>y: horizontal direction perpendicular to y</li>
-                    <li>z: vertical direction perpendicular to x and y&nbsp;</li>
-                    <li>r: Rotation angle in &deg; (0.0 to 720.0)</li>
-                    </ul>
-                    <p>&nbsp;</p>
-                    <p><strong>Parameters:</strong></p>
-                    <ul>
-                    <li>'Go home at start' moves the robot at the beginning of a run to the fixed home position.</li>
-                    <li>'Go hame at end' move the robot at the end of a run to the fixed home position.</li>
-                    <li>Global speed factor affects all moves: 1-100</li>
-                    <li>Acceleration factor: 1-100<br />&nbsp;</li>
-                    <li>Speed factor is the speed of a linear move in the range 1-100. It can be changed at each step using the parameter syntax.</li>
-                    </ul>
-                    <p><strong>Caution:</strong></p>
-                    <ul>
-                    <li>The home position is fixed and independent from an individual position set in Dobot Studio Pro, so please check whether Go home before or after the run works for you.</li>
-                    </ul>
-                    """
-                    
+    description = """
+        <p>This driver can be used to control x, y, z and r (rotation) of a Dobot MG400 tabletop robot.</p>
+        <p>&nbsp;</p>
+        <p><strong>Requirements</strong>:</p>
+        <ul>
+        <li>To use this driver, you need to update the robot firmware to 1.5.4 or higher. The driver has been tested with firmware version 1.5.6.</li>
+        <li>The MG400 has two Ethernet ports. The first one uses fixed IP address being 192.168.1.6 and the second one has a variable IP address that is 192.168.2.6 as factory default.<br />To connect with the robot your computer needs a static IP address that can be set via Windows network connetions. Right click on your Ethernet network adapter -&gt; 'Properties' -&gt; Tab 'Network' -&gt; 'Internet protocol version 4 (TCP/IPv4) -&gt; button 'Properties'. Select static IP address and 255.255.255.0 as subnet mask. Use an address that is different from the one of the robot but in the same sub net mask, e.g. "192.168.1.5" if you use the first ethernet port.<br /><br /></li>
+        </ul>
+        <p><strong>Usage:</strong></p>
+        <ul>
+        <li>Insert numbers into the Axes fields x, y, z, r. For more complex procedures, use the parameter syntax {...} to handover values from other fields.</li>
+        <li>If the object attached to robot is heavy, one should set the payload mass and eventually the eccentric distance of the object.</li>
+        <li>The Robot module works best in combination with add-on modules such as "ReadValues" or "TableValues" where you create a list of x, y, z, r values that you handover to the Robot module using the parameter syntax {...}</li>
+        <li>Home position is fixed at x = 350 mm, y = 0 mm, z = 0 mm, r = 0 mm</li>
+        <li>Jump mode: When activated the robot will make all lateral and rotational movements at the given movement height.<br />&nbsp;</li>
+        </ul>
+        <p><strong>Coordinates:</strong></p>
+        <ul>
+        <li>Home position: x = 350.0 mm, y = 0.0 mm, z = 0.0 mm, r = 0&deg;</li>
+        <li>x: horizontal direction of the robot arm in the home position</li>
+        <li>y: horizontal direction perpendicular to y</li>
+        <li>z: vertical direction perpendicular to x and y&nbsp;</li>
+        <li>r: Rotation angle in &deg; (0.0 to 720.0)</li>
+        </ul>
+        <p>&nbsp;</p>
+        <p><strong>Parameters:</strong></p>
+        <ul>
+        <li>'Go home at start' moves the robot at the beginning of a run to the fixed home position.</li>
+        <li>'Go hame at end' move the robot at the end of a run to the fixed home position.</li>
+        <li>Global speed factor affects all moves: 1-100</li>
+        <li>Acceleration factor: 1-100<br />&nbsp;</li>
+        <li>Speed factor is the speed of a linear move in the range 1-100. It can be changed at each step using the parameter syntax.</li>
+        </ul>
+        <p><strong>Caution:</strong></p>
+        <ul>
+        <li>The home position is fixed and independent from an individual position set in Dobot Studio Pro, so please check whether Go home before or after the run works for you.</li>
+        </ul>
+    """
+
+    # needs to be defined for Robot drivers to define the variables and default values for the axes section
     axes = {
             "x": {
                 "Value": 350.0
@@ -100,6 +102,8 @@ class Device(EmptyDevice):
                 },
             }
 
+    actions = ["go_home"]
+
     def __init__(self):
     
         EmptyDevice.__init__(self)
@@ -107,6 +111,8 @@ class Device(EmptyDevice):
         self.shortname = "MG400"  # short name will be shown in the sequencer
             
         self.reach_position_timeout = 30.0
+
+        self._last_xyzr = (None, None, None, None)
             
     def set_GUIparameter(self):
 
@@ -118,18 +124,18 @@ class Device(EmptyDevice):
                         "Acceleration factor": 10,
                         "Global speed factor": 100,
                         "Speed factor": "10",
-                        "": None,
-                        "Payload": None,
+                        "": None,  # Empty line
+                        "Payload": None,  # Section label
                         "Payload weight in kg": 0.0,
                         # "Payload inertia in kgm²": 0.0,
                         "Payload x offset": 0.0,
                         "Payload y offset": 0.0,
                         # "Payload z offset": 0.0,
-                        " ": None,
-                        "Jump": None,
+                        " ": None,  # Another empty line with a different empty key
+                        "Jump": None,  # Section label
                         "Use jump mode": False,
                         "Movement height": 0.0,
-                        "  ": None,
+                        "  ": None,   # Another empty line with a different empty key
 
                         "GoHomeStart": True,
                         "GoHomeEnd": True,
@@ -157,8 +163,8 @@ class Device(EmptyDevice):
         self.global_speed_factor = parameter["Global speed factor"]
         self.speed_factor = parameter["Speed factor"]
 
-        self.use_jump_mode = parameter["Use jump mode"]
-        self.movement_height = parameter["Movement height"]
+        self.use_jump_mode = parameter["Use jump mode"]  # Activates jump mode
+        self.movement_height = float(parameter["Movement height"])  # Lateral movement height in jump mode
         
         self.variables = ["x", "y", "z", "r"] 
         self.units = [self.length_unit] * 3 + ["°"]
@@ -187,10 +193,14 @@ class Device(EmptyDevice):
 
         self.set_collision_level(self.collision_level)
 
-        # first without any parameters. Otherwise the robot tend to throw error 105 "Servo on failed"
+        # first without any parameters. Otherwise, the robot tends to throw error 105 "Servo on failed"
         self.enable_robot()
         self.enable_robot(self.payload_weight, self.payload_x_offset, self.payload_y_offset, 0.0)
+
+        # The line below should be used to set payload properties. However, the command did not work correctly
+        # and now payload properties are handed over during self.enable_robot()
         # self.set_payload(self.payload_weight, self.payload_inertia)
+
         if self.go_home_start:
             self.go_home()
         
@@ -203,11 +213,9 @@ class Device(EmptyDevice):
 
     def configure(self):
 
-        self.movement_height = float(self.movement_height)
         self.set_acceleration_linear(self.acceleration_factor)  # Linear acceleration factor 1-100
         self.set_speed_global(self.global_speed_factor)  # Global speed factor 1-100
         self.set_speed_linear(self.speed_factor)  # Linear speed factor 1-100
-        # self._last_xyzr = (None, None, None, None)
         self._last_xyzr = self.get_position()
 
     def unconfigure(self):
@@ -215,9 +223,6 @@ class Device(EmptyDevice):
         if self.use_jump_mode:
             self.move_linear(self._last_xyzr[0], self._last_xyzr[1], self.movement_height, self._last_xyzr[3])
             self.sync(self.reach_position_timeout)
-
-        mode = self.get_robot_mode()
-        # todo: check for errors
 
     def reconfigure(self, parameters, keys):
 
@@ -229,8 +234,6 @@ class Device(EmptyDevice):
 
     def apply(self):
     
-        # print(self.sweepvalues)
-
         # Position
         if "x" in self.sweepvalues and self.sweepvalues["x"] != "nan":
             x = float(self.sweepvalues["x"])
@@ -252,8 +255,6 @@ class Device(EmptyDevice):
         else: 
             r = self._last_xyzr[3]     
 
-        # print(x,y,z,r)
-                    
         if self._last_xyzr != (x, y, z, r):
 
             if self.use_jump_mode:
@@ -278,8 +279,8 @@ class Device(EmptyDevice):
         self.sync(self.reach_position_timeout)  # wait to finish all commands in queue
                     
     def call(self):
-        x,y,z,r = self.get_position()
-        return x,y,z,r
+        x, y, z, r = self.get_position()
+        return x, y, z, r
 
     def enable_robot(self, *args):
         self.api_dashboard.EnableRobot(args)
@@ -312,12 +313,13 @@ class Device(EmptyDevice):
         mode = self.api_dashboard.RobotMode()
         return mode
         
-    def move_linear(self, x,y,z,r):
-        self.api_move.MovL(x,y,z,r)  # linear move to home position
+    def move_linear(self, x, y, z, r):
+        self.api_move.MovL(x, y, z, r)  # linear move to home position
         
     def go_home(self):
         self.move_linear(350.0, 0.0, 0.0, 0.0)  # linear move to home position
         self.sync()
+        self._last_xyzr = self.get_position()
                 
     def sync(self, timeout=10.0):
         self.api_move.Sync(timeout) 
