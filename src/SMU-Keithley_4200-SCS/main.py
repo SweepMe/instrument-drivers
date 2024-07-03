@@ -453,7 +453,7 @@ class Device(EmptyDevice):
     def trigger_ready(self):
 
         if self.pulse_mode:
-
+            print("Trigger Ready")
             # needed because of bug in SweepMe! that changes type of
             # self.value to float64
             self.value = float(self.value)
@@ -502,17 +502,16 @@ class Device(EmptyDevice):
                     self.lpt.dev_abort()
 
     def read_result(self):
-
         if self.pulse_mode:
 
             buffer_size = self.lpt.pulse_chan_status(
                 self.card_id,
                 self.pulse_channel,
             )
-            # print("Buffer size:", buffer_size)
+            print("Buffer size:", buffer_size)
 
             # fetch results
-            status_dict, timestamp, v_meas, i_meas = self.lpt.pulse_fetch(
+            v_meas, i_meas, timestamp, status_dict = self.lpt.pulse_fetch(
                 instr_id=self.card_id,
                 chan=self.pulse_channel,
                 start_index=0,
@@ -528,7 +527,7 @@ class Device(EmptyDevice):
             self.i = np.average(i_meas)
 
     def call(self):
-
+        print(f"Call {self.v, self.i}")
         if not self.pulse_mode:
     
             if self.command_set == "LPTlib":
