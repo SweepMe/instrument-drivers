@@ -55,19 +55,19 @@ except:
 
 
 class Device(EmptyDevice):
-    """Device class for the Metrohm Autolab PGSTAT used as LCRmeter."""
+    """Driver class for the Metrohm Autolab PGSTAT used as LCRmeter."""
 
-    description = """
+    description = r"""
     <h3>Metrohm Autolab PGSTAT</h3>
     <p>This driver controls Metrohm Autolab Potentiostats.</p>
     <h4>Setup</h4>
     <ul>
     <li>Install the Autolab SDK 2.1.</li>
-    <li>Create a device configuration of your pump using QmixElements of the CETONI SDK.</li>
     <li>Copy the LCRmeter_Metrohm-AutolabPGSTAT.ini file to public documents/SweepMe!/CustomFiles. In this file:
     <ul>
     <li>Set the path to your .Adk Setup File.</li>
     <li>Set the path to the Hardware Setup files for each device.</li>
+    <li>These files are typically saved at C:\Program Files\Metrohm Autolab\Autolab SDK 2.1.\Hardware Setup Files</li>
     </ul>
     </li>
     </ul>
@@ -81,8 +81,8 @@ class Device(EmptyDevice):
         """Initializes the device class."""
         super().__init__()
 
-        self.variables = ["|Z|", "Phase", "Frequency", "Voltage bias"]
-        self.units = ["", "", "Hz", "V"]
+        self.variables = ["R", "X", "Frequency", "Voltage bias"]
+        self.units = ["Ohm", "Ohm", "Hz", "V"]
         self.plottype = [True, True, True, True]
         self.savetype = [True, True, True, True]
         self.identifier: str = ""
@@ -105,26 +105,26 @@ class Device(EmptyDevice):
         self.dc_bias: float = 0.0
         self.measure_range: str = ""
         self.measurement_ranges = {
-            "1000A": "CR00_1000A",
-            "100A": "CR01_100A",
-            "80A": "CR02_80A",
-            "50A": "CR03_50A",
-            "40A": "CR04_40A",
-            "20A": "CR05_20A",
-            "10A": "CR06_10A",
-            "1A": "CR07_1A",
-            "100mA": "CR08_100mA",
-            "10mA": "CR09_10mA",
-            "1mA": "CR10_1mA",
-            "100uA": "CR11_100uA",
-            "10uA": "CR12_10uA",
-            "1uA": "CR13_1uA",
-            "100nA": "CR14_100nA",
-            "10nA": "CR15_10nA",
-            "1nA": "CR16_1nA",
-            "100pA": "CR17_100pA",
-            "10pA": "CR18_10pA",
-            "1pA": "CR19_1pA",
+            "1000 A": "CR00_1000A",
+            "100 A": "CR01_100A",
+            "80 A": "CR02_80A",
+            "50 A": "CR03_50A",
+            "40 A": "CR04_40A",
+            "20 A": "CR05_20A",
+            "10 A": "CR06_10A",
+            "1 A": "CR07_1A",
+            "100 mA": "CR08_100mA",
+            "10 mA": "CR09_10mA",
+            "1 mA": "CR10_1mA",
+            "100 uA": "CR11_100uA",
+            "10 uA": "CR12_10uA",
+            "1 uA": "CR13_1uA",
+            "100 nA": "CR14_100nA",
+            "10 nA": "CR15_10nA",
+            "1 nA": "CR16_1nA",
+            "100 pA": "CR17_100pA",
+            "10 pA": "CR18_10pA",
+            "1 pA": "CR19_1pA",
         }
         self.speed: str = ""
         self.speeds = {
@@ -152,6 +152,7 @@ class Device(EmptyDevice):
             "Range": list(self.measurement_ranges),
             "Trigger": ["Internal"],
             "Average": list(range(1, 17)),  # maximum of 16 cycles
+            "speed": "High Speeeeed",
         }
 
     def find_ports(self) -> list[str]:
@@ -161,7 +162,10 @@ class Device(EmptyDevice):
             hardware_setup_files = ini_data["hardware_setup_files"].replace("\n", "").split(",")
         except KeyError:
             hardware_setup_files = []
-            debug("No Autolab HardwareSetup files found in .ini file.")
+            debug(
+                "No Autolab HardwareSetup files found in .ini file. Ensure the LCRmeter_Metrohm-AutolabPGSTAT.ini file "
+                "is set up correctly.",
+            )
 
         return hardware_setup_files
 
@@ -191,7 +195,7 @@ class Device(EmptyDevice):
         self.autolab.set_HardwareSetupFile(self.hardware_setup_file)
 
         print("Connecting to Autolab...")
-        # TODO: handle error if Nova is still running or not connected
+        # TODO: handle error if Nova is still running or not connected to the device
         self.autolab.Connect()
         print("Connected to Autolab.")
 
@@ -217,6 +221,8 @@ class Device(EmptyDevice):
 
         # General Measurement Parameters
         self.Fra.WaveType = self.Fra.WaveType.Sine
+
+        # If needed, this parameter could be added to the GUI
         self.Fra.MinimumIntegrationTime = 0.125
 
         self.Fra.MinimumIntegrationCycles = self.number_of_cycles
@@ -274,7 +280,7 @@ class Device(EmptyDevice):
             debug("No adk_path found in ini file.")
 
         if Path(adk_path).exists() is False:
-            msg = "Invalid adk_path. Please check the path in the ini file."
+            msg = "Invalid adk_path. Ensure the LCRmeter_Metrohm-AutolabPGSTAT.ini file is set up correctly."
             raise Exception(msg)
 
     def set_frequency(self, frequency: float) -> None:

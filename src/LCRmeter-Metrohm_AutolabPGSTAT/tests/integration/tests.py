@@ -1,10 +1,10 @@
-import pytest
 import pysweepme
+import pytest
 
-
-driver_name = "LCRmeter-Metrohm_AutolabPGTSTAT"
+driver_name = "LCRmeter-Metrohm_AutolabPGSTAT"
 driver_path = r"/src/LCRmeter-Metrohm_AutolabPGSTAT"
-port_string = "COM5"
+port_string = r"C:\Program Files\Metrohm Autolab\Autolab SDK 2.1\Hardware Setup Files\PGSTAT302N\HardwareSetup.FRA2V10.xml"
+adk_path = r"C:\Program Files\Metrohm Autolab\Autolab SDK 2.1\Hardware Setup Files\Adk.x"
 
 
 def test_init_device() -> None:
@@ -17,21 +17,14 @@ def test_init_device() -> None:
 def setup_device() -> pysweepme.Device:
     """Set up the device for testing."""
     device = pysweepme.get_driver(driver_name, driver_path, port_string)
+    device.adk_path = adk_path
+    device.hardware_setup_file = port_string
+
     yield device
+
     del device
 
 
 def test_connect(device: pysweepme.Device) -> None:
     """Test the connection to the device."""
     device.connect()
-
-
-def test_load_sdk():
-    autolab_sdk_path = r"C:\Program Files\Metrohm Autolab\Autolab SDK 2.1\EcoChemie.Autolab.Sdk.dll"
-    clr.AddReference(autolab_sdk_path)
-
-    import EcoChemie.Autolab.Sdk as AutolabSDK
-
-    global Instrument
-    from EcoChemie.Autolab.Sdk import Instrument
-
