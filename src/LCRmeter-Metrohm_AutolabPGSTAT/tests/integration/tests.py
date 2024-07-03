@@ -3,7 +3,7 @@ import pysweepme
 
 
 driver_name = "LCRmeter-Metrohm_AutolabPGTSTAT"
-driver_path = r"C:\Code\instrument-drivers\src\LCRmeter-Metrohm_AutolabPGTSTAT"
+driver_path = r"/src/LCRmeter-Metrohm_AutolabPGSTAT"
 port_string = "COM5"
 
 
