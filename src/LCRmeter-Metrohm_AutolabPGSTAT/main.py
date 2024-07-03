@@ -39,37 +39,25 @@ import clr
 from pysweepme import debug
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
-autolab_sdk_path = r"C:\Program Files\Metrohm Autolab\Autolab SDK 2.1\EcoChemie.Autolab.Sdk.dll"
-extension_path = r"C:\Program Files\Metrohm Autolab\Autolab SDK 2.1\EcoChemie.Autolab.SDK.Extensions.dll"
-
-import_failed = False
-try:
-    clr.AddReference(autolab_sdk_path)
-    clr.AddReference(extension_path)
-    from EcoChemie.Autolab.Sdk import Instrument
-    from EcoChemie.Autolab.SDK.Extensions import InstrumentExtensions
-
-except:
-    # TODO: Handle import error
-    import_failed = True
-
 
 class Device(EmptyDevice):
-    """Driver class for the Metrohm Autolab PGSTAT used as LCRmeter."""
+    """Driver for the Metrohm Autolab PGSTAT used as LCRmeter."""
 
     description = r"""
     <h3>Metrohm Autolab PGSTAT</h3>
     <p>This driver controls Metrohm Autolab Potentiostats.</p>
     <h4>Setup</h4>
+    <p>Install the Autolab SDK 2.1.</p>
     <ul>
-    <li>Install the Autolab SDK 2.1.</li>
-    <li>Copy the LCRmeter_Metrohm-AutolabPGSTAT.ini file to public documents/SweepMe!/CustomFiles. In this file:
+    <li>Download the SDK from the <a href="https://www.metrohm.com/en/service/software-center/autolab-sdk.html">Metrohm Homepage</a>. </li>
+    <li>Install to the standard path: C:\Program Files\Metrohm Autolab\Autolab SDK 2.1</li>
+    <li>As of July 2024, the SDK Version 2.1.7 might not work with older Autolab devices. Contact us at contact@sweep-me.net for help.</li>
+    </ul>
+    <p>Copy the LCRmeter_Metrohm-AutolabPGSTAT.ini file to public documents/SweepMe!/CustomFiles. This can be done in Tools -&gt; Modules&amp;Devices -&gt; right-click on version number -&gt; copy configuration file to public folder. In this file:</p>
     <ul>
     <li>Set the path to your .Adk Setup File.</li>
     <li>Set the path to the Hardware Setup files for each device.</li>
     <li>These files are typically saved at C:\Program Files\Metrohm Autolab\Autolab SDK 2.1.\Hardware Setup Files</li>
-    </ul>
-    </li>
     </ul>
     <h4>General Tips</h4>
     <ul>
@@ -90,10 +78,12 @@ class Device(EmptyDevice):
 
         # Device Parameter
         self.autolab = None
-        self.adx_path = ""
+        self.adk_path = ""
         self.hardware_setup_file = ""
-        self.Fra: Instrument.Fra = None
-        self.Ei: Instrument.Ei = None
+
+        if self.load_nova_sdk():
+            self.Fra: Instrument.Fra = None
+            self.Ei: Instrument.Ei = None
 
         # Sweep Parameter
         self.sweepmode = None
@@ -162,16 +152,13 @@ class Device(EmptyDevice):
             hardware_setup_files = ini_data["hardware_setup_files"].replace("\n", "").split(",")
         except KeyError:
             hardware_setup_files = []
-            debug(
-                "No Autolab HardwareSetup files found in .ini file. Ensure the LCRmeter_Metrohm-AutolabPGSTAT.ini file "
-                "is set up correctly.",
-            )
+            debug("Autolab: No HardwareSetup files found in .ini file. Ensure the .ini file is set up correctly.")
 
         return hardware_setup_files
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Update parameter from SweepMe! GUI."""
-        self.get_adx_path()  # set self.adx_path
+        self.adk_path = self.get_adk_path()
         self.hardware_setup_file = parameter["Port"]
 
         self.sweepmode = parameter["SweepMode"]
@@ -186,12 +173,12 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Connect to the Metrohm Autolab LCRmeter."""
-        if import_failed:
-            msg = "Could not import required libraries."
+        if not self.load_nova_sdk():
+            msg = "Autolab: Could not import Nova SDK. Ensure the Nova SDK is installed and the .ini file is set up correctly."
             raise ImportError(msg)
 
         self.autolab = Instrument()
-        self.autolab.AutolabConnection.EmbeddedExeFileToStart = self.adx_path
+        self.autolab.AutolabConnection.EmbeddedExeFileToStart = self.adk_path
         self.autolab.set_HardwareSetupFile(self.hardware_setup_file)
 
         print("Connecting to Autolab...")
@@ -205,12 +192,6 @@ class Device(EmptyDevice):
     def disconnect(self) -> None:
         """Disconnect from the Metrohm Autolab LCRmeter."""
         self.autolab.Disconnect()
-
-    def initialize(self) -> None:
-        """Initialize the Metrohm Autolab LCRmeter."""
-
-    def deinitialize(self) -> None:
-        """Reset device and close connection."""
 
     def configure(self) -> None:
         """Set bias and measurement parameters with start values from GUI."""
@@ -252,11 +233,11 @@ class Device(EmptyDevice):
             self.handle_set_value(self.stepmode, step_value)
 
     def measure(self) -> None:
-        """Retrieve Impedance results from device."""
-        # Run the measurement
+        """Run the measurement."""
         self.Fra.Start()
 
-        # Retrieve measured values
+    def request_result(self) -> None:
+        """Retrieve the measured values from the device."""
         self.resistance, self.reactance = self.measure_resistance_reactance()
 
         # Currently, the set values are returned
@@ -270,18 +251,49 @@ class Device(EmptyDevice):
 
     """ here wrapped functions start """
 
-    def get_adx_path(self) -> None:
-        """Read the ini file and set the adx path."""
+    def load_nova_sdk(self) -> bool:
+        """Get the path to the Nova SDK from the .ini file and load the required libraries."""
+        try:
+            ini_data = self.get_configoptions("Autolab HardwareSetup")
+            sdk_path = ini_data["sdk_path"]
+        except KeyError:
+            debug("Autolab: No sdk_path found in ini file. Ensure the .ini file is set up correctly.")
+            return False
+
+        if Path(sdk_path).exists() is False:
+            debug("Autolab: Invalid sdk_path. Ensure the Nova SDK is installed and the .ini file is set up correctly.")
+            return False
+
+        autolab_sdk_path = sdk_path + r"\EcoChemie.Autolab.Sdk.dll"
+        extension_path = sdk_path + r"\EcoChemie.Autolab.SDK.Extensions.dll"
+
+        try:
+            clr.AddReference(autolab_sdk_path)
+            clr.AddReference(extension_path)
+
+        except:
+            # TODO: Handle import error
+            debug(
+                "Autolab: Cannot import libraries. Ensure the Nova SDK is installed and the .ini file is set up correctly.",
+            )
+            return False
+
+        return True
+
+    def get_adk_path(self) -> str:
+        """Read the ini file and set the adk path."""
         try:
             ini_data = self.get_configoptions("Autolab HardwareSetup")
             adk_path = ini_data["adk_path"]
         except KeyError:
-            adk_path = ""
-            debug("No adk_path found in ini file.")
+            debug("Autolab: No adk_path found in ini file.")
+            return ""
 
         if Path(adk_path).exists() is False:
-            msg = "Invalid adk_path. Ensure the LCRmeter_Metrohm-AutolabPGSTAT.ini file is set up correctly."
+            msg = "Autolab: Invalid adk_path. Ensure the .ini file is set up correctly."
             raise Exception(msg)
+
+        return adk_path
 
     def set_frequency(self, frequency: float) -> None:
         """Set the frequency in Hz."""
