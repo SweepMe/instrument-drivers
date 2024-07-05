@@ -26,9 +26,9 @@
 # SOFTWARE.
 
 
-# SweepMe! device class
-# Type: SMU
-# Device: Agilent 29xx
+# SweepMe! driver
+# * Module: SMU
+# * Instrument: Keysight/Agilent B2900 series
 
 
 from __future__ import annotations
@@ -67,25 +67,30 @@ class Device(EmptyDevice):
 
     def set_GUIparameter(self):
 
-        GUIparameter = {
+        gui_parameter = {
             "SweepMode": ["Voltage in V", "Current in A"],
             "Channel": ["CH1", "CH2"],
             "4wire": False,
             # "RouteOut": ["Front", "Rear"],
-            "Speed": ["Very Fast: 0.01NPLC", "Fast: 0.1NPLC", "Medium: 1NPLC", "Slow: 10NPLC"],
+
             # NPLCs included to transparently allow for user based measurement time estimations
+            "Speed": ["Very fast: 0.01NPLC", "Fast: 0.1NPLC", "Medium: 1NPLC", "Slow: 10NPLC"],
+
             "Compliance": 100e-6,
             "CheckPulse": False,
-            # "PulseMeasStart_in_s": 750e-6, #for use on the B2902B, defined as the delay for measurement start after pulse release;variable not yet implemented
+            # for use on the B2902B, defined as the delay for measurement start after pulse release;
+            # variable not yet implemented
+            # "PulseMeasStart_in_s": 750e-6,
             "PulseOnTime": 1e-3,  # for use on the B2902B, defined as the pulse width time
             "PulseDelay": 0,  # for use on the B2902B, defined as the delay time prior to pulse
             "PulseOffLevel": 0.0,  # bias voltage during pulse-off
             # "Average": 1, # not yet supported
         }
 
-        return GUIparameter
+        return gui_parameter
 
     def get_GUIparameter(self, parameter={}):
+
         self.four_wire = parameter['4wire']
         # self.route_out = parameter['RouteOut']
         self.source = parameter['SweepMode']
@@ -101,27 +106,43 @@ class Device(EmptyDevice):
         # if self.average > 100:
         #     self.average = 100
 
-        self.device = parameter['Device']
-        self.channel = str(parameter['Channel'])[-1]
+        self.device = parameter["Device"]
+        self.channel = str(parameter["Channel"])[-1]
 
-        self.pulse = parameter['CheckPulse']  # check in GUI is pulse option has been selected
-        # self.pulse_meas_time_in_s = parameter['PulseMeasStart_in_s'] #for use on the B2902B, defined as the delay for measurement start after pulse release; variable not yet implemented
-        self.ton = float(
-            round(float(parameter["PulseOnTime"]), 6))  # for use on the B2902B, defined as the pulse width time
-        self.toff = float(parameter["PulseDelay"])  # for use on the B2902B, defined as the delay time prior to pulse
-        self.pulseofflevel = parameter['PulseOffLevel']  # bias voltage during pulse-off
-        self.acqdelay = str("{:.4E}".format(
-            self.toff + 750e-6))  # pulse delay is part of trigger acquire delay; this equation makes sure than the minimum acquire delay of 750us is extended by the amount of pulse delay requested by the user via the GUI
-        print(self.acqdelay)
+        # check in GUI to select pulse option
+        self.pulse = parameter["CheckPulse"]
+
+        # for use on the B2902B, defined as the delay for measurement start after pulse release;
+        # variable not yet implemented
+        # self.pulse_meas_time_in_s = parameter["PulseMeasStart_in_s"]
+
+        # for use on the B2902B, defined as the pulse width time
+        self.ton = float(round(float(parameter["PulseOnTime"]), 6))
+
+        # for use on the B2902B, defined as the delay time prior to pulse
+        self.toff = float(parameter["PulseDelay"])
+
+        # bias voltage during pulse-off
+        self.pulseofflevel = parameter["PulseOffLevel"]
+
+        # pulse delay is part of trigger acquire delay; this equation makes sure than the minimum acquire delay of
+        # 750us is extended by the amount of pulse delay requested by the user via the GUI
+        self.acqdelay = str("{:.4E}".format(self.toff + 750e-6))
 
     def initialize(self):
         # once at the beginning of the measurement
 
-        # if float(self.pulse_meas_time_in_s) < 750e-6: #variable not yet implemented
-        #    raise Exception("High voltage pulses can take as much as 750us to ramp up, measurement might start too early.\nPlease increase pulse measurement (start-)time or modify driver source code after validating your usecase with an Oscillopscope.")
+        # if float(self.pulse_meas_time_in_s) < 750e-6:  #variable not yet implemented
+        #     msg = ("High voltage pulses can take as much as 750us to ramp up, measurement might start too early.\n"
+        #           "Please increase pulse measurement (start-)time or modify driver source code after validating your "
+        #           "usecase with an oscilloscope.")
+        #     raise Exception(msg)
+
         if float(self.ton) < 1e-3:
-            raise Exception(
-                "Measurement at 0.01 NPLC requires at least 200us@50Hz PLC, pulse measurement start time is set to 750us minimum.\nThrefore, shortest pulse width is restricted to 1ms to ensure proper measurement at long ramp-up times of high current and voltage values.")
+            msg = ("Measurement at 0.01 NPLC requires at least 200us@50Hz PLC, pulse measurement start time is set to "
+                   "750us minimum.\nTherefore, shortest pulse width is restricted to 1ms to ensure proper measurement "
+                   "at long ramp-up times of high current and voltage values.")
+            raise Exception(msg)
 
         self.port.write("*RST")
 
@@ -145,7 +166,6 @@ class Device(EmptyDevice):
             self.port.write(":SOUR%s:CURR:RANG:AUTO ON" % self.channel)
             # Autorange for current output
 
-
         elif self.source.startswith("Current"):
             self.port.write(":SOUR%s:FUNC:MODE CURR" % self.channel)
             # sourcemode = Voltage
@@ -160,7 +180,7 @@ class Device(EmptyDevice):
             self.port.write(":SOUR%s:VOLT:RANG:AUTO ON" % self.channel)
             # Autorange for voltage output
 
-        if self.speed.startswith("Very Fast"):  # newly impplemented to allow for measurements during fast pulses
+        if self.speed.startswith("Very fast"):  # newly implemented to allow for measurements during fast pulses
             self.nplc = "0.01"
         elif self.speed.startswith("Fast"):
             self.nplc = "0.1"
@@ -202,13 +222,16 @@ class Device(EmptyDevice):
             self.port.write(
                 ":SENS%s:WAIT ON" % self.channel)  # enables wait time for start of measurement defined by delay
             self.port.write(":TRIG%s:TRAN:DEL MIN" % self.channel)  # trigger delay hardcoded to 0s
-            self.port.write(":TRIG%s:ACQ:DEL %s" % (self.channel,
-                                                    self.acqdelay))  # delay of measurement after pulse release is triggered; takes care of ramp-up
+
+            # delay of measurement after pulse release is triggered; takes care of ramp-up
+            self.port.write(":TRIG%s:ACQ:DEL %s" % (self.channel, self.acqdelay))
+
             self.port.write(":TRIG%s:ALL:COUN 1" % self.channel)  # sets trigger count, 1 for single pulse
             self.port.write(":TRIG%s:LXI:LAN:DIS:ALL" % self.channel)  # disable LXI triggering
             self.port.write(":TRIG%s:ALL:SOUR AINT" % self.channel)  # enable internal trigger
-            self.port.write(
-                ":TRIG%s:ALL:TIM MIN" % self.channel)  # set trigger daly to minimum; not to be mixed up with pulse delay
+
+            # set trigger daly to minimum; not to be mixed up with pulse delay
+            self.port.write(":TRIG%s:ALL:TIM MIN" % self.channel)
             self.port.write(":FORM:ELEM:SENS VOLT,CURR,TIME,STAT,SOUR")  # defining the measurement out sizes
             self.port.write(":SYST:TIME:TIM:COUN:RES:AUTO ON")  # activates a counter timer reset
         else:
@@ -238,92 +261,135 @@ class Device(EmptyDevice):
             if self.source.startswith("Voltage"):
 
                 if self.value > 200:
-                    raise Exception("Voltage exceeding 200 V maximum pulse capability of device")
+                    msg = "Voltage exceeding 200 V maximum pulse capability of device"
+                    raise Exception(msg)
+
                 if self.value < -200:
-                    raise Exception("Voltage exceeding -200 V maximum pulse capability of device")
+                    msg = "Voltage exceeding -200 V maximum pulse capability of device"
+                    raise Exception(msg)
 
                 if float(self.protection) > 10.5:
-                    raise Exception("Compliance above maximum pulse limit of 3.03 A")
+                    msg = "Compliance above maximum pulse limit of 3.03 A"
+                    raise Exception(msg)
+
                 if float(self.protection) < -10.5:
-                    raise Exception("Compliance below maximum pulse limit of -3.03 A")
+                    msg = "Compliance below maximum pulse limit of -3.03 A"
+                    raise Exception(msg)
 
                 if float(self.protection) > 1.515 and self.value > 6:
-                    raise Exception("Compliance above maximum limit of 1.515 A for voltages pulses above 6 V")
+                    msg = "Compliance above maximum limit of 1.515 A for voltages pulses above 6 V"
+                    raise Exception(msg)
+
                 if float(self.protection) < -1.515 and self.value < -6:
-                    raise Exception("Compliance below maximum limit of -1.515 A for voltages pulses below -6 V")
+                    msg = "Compliance below maximum limit of -1.515 A for voltages pulses below -6 V"
+                    raise Exception(msg)
 
             if self.source.startswith("Current"):
 
                 if self.value > 10.5:
-                    raise Exception("Compliance above maximum pulse limit of 3.03 A")
+                    msg = "Compliance above maximum pulse limit of 3.03 A"
+                    raise Exception(msg)
+
                 if self.value < -10.5:
-                    raise Exception("Compliance below maximum pulse limit of -3.03 A")
+                    msg = "Compliance below maximum pulse limit of -3.03 A"
+                    raise Exception(msg)
 
                 if float(self.protection) > 200:
-                    raise Exception("Voltage exceeding 200 V maximum pulse capability of device")
+                    msg = "Voltage exceeding 200 V maximum pulse capability of device"
+                    raise Exception(msg)
+
                 if float(self.protection) < -200:
-                    raise Exception("Voltage exceeding -200 V maximum pulse capability of device")
+                    msg = "Voltage exceeding -200 V maximum pulse capability of device"
+                    raise Exception(msg)
 
                 if float(self.protection) > 6 and self.value > 1.515:
-                    raise Exception("Compliance above maximum limit of 6 V for pulse currents above 1.515 A")
+                    msg = "Compliance above maximum limit of 6 V for pulse currents above 1.515 A"
+                    raise Exception(msg)
+
                 if float(self.protection) < -6 and self.value < -1.515:
-                    raise Exception("Compliance below maximum limit of -6 V for pulse currents below -1.515 A")
+                    msg = "Compliance below maximum limit of -6 V for pulse currents below -1.515 A"
+                    raise Exception(msg)
 
         else:
             if self.source.startswith("Voltage"):
 
                 if self.value > 210:
-                    raise Exception("Voltage exceeding 210 V maximum capability of device")
+                    msg = "Voltage exceeding 210 V maximum capability of device"
+                    raise Exception(msg)
+
                 if self.value < -210:
-                    raise Exception("Voltage exceeding -210 V maximum capability of device")
+                    msg = "Voltage exceeding -210 V maximum capability of device"
+                    raise Exception(msg)
 
                 if float(self.protection) > 3.03:
-                    raise Exception("Compliance above maximum limit of 3.03 A")
+                    msg = "Compliance above maximum limit of 3.03 A"
+                    raise Exception(msg)
+
                 if float(self.protection) < -3.03:
-                    raise Exception("Compliance below maximum limit of -3.03 A")
+                    msg = "Compliance below maximum limit of -3.03 A"
+                    raise Exception(msg)
 
                 if float(self.protection) > 1.515 and self.value > 6:
-                    raise Exception("Compliance above maximum limit of 1.515 A for voltages above 6 V")
+                    msg = "Compliance above maximum limit of 1.515 A for voltages above 6 V"
+                    raise Exception(msg)
+
                 if float(self.protection) < -1.515 and self.value < -6:
-                    raise Exception("Compliance below maximum limit of -1.515 A for voltages below -6 V")
+                    msg = "Compliance below maximum limit of -1.515 A for voltages below -6 V"
+                    raise Exception(msg)
 
                 if float(self.protection) > 0.105 and self.value > 21:
-                    raise Exception("Compliance above maximum limit of 0.105 A for voltages above 21 V")
+                    msg = "Compliance above maximum limit of 0.105 A for voltages above 21 V"
+                    raise Exception(msg)
+
                 if float(self.protection) < -0.105 and self.value < -21:
-                    raise Exception("Compliance below maximum limit of -0.105 A for voltages below -21 V")
+                    msg = "Compliance below maximum limit of -0.105 A for voltages below -21 V"
+                    raise Exception(msg)
 
             if self.source.startswith("Current"):
 
                 if self.value > 3.03:
-                    raise Exception("Voltage exceeding 3.03 A maximum capability of device")
+                    msg = "Voltage exceeding 3.03 A maximum capability of device"
+                    raise Exception(msg)
+
                 if self.value < -3.03:
-                    raise Exception("Voltage exceeding -3.03 A maximum capability of device")
+                    msg = "Voltage exceeding -3.03 A maximum capability of device"
+                    raise Exception(msg)
 
                 if float(self.protection) > 210:
-                    raise Exception("Compliance above maximum limit of 210 V")
+                    msg = "Compliance above maximum limit of 210 V"
+                    raise Exception(msg)
+
                 if float(self.protection) < -210:
-                    raise Exception("Compliance below maximum limit of -210 V")
+                    msg = "Compliance below maximum limit of -210 V"
+                    raise Exception(msg)
 
                 if float(self.protection) > 21 and self.value > 0.105:
-                    raise Exception("Compliance above maximum limit of 21 V for currents above 0.105 A")
+                    msg = "Compliance above maximum limit of 21 V for currents above 0.105 A"
+                    raise Exception(msg)
+
                 if float(self.protection) < -21 and self.value < -0.105:
-                    raise Exception("Compliance below maximum limit of -21 V for currents below -0.105 A")
+                    msg = "Compliance below maximum limit of -21 V for currents below -0.105 A"
+                    raise Exception(msg)
 
                 if float(self.protection) > 6 and self.value > 1.515:
-                    raise Exception("Compliance above maximum limit of 6 V for currents above 1.515 A")
+                    msg = "Compliance above maximum limit of 6 V for currents above 1.515 A"
+                    raise Exception(msg)
+
                 if float(self.protection) < -6 and self.value < -1.515:
-                    raise Exception("Compliance below maximum limit of -6 V for currents above -1.515 A")
+                    msg = "Compliance below maximum limit of -6 V for currents above -1.515 A"
+                    raise Exception(msg)
 
         value = str("{:.4E}".format(self.value))  # makes sure that self.value fits into SCPI command in terms of length
         if self.pulse:
-            self.port.write(":SOUR%s:%s %s" % (
-            self.channel, self.commands[self.source], self.pulseofflevel))  # get channel ready at specified values
-            self.port.write(
-                ":SOUR%s:%s:TRIG %s" % (self.channel, self.commands[self.source], value))  # arming the pulse trigger
-            self.port.write(":INIT (@%s)" % self.channel)  # releasing the pulse trigger
+            # get channel ready at specified values
+            self.port.write(":SOUR%s:%s %s" % (self.channel, self.commands[self.source], self.pulseofflevel))
+            # arming the pulse trigger
+            self.port.write(":SOUR%s:%s:TRIG %s" % (self.channel, self.commands[self.source], value))
+            # releasing the pulse trigger
+            self.port.write(":INIT (@%s)" % self.channel)
         else:
-            self.port.write(
-                ":SOUR%s:%s %s" % (self.channel, self.commands[self.source], value))  # set output to specified values
+            # set output to specified values
+            self.port.write(":SOUR%s:%s %s" % (self.channel, self.commands[self.source], value))
 
     def call(self):
 
