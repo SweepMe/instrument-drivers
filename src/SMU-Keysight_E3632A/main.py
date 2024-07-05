@@ -25,9 +25,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# SweepMe! device class
-# Type: SMU
-# Device: Agilent E3632A
+# SweepMe! driver
+# * Module: SMU
+# * Instrument: Agilent/Keysight E3632A
 
 import time  # needed for waiting until PSU has set the requested voltage
 
