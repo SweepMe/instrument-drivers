@@ -260,8 +260,8 @@ class Device(EmptyDevice):
             if self.use_jump_mode:
 
                 # we only move to movement height if x, y, or r change
-                # in case of a z scan, we do not need to go back to movement height
-                if self._last_xyzr[0, 2] != (x, y) or self._last_xyzr[3] != r:
+                # in case of a z scan, we do not need to go back to movement height                
+                if self._last_xyzr[0:2] != (x, y) or self._last_xyzr[3] != r:
 
                     # vertical move to movement height
                     self.move_linear(self._last_xyzr[0], self._last_xyzr[1], self.movement_height, self._last_xyzr[3])
@@ -326,7 +326,7 @@ class Device(EmptyDevice):
         
     def get_pose(self):
         answer = self.api_dashboard.GetPose()  # added function
-        x,y,z,r = self.get_response_data(answer)[0:4]
+        x,y,z,r = tuple(map(float, self.get_response_data(answer)[0:4]))
         return x,y,z,r
       
     def get_position(self):
