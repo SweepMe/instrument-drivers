@@ -110,6 +110,9 @@ class Device(EmptyDevice):
             round(float(parameter["PulseOnTime"]), 6))  # for use on the B2902B, defined as the pulse width time
         self.toff = float(parameter["PulseDelay"])  # for use on the B2902B, defined as the delay time prior to pulse
         self.pulseofflevel = parameter['PulseOffLevel']  # bias voltage during pulse-off
+        self.acqdelay = str("{:.4E}".format(
+            self.toff + 750e-6))  # pulse delay is part of trigger acquire delay; this equation makes sure than the minimum acquire delay of 750us is extended by the amount of pulse delay requested by the user via the GUI
+        print(self.acqdelay)
 
     def initialize(self):
         # once at the beginning of the measurement
@@ -199,8 +202,8 @@ class Device(EmptyDevice):
             self.port.write(
                 ":SENS%s:WAIT ON" % self.channel)  # enables wait time for start of measurement defined by delay
             self.port.write(":TRIG%s:TRAN:DEL MIN" % self.channel)  # trigger delay hardcoded to 0s
-            self.port.write(
-                ":TRIG%s:ACQ:DEL 750e-6" % self.channel)  # delay of measurement after pulse release is triggered; takes care of ramp-up
+            self.port.write(":TRIG%s:ACQ:DEL %s" % (self.channel,
+                                                    self.acqdelay))  # delay of measurement after pulse release is triggered; takes care of ramp-up
             self.port.write(":TRIG%s:ALL:COUN 1" % self.channel)  # sets trigger count, 1 for single pulse
             self.port.write(":TRIG%s:LXI:LAN:DIS:ALL" % self.channel)  # disable LXI triggering
             self.port.write(":TRIG%s:ALL:SOUR AINT" % self.channel)  # enable internal trigger
