@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2022-2023 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -61,20 +61,17 @@ class Device(EmptyDevice):
         self.port_types = ["COM", "GPIB"]
 
         self.port_properties = {"timeout": 1,
-                                # "delay": 0.05,
-                                # "Exception": False,
                                 }
-
-    #       self.commands = {
-    #                      "Voltage in V" : "VOLT",
-    #                      "Current in A" : "CURR",
-    #                      }
 
     def set_GUIparameter(self):
 
         gui_parameter = {
             "SweepMode": ["Voltage in V"],
-            # "Channel": [1], NOT NEEDED with E3632A as it is a single channel instrument but will be used for other E36xxA instruments later.
+
+            # NOT NEEDED with E3632A as it is a single channel instrument
+            # but will be used for other E36xxA instruments later.
+            # "Channel": [1],
+
             "RouteOut": ["Front"],
             "Compliance": 1,
             "RangeVoltage": ["15 V / 7 A", "30 V / 4 A"],
@@ -87,51 +84,59 @@ class Device(EmptyDevice):
         self.source = parameter["SweepMode"]
         self.route_out = parameter["RouteOut"]
         self.currentlimit = parameter["Compliance"]
-        # self.channel = int(parameter["Channel"]) #NOT NEEDED with E3632A as it is a single channel instrument but will be used for other E36xxA instruments later.
-        self.voltage_range = parameter["RangeVoltage"]
 
-    def connect(self):
-        pass  # No LAN port on E3632A
-        # if self.port_string.startswith("TCPIP"):
-        #    if self.port_string.endswith("SOCKET"):
-        #        self.port.port.write_termination = '\n'
-        #        self.port.port.read_termination = '\n'
+        # NOT NEEDED with E3632A as it is a single channel instrument
+        # but will be used for other E36xxA instruments later.
+        # self.channel = int(parameter["Channel"])
+
+        self.voltage_range = parameter["RangeVoltage"]
 
     def initialize(self):
         self.port.write("*IDN?")
         identifier = self.port.read()
-        print("Identifier:", identifier)  # can be used to check the instrument
+        # print("Identifier:", identifier)  # can be used to check the instrument
+
         self.port.write("*RST")
 
+        self.display_off()
+
     def configure(self):
+
         # self.port.write("VOLT:PROT:STAT OFF") # output voltage protection disabled
         # self.port.write("CURR:PROT:STAT OFF") # output current protection disabled
-        self.port.write(
-            "VOLT:PROT:LEV 32")  # hardcoded overvoltage protection limit, causes switch-off of channel; set to PSU protection default value
-        self.port.write(
-            "CURR:PROT:LEV 7.5")  # hardcoded overcurrent protection limit, causes switch-off of channel; set to PSU protection default value
+
+        # hardcoded overvoltage protection limit, causes switch-off of channel; set to PSU protection default value
+        self.port.write("VOLT:PROT:LEV 32")
+
+        # hardcoded overcurrent protection limit, causes switch-off of channel; set to PSU protection default value
+        self.port.write("CURR:PROT:LEV 7.5")
 
         if self.voltage_range.startswith("30 V"):
             if float(self.currentlimit) > 4.12:
-                raise Exception("Lower compliance limit to max 4.12A")
+                msg = "Lower compliance limit to max 4.12A"
+                raise Exception(msg)
             self.port.write("CURR:LEV:IMM %1.4f" % float(self.currentlimit))
             self.port.write("SOUR:VOLT:RANG P30V")
         elif self.voltage_range.startswith("15 V"):
             if float(self.currentlimit) > 7.21:
-                raise Exception("Lower compliance limit to max 7.21A")
+                msg = "Lower compliance limit to max 7.21A"
+                raise Exception(msg)
             self.port.write("CURR:LEV:IMM %1.4f" % float(self.currentlimit))
             self.port.write("SOUR:VOLT:RANG P15V")
         else:
-            raise Exception("The input voltage range is not valid.")
+            msg = "The input voltage range is not valid."
+            raise Exception(msg)
 
         self.port.write("SOUR:VOLT MIN")
 
     def unconfigure(self):
         self.port.write("SOUR:VOLT MIN")
-        # self.port.write("SYST:LOC") #On the E3632A, ONLY ALLOWED WITH RS232
+
+        # if self.port_string.startswith("COM"):
+        #     self.port.write("SYST:LOC")  # On the E3632A, ONLY ALLOWED WITH RS232
 
     def deinitialize(self):
-        pass
+        self.display_on()
 
     def poweron(self):
         self.port.write("OUTP:STAT ON")
@@ -141,8 +146,9 @@ class Device(EmptyDevice):
 
     def apply(self):
         if self.value > 15.45 and float(self.currentlimit) > 4.12:
-            raise Exception(
-                "The next requested step would exceed 15.45 V with current limit higher than 4.12 A.\n\nPlease either stop at 15.45 V max or lower current compliance limit to 4.12 A max.")
+            msg = ("The next requested step would exceed 15.45 V with current limit higher than 4.12 A.\n\n"
+                   "Please either stop at 15.45 V max or lower current compliance limit to 4.12 A max.")
+            raise Exception(msg)
         else:
             self.port.write("VOLT:LEV:IMM %1.4f" % float(self.value))
 
@@ -151,7 +157,6 @@ class Device(EmptyDevice):
         self.v = float(self.port.read())
         self.port.write("MEAS:CURR?")
         self.i = float(self.port.read())
-        # print(self.v, self.i)
 
     def call(self):
         return [self.v, self.i]
