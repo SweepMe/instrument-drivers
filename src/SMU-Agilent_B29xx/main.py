@@ -117,10 +117,10 @@ class Device(EmptyDevice):
         # self.pulse_meas_time_in_s = parameter["PulseMeasStart_in_s"]
 
         # for use on the B2902B, defined as the pulse width time
-        self.ton = float(round(float(parameter["PulseOnTime"]), 6))
+        self.ton = round(float(parameter["PulseOnTime"]), 6)  # minimum step width of 1µs
 
         # for use on the B2902B, defined as the delay time prior to pulse
-        self.toff = float(parameter["PulseDelay"])
+        self.toff = round(float(parameter["PulseDelay"]), 6)  # minimum step width of 1µs
 
         # bias voltage during pulse-off
         self.pulseofflevel = parameter["PulseOffLevel"]
@@ -257,6 +257,8 @@ class Device(EmptyDevice):
 
     def apply(self):
 
+        # Please note that voltage and current limits are different for DC and pulse operation.
+
         if self.pulse:
             if self.source.startswith("Voltage"):
 
@@ -269,11 +271,11 @@ class Device(EmptyDevice):
                     raise Exception(msg)
 
                 if float(self.protection) > 10.5:
-                    msg = "Compliance above maximum pulse limit of 3.03 A"
+                    msg = "Compliance above maximum pulse limit of 10.5 A"
                     raise Exception(msg)
 
                 if float(self.protection) < -10.5:
-                    msg = "Compliance below maximum pulse limit of -3.03 A"
+                    msg = "Compliance below maximum pulse limit of -10.5 A"
                     raise Exception(msg)
 
                 if float(self.protection) > 1.515 and self.value > 6:
@@ -287,11 +289,11 @@ class Device(EmptyDevice):
             if self.source.startswith("Current"):
 
                 if self.value > 10.5:
-                    msg = "Compliance above maximum pulse limit of 3.03 A"
+                    msg = "Compliance above maximum pulse limit of 10.5 A"
                     raise Exception(msg)
 
                 if self.value < -10.5:
-                    msg = "Compliance below maximum pulse limit of -3.03 A"
+                    msg = "Compliance below maximum pulse limit of -10.5 A"
                     raise Exception(msg)
 
                 if float(self.protection) > 200:
