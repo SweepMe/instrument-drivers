@@ -130,6 +130,8 @@ class Device(EmptyDevice):
         self.measured_frequency: float = 0.0
         self.measured_dc_bias: float = 0.0
 
+        self.is_connected = None
+
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set initial GUI parameter in SweepMe!."""
         return {
@@ -174,7 +176,8 @@ class Device(EmptyDevice):
     def connect(self) -> None:
         """Connect to the Metrohm Autolab LCRmeter."""
         if not self.load_nova_sdk():
-            msg = "Autolab: Could not import Nova SDK. Ensure the Nova SDK is installed and the .ini file is set up correctly."
+            msg = ("Autolab: Could not import Nova SDK. "
+                   "Ensure the Nova SDK is installed and the .ini file is set up correctly.")
             raise ImportError(msg)
 
         self.autolab = Instrument()
@@ -186,12 +189,16 @@ class Device(EmptyDevice):
         self.autolab.Connect()
         print("Connected to Autolab.")
 
+        self.is_connected = True
+
         self.Fra = self.autolab.Fra
         self.Ei = self.autolab.Ei
 
     def disconnect(self) -> None:
         """Disconnect from the Metrohm Autolab LCRmeter."""
-        self.autolab.Disconnect()
+
+        if self.is_connected:
+            self.autolab.Disconnect()
 
     def configure(self) -> None:
         """Set bias and measurement parameters with start values from GUI."""
@@ -271,10 +278,16 @@ class Device(EmptyDevice):
             clr.AddReference(autolab_sdk_path)
             clr.AddReference(extension_path)
 
+            global Instrument
+            global InstrumentExtensions
+            from EcoChemie.Autolab.Sdk import Instrument
+            from EcoChemie.Autolab.SDK.Extensions import InstrumentExtensions
+
         except:
             # TODO: Handle import error
             debug(
-                "Autolab: Cannot import libraries. Ensure the Nova SDK is installed and the .ini file is set up correctly.",
+                "Autolab: Cannot import libraries. "
+                "Ensure the Nova SDK is installed and the .ini file is set up correctly.",
             )
             return False
 
