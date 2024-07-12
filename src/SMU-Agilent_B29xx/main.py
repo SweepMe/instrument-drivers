@@ -26,9 +26,9 @@
 # SOFTWARE.
 
 
-# SweepMe! device class
-# Type: SMU
-# Device: Agilent 29xx
+# SweepMe! driver
+# * Module: SMU
+# * Instrument: Keysight/Agilent B2900 series
 
 
 from __future__ import annotations
@@ -63,21 +63,34 @@ class Device(EmptyDevice):
             "Current in A": "CURR",
         }
 
+        self.pulse_mode = True  # enables pulsed signal option in GUI
+
     def set_GUIparameter(self):
 
-        GUIparameter = {
+        gui_parameter = {
             "SweepMode": ["Voltage in V", "Current in A"],
             "Channel": ["CH1", "CH2"],
             "4wire": False,
             # "RouteOut": ["Front", "Rear"],
-            "Speed": ["Fast", "Medium", "Slow"],
+
+            # NPLCs included to transparently allow for user based measurement time estimations
+            "Speed": ["Very fast: 0.01NPLC", "Fast: 0.1NPLC", "Medium: 1NPLC", "Slow: 10NPLC"],
+
             "Compliance": 100e-6,
+            "CheckPulse": False,
+            # for use on the B2902B, defined as the delay for measurement start after pulse release;
+            # variable not yet implemented
+            # "PulseMeasStart_in_s": 750e-6,
+            "PulseOnTime": 1e-3,  # for use on the B2902B, defined as the pulse width time
+            "PulseDelay": 0,  # for use on the B2902B, defined as the delay time prior to pulse
+            "PulseOffLevel": 0.0,  # bias voltage during pulse-off
             # "Average": 1, # not yet supported
         }
 
-        return GUIparameter
+        return gui_parameter
 
     def get_GUIparameter(self, parameter={}):
+
         self.four_wire = parameter['4wire']
         # self.route_out = parameter['RouteOut']
         self.source = parameter['SweepMode']
@@ -93,11 +106,44 @@ class Device(EmptyDevice):
         # if self.average > 100:
         #     self.average = 100
 
-        self.device = parameter['Device']
-        self.channel = str(parameter['Channel'])[-1]
+        self.device = parameter["Device"]
+        self.channel = str(parameter["Channel"])[-1]
+
+        # check in GUI to select pulse option
+        self.pulse = parameter["CheckPulse"]
+
+        # for use on the B2902B, defined as the delay for measurement start after pulse release;
+        # variable not yet implemented
+        # self.pulse_meas_time_in_s = parameter["PulseMeasStart_in_s"]
+
+        # for use on the B2902B, defined as the pulse width time
+        self.ton = round(float(parameter["PulseOnTime"]), 6)  # minimum step width of 1µs
+
+        # for use on the B2902B, defined as the delay time prior to pulse
+        self.toff = round(float(parameter["PulseDelay"]), 6)  # minimum step width of 1µs
+
+        # bias voltage during pulse-off
+        self.pulseofflevel = parameter["PulseOffLevel"]
+
+        # pulse delay is part of trigger acquire delay; this equation makes sure than the minimum acquire delay of
+        # 750us is extended by the amount of pulse delay requested by the user via the GUI
+        self.acqdelay = str("{:.4E}".format(self.toff + 750e-6))
 
     def initialize(self):
         # once at the beginning of the measurement
+
+        # if float(self.pulse_meas_time_in_s) < 750e-6:  #variable not yet implemented
+        #     msg = ("High voltage pulses can take as much as 750us to ramp up, measurement might start too early.\n"
+        #           "Please increase pulse measurement (start-)time or modify driver source code after validating your "
+        #           "usecase with an oscilloscope.")
+        #     raise Exception(msg)
+
+        if float(self.ton) < 1e-3:
+            msg = ("Measurement at 0.01 NPLC requires at least 200us@50Hz PLC, pulse measurement start time is set to "
+                   "750us minimum.\nTherefore, shortest pulse width is restricted to 1ms to ensure proper measurement "
+                   "at long ramp-up times of high current and voltage values.")
+            raise Exception(msg)
+
         self.port.write("*RST")
 
         self.port.write("SYST:BEEP:STAT OFF")  # control-Beep off
@@ -118,6 +164,10 @@ class Device(EmptyDevice):
             self.port.write(":SENS%s:CURR:RANG:AUTO ON" % self.channel)
             # Autorange for current measurement
 
+            # It is unclear why sourcing must be defined for Current when Voltage is sourced but there seems to be other
+            # software solutions that make use of this handling and so far it does not have any negative effect.
+            self.port.write(":SOUR%s:CURR:RANG:AUTO ON" % self.channel)
+            # Autorange for current output
 
         elif self.source.startswith("Current"):
             self.port.write(":SOUR%s:FUNC:MODE CURR" % self.channel)
@@ -131,11 +181,18 @@ class Device(EmptyDevice):
             self.port.write(":SENS%s:VOLT:RANG:AUTO ON" % self.channel)
             # Autorange for voltage measurement
 
-        if self.speed == "Fast":
+            # It is unclear why sourcing must be defined for Voltage when Current is sourced but there seems to be other
+            # software solutions that make use of this handling and so far it does not have any negative effect.
+            self.port.write(":SOUR%s:VOLT:RANG:AUTO ON" % self.channel)
+            # Autorange for voltage output
+
+        if self.speed.startswith("Very fast"):  # newly implemented to allow for measurements during fast pulses
+            self.nplc = "0.01"
+        elif self.speed.startswith("Fast"):
             self.nplc = "0.1"
-        elif self.speed == "Medium":
+        elif self.speed.startswith("Medium"):
             self.nplc = "1.0"
-        elif self.speed == "Slow":
+        elif self.speed.startswith("Slow"):
             self.nplc = "10.0"
 
         self.port.write(":SENS%s:CURR:NPLC %s" % (self.channel, self.nplc))
@@ -161,10 +218,32 @@ class Device(EmptyDevice):
             self.port.write(":SENSe:AVER:COUN 1")  
         """
 
-        # These lines remain here in case somebody needs them in future, e.g. to test something
+        if self.pulse:
+            self.port.write(":FUNC PULS")  # switch to pulse output instead of "DC"
+            self.port.write(":PULS:WIDT %s" % self.ton)  # pulse width time
+            self.port.write(":PULS:DEL %s" % self.toff)  # delay prior to pulse
+            self.port.write(
+                ":SOUR%s:FUNC:TRIG:CONT OFF" % self.channel)  # switch off continuous operation of internal trigger
+            self.port.write(":SOUR%s:WAIT ON" % self.channel)  # enables to wait for any change of amplitude past pulse
+            self.port.write(
+                ":SENS%s:WAIT ON" % self.channel)  # enables wait time for start of measurement defined by delay
+            self.port.write(":TRIG%s:TRAN:DEL MIN" % self.channel)  # trigger delay hardcoded to 0s
 
-        # self.port.write(":OUTP:LOW GRO") # LowGround
-        # self.port.write(":OUTP:HCAP ON") # High capacity On
+            # delay of measurement after pulse release is triggered; takes care of ramp-up
+            self.port.write(":TRIG%s:ACQ:DEL %s" % (self.channel, self.acqdelay))
+
+            self.port.write(":TRIG%s:ALL:COUN 1" % self.channel)  # sets trigger count, 1 for single pulse
+            self.port.write(":TRIG%s:LXI:LAN:DIS:ALL" % self.channel)  # disable LXI triggering
+            self.port.write(":TRIG%s:ALL:SOUR AINT" % self.channel)  # enable internal trigger
+
+            # set trigger daly to minimum; not to be mixed up with pulse delay
+            self.port.write(":TRIG%s:ALL:TIM MIN" % self.channel)
+            self.port.write(":FORM:ELEM:SENS VOLT,CURR,TIME,STAT,SOUR")  # defining the measurement out sizes
+            self.port.write(":SYST:TIME:TIM:COUN:RES:AUTO ON")  # activates a counter timer reset
+        else:
+            self.port.write(":FUNC DC")  # std DC output
+
+        self.port.write(":OUTP%s:LOW GRO" % self.channel)  # FLOating or GROunded GND terminal
 
     def deinitialize(self):
         if self.four_wire:
@@ -184,10 +263,149 @@ class Device(EmptyDevice):
 
     def apply(self):
 
-        self.port.write(":SOUR%s:%s %s" % (self.channel, self.commands[self.source], self.value))  # set source
+        # Please note that voltage and current limits are different for DC and pulse operation.
+
+        if self.pulse:
+            if self.source.startswith("Voltage"):
+
+                if self.value > 200:
+                    msg = "Voltage exceeding 200 V maximum pulse capability of device"
+                    raise Exception(msg)
+
+                if self.value < -200:
+                    msg = "Voltage exceeding -200 V maximum pulse capability of device"
+                    raise Exception(msg)
+
+                if float(self.protection) > 10.5:
+                    msg = "Compliance above maximum pulse limit of 10.5 A"
+                    raise Exception(msg)
+
+                if float(self.protection) < -10.5:
+                    msg = "Compliance below maximum pulse limit of -10.5 A"
+                    raise Exception(msg)
+
+                if float(self.protection) > 1.515 and self.value > 6:
+                    msg = "Compliance above maximum limit of 1.515 A for voltages pulses above 6 V"
+                    raise Exception(msg)
+
+                if float(self.protection) < -1.515 and self.value < -6:
+                    msg = "Compliance below maximum limit of -1.515 A for voltages pulses below -6 V"
+                    raise Exception(msg)
+
+            if self.source.startswith("Current"):
+
+                if self.value > 10.5:
+                    msg = "Compliance above maximum pulse limit of 10.5 A"
+                    raise Exception(msg)
+
+                if self.value < -10.5:
+                    msg = "Compliance below maximum pulse limit of -10.5 A"
+                    raise Exception(msg)
+
+                if float(self.protection) > 200:
+                    msg = "Voltage exceeding 200 V maximum pulse capability of device"
+                    raise Exception(msg)
+
+                if float(self.protection) < -200:
+                    msg = "Voltage exceeding -200 V maximum pulse capability of device"
+                    raise Exception(msg)
+
+                if float(self.protection) > 6 and self.value > 1.515:
+                    msg = "Compliance above maximum limit of 6 V for pulse currents above 1.515 A"
+                    raise Exception(msg)
+
+                if float(self.protection) < -6 and self.value < -1.515:
+                    msg = "Compliance below maximum limit of -6 V for pulse currents below -1.515 A"
+                    raise Exception(msg)
+
+        else:
+            if self.source.startswith("Voltage"):
+
+                if self.value > 210:
+                    msg = "Voltage exceeding 210 V maximum capability of device"
+                    raise Exception(msg)
+
+                if self.value < -210:
+                    msg = "Voltage exceeding -210 V maximum capability of device"
+                    raise Exception(msg)
+
+                if float(self.protection) > 3.03:
+                    msg = "Compliance above maximum limit of 3.03 A"
+                    raise Exception(msg)
+
+                if float(self.protection) < -3.03:
+                    msg = "Compliance below maximum limit of -3.03 A"
+                    raise Exception(msg)
+
+                if float(self.protection) > 1.515 and self.value > 6:
+                    msg = "Compliance above maximum limit of 1.515 A for voltages above 6 V"
+                    raise Exception(msg)
+
+                if float(self.protection) < -1.515 and self.value < -6:
+                    msg = "Compliance below maximum limit of -1.515 A for voltages below -6 V"
+                    raise Exception(msg)
+
+                if float(self.protection) > 0.105 and self.value > 21:
+                    msg = "Compliance above maximum limit of 0.105 A for voltages above 21 V"
+                    raise Exception(msg)
+
+                if float(self.protection) < -0.105 and self.value < -21:
+                    msg = "Compliance below maximum limit of -0.105 A for voltages below -21 V"
+                    raise Exception(msg)
+
+            if self.source.startswith("Current"):
+
+                if self.value > 3.03:
+                    msg = "Voltage exceeding 3.03 A maximum capability of device"
+                    raise Exception(msg)
+
+                if self.value < -3.03:
+                    msg = "Voltage exceeding -3.03 A maximum capability of device"
+                    raise Exception(msg)
+
+                if float(self.protection) > 210:
+                    msg = "Compliance above maximum limit of 210 V"
+                    raise Exception(msg)
+
+                if float(self.protection) < -210:
+                    msg = "Compliance below maximum limit of -210 V"
+                    raise Exception(msg)
+
+                if float(self.protection) > 21 and self.value > 0.105:
+                    msg = "Compliance above maximum limit of 21 V for currents above 0.105 A"
+                    raise Exception(msg)
+
+                if float(self.protection) < -21 and self.value < -0.105:
+                    msg = "Compliance below maximum limit of -21 V for currents below -0.105 A"
+                    raise Exception(msg)
+
+                if float(self.protection) > 6 and self.value > 1.515:
+                    msg = "Compliance above maximum limit of 6 V for currents above 1.515 A"
+                    raise Exception(msg)
+
+                if float(self.protection) < -6 and self.value < -1.515:
+                    msg = "Compliance below maximum limit of -6 V for currents above -1.515 A"
+                    raise Exception(msg)
+
+        value = str("{:.4E}".format(self.value))  # makes sure that self.value fits into SCPI command in terms of length
+        if self.pulse:
+            # get channel ready at specified values
+            self.port.write(":SOUR%s:%s %s" % (self.channel, self.commands[self.source], self.pulseofflevel))
+            # arming the pulse trigger
+            self.port.write(":SOUR%s:%s:TRIG %s" % (self.channel, self.commands[self.source], value))
+            # releasing the pulse trigger
+            self.port.write(":INIT (@%s)" % self.channel)
+        else:
+            # set output to specified values
+            self.port.write(":SOUR%s:%s %s" % (self.channel, self.commands[self.source], value))
 
     def call(self):
-        self.port.write(":MEAS? (@%s)" % self.channel)
+
+        if self.pulse:
+            self.port.write(
+                ":FETC:ARR? (@%s)" % self.channel)  # get measured values taken during pulse release out of the memory
+        else:
+            self.port.write(":MEAS? (@%s)" % self.channel)  # taking a measurement during constant DC output
 
         answer = self.port.read()
 
