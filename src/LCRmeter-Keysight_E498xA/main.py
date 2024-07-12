@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2019 Axel Fischer (sweep-me.net)
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,13 +25,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# SweepMe! device class
-# Type: LCRmeter
-# Device: Keysight LCRmeter E498xA
+# SweepMe! driver
+# * Module: LCRmeter
+# * Instrument: Keysight LCRmeter E498xA
 
-from collections import OrderedDict
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
-from EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
 
@@ -41,63 +40,64 @@ class Device(EmptyDevice):
         
         self.shortname = "E489xA"
         
-        self.plottype  = [True, True, True, True] # True to plot data
-        self.savetype  = [True, True, True, True] # True to save data
+        self.plottype = [True, True, True, True]  # True to plot data
+        self.savetype = [True, True, True, True]  # True to save data
         
         self.port_manager = True
-        self.port_types = ["USB", "GPIB"]
-        self.port_properties = {"timeout":10}
+        self.port_types = ["USB", "GPIB", "TCPIP"]
+        self.port_properties = {
+            "timeout": 10,
+        }
         
-        self.operating_modes = OrderedDict([
-                                            ("R-X", "RX"),
-                                            ("Cp-D", "CPD"),
-                                            ("Cp-Gp", "CPG"),
-                                            ("Cs-Rs", "CSRS"),
-                                            ])
-        
+        self.operating_modes = {
+            "R-X": "RX",
+            "Cp-D": "CPD",
+            "Cp-Gp": "CPG",
+            "Cs-Rs": "CSRS",
+        }
+
         self.commands_to_restore = [
-        
-                                    "FUNC:IMP",                 # Operating mode
-                                    "FUNC:IMP:RANG:AUTO",       # Auto range on/off
-                                    "DISP:LINE",                # Display line
-                                    # "VOLT",                     # Oscillator strength
-                                    # "CURR",                     # current oscillator
-                                    # "BIAS:VOLT",                # bias level
-                                    "APER",                     # average
-                                    "FREQ",                     # Frequency
-                                    "AMPL:ALC",                 # Automatic level control
-                                    "CORR:LENG",                # Correction length
-                                    "FUNC:IMP:RANG",            # Range value -> must be last and 
-                                    ]
+            "FUNC:IMP",                 # Operating mode
+            "FUNC:IMP:RANG:AUTO",       # Auto range on/off
+            "DISP:LINE",                # Display line
+            # "VOLT",                     # Oscillator strength
+            # "CURR",                     # current oscillator
+            # "BIAS:VOLT",                # bias level
+            "APER",                     # average
+            "FREQ",                     # Frequency
+            "AMPL:ALC",                 # Automatic level control
+            "CORR:LENG",                # Correction length
+            "FUNC:IMP:RANG",            # Range value -> must be last and
+        ]
         
     def set_GUIparameter(self):
         
-        GUIparameter = {
-                        "Average": ["1", "2", "4", "8", "16", "32", "64"],
-                        
-                        "SweepMode": ["None", "Frequency in Hz", "Voltage bias in V", "Current bias in A", "Voltage RMS in V"],
-                        "StepMode": ["None", "Frequency in Hz", "Voltage bias in V", "Current bias in A", "Voltage RMS in V"],
-                        
-                        "ValueTypeRMS": ["Voltage RMS in V:", "Current RMS in A:"],
-                        "ValueRMS": 0.02,
-                        
-                        "ValueTypeBias": ["Voltage bias in V:", "Current bias in A:"],
-                        "ValueBias": 0.0,
-                        
-                        "Frequency": 1000.0,
-                        
-                        "OperatingMode": list(self.operating_modes.keys()),
-                        
-                        "ALC": ["On", "Off"],
-                        "Integration": ["Short", "Medium", "Long"], 
+        gui_parameter = {
+            "Average": ["1", "2", "4", "8", "16", "32", "64"],
 
-                        "Trigger": ["Software", "Internal", "External"],
-                        }
-                        
-        
-        return GUIparameter
+            "SweepMode": ["None", "Frequency in Hz", "Voltage bias in V", "Current bias in A", "Voltage RMS in V"],
+            "StepMode": ["None", "Frequency in Hz", "Voltage bias in V", "Current bias in A", "Voltage RMS in V"],
+
+            "ValueTypeRMS": ["Voltage RMS in V:", "Current RMS in A:"],
+            "ValueRMS": 0.02,
+
+            "ValueTypeBias": ["Voltage bias in V:", "Current bias in A:"],
+            "ValueBias": 0.0,
+
+            "Frequency": 1000.0,
+
+            "OperatingMode": list(self.operating_modes.keys()),
+
+            "ALC": ["Off", "On"],
+            "Integration": ["Short", "Medium", "Long"],
+
+            "Trigger": ["Software", "Internal", "External"],
+        }
+
+        return gui_parameter
                                  
-    def get_GUIparameter(self, parameter = {}):
+    def get_GUIparameter(self, parameter={}):
+
         self.sweepmode = parameter['SweepMode']
         self.stepmode = parameter['StepMode']
         
@@ -111,8 +111,7 @@ class Device(EmptyDevice):
         self.integration = parameter['Integration']
         self.average = int(parameter['Average'])
         self.frequency = float(parameter['Frequency'])
-        
-        
+
         self.OperatingMode = parameter['OperatingMode']
         
         if self.sweepmode.startswith("Voltage"):
@@ -152,34 +151,32 @@ class Device(EmptyDevice):
             self.variables = ["Cs", "Rs", "Frequency", self.bias_modes_variables[self.bias_mode]]
             self.units     = ["F", "Ohm", "Hz", self.bias_modes_units[self.bias_mode]]
 
-        
         self.trigger_type = parameter["Trigger"]
 
     def initialize(self):
     
-        ## store the users device setting       
+        # store the users device setting
         self.vals_to_restore = {}
         for cmd in self.commands_to_restore:
             self.port.write(cmd + "?")
             answer = self.port.read()
-            # print(cmd, answer)
             self.vals_to_restore[cmd] = answer
     
-        # no reset anymore as the device starts with an osciallator amplitude of 1V which can influence sensitive devices.
-        # self.port.write("*RST") # reset configuration
+        # no reset anymore as the device starts with an oscillator amplitude of 1V which
+        # can influence sensitive devices.
+        # self.port.write("*RST")  # reset configuration
         
-        self.port.write("*CLS") # clear memory
+        self.port.write("*CLS")  # clear memory
         
     def deinitialize(self):
-        pass
-    
-        ## restore the users device setting
+
+        # restore the users device setting
         for cmd in self.commands_to_restore:
             self.port.write(cmd + " " + self.vals_to_restore[cmd])
         
     def configure(self):
         
-        # integration and average
+        # Integration and average
         if self.integration == "Short":
             self.integration_string = "SHOR"
         if self.integration == "Medium":
@@ -188,36 +185,35 @@ class Device(EmptyDevice):
             self.integration_string = "LONG"
             
         self.port.write("APER %s,%i" % (self.integration_string, self.average))
-        
-        # Auto range
-        self.port.write("FUNC:IMP:RANG:AUTO ON") # auto range
-        
+
         # No Cable correction
-        self.port.write("CORR:LENG %iM" % 0) # cable correction set to 0m
+        self.port.write("CORR:LENG %iM" % 0)  # cable correction set to 0m
         
-        #ALC
+        # ALC
         if self.ALC == "On":
             self.port.write("AMPL:ALC ON")
         elif self.ALC == "Off": 
             self.port.write("AMPL:ALC OFF")
             
-        # measures real (R) and imaginary (X) part of the impedance    
-        self.port.write("FUNC:IMP %s" % self.operating_modes[self.OperatingMode]) 
-        
-        # standard frequency
+        # Measures real (R) and imaginary (X) part of the impedance
+        self.port.write("FUNC:IMP %s" % self.operating_modes[self.OperatingMode])
+
+        # Auto range
+        self.port.write("FUNC:IMP:RANG:AUTO ON")
+
+        # Standard frequency
         self.port.write("FREQ %1.5eHZ" % self.frequency)
         
-        # bias
+        # Standard bias
         self.port.write("BIAS:%s %1.3e" % (self.bias_mode, self.ValueBias))
 
-        # oscillator signal
+        # Oscillator signal
         if self.ValueTypeRMS.startswith("Voltage RMS"):
             self.port.write("VOLT %s MV" % (self.ValueRMS*1000.0))
         elif self.ValueTypeRMS.startswith("Current RMS"):
             self.port.write("CURR %s MA" % (self.ValueRMS*1000.0))
 
-
-        # trigger
+        # Trigger
         if self.trigger_type == "Software":
             self.port.write("TRIG:SOUR BUS")
         elif self.trigger_type == "Internal":
@@ -225,31 +221,33 @@ class Device(EmptyDevice):
         elif self.trigger_type == "External":
             self.port.write("TRIG:SOUR EXT")
         else:
-            self.port.write("TRIG:SOUR INT") #default will be internal trigger, i.e. continuous trigger
+            self.port.write("TRIG:SOUR INT")  # default will be internal trigger, i.e. continuous trigger
             
-        #Automatically wait for trigger
+        # Automatically wait for trigger
         self.port.write("INIT:CONT ON")
         
-        ## other option would be:  self.port.write("INIT:CONT OFF") # in this case one has to use self.port.write("INIT:IMM") before every triger to set the device into 'wait-for-trigger' state
-
+        # other option would be: self.port.write("INIT:CONT OFF")
+        # in this case one has to use self.port.write("INIT:IMM") before every trigger
+        # to set the device into 'wait-for-trigger' state
 
     def unconfigure(self):
     
-        self.port.write("ABOR") # abort any running command
+        self.port.write("ABOR")  # abort any running command
     
         self.port.write("BIAS:VOLT 0V")
-        self.port.write("AMPL:ALC OFF")
-        self.port.write("FREQ 1000HZ")
+        self.port.write("AMPL:ALC OFF")  # TODO: it is overwritten by the user setting in deinitialize
+        # self.port.write("FREQ 1000HZ")
         self.port.write("VOLT 20 MV") 
-        self.port.write("FUNC:IMP CPD") 
-        
-        # Don't ask me why, but asking any value makes sure that the commands above are correctly set or shown on the display
-        self.port.write("*IDN?")
-        self.port.read()
-        
-    def deinitialize(self):
-        self.port.write("TRIG:SOUR INT")
+        # self.port.write("FUNC:IMP CPD")
 
+        self.port.write("TRIG:SOUR INT")
+        self.port.write("INIT:CONT ON")
+        
+        # Don't ask me why, but asking any value makes sure that the commands above are correctly set
+        # or shown on the display
+        # self.port.write("*IDN?")
+        # self.port.read()
+        
     def poweron(self):
         self.port.write("BIAS:STAT 1")
         
@@ -319,14 +317,14 @@ class Device(EmptyDevice):
     
         # trigger
         if self.trigger_type == "Software":
+            # only in case of Software trigger as it will be otherwise created internally or externally
             self.port.write("TRIG:IMM")
-        else:
-            pass # no trigger as it will be created internally or externally
             
-        ### use the next two lines to check whether the last operation is completed, *OPC? returns 1 whenever the last operation is completed and otherwise stop the further procedure.
-        ### actually needed if the trigger is set to TRIG:SOUR INT, otherwise there will be missing data
+        # use the next two lines to check whether the last operation is completed,
+        # *OPC? returns 1 whenever the last operation is completed and otherwise stop the further procedure.
+        # actually needed if the trigger is set to TRIG:SOUR INT, otherwise there will be missing data
         self.port.write("*OPC?")
-        self.port.read() # reading out the answer of the previous *OPC?
+        self.port.read()  # reading out the answer of the previous *OPC?
                        
     def request_result(self):
         
@@ -338,12 +336,7 @@ class Device(EmptyDevice):
 
         self.R, self.X = map(float, answer[0].split(',')[0:2])
         self.F = float(answer[1])
-        self.Bias = float(answer[2])
-        
+        self.bias = float(answer[2])
        
     def call(self):     
-        return [self.R, self.X, self.F, self.Bias]
-        
-    def finish(self):
-        pass
-        
+        return [self.R, self.X, self.F, self.bias]
