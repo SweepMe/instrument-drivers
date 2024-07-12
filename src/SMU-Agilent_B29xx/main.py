@@ -163,6 +163,9 @@ class Device(EmptyDevice):
             # Protection with Imax
             self.port.write(":SENS%s:CURR:RANG:AUTO ON" % self.channel)
             # Autorange for current measurement
+
+            # It is unclear why sourcing must be defined for Current when Voltage is sourced but there seems to be other
+            # software solutions that make use of this handling and so far it does not have any negative effect.
             self.port.write(":SOUR%s:CURR:RANG:AUTO ON" % self.channel)
             # Autorange for current output
 
@@ -177,6 +180,9 @@ class Device(EmptyDevice):
             # Protection with Imax
             self.port.write(":SENS%s:VOLT:RANG:AUTO ON" % self.channel)
             # Autorange for voltage measurement
+
+            # It is unclear why sourcing must be defined for Voltage when Current is sourced but there seems to be other
+            # software solutions that make use of this handling and so far it does not have any negative effect.
             self.port.write(":SOUR%s:VOLT:RANG:AUTO ON" % self.channel)
             # Autorange for voltage output
 
