@@ -321,3 +321,67 @@ class Device(EmptyDevice):
         """Set the frequency of the device in Hz."""
         self.port.write(f"FREQ {value:1.5e}HZ")
 
+    """ List Sweep Functions """
+#         max 201 points
+# sweep frequency, signal level, dc bias, dc source
+# sweep mode
+# sweep parameter selection FREQ, VOLT, CURR A, BIAS V, BIAS A, DC SRC V
+# SEQ mode to run all at once, step mode is the thing sweepme already does
+
+    def set_list_mode(self) -> None:
+        """Set the list mode to sequence, where one trigger makes all sweep point measurements.
+
+        The alternative is step mode, where one trigger makes one sweep point measurement. This is not needed, as
+        the SweepMe! step mode already implements this without needing the list mode.
+        """
+        self.port.write("LIST:MODE SEQ")
+        # Clear the time stamp
+        self.port.write("LIST:SEQ:TST:CLE")
+
+    def list_sweep_bias_current(self, values: list) -> None:
+        """Create a list sweep for bias current in A."""
+        value_string = self.create_value_string(values)
+        self.port.write(f"LIST:BIAS:CURR {value_string}A")
+
+    def list_sweep_bias_voltage(self, values: list) -> None:
+        """Create a list sweep for bias voltage in V."""
+        value_string = self.create_value_string(values)
+        self.port.write(f"LIST:BIAS:VOLT {value_string}V")
+
+    def list_sweep_current(self, values: list) -> None:
+        """Create a list sweep for current."""
+        value_string = self.create_value_string(values)
+        self.port.write(f"LIST:CURR {value_string}")
+
+    def list_sweep_frequency(self, values: list) -> None:
+        """Create a list sweep for frequency in Hz."""
+        value_string = self.create_value_string(values)
+        self.port.write(f"LIST:FREQ {value_string}")
+
+    def list_sweep_dc_source(self, values: list) -> None:
+        """Create a list sweep for DC source."""
+        value_string = self.create_value_string(values)
+        self.port.write(f"LIST:DCS:VOLT {value_string}")
+
+    def list_sweep_ac_voltage(self, values: list) -> None:
+        """Create a list sweep for AC voltage."""
+        value_string = self.create_value_string(values)
+        self.port.write(f"LIST:VOLT {value_string}")
+
+    @staticmethod
+    def create_value_string(values: list) -> str:
+        """Create a string of values."""
+        maximum_number_of_values = 201
+        if len(values) > maximum_number_of_values:
+            msg = f"The list sweep can only have a maximum of {maximum_number_of_values} values."
+            raise ValueError(msg)
+
+        return ",".join([f"{value:1.5e}" for value in values])
+
+    def get_list_timestamps(self) -> list:
+        """Get the timestamps of the list sweep."""
+        # TODO: Might need to define return type and size
+        self.port.write("LIST:SEQ:TST:DATA?")
+        return self.port.read().split(",")
+
+
