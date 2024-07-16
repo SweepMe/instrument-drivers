@@ -144,7 +144,6 @@ class Device(EmptyDevice):
             "Range": list(self.measurement_ranges),
             "Trigger": ["Internal"],
             "Average": list(range(1, 17)),  # maximum of 16 cycles
-            "speed": "High Speeeeed",
         }
 
     def find_ports(self) -> list[str]:
@@ -184,11 +183,8 @@ class Device(EmptyDevice):
         self.autolab.AutolabConnection.EmbeddedExeFileToStart = self.adk_path
         self.autolab.set_HardwareSetupFile(self.hardware_setup_file)
 
-        print("Connecting to Autolab...")
         # TODO: handle error if Nova is still running or not connected to the device
         self.autolab.Connect()
-        print("Connected to Autolab.")
-
         self.is_connected = True
 
         self.Fra = self.autolab.Fra
@@ -196,7 +192,6 @@ class Device(EmptyDevice):
 
     def disconnect(self) -> None:
         """Disconnect from the Metrohm Autolab LCRmeter."""
-
         if self.is_connected:
             self.autolab.Disconnect()
 
