@@ -16,4 +16,4 @@ jobs:
     - name: Check Semilinear History
       shell: pwsh
       run: |
-        .\.github\Check-SemilinearHistory.ps1 -targetBranch ${{ github.base_ref }} -sourceBranch ${{ github.head_ref }}
+        .\.github\Check-SemilinearHistory.ps1 -targetBranch ${{ github.base_ref }} -commitSource ${{ github.event.pull_request.head.sha }}
