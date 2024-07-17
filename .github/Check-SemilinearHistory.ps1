@@ -2,15 +2,14 @@ Param(
     [Parameter(Mandatory)]
     [string]$targetBranch,
     [Parameter(Mandatory)]
-    [string]$sourceBranch
+    [string]$commitSource
 )
 
 $ErrorActionPreference = 'Stop'
 
 git fetch origin $targetBranch
 $commitTarget = git rev-parse "origin/$targetBranch"
-git fetch origin $sourceBranch
-$commitSource = git rev-parse "origin/$sourceBranch"
+git fetch origin $commitSource
 
 # verify that source branch originates from the latest commit of the target branch
 # (i.e. a fast-forward merge could be performed)
