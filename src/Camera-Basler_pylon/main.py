@@ -91,7 +91,7 @@ class Device(EmptyDevice):
             # "GainAuto": ["Off"],  # not needed
             # "ExposureAuto": ["Off"],  # not needed
             "PixelFormat": "",
-            "FileFormat": ["jpeg", "png"],
+            "FileFormat": ["jpeg", "png", "bmp", "tiff", "raw"],
             "Gamma": 1,
             "ExposureTime": 10,
             "Gain": 1,
@@ -216,7 +216,16 @@ class Device(EmptyDevice):
                     img.AttachGrabResultBuffer(grab_result)
 
                     # Save the image data.
-                    img.Save(pylon.ImageFileFormat_Jpeg, self.save_path)
+                    if self.file_format == "jpeg":
+                        img.Save(pylon.ImageFileFormat_Jpeg, self.save_path)
+                    elif self.file_format == "png":
+                        img.Save(pylon.ImageFileFormat_Png, self.save_path)
+                    elif self.file_format == "bmp":
+                        img.Save(pylon.ImageFileFormat_Bmp, self.save_path)
+                    elif self.file_format == "tiff":
+                        img.Save(pylon.ImageFileFormat_Tiff, self.save_path)
+                    elif self.file_format == "raw":
+                        img.Save(pylon.ImageFileFormat_Raw, self.save_path)
                 else:
                     print("Error: ", grab_result.ErrorCode, grab_result.ErrorDescription)
                 grab_result.Release()
