@@ -68,7 +68,13 @@ class Device(EmptyDevice):
             "FUNC:IMP:RANG",  # Range value -> must be last and
         ]
 
+        self.bias_modes_variables = {"VOLT": "Voltage bias", "CURR": "Current bias"}
+        self.bias_modes_units = {"VOLT": "V", "CURR": "A"}
+
+        self.bias_mode: str = "VOLT"
+
     def set_GUIparameter(self) -> dict:
+        """Set standard GUI parameter."""
         return {
             "Average": ["1", "2", "4", "8", "16", "32", "64"],
             "SweepMode": ["None", "Frequency in Hz", "Voltage bias in V", "Current bias in A", "Voltage RMS in V"],
@@ -85,7 +91,8 @@ class Device(EmptyDevice):
         }
 
 
-    def get_GUIparameter(self, parameter={}):
+    def get_GUIparameter(self, parameter: dict) -> None:
+        """Get the user settings."""
         self.sweepmode = parameter["SweepMode"]
         self.stepmode = parameter["StepMode"]
 
@@ -102,6 +109,13 @@ class Device(EmptyDevice):
 
         self.OperatingMode = parameter["OperatingMode"]
 
+        self.handle_bias_mode()
+        self.handle_operating_mode(self.OperatingMode)
+
+        self.trigger_type = parameter["Trigger"]
+
+    def handle_bias_mode(self) -> None:
+        """Choose the bias mode from sweepmode, stepmode, or ValueTypeBias."""
         if self.sweepmode.startswith("Voltage"):
             self.bias_mode = "VOLT"
         elif self.sweepmode.startswith("Current"):
@@ -120,26 +134,23 @@ class Device(EmptyDevice):
         else:
             self.bias_mode = "VOLT"
 
-        self.bias_modes_variables = {"VOLT": "Voltage bias", "CURR": "Current bias"}
-        self.bias_modes_units = {"VOLT": "V", "CURR": "A"}
-
-        if self.OperatingMode == "R-X":
+    def handle_operating_mode(self, mode: str) -> None:
+        """Set the return variables and units for the chosen operating mode."""
+        if mode == "R-X":
             self.variables = ["R", "X", "Frequency", self.bias_modes_variables[self.bias_mode]]
             self.units = ["Ohm", "Ohm", "Hz", self.bias_modes_units[self.bias_mode]]
 
-        elif self.OperatingMode == "Cp-D":
+        elif mode == "Cp-D":
             self.variables = ["Cp", "D", "Frequency", self.bias_modes_variables[self.bias_mode]]
             self.units = ["F", "", "Hz", self.bias_modes_units[self.bias_mode]]
 
-        elif self.OperatingMode == "Cp-Gp":
+        elif mode == "Cp-Gp":
             self.variables = ["Cp", "Gp", "Frequency", self.bias_modes_variables[self.bias_mode]]
             self.units = ["F", "S", "Hz", self.bias_modes_units[self.bias_mode]]
 
-        elif self.OperatingMode == "Cs-Rs":
+        elif mode == "Cs-Rs":
             self.variables = ["Cs", "Rs", "Frequency", self.bias_modes_variables[self.bias_mode]]
             self.units = ["F", "Ohm", "Hz", self.bias_modes_units[self.bias_mode]]
-
-        self.trigger_type = parameter["Trigger"]
 
     def initialize(self) -> None:
         """Initialize the device."""
@@ -163,15 +174,7 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device with the user settings."""
-        # Integration and average
-        if self.integration == "Short":
-            self.integration_string = "SHOR"
-        if self.integration == "Medium":
-            self.integration_string = "MED"
-        if self.integration == "Long":
-            self.integration_string = "LONG"
-
-        self.port.write("APER %s,%i" % (self.integration_string, self.average))
+        self.set_integration(self.integration, self.average)
 
         # No Cable correction
         self.port.write("CORR:LENG %iM" % 0)  # cable correction set to 0m
@@ -301,6 +304,13 @@ class Device(EmptyDevice):
 
     """ Wrapped Functions """
 
+    def set_integration(self, integration: str, average: int) -> None:
+        """Set the integration mode."""
+        integration_dict = {"Short": "SHOR", "Medium": "MED", "Long": "LONG"}
+        integration_string = integration_dict[integration]
+
+        self.port.write("APER %s,%i" % (integration_string, average))
+
     def set_bias_voltage(self, value: float) -> None:
         """Set the bias voltage of the device in V."""
         self.port.write(f"BIAS:VOLT {value:1.5e}V")
@@ -322,11 +332,6 @@ class Device(EmptyDevice):
         self.port.write(f"FREQ {value:1.5e}HZ")
 
     """ List Sweep Functions """
-#         max 201 points
-# sweep frequency, signal level, dc bias, dc source
-# sweep mode
-# sweep parameter selection FREQ, VOLT, CURR A, BIAS V, BIAS A, DC SRC V
-# SEQ mode to run all at once, step mode is the thing sweepme already does
 
     def set_list_mode(self) -> None:
         """Set the list mode to sequence, where one trigger makes all sweep point measurements.
