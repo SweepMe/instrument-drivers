@@ -213,6 +213,9 @@ class Device(EmptyDevice):
         else:
             self.port.write("TRIG:SOUR INT")  # default will be internal trigger, i.e. continuous trigger
 
+        # Set the display page to measurement in case a list sweep was used before
+        self.port.write("DISP:PAGE MEAS")
+
         # Automatically wait for trigger
         self.port.write("INIT:CONT ON")
 
