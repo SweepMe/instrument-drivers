@@ -47,7 +47,7 @@ class Device(EmptyDevice):
         self.port_manager = True
         self.port_types = ["USB", "GPIB", "TCPIP"]
         self.port_properties = {
-            "timeout": 10,
+            "timeout": 20,
         }
 
         # Parameters to restore the users device setting
@@ -108,10 +108,11 @@ class Device(EmptyDevice):
         self.plottype = [True, True, True, True]  # True to plot data
         self.savetype = [True, True, True, True]  # True to save data
 
-        self.value_1: float | list = 0.0
-        self.value_2: float | list = 0.0
-        self.measured_frequency: float | list = 0.0
-        self.bias: float | list = 0.0
+        self.value_1: float | list[float] = 0.0
+        self.value_2: float | list[float] = 0.0
+        self.measured_frequency: float | list[float] = 0.0
+        self.bias: float | list[float] = 0.0
+        self.time_stamps: list[float] = []
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set standard GUI parameter."""
@@ -165,6 +166,9 @@ class Device(EmptyDevice):
         if parameter["SweepValue"] == "List":
             self.use_list_sweep = True
             self.handle_list_sweep_parameter(parameter)
+
+            self.variables.append("Time")
+            self.units.append("s")
 
     def handle_bias_mode(self) -> None:
         """Choose the bias mode from sweepmode, stepmode, or ValueTypeBias."""
@@ -398,21 +402,24 @@ class Device(EmptyDevice):
     def request_result(self) -> None:
         """Request the measured values for R+X (depending on measurement mode), F, and bias."""
         if self.use_list_sweep:
-            self.port.write("FETC?")
+            # Request list sweep data and time stamps
+            self.port.write("FETC?;LIST:SEQ:TST:DATA?")
         else:
+            # Request measured values, frequency, and bias
             self.port.write("FETC?;FREQ?;BIAS:VOLT?")
 
     def read_result(self) -> None:
         """Read the measured values for R+X (depending on measurement mode), F, and bias."""
         if self.use_list_sweep:
             answer = self.port.read().split(",")
-            reshaped_answer = np.array(answer).reshape(-1, 4)
+            reshaped_answer = np.array(answer).reshape(-1, 5)
 
             # TODO: Check this
             self.value_1 = reshaped_answer[:, 0].astype(float).tolist()
             self.value_2 = reshaped_answer[:, 1].astype(float).tolist()
             self.measured_frequency = reshaped_answer[:, 2].astype(float).tolist()
             self.bias = reshaped_answer[:, 3].astype(float).tolist()
+            self.time_stamps = reshaped_answer[:, 4].astype(float).tolist()
 
             # resistance = [float(answer[i]) for i in range(0, len(answer), 4)]
             # reactance = [float(answer[i + 1]) for i in range(1, len(answer), 4)]
@@ -427,7 +434,12 @@ class Device(EmptyDevice):
 
     def call(self) -> list:
         """Return measured values for R+X (depending on measurement mode), F, and bias."""
-        return [self.value_1, self.value_2, self.measured_frequency, self.bias]
+        if self.use_list_sweep:
+            result = [self.value_1, self.value_2, self.measured_frequency, self.bias, self.time_stamps]
+        else:
+            result = [self.value_1, self.value_2, self.measured_frequency, self.bias]
+
+        return result
 
     """ Wrapped Functions """
 
