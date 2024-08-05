@@ -29,6 +29,9 @@
 # * Module: LCRmeter
 # * Instrument: Hewlett Packard LCRmeter 4284A
 
+from __future__ import annotations
+
+import numpy as np
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -89,23 +92,32 @@ class Device(EmptyDevice):
         }
         self.operating_mode: str = "R-X"
 
+        # List Mode
+        self.use_list_sweep: bool = False
+        self.list_sweep_values: np.ndarray = np.array([])
+
+        self.list_sweep_holdtime: float = 0.0
+        self.list_sweep_delaytime: float = 0.0
+
         # Measured values
-        self.variables: list = []
-        self.units: list = []
+        self.variables: list[str] = []
+        self.units: list[str] = []
 
         self.plottype = [True, True, True, True]  # True to plot data
         self.savetype = [True, True, True, True]  # True to save data
 
-        self.value_1: float = 0.0
-        self.value_2: float = 0.0
-        self.measured_frequency: float = 0.0
-        self.bias: float = 0.0
+        self.value_1: float | list[float] = 0.0
+        self.value_2: float | list[float] = 0.0
+        self.measured_frequency: float | list[float] = 0.0
+        self.bias: float | list[float] = 0.0
+        self.time_stamps: list[float] = []
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set standard GUI parameter."""
         return {
             "Average": ["1", "2", "4", "8", "16", "32", "64"],
             "SweepMode": ["None", "Frequency in Hz", "Voltage bias in V", "Current bias in A", "Voltage RMS in V"],
+            "SweepValue": ["List"],
             "StepMode": ["None", "Frequency in Hz", "Voltage bias in V", "Current bias in A", "Voltage RMS in V"],
             "ValueTypeRMS": ["Voltage RMS in V:", "Current RMS in A:"],
             "ValueRMS": 0.02,
@@ -116,6 +128,13 @@ class Device(EmptyDevice):
             "ALC": ["Off", "On"],
             "Integration": ["Short", "Medium", "Long"],
             "Trigger": ["Software", "Internal", "External"],
+            "ListSweepCheck": True,
+            "ListSweepType": ["Sweep", "Custom"],
+            "ListSweepStart": 0.0,
+            "ListSweepEnd": 1.0,
+            "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
+            "ListSweepStepPointsValue": 0.1,
+            "ListSweepDual": False,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -140,6 +159,14 @@ class Device(EmptyDevice):
         self.handle_operating_mode(self.operating_mode)
 
         self.trigger_type = parameter["Trigger"]
+
+        # List Mode
+        if parameter["SweepValue"] == "List":
+            self.use_list_sweep = True
+            self.handle_list_sweep_parameter(parameter)
+
+            self.variables.append("Time")
+            self.units.append("s")
 
     def handle_bias_mode(self) -> None:
         """Choose the bias mode from sweepmode, stepmode, or ValueTypeBias."""
@@ -178,6 +205,45 @@ class Device(EmptyDevice):
         elif mode == "Cs-Rs":
             self.variables = ["Cs", "Rs", "Frequency", self.bias_modes_variables[self.bias_mode]]
             self.units = ["F", "Ohm", "Hz", self.bias_modes_units[self.bias_mode]]
+
+    def handle_list_sweep_parameter(self, parameter: dict) -> None:
+        """Read out the list sweep parameters and create self.list_sweep_values."""
+        list_sweep_type = parameter["ListSweepType"]
+
+        if list_sweep_type == "Sweep":
+            # Create the list sweep values
+            start = float(parameter["ListSweepStart"])
+            end = float(parameter["ListSweepEnd"])
+
+            step_points_type = parameter["ListSweepStepPointsType"]
+            step_points_value = float(parameter["ListSweepStepPointsValue"])
+
+            if step_points_type.startswith("Step width"):
+                list_sweep_values = np.arange(start, end, step_points_value)
+                # include end value
+                self.list_sweep_values = np.append(list_sweep_values, end)
+
+            elif step_points_type.startswith("Points (lin.)"):
+                self.list_sweep_values = np.linspace(start, end, int(step_points_value))
+
+            elif step_points_type.startswith("Points (log.)"):
+                self.list_sweep_values = np.logspace(np.log10(start), np.log10(end), int(step_points_value))
+
+            else:
+                msg = f"Unknown step points type: {step_points_type}"
+                raise ValueError(msg)
+
+        elif list_sweep_type == "Custom":
+            custom_values = parameter["ListSweepCustomValues"]
+            self.list_sweep_values = [float(value) for value in custom_values.split(",")]
+
+        else:
+            msg = f"Unknown list sweep type: {list_sweep_type}"
+            raise ValueError(msg)
+
+        # Add the returning values in reverse order to the list
+        if parameter["ListSweepDual"]:
+            self.list_sweep_values = np.append(self.list_sweep_values, self.list_sweep_values[::-1])
 
     def initialize(self) -> None:
         """Initialize the device."""
@@ -246,6 +312,19 @@ class Device(EmptyDevice):
             self.port.write("TRIG:SOUR INT")  # default will be internal trigger, i.e. continuous trigger
             self.port.write("INIT:CONT ON")
 
+        if self.use_list_sweep:
+            self.set_list_mode()
+        else:
+            # Set the display page to measurement in case a list sweep was used before
+            self.port.write("DISP:PAGE MEAS")
+
+        # Automatically wait for trigger
+        self.port.write("INIT:CONT ON")
+
+        # other option would be: self.port.write("INIT:CONT OFF")
+        # in this case one has to use self.port.write("INIT:IMM") before every trigger
+        # to set the device into 'wait-for-trigger' state
+
     def unconfigure(self) -> None:
         """Turn off bias, amplitude control, and trigger."""
         self.port.write("ABOR")  # abort any running command
@@ -272,9 +351,9 @@ class Device(EmptyDevice):
         """Switch off the DC bias."""
         self.port.write("BIAS:STAT 0")
 
-    def apply(self):
+    def apply(self) -> None:
         """Set the device to the sweep and/or step value."""
-        if self.sweepmode != "None":
+        if self.sweepmode != "None" and not self.use_list_sweep:
             sweep_value = float(self.value)
             self.handle_set_value(self.sweepmode, sweep_value)
 
@@ -301,7 +380,19 @@ class Device(EmptyDevice):
 
     def measure(self) -> None:
         """Start the measurement."""
-        # trigger
+        if self.use_list_sweep:
+            if self.sweepmode.startswith("Frequency"):
+                self.list_sweep_frequency(self.list_sweep_values.tolist())
+
+            elif self.sweepmode.startswith("Voltage bias"):
+                self.list_sweep_bias_voltage(self.list_sweep_values.tolist())
+
+            elif self.sweepmode.startswith("Current bias"):
+                self.list_sweep_bias_current(self.list_sweep_values.tolist())
+
+            elif self.sweepmode.startswith("Voltage RMS in V"):
+                self.list_sweep_ac_voltage(self.list_sweep_values.tolist())
+
         if self.trigger_type == "Software":
             # only in case of Software trigger as it will be otherwise created internally or externally
             self.port.write("TRIG:IMM")
@@ -313,20 +404,46 @@ class Device(EmptyDevice):
         self.port.read()  # reading out the answer of the previous *OPC?
 
     def request_result(self) -> None:
-        """Request the measured values for R, X, F, and bias."""
-        self.port.write("FETC?;FREQ?;BIAS:%s?" % self.bias_mode)
+        """Request the measured values for R+X (depending on measurement mode), F, and bias."""
+        if self.use_list_sweep:
+            # Request list sweep data and time stamps
+            self.port.write("FETC?;LIST:SEQ:TST:DATA?")
+        else:
+            # Request measured values, frequency, and bias
+            self.port.write("FETC?;FREQ?;BIAS:VOLT?")
 
     def read_result(self) -> None:
         """Read the measured values for R+X (depending on measurement mode), F, and bias."""
-        answer = self.port.read().split(";")
+        if self.use_list_sweep:
+            answer = self.port.read().split(",")
+            reshaped_answer = np.array(answer).reshape(-1, 5)
 
-        self.value_1, self.value_2 = map(float, answer[0].split(",")[0:2])
-        self.measured_frequency = float(answer[1])
-        self.bias = float(answer[2])
+            # TODO: Check this
+            self.value_1 = reshaped_answer[:, 0].astype(float).tolist()
+            self.value_2 = reshaped_answer[:, 1].astype(float).tolist()
+            self.measured_frequency = reshaped_answer[:, 2].astype(float).tolist()
+            self.bias = reshaped_answer[:, 3].astype(float).tolist()
+            self.time_stamps = reshaped_answer[:, 4].astype(float).tolist()
+
+            # resistance = [float(answer[i]) for i in range(0, len(answer), 4)]
+            # reactance = [float(answer[i + 1]) for i in range(1, len(answer), 4)]
+            # # TODO: Check this
+            # frequency = [float(answer[i + 2]) for i in range(2, len(answer), 4)]
+            # bias = [float(answer[i + 3]) for i in range(3, len(answer), 4)]
+        else:
+            answer = self.port.read().split(";")
+            self.value_1, self.value_2 = map(float, answer[0].split(",")[0:2])
+            self.measured_frequency = float(answer[1])
+            self.bias = float(answer[2])
 
     def call(self) -> list:
         """Return measured values for R+X (depending on measurement mode), F, and bias."""
-        return [self.value_1, self.value_2, self.measured_frequency, self.bias]
+        if self.use_list_sweep:
+            result = [self.value_1, self.value_2, self.measured_frequency, self.bias, self.time_stamps]
+        else:
+            result = [self.value_1, self.value_2, self.measured_frequency, self.bias]
+
+        return result
 
     """ Wrapped Functions """
 
@@ -356,3 +473,68 @@ class Device(EmptyDevice):
     def set_frequency(self, value: float) -> None:
         """Set the frequency of the device in Hz."""
         self.port.write(f"FREQ {value:1.5e}HZ")
+
+    """ List Sweep Functions """
+
+    def set_list_mode(self) -> None:
+        """Set the list mode to sequence, where one trigger makes all sweep point measurements.
+
+        The alternative is step mode, where one trigger makes one sweep point measurement. This is not needed, as
+        the SweepMe! step mode already implements this without needing the list mode.
+        """
+        # Show the list page to enable the list mode
+        self.port.write("DISP:PAGE LIST")
+
+        # TODO: Check Clear the list sweep setup
+        self.port.write("LIST:CLE:ALL")
+
+        self.port.write("LIST:MODE SEQ")
+        # Clear the time stamp
+        self.port.write("LIST:SEQ:TST:CLE")
+
+    def list_sweep_bias_current(self, values: list) -> None:
+        """Create a list sweep for bias current in A."""
+        value_string = self.create_value_string(values)
+        self.port.write(f"LIST:BIAS:CURR {value_string}A")
+
+    def list_sweep_bias_voltage(self, values: list) -> None:
+        """Create a list sweep for bias voltage in V."""
+        value_string = self.create_value_string(values)
+        self.port.write(f"LIST:BIAS:VOLT {value_string}V")
+
+    def list_sweep_frequency(self, values: list) -> None:
+        """Create a list sweep for frequency in Hz."""
+        value_string = self.create_value_string(values)
+        self.port.write(f"LIST:FREQ {value_string}")
+
+    def list_sweep_ac_voltage(self, values: list) -> None:
+        """Create a list sweep for AC voltage."""
+        value_string = self.create_value_string(values)
+        self.port.write(f"LIST:VOLT {value_string}")
+
+    @staticmethod
+    def create_value_string(values: list) -> str:
+        """Create a string of values."""
+        maximum_number_of_values = 201
+        if len(values) > maximum_number_of_values:
+            msg = f"The list sweep can only have a maximum of {maximum_number_of_values} values."
+            raise ValueError(msg)
+
+        return ",".join([f"{value:1.5e}" for value in values])
+
+    """ Currently unused Wrapped functions """
+
+    def list_sweep_current(self, values: list) -> None:
+        """Create a list sweep for current."""
+        value_string = self.create_value_string(values)
+        self.port.write(f"LIST:CURR {value_string}")
+
+    def list_sweep_dc_source(self, values: list) -> None:
+        """Create a list sweep for DC source."""
+        value_string = self.create_value_string(values)
+        self.port.write(f"LIST:DCS:VOLT {value_string}")
+
+    def get_list_timestamps(self) -> list:
+        """Get the timestamps of the list sweep."""
+        self.port.write("LIST:SEQ:TST:DATA?")
+        return self.port.read().split(",")
