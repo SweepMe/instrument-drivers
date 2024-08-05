@@ -165,9 +165,6 @@ class Device(EmptyDevice):
             self.use_list_sweep = True
             self.handle_list_sweep_parameter(parameter)
 
-            self.variables.append("Time")
-            self.units.append("s")
-
     def handle_bias_mode(self) -> None:
         """Choose the bias mode from sweepmode, stepmode, or ValueTypeBias."""
         if self.sweepmode.startswith("Voltage"):
@@ -244,6 +241,12 @@ class Device(EmptyDevice):
         # Add the returning values in reverse order to the list
         if parameter["ListSweepDual"]:
             self.list_sweep_values = np.append(self.list_sweep_values, self.list_sweep_values[::-1])
+
+        # Add time staps to return values
+        self.variables.append("Time")
+        self.units.append("s")
+        self.plottype.append(True)
+        self.savetype.append(True)
 
     def initialize(self) -> None:
         """Initialize the device."""
