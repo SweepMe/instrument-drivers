@@ -107,7 +107,7 @@ class Device(EmptyDevice):
         #print(parameter)
     
         self.triggersource = parameter["TriggerSource"]
-        self.triggercoupling = parameter["TriggerCoupling"]
+        # self.triggercoupling = parameter["TriggerCoupling"]  # not yet implemented
         self.triggerslope = parameter["TriggerSlope"]
         self.triggerlevel = parameter["TriggerLevel"]
         self.triggerdelay = parameter["TriggerDelay"]
