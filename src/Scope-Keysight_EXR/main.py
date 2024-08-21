@@ -73,6 +73,18 @@ class Device(EmptyDevice):
             "Rising": "POS",
             "Falling": "NEG",
         }
+
+        self.adc_resolution_options = {
+            "10 Bits (16 GSa or Manual)": "BITS10",
+            "11 Bits (6.4 GSa)": "BITS11",
+            "12 Bits (3.2 GSa)": "BITS12",
+            "13 Bits (1.6 GSa)": "BITS13",
+            "14 Bits (800 MSa)": "BITS14",
+            "15 Bits (400 MSa)": "BITS15",
+            "16 Bits (200 MSa)": "BITS16",
+            "16 Bits (100 MSa)": "BITS16_4",
+            "16 Bits (50 MSa)": "BITS16_2",
+        }
            
     def set_GUIparameter(self):
 
@@ -89,9 +101,10 @@ class Device(EmptyDevice):
              "TimeRangeValue": 5e-4,
              "TimeOffsetValue": 0.0,
              "SamplingRate": ["10e+3", "100e+3", "1e+6", "10e+6", "100e+6", "1e+9","5e+9","10e+9","16e+9"],
-             "SamplingRateType":["BITS10: 10 Bits (16 GSa or Manual)","BITS11: 11 Bits (6.4 GSa)","BITS12: 12 Bits (3.2 GSa)","BITS13: 13 Bits (1.6 GSa)","BITS14: 14 Bits (800 MSa)","BITS15: 15 Bits (400 GSa)","BITS16: 16 Bits (200 GSa)","BITS16_4: 16 Bits (100 GSa)","BITS16_2: 16 Bits (50 GSa)"],
+             "SamplingRateType": ["Samples per s"],
+             "ADCResolution": list(self.adc_resolution_options.keys()),
              "Acquisition": ["Continuous", "Single"],
-             "Average": ["none", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"],
+             "Average": ["None", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"],
              "VoltageRange": ["Voltage range in V"],
         }
                        
@@ -104,8 +117,7 @@ class Device(EmptyDevice):
         return GUIparameter
 
     def get_GUIparameter(self, parameter={}):
-        #print(parameter)
-    
+
         self.triggersource = parameter["TriggerSource"]
         # self.triggercoupling = parameter["TriggerCoupling"]  # not yet implemented
         self.triggerslope = parameter["TriggerSlope"]
@@ -117,12 +129,13 @@ class Device(EmptyDevice):
         self.timerangevalue = float(parameter["TimeRangeValue"])
         self.timeoffsetvalue = parameter["TimeOffsetValue"]
         self.samplingrate = parameter["SamplingRate"]
-        self.samplingratetype = parameter["SamplingRateType"]  # reads the chosen "sampling rate type", here: used to set the ADC resolution to enable resolution increase at the cost of samplingrate and bandwidth
-        
-        if self.samplingratetype.startswith("BITS16_"):  # chosen ADC resolution is taken from the GUI selection and modified so it can be used as the required parameter in the respective SCPI command
-            self.samplingratetype = self.samplingratetype[:8]
-        else:
-            self.samplingratetype = self.samplingratetype[:6]
+        self.samplingratetype = parameter["SamplingRateType"]
+
+        # used to set the ADC resolution to enable resolution increase at the cost of sampling rate and bandwidth
+        adc_resolution_selection = parameter["ADCResolution"]
+
+        # required SCPI command parameter is taken according to selected ADC resolution via dictionary
+        self.adc_resolution = self.adc_resolution_options[adc_resolution_selection]
 
         self.acquisition = parameter["Acquisition"]
         self.average = parameter["Average"]
@@ -133,7 +146,7 @@ class Device(EmptyDevice):
         self.channel_divs = {}
         self.channel_offsets = {}
         
-        for i in range(1,5):
+        for i in range(1, 5):
             
             if parameter["Channel%i" % i]:
                 self.channels.append(i)
@@ -163,32 +176,45 @@ class Device(EmptyDevice):
         # print("ID Checkup")
         # print(self.port.read())
 
-        self.port.write("*CLS")  # Clears all the event registers, and also clears the error queue.
-        
-        self.port.write(":WAV:FORM ASC")  # sets encoding to ASCii insetad of BYTE or WORD; BYTE and WORD would allow for a much quicker data transfer, but values would have to be processed first before use.
-        self.port.write(":WAV:TYPE RAW")  # sets data type to RAW, transmitting only true sampling points, no interpolation
+        # Clears all the event registers, and also clears the error queue.
+        self.port.write("*CLS")
+
+        # sets encoding to ASCii instead of BYTE or WORD; BYTE and WORD would allow for a much quicker data transfer,
+        # but values would have to be processed first before use.
+        self.port.write(":WAV:FORM ASC")
+
+        # sets data type to RAW, transmitting only true sampling points, no interpolation
+        self.port.write(":WAV:TYPE RAW")
 
     def configure(self):
 
         # Acquisition #
-        self.port.write(":ACQ:MODE RTIM")  # use real time aquisition
+        self.port.write(":ACQ:MODE RTIM")  # use real time acquisition
         
-        if self.average =="none":
-            self.port.write(":ACQ:AVER OFF")  # diable averaging of triggered shots
+        if self.average == "None":
+            self.port.write(":ACQ:AVER OFF")  # disable averaging of triggered shots
         else:
-            self.port.write(":ACQ:AVER ON")  # enabling averaging of triggered shots
-            self.port.write(":ACQ:AVER:COUN %s" %self.average)  # setting the amount of triggered shots to be used for averaging
-        
-        self.port.write(":ACQ:POIN:ANAL AUTO")  # set the Memory Depth to AUTO to give priority to sampling rate, mnanual p. 326
-        if self.samplingratetype.startswith("BITS10"):
-            self.port.write(":ACQ:SRAT:ANAL %s" %self.samplingrate)  # sets the sampling rate, memory auto-adjusts accordingly. Only allowed with 10bits ADC setting!!!
-        else:
-            self.port.write(":ACQ:SRAT:ANAL AUTO")  # sampling rate to AUTO for all ADC interpolation options
-        self.port.write(":ACQ:ADCR %s" %self.samplingratetype)  # sets the "sampling rate type", here: used to set the ADC resolution to enable resolution increase at the cost of samplingrate and bandwidth
+            # enabling averaging of triggered shots
+            self.port.write(":ACQ:AVER ON")
 
-        self.port.write(":TIM:REF CENTER")   #sets the timebase reference to center; might be a future GUI option to allow for left or right border choice?
-        
-        ##self.port.write(":ACQ:AVER %s" %self.average)   # set averages
+            # setting the amount of triggered shots to be used for averaging
+            self.port.write(":ACQ:AVER:COUN %s" % self.average)
+
+        # set the Memory Depth to AUTO to give priority to sampling rate, manual p. 326
+        self.port.write(":ACQ:POIN:ANAL AUTO")
+
+        if self.adc_resolution == "BITS10":
+            # sets the sampling rate, memory auto-adjusts accordingly. Only allowed with 10bits ADC setting!!!
+            self.port.write(":ACQ:SRAT:ANAL %s" % self.samplingrate)
+        else:
+            # sampling rate to AUTO for all ADC interpolation options
+            self.port.write(":ACQ:SRAT:ANAL AUTO")
+
+        # used to set the ADC resolution to enable resolution increase at the cost of samplingrate and bandwidth
+        self.port.write(":ACQ:ADCR %s" % self.adc_resolution)
+
+        # sets the timebase reference to center; might be a future GUI option to allow for left or right border choice?
+        self.port.write(":TIM:REF CENTER")
 
         # Trigger #
         # setting trigger source and level
@@ -203,26 +229,30 @@ class Device(EmptyDevice):
      
         if self.triggerslope == "As is":  # set trigger slope
             pass
-        elif self.triggerslope== "Rising":
+        elif self.triggerslope == "Rising":
             self.port.write(":TRIG:EDGE:SLOP POS")
         elif self.triggerslope == "Falling":
             self.port.write(":TRIG:EDGE:SLOP NEG")
 
-        self.port.write(":TRIG:DEL:TDEL:TIME %s" % self.triggerdelay) # sets trigger delay; very usefull if scope is combined in a sweepme sequence with other instruments
-        self.port.write(":TRIG:SWE TRIG")  # set trigger sweep mode to TRIGGERED
+        # sets trigger delay; very useful if scope is combined in a sweepme sequence with other instruments
+        self.port.write(":TRIG:DEL:TDEL:TIME %s" % self.triggerdelay)
+
+        # set trigger sweep mode to TRIGGERED
+        self.port.write(":TRIG:SWE TRIG")
 
         # Time range #
         if self.timerange == "Time range in s":
-            self.port.write(":TIM:RANG %s" %self.timerangevalue)  # set timebase range
+            self.port.write(":TIM:RANG %s" % self.timerangevalue)  # set timebase range
         elif self.timerange == "Time scale in s/div":
-            self.port.write(":TIM:SCAL %s" %self.timerangevalue)  # set timebase scale
+            self.port.write(":TIM:SCAL %s" % self.timerangevalue)  # set timebase scale
         
         if self.timeoffsetvalue == "As is":
             pass
         else:
-            self.port.write(":TIM:POS %s" %self.timeoffsetvalue)  # set timebase offset
+            self.port.write(":TIM:POS %s" % self.timeoffsetvalue)  # set timebase offset
 
-        for i in range(1, 5):  # makes sure that only activated channels are displayed
+        # makes sure that only activated channels are displayed
+        for i in range(1, 5):
             if i in self.channels:
                 self.port.write(":CHAN%s:DISP ON" % i)  # turn on selected channels
                 self.port.write(":CHAN%s:SCAL %s" % (i, self.channel_divs[i]))  # scale of channel
@@ -236,24 +266,30 @@ class Device(EmptyDevice):
     def measure(self):
         
         if self.average != "none" and self.acquisition.startswith("Cont"):
-            self.port.write(":CDIS")  # clear display to reset the averaging counter when using continous trigger
+            self.port.write(":CDIS")  # clear display to reset the averaging counter when using continuous trigger
             time.sleep(0.3)
         
         if self.acquisition.startswith("Single"): 
             self.port.write(":SING")  # performs single acquisition
         elif self.acquisition.startswith("Cont"):
-            self.port.write(":RUN")  # run continuous aquisition; not required when using single trigger
+            self.port.write(":RUN")  # run continuous acquisition; not required when using single trigger
             
         time.sleep(float(self.triggerdelay))
         trigcounter = 0
         while True:
-            self.port.write(":ADER?")  # check if trigger aquisition was successfull; if averaging is enabled, it will return 1 only when all average samples have been taken
-            triggerstat=int(self.port.read())
+            # check if trigger acquisition was successful;
+            # if averaging is enabled, it will return 1 only when all average samples have been taken
+            self.port.write(":ADER?")
+            triggerstat = int(self.port.read())
             print("triggerstatus:", triggerstat)
-            if triggerstat == 0 and trigcounter < int(round(float(self.triggertimeout),1)*5):  #if no trigger was aquired, wait loops in 0.2s increments
+
+            # if no trigger was acquired, wait loops in 0.2s increments
+            if triggerstat == 0 and trigcounter < int(round(float(self.triggertimeout),1)*5):
                 trigcounter += 1
                 time.sleep(0.2)
-            elif trigcounter >= int(round(float(self.triggertimeout),1)*5):  #timeout in trigger wait loop, stops the aqusition
+
+            # timeout in trigger wait loop, stops the acquisition
+            elif trigcounter >= int(round(float(self.triggertimeout),1)*5):
                 self.port.write(":STOP")
                 if self.average == "none":
                     msg = "Oscilloscope could not trigger before timeout"
@@ -265,7 +301,7 @@ class Device(EmptyDevice):
                 break
         
         if self.acquisition.startswith("Cont"):
-            self.port.write(":STOP")  # stop continuous aquisition; not required when using single trigger
+            self.port.write(":STOP")  # stop continuous acquisition; not required when using single trigger
         
         slot = 0  # run variable for data sorting
 
@@ -286,7 +322,10 @@ class Device(EmptyDevice):
         y_inc=float(preamble[7])
         y_orig=float(preamble[8])
         y_ref=float(preamble[9])
-        #print ("wav_format:", wav_format, "acq_mode:", acq_mode, "numberpoints:", numberpoints, "av_count:", av_count, "x_inc:", x_inc, "x_org:", x_orig, "x_ref:", x_ref, "y_inc:", y_inc, "y_org:", y_orig, "y_ref:", y_ref)
+
+        # print ("wav_format:", wav_format, "acq_mode:", acq_mode, "numberpoints:", numberpoints,
+        # "av_count:", av_count, "x_inc:", x_inc, "x_org:", x_orig, "x_ref:", x_ref, "y_inc:", y_inc,
+        # "y_org:", y_orig, "y_ref:", y_ref)
 
         for i in self.channels:
             
@@ -294,9 +333,11 @@ class Device(EmptyDevice):
 
             if slot == 0:  # only for first measurement
                 channels = len(self.channels)  # number of measured channels
-                self.voltages = np.zeros((numberpoints, len(self.channels)))  # generate empty array of correct size for channels + data
+                # generate empty array of correct size for channels + data
+                self.voltages = np.zeros((numberpoints, len(self.channels)))
 
-            self.timecode = np.linspace(x_orig, (x_orig+x_inc*numberpoints), numberpoints)  # generate linear time array FROM, TO, STEPSAMOUNT
+            # generate linear time array FROM, TO, STEPSAMOUNT
+            self.timecode = np.linspace(x_orig, (x_orig+x_inc*numberpoints), numberpoints)
 
             self.port.write(":WAV:DATA?;*OPC")  # retrieve waveform values from scope
             time.sleep(0.2)  # give scope time to prepare waveform data for download
@@ -305,7 +346,8 @@ class Device(EmptyDevice):
             opccounter = 0  # set counter for OPC loop back to zero
             
             while True:
-                self.port.write("*OPC?")  # query scope in loop whether [OP]eration of waveform data tranmission is [C]ompleted
+                # query scope in loop whether [OP]eration of waveform data tranmission is [C]ompleted
+                self.port.write("*OPC?")
                 completed = int(self.port.read())
                 if completed == 0 and opccounter < 25:  # loop time hardcoded to 5s
                     opccounter += 1
