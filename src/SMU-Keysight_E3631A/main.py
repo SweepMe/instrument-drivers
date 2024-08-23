@@ -49,13 +49,9 @@ class Device(EmptyDevice):
     def __init__(self):
 
         super().__init__()
-        #EmptyDevice.__init__(self)
 
         self.shortname = "E3631A"
         
-        # remains here for compatibility with v1.5.3
-        self.multichannel = ["P6V", "P25V", "N25V", "TRACK25V"]
-
         self.variables = ["Voltage", "Current"]
         self.units = ["V", "A"]
         self.plottype = [True, True]  # True to plot data
@@ -64,17 +60,25 @@ class Device(EmptyDevice):
         self.port_manager = True
         self.port_types = ["COM", "GPIB"]
 
-        self.port_properties = {"timeout": 3,
-                                }
+        self.port_properties = {
+            "timeout": 3,
+        }
+
+        self.channels_commands = {
+            "+6V": "P6V",
+            "+25V": "P25V",
+            "-25V": "N25V",
+            "Synced +/-25V": "TRACK25V",  # only a positive voltage is handed over
+        }
 
     def set_GUIparameter(self):
 
         gui_parameter = {
             "SweepMode": ["Voltage in V"],
-            "Channel": ["P6V", "P25V", "N25V", "TRACK25V"],
+            "Channel": list(self.channels_commands.keys()),
             "RouteOut": ["Front"],
             "Compliance": 1,
-            #"RangeVoltage": ["15 V / 7 A", "30 V / 4 A"], #no voltage range per channel on the E3631A
+            # "RangeVoltage": ["15 V / 7 A", "30 V / 4 A"],  # no voltage range per channel on the E3631A
         }
 
         return gui_parameter
@@ -86,11 +90,13 @@ class Device(EmptyDevice):
         self.currentlimit = parameter["Compliance"]
         
         self.device = parameter['Device']
-        self.channel = parameter['Channel']
+
+        channel_selection = parameter['Channel']
+        self.channel = self.channels_commands[channel_selection]
 
     def initialize(self):
-        #self.port.write("*IDN?")
-        #identifier = self.port.read()
+        # self.port.write("*IDN?")
+        # identifier = self.port.read()
         # print("Identifier:", identifier)  # can be used to check the instrument
 
         self.port.write("*CLS")
@@ -100,38 +106,43 @@ class Device(EmptyDevice):
         # NOT AVAILABLE ON E3631A: self.port.write("VOLT:PROT:STAT OFF") # output voltage protection disabled
         # NOT AVAILABLE ON E3631A: self.port.write("CURR:PROT:STAT OFF") # output current protection disabled
 
-        # NOT AVAILABLE ON E3631A: hardcoded overvoltage protection limit, causes switch-off of channel; set to PSU protection default value
-        #self.port.write("VOLT:PROT:LEV 32")
+        # NOT AVAILABLE ON E3631A:
+        # hardcoded overvoltage protection limit, causes switch-off of channel; set to PSU protection default value
+        # self.port.write("VOLT:PROT:LEV 32")
 
-        # NOT AVAILABLE ON E3631A: hardcoded overcurrent protection limit, causes switch-off of channel; set to PSU protection default value
-        #self.port.write("CURR:PROT:LEV 7.5")
+        # NOT AVAILABLE ON E3631A:
+        # hardcoded overcurrent protection limit, causes switch-off of channel; set to PSU protection default value
+        # self.port.write("CURR:PROT:LEV 7.5")
 
-        ## checking if requested compliance is within PSU capabilities and enabling TRACK mode if channel option was selected in GUI"
-        if self.channel=="P6V":
+        # checking if requested compliance is within PSU capabilities and
+        # enabling TRACK mode if channel option was selected in GUI"
+        if self.channel == "P6V":
             if float(self.currentlimit) > 5:
                 msg = "Lower compliance limit to max 5 A"
                 raise Exception(msg)
         
-        elif self.channel=="P25V" or self.channel=="N25V" or self.channel=="TRACK25V":
+        elif self.channel == "P25V" or self.channel == "N25V" or self.channel == "TRACK25V":
             if float(self.currentlimit) > 1:
                 msg = "Lower compliance limit to max 1 A"
                 raise Exception(msg)
-            if self.channel=="TRACK25V":
-                self.port.write("OUTPUT:TRAC:STAT ON") #activate sync of both 25V channels
+            if self.channel == "TRACK25V":
+                self.port.write("OUTPUT:TRAC:STAT ON")  # activate sync of both 25V channels
             else:
-                self.port.write("OUTPUT:TRAC:STAT OFF") #make sure, sync of +25V and -25V channel is disabled
+                self.port.write("OUTPUT:TRAC:STAT OFF")  # make sure, sync of +25V and -25V channel is disabled
         else:
             msg = "The input channel selection is not valid."
             raise Exception(msg)
         
         self.select_channel()
-        
-        self.port.write("CURR:LEV:IMM %1.4f" % float(self.currentlimit))  #set compliance limit for selected channel.
+        # set compliance limit for selected channel.
+        self.port.write("CURR:LEV:IMM %1.4f" % float(self.currentlimit))
         
     def unconfigure(self):
         self.select_channel()
-        
-        self.port.write("VOLT:LEV MIN") #Safety measure, setting voltage back to minimum before output switch-off. hint: this command differs slightly from the one used in the E3632A driver
+
+        # Safety measure, setting voltage back to minimum before output switch-off. hint: this command differs
+        # slightly from the one used in the E3632A driver
+        self.port.write("VOLT:LEV MIN")
 
         # if self.port_string.startswith("COM"):
         #     self.port.write("SYST:LOC")  # On the E3631A, ONLY ALLOWED WITH RS232
@@ -146,19 +157,19 @@ class Device(EmptyDevice):
         self.port.write("OUTP:STAT OFF")
 
     def apply(self):
-        if self.channel=="P6V" and self.value > 6:
+        if self.channel == "P6V" and self.value > 6:
             msg = "Requested voltage out of range for this channel (max. 6 V)"
             raise Exception(msg)
         
-        if self.channel=="P25V" or self.channel=="TRACK25V": 
+        if self.channel == "P25V" or self.channel == "TRACK25V":
             if abs(self.value) > 25:
                 msg = "Requested voltage out of range for this channel (max. +25 V)"
                 raise Exception(msg)
-            elif self.channel=="TRACK25V" and self.value < 0:
+            elif self.channel == "TRACK25V" and self.value < 0:
                 msg = "Use positive values only in TRACK mode to request symmetric voltage on both channels."
                 raise Exception(msg)
         
-        if self.channel=="N25V": 
+        if self.channel == "N25V":
             if abs(self.value) > 25:
                 msg = "Requested voltage out of range for this channel (max. -25 V)"
                 raise Exception(msg)
@@ -180,23 +191,27 @@ class Device(EmptyDevice):
         return [self.v, self.i]
 
     def display_off(self):
-        # For further use.
 
         self.port.write("DISP:STAT OFF")
         # wait for display shutdown procedure to complete
         # time.sleep(0.5)
 
     def display_on(self):
-        # For further use.
 
         self.port.write("DISP:STAT ON")
         # wait for display switch-on procedure to complete
         # time.sleep(0.5)
         
     def select_channel(self):
-        #selects the current channel as the receipt for following SCPI configuration commands
-        print(self.channel)
-        if self.channel=="TRACK25V":
-            self.port.write("INST:SEL P25V") #when in TRACK mode (synced +/-25V channels), voltage on both channels can be set by setting P25V channel or N25V channel arbitrarily. Here, P25V is used to positive values can be used as the negative channel only accepts negative voltage values.
+        """Selects the current channel as the receipt for following SCPI configuration commands.
+        """
+
+        if self.channel == "TRACK25V":
+            # when in TRACK mode (synced +/-25V channels), voltage on both channels can be set by
+            # setting P25V channel or N25V channel arbitrarily.
+            # Here, P25V is used to positive values can be used
+            # as the negative channel only accepts negative voltage values.
+            self.port.write("INST:SEL P25V")
         else:
-            self.port.write("INST:SEL %s" % self.channel) #select channel to configure
+            # select channel to configure
+            self.port.write("INST:SEL %s" % self.channel)
