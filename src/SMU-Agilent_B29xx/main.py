@@ -95,7 +95,6 @@ class Device(EmptyDevice):
         return gui_parameter
 
     def get_GUIparameter(self, parameter={}):
-        #print(parameter)
 
         self.four_wire = parameter['4wire']
         self.source = parameter['SweepMode']
@@ -425,13 +424,19 @@ class Device(EmptyDevice):
             if self.source.startswith("Voltage"):
                 self.port.write(":SOUR%s:VOLT:STAR %s" % (self.channel, value))
                 self.port.write(":SOUR%s:VOLT:STOP %s" % (self.channel, value))
-            
-            # releasing the pulse trigger
-            self.port.write(":INIT (@%s)" % self.channel)
-            
+
+            # pulse is finally triggered in 'measure' phase
+            # in 'apply' the pulse is only setup
+
         else:
             # set output to specified values
             self.port.write(":SOUR%s:%s %s" % (self.channel, self.commands[self.source], value))
+
+    def measure(self):
+
+        if self.pulse:
+            # releasing the pulse trigger, just at the moment when the measurement should be performed
+            self.port.write(":INIT (@%s)" % self.channel)
 
     def call(self):
         
@@ -455,7 +460,6 @@ class Device(EmptyDevice):
                     opcounter += 1
                     time.sleep(0.5)
 
-        if self.pulse:
             self.port.write(
                 ":FETC:ARR? (@%s)" % self.channel)  # get measured values taken during pulse release out of the memory
         else:
