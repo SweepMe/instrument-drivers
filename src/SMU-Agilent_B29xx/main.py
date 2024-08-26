@@ -68,11 +68,11 @@ class Device(EmptyDevice):
         self.pulse_mode = True  # enables pulsed signal option in GUI
         
         self.speed_types = {
-        "Very fast (0.01)": "0.01",
-        "Fast (0.1)": "0.1",
-        "Standard (1)": "1",
-        "Slow (10)": "10",
-        "Very Slow (100)": "100"
+            "Very fast (0.01)": "0.01",
+            "Fast (0.1)": "0.1",
+            "Medium (1)": "1",
+            "Slow (10)": "10",
+            "Very slow (100)": "100",
         }
 
     def set_GUIparameter(self):
@@ -88,7 +88,7 @@ class Device(EmptyDevice):
             "PulseOnTime": 1e-3,  # for use on the B2902B, defined as the pulse width time
             "PulseDelay": 0,  # for use on the B2902B, defined as the delay time prior to pulse
             "PulseOffLevel": 0.0,  # bias voltage during pulse-off
-            "PulseCount": 1, #amount of pulses
+            "PulseCount": 1,  # amount of pulses
             # "Average": 1, # not yet supported
         }
 
@@ -189,7 +189,7 @@ class Device(EmptyDevice):
             self.port.write(":SENS%s:FUNC \"VOLT\"" % self.channel)
             # measurement mode
             self.port.write(":SENS%s:VOLT:NPLC %s" % (self.channel, self.speed_types[self.speed]))
-            #NPLC definition for sensing voltage
+            # NPLC definition for sensing voltage
             self.port.write(":SENS%s:VOLT:PROT %s" % (self.channel, self.protection))
             # Protection with Imax
             self.port.write(":SENS%s:VOLT:RANG:AUTO ON" % self.channel)
@@ -224,25 +224,45 @@ class Device(EmptyDevice):
             self.port.write(":FUNC PULS")  # switch to pulse output instead of "DC"
             self.port.write(":PULS:WIDT %s" % self.ton)  # pulse width time
             self.port.write(":PULS:DEL %s" % self.toff)  # delay prior to pulse
-            self.port.write(":SOUR%s:SWE:POIN %s" % (self.channel,self.pulsecount)) # setting the amount of pulses by mis-using the sweep function
-            self.port.write(":SOUR%s:FUNC:TRIG:CONT OFF" % self.channel)  # switch off continuous operation of internal trigger
-            self.port.write(":SOUR%s:WAIT ON" % self.channel)  # enables to wait for any change of amplitude past pulse
-            self.port.write(":SENS%s:WAIT ON" % self.channel)  # enables wait time for start of measurement defined by delay
-            self.port.write(":TRIG%s:TRAN:DEL MIN" % self.channel)  # trigger delay hardcoded to 0s
+
+            # setting the amount of pulses by mis-using the sweep function
+            self.port.write(":SOUR%s:SWE:POIN %s" % (self.channel,self.pulsecount))
+
+            # switch off continuous operation of internal trigger
+            self.port.write(":SOUR%s:FUNC:TRIG:CONT OFF" % self.channel)
+
+            # enables to wait for any change of amplitude past pulse
+            self.port.write(":SOUR%s:WAIT ON" % self.channel)
+
+            # enables wait time for start of measurement defined by delay
+            self.port.write(":SENS%s:WAIT ON" % self.channel)
+
+            # trigger delay hardcoded to 0s
+            self.port.write(":TRIG%s:TRAN:DEL MIN" % self.channel)
 
             # delay of measurement after pulse release is triggered; takes care of ramp-up
             self.port.write(":TRIG%s:ACQ:DEL %s" % (self.channel, self.acqdelay))
 
-            self.port.write(":TRIG%s:ALL:COUN 1" % self.channel)  # sets trigger count, 1 for single pulse
-            self.port.write(":TRIG%s:LXI:LAN:DIS:ALL" % self.channel)  # disable LXI triggering
-            self.port.write(":TRIG%s:ALL:SOUR AINT" % self.channel)  # enable internal trigger
-            
-            self.port.write(":TRIG%s:ALL:COUN %s" % (self.channel, self.pulsecount)) # enables multiple trigger events for the requested amount of pulses
+            # sets trigger count, 1 for single pulse
+            self.port.write(":TRIG%s:ALL:COUN 1" % self.channel)
+
+            # disable LXI triggering
+            self.port.write(":TRIG%s:LXI:LAN:DIS:ALL" % self.channel)
+
+            # enable internal trigger
+            self.port.write(":TRIG%s:ALL:SOUR AINT" % self.channel)
+
+            # enables multiple trigger events for the requested amount of pulses
+            self.port.write(":TRIG%s:ALL:COUN %s" % (self.channel, self.pulsecount))
 
             # set trigger daly to minimum; not to be mixed up with pulse delay
             self.port.write(":TRIG%s:ALL:TIM MIN" % self.channel)
-            self.port.write(":FORM:ELEM:SENS VOLT,CURR,TIME,STAT,SOUR")  # defining the measurement out sizes
-            self.port.write(":SYST:TIME:TIM:COUN:RES:AUTO ON")  # activates a counter timer reset
+
+            # defining the measurement out sizes
+            self.port.write(":FORM:ELEM:SENS VOLT,CURR,TIME,STAT,SOUR")
+
+            # activates a counter timer reset
+            self.port.write(":SYST:TIME:TIM:COUN:RES:AUTO ON")
         else:
             self.port.write(":FUNC DC")  # std DC output
 
@@ -390,13 +410,14 @@ class Device(EmptyDevice):
                     msg = "Compliance below maximum limit of -6 V for currents above -1.515 A"
                     raise Exception(msg)
 
-        value = str("{:.4E}".format(self.value))  # makes sure that self.value fits into SCPI command in terms of length
+        # makes sure that self.value fits into SCPI command in terms of length
+        value = str("{:.4E}".format(self.value))
         if self.pulse:
             # get channel ready at specified values
- 
             self.port.write(":SOUR%s:%s %s" % (self.channel, self.commands[self.source], self.pulseofflevel))
     
-            # arming the pulse trigger; mis-using the sweep function with identical start and stop values so we can use number-of-pulses functionality
+            # arming the pulse trigger; mis-using the sweep function with identical start and stop values
+            # so we can use number-of-pulses functionality
             if self.source.startswith("Current"):
                 self.port.write(":SOUR%s:CURR:STAR %s" % (self.channel, value))
                 self.port.write(":SOUR%s:CURR:STOP %s" % (self.channel, value))
@@ -415,19 +436,24 @@ class Device(EmptyDevice):
     def call(self):
         
         if self.pulse:
-            opcounter = 0                                                    # set counter for operation register request loop back to zero
+            opcounter = 0  # set counter for operation register request loop back to zero
                 
             while True:
-                self.port.write(":STAT:OPER:COND?")                           # query SMU for the status of the operation register
-                opstatus=self.port.read()
-                if self.channel == "1" and ((int(opstatus)>> 1) & 1) == 1 and ((int(opstatus)>> 4) & 1) == 1:                                          # checks bitwise on operation condition register whether transition and aquisition are finished if currently operating on channel 1 (INT values 2+16, BIT 1 and 4)
+                self.port.write(":STAT:OPER:COND?")  # query SMU for the status of the operation register
+                opstatus = self.port.read()
+                # checks bitwise on operation condition register whether transition and acquisition are finished
+                # if currently operating on channel 1 (INT values 2+16, BIT 1 and 4)
+                if self.channel == "1" and ((int(opstatus) >> 1) & 1) == 1 and ((int(opstatus) >> 4) & 1) == 1:
                     break
-                elif self.channel == "2" and ((int(opstatus)>> 7) & 1) == 1 and ((int(opstatus)>> 10) & 1) == 1:                                       # checks bitwise on operation condition register whether transition and aquisition are finished if currently operating on channel 2 (INT values 128+1024, BIT 7 and 10)
+                # checks bitwise on operation condition register whether transition and acquisition are finished
+                # if currently operating on channel 2 (INT values 128+1024, BIT 7 and 10)
+                elif self.channel == "2" and ((int(opstatus) >> 7) & 1) == 1 and ((int(opstatus) >> 10) & 1) == 1:
                     break
                 else:
-                    opcounter += 1                                             #can be used to define a timeout, but is current not implemented as the time span can vary depending on the amount of pulses and their delays
+                    # can be used to define a timeout, but is current not implemented
+                    # as the time span can vary depending on the amount of pulses and their delays
+                    opcounter += 1
                     time.sleep(0.5)
-                    
 
         if self.pulse:
             self.port.write(
