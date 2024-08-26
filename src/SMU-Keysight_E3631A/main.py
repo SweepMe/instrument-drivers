@@ -101,6 +101,8 @@ class Device(EmptyDevice):
 
         self.port.write("*CLS")
 
+        self.unique_identifier = self_device + "_" + self.port_string + "_channel"
+
     def configure(self):
 
         # NOT AVAILABLE ON E3631A: self.port.write("VOLT:PROT:STAT OFF") # output voltage protection disabled
@@ -206,12 +208,19 @@ class Device(EmptyDevice):
         """Selects the current channel as the receipt for following SCPI configuration commands.
         """
 
-        if self.channel == "TRACK25V":
-            # when in TRACK mode (synced +/-25V channels), voltage on both channels can be set by
-            # setting P25V channel or N25V channel arbitrarily.
-            # Here, P25V is used to positive values can be used
-            # as the negative channel only accepts negative voltage values.
-            self.port.write("INST:SEL P25V")
-        else:
-            # select channel to configure
-            self.port.write("INST:SEL %s" % self.channel)
+        # only if a channel was not set so far or another channel is request, we change the channel
+        if (self.unique_identifier not in self.device_communication or
+                self.device_communication[self.unique_identifier] != self.channel):
+
+            if self.channel == "TRACK25V":
+                # when in TRACK mode (synced +/-25V channels), voltage on both channels can be set by
+                # setting P25V channel or N25V channel arbitrarily.
+                # Here, P25V is used to positive values can be used
+                # as the negative channel only accepts negative voltage values.
+                self.port.write("INST:SEL P25V")
+            else:
+                # select channel to configure
+                self.port.write("INST:SEL %s" % self.channel)
+
+            # updating the current channel information
+            self.device_communication[self.unique_identifier] = self.channel
