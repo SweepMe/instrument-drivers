@@ -66,6 +66,14 @@ class Device(EmptyDevice):
         }
 
         self.pulse_mode = True  # enables pulsed signal option in GUI
+        
+        self.speed_types = {
+        "Very fast (0.01)": "0.01",
+        "Fast (0.1)": "0.1",
+        "Standard (1)": "1",
+        "Slow (10)": "10",
+        "Very Slow (100)": "100"
+        }
 
     def set_GUIparameter(self):
 
@@ -73,16 +81,10 @@ class Device(EmptyDevice):
             "SweepMode": ["Voltage in V", "Current in A"],
             "Channel": ["CH1", "CH2"],
             "4wire": False,
-            # "RouteOut": ["Front", "Rear"],
-
             # NPLCs included to transparently allow for user based measurement time estimations
-            "Speed": ["Very fast: 0.01NPLC", "Fast: 0.1NPLC", "Medium: 1NPLC", "Slow: 10NPLC"],
-
+            "Speed": list(self.speed_types.keys()),
             "Compliance": 100e-6,
             "CheckPulse": False,
-            # for use on the B2902B, defined as the delay for measurement start after pulse release;
-            # variable not yet implemented
-            # "PulseMeasStart_in_s": 750e-6,
             "PulseOnTime": 1e-3,  # for use on the B2902B, defined as the pulse width time
             "PulseDelay": 0,  # for use on the B2902B, defined as the delay time prior to pulse
             "PulseOffLevel": 0.0,  # bias voltage during pulse-off
@@ -96,10 +98,8 @@ class Device(EmptyDevice):
         #print(parameter)
 
         self.four_wire = parameter['4wire']
-        # self.route_out = parameter['RouteOut']
         self.source = parameter['SweepMode']
         self.protection = parameter['Compliance']
-
         self.speed = parameter['Speed']
 
         # not yet supported
@@ -115,10 +115,6 @@ class Device(EmptyDevice):
 
         # check in GUI to select pulse option
         self.pulse = parameter["CheckPulse"]
-
-        # for use on the B2902B, defined as the delay for measurement start after pulse release;
-        # variable not yet implemented
-        # self.pulse_meas_time_in_s = parameter["PulseMeasStart_in_s"]
 
         # for use on the B2902B, defined as the pulse width time
         self.ton = round(float(parameter["PulseOnTime"]), 6)  # minimum step width of 1µs
@@ -139,12 +135,6 @@ class Device(EmptyDevice):
     def initialize(self):
         # once at the beginning of the measurement
 
-        # if float(self.pulse_meas_time_in_s) < 750e-6:  #variable not yet implemented
-        #     msg = ("High voltage pulses can take as much as 750us to ramp up, measurement might start too early.\n"
-        #           "Please increase pulse measurement (start-)time or modify driver source code after validating your "
-        #           "usecase with an oscilloscope.")
-        #     raise Exception(msg)
-
         if float(self.ton) < 1e-3:
             msg = ("Measurement at 0.01 NPLC requires at least 200us@50Hz PLC, pulse measurement start time is set to "
                    "750us minimum.\nTherefore, shortest pulse width is restricted to 1ms to ensure proper measurement "
@@ -162,10 +152,18 @@ class Device(EmptyDevice):
         if self.source.startswith("Voltage"):
             self.port.write(":SOUR%s:FUNC:MODE VOLT" % self.channel)
             # sourcemode = Voltage
-            self.port.write(":SOUR%s:VOLT:MODE SWE" % self.channel)
-            # sourcemode sweepo
+            
+            if self.pulse:
+                self.port.write(":SOUR%s:VOLT:MODE SWE" % self.channel)
+                # sourcemode sweep to allow for multiple pulses optionally
+            else:
+                self.port.write(":SOUR%s:VOLT:MODE FIX" % self.channel)
+                # sourcemode fix
+                
             self.port.write(":SENS%s:FUNC \"CURR\"" % self.channel)
             # measurement mode
+            self.port.write(":SENS%s:CURR:NPLC %s" % (self.channel, self.speed_types[self.speed]))
+            #NPLC definition for sensing current
             self.port.write(":SENS%s:CURR:PROT %s" % (self.channel, self.protection))
             # Protection with Imax
             self.port.write(":SENS%s:CURR:RANG:AUTO ON" % self.channel)
@@ -180,10 +178,18 @@ class Device(EmptyDevice):
         
             self.port.write(":SOUR%s:FUNC:MODE CURR" % self.channel)
             # sourcemode = Voltage
-            self.port.write(":SOUR%s:CURR:MODE SWE" % self.channel)
-            # sourcemode sweep
+            
+            if self.pulse:
+                self.port.write(":SOUR%s:CURR:MODE SWE" % self.channel)
+                # sourcemode sweep to allow for multiple pulses optionally
+            else:
+                self.port.write(":SOUR%s:CURR:MODE FIX" % self.channel)
+                # sourcemode fix
+                
             self.port.write(":SENS%s:FUNC \"VOLT\"" % self.channel)
             # measurement mode
+            self.port.write(":SENS%s:VOLT:NPLC %s" % (self.channel, self.speed_types[self.speed]))
+            #NPLC definition for sensing voltage
             self.port.write(":SENS%s:VOLT:PROT %s" % (self.channel, self.protection))
             # Protection with Imax
             self.port.write(":SENS%s:VOLT:RANG:AUTO ON" % self.channel)
@@ -193,18 +199,6 @@ class Device(EmptyDevice):
             # software solutions that make use of this handling and so far it does not have any negative effect.
             self.port.write(":SOUR%s:VOLT:RANG:AUTO ON" % self.channel)
             # Autorange for voltage output
-
-        if self.speed.startswith("Very fast"):  # newly implemented to allow for measurements during fast pulses
-            self.nplc = "0.01"
-        elif self.speed.startswith("Fast"):
-            self.nplc = "0.1"
-        elif self.speed.startswith("Medium"):
-            self.nplc = "1.0"
-        elif self.speed.startswith("Slow"):
-            self.nplc = "10.0"
-
-        self.port.write(":SENS%s:CURR:NPLC %s" % (self.channel, self.nplc))
-        self.port.write(":SENS%s:VOLT:NPLC %s" % (self.channel, self.nplc))
 
         self.port.write(":SENS%s:CURR:RANG:AUTO:MODE RES" % self.channel)
 
@@ -426,16 +420,14 @@ class Device(EmptyDevice):
             while True:
                 self.port.write(":STAT:OPER:COND?")                           # query SMU for the status of the operation register
                 opstatus=self.port.read()
-                print("Operation Status:", opstatus)
-                if opstatus=="1170":                                          # checks whether transition and aquisition are finished on both channels (INT values 2+16 + 128+1024)
+                if self.channel == "1" and ((int(opstatus)>> 1) & 1) == 1 and ((int(opstatus)>> 4) & 1) == 1:                                          # checks bitwise on operation condition register whether transition and aquisition are finished if currently operating on channel 1 (INT values 2+16, BIT 1 and 4)
+                    break
+                elif self.channel == "2" and ((int(opstatus)>> 7) & 1) == 1 and ((int(opstatus)>> 10) & 1) == 1:                                       # checks bitwise on operation condition register whether transition and aquisition are finished if currently operating on channel 2 (INT values 128+1024, BIT 7 and 10)
                     break
                 else:
-                    opcounter += 1
+                    opcounter += 1                                             #can be used to define a timeout, but is current not implemented as the time span can vary depending on the amount of pulses and their delays
                     time.sleep(0.5)
-  
-        
-        #if self.pulse:
-        #    time.sleep(round(self.pulsecount * (0.04 + self.ton + self.toff),1)) # prevents visa timeout as the device won't response during pulse sweep, not even to OPC command. A generous 40ms minimum delay between pulses is assumed.
+                    
 
         if self.pulse:
             self.port.write(
