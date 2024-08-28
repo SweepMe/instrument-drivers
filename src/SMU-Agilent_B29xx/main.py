@@ -463,7 +463,8 @@ class Device(EmptyDevice):
                     opcounter += 1
                     time.sleep(0.5)
 
-            self.port.write(":FETC:ARR? (@%s)" % self.channel)  # get measured values taken during pulse release out of the memory
+            # get measured values taken during pulse release out of the memory
+            self.port.write(":FETC:ARR? (@%s)" % self.channel)
 
         answer = self.port.read()
 
