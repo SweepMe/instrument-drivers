@@ -140,6 +140,7 @@ class Device(EmptyDevice):
 
     def poweron(self):
         self.port.write("OUTP:STAT ON")
+        time.sleep(0.1) #the switch of the output terminal takes some time; without the delay, the timing is borderline and can lead to an Error-113 as the instrument is not ready just yet to receive a new command
 
     def poweroff(self):
         self.port.write("OUTP:STAT OFF")
@@ -151,7 +152,9 @@ class Device(EmptyDevice):
             raise Exception(msg)
         else:
             self.port.write("VOLT:LEV:IMM %1.4f" % float(self.value))
+            time.sleep(0.1) #the adjustment of the output takes some time; without the delay, the timing is borderline and can lead to an Error-113 as the instrument is not ready just yet to receive a new command
 
+            
     def measure(self):
         self.port.write("MEAS:VOLT?")
         self.v = float(self.port.read())
