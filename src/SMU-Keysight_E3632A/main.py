@@ -27,7 +27,7 @@
 
 # SweepMe! driver
 # * Module: SMU
-# * Instrument: Agilent/Keysight E3632A
+# * Instrument: HP/Agilent/Keysight E3632A
 
 import time  # needed for waiting until PSU has set the requested voltage
 
@@ -102,8 +102,8 @@ class Device(EmptyDevice):
 
     def configure(self):
 
-        # self.port.write("VOLT:PROT:STAT OFF") # output voltage protection disabled
-        # self.port.write("CURR:PROT:STAT OFF") # output current protection disabled
+        # self.port.write("VOLT:PROT:STAT OFF")  # output voltage protection disabled
+        # self.port.write("CURR:PROT:STAT OFF")  # output current protection disabled
 
         # hardcoded overvoltage protection limit, causes switch-off of channel; set to PSU protection default value
         self.port.write("VOLT:PROT:LEV 32")
@@ -140,6 +140,9 @@ class Device(EmptyDevice):
 
     def poweron(self):
         self.port.write("OUTP:STAT ON")
+        # the switch of the output terminal takes some time; without the delay, the timing is borderline and
+        # can lead to an Error-113 as the instrument is not ready just yet to receive a new command
+        time.sleep(0.1)
 
     def poweroff(self):
         self.port.write("OUTP:STAT OFF")
@@ -151,6 +154,9 @@ class Device(EmptyDevice):
             raise Exception(msg)
         else:
             self.port.write("VOLT:LEV:IMM %1.4f" % float(self.value))
+            # the adjustment of the output takes some time; without the delay, the timing is borderline and
+            # can lead to an Error-113 as the instrument is not ready just yet to receive a new command
+            time.sleep(0.1)
 
     def measure(self):
         self.port.write("MEAS:VOLT?")
@@ -162,14 +168,12 @@ class Device(EmptyDevice):
         return [self.v, self.i]
 
     def display_off(self):
-        # For further use.
 
         self.port.write("DISP:STAT OFF")
         # wait for display shutdown procedure to complete
         # time.sleep(0.5)
 
     def display_on(self):
-        # For further use.
 
         self.port.write("DISP:STAT ON")
         # wait for display switch-on procedure to complete
