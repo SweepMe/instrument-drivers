@@ -36,9 +36,27 @@ from pysweepme.ErrorMessage import debug, error
 
 
 class Device(EmptyDevice):
-    description = """
-        <h3>Calliope mini 3</h3>
-        <p>Reading basic sensors</p>
+    description = """<h3>Calliope mini 3</h3>
+<p><br />This SweepMe! driver can be used to readout the basic sensors of the Calliope mini 3. The Calliope mini is a mini computer/ micro controller that is used at schools for educational purposes. The board comes with several included sensors that can be read out without any further wiring.</p>
+<p><br /><br /><strong>Sensors:</strong></p>
+<ul>
+<li>Light level</li>
+<li>Sound level</li>
+<li>Acceleration (x,y,z)</li>
+<li>Magnetic field (x, y, z)</li>
+<li>Rotation (pitch, roll)</li>
+</ul>
+<p>&nbsp;</p>
+<p><strong>Usage:</strong></p>
+<ul>
+<li>Before the first use, please download the Calliope script onto the device. Please use the following link&nbsp;<a href="https://makecode.calliope.cc/_E77YhDWRVcCk">https://makecode.calliope.cc/_E77YhDWRVcCk</a>&nbsp;to open the script in the online editor. There you can directly download the script to the Calliope mini. Alternatively, you can find&nbsp;.hex file shipped with this SweepMe! driver. This file can be also used to load it with the Calliope online editor and program the mini computer.</li>
+<li>In SweepMe!: Add the module "Logger" to your sequencer and select the Device "Logger-Calliope_mini3". To read out the Calliope device multiple times, put the Logger module into a Loop module. Use a Delay module to slow down the measurement. Typically, it is enough to read the sensor data every second or every 0.1 s (= 10 times per second).</li>
+</ul>
+<p>&nbsp;</p>
+<p><strong>Known issues:<br /></strong></p>
+<ul>
+<li>Please make sure that the Calliope online editor is closed or the Calliope mini is disconnected in the online editor. Otherwise, the serial communication is disturbed.</li>
+</ul>
     """
 
     def __init__(self):
