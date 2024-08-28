@@ -437,6 +437,9 @@ class Device(EmptyDevice):
         if self.pulse:
             # releasing the pulse trigger, just at the moment when the measurement should be performed
             self.port.write(":INIT (@%s)" % self.channel)
+        else:
+            # taking a measurement during constant DC output
+            self.port.write(":MEAS? (@%s)" % self.channel)
 
     def call(self):
         
@@ -460,10 +463,8 @@ class Device(EmptyDevice):
                     opcounter += 1
                     time.sleep(0.5)
 
-            self.port.write(
-                ":FETC:ARR? (@%s)" % self.channel)  # get measured values taken during pulse release out of the memory
-        else:
-            self.port.write(":MEAS? (@%s)" % self.channel)  # taking a measurement during constant DC output
+            # get measured values taken during pulse release out of the memory
+            self.port.write(":FETC:ARR? (@%s)" % self.channel)
 
         answer = self.port.read()
 
