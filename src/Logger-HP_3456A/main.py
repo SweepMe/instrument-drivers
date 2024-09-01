@@ -35,9 +35,7 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    description = """<p><strong>HP 3456A 6.5 digit ohm- and voltmeter</strong>
-                     <br>Make sure the instrument is NOT in listen-only mode:
-                     <br>rightmost DIP switch of GPIB address encoder must be in "down" position </p>
+    description = """<p><strong>HP 3456A 6.5 digit ohm- and voltmeter</strong></p></p>
                     """
 
     def __init__(self):
@@ -53,27 +51,43 @@ class Device(EmptyDevice):
             "timeout": 10,  # needed for 100 NPLC
         }
 
-        # this dictionary connects modes to commands. The modes will be displayed to the user in the field 'Mode'.
+        # this dictionary connects modes to commands. The modes will be displayed to the user in the field 'Mode'
+        # 'S0' Makes sure than the SHIFT button is not pressed before requesting the function of choice whereas 'S1' virtually pressed the Shift button
         self.modes = {
-            "Voltage DC": "F1 Z0",
-            "Voltage AC": "F2 Z0",
-            "Voltage AC+DC": "F3 Z0",
-            "2W-Resistance": "F4 Z0",
-            "4W-Resistance": "F5 Z0",
-            #The following measurement functions are selected just like on the frontpanel by pressing the SHIFT key (S1 command) first  
-            "O.C. 2W-Res.": "S1 F4 Z0", #Offset-Compensated 2-Wire Resistance Measurement
-            "O.C. 4W-Res.": "S1 F5 Z0" #Offset-Compensated 4-Wire Resistance Measurement
+            "Voltage DC": "S0 F1 Z0",
+            #"Voltage DC with Auto-Zero": "F1 Z1", #Auto-Zero shorts the inputs to ground between measurements; doubles measurement time but removes zero point drift
+            "Voltage AC": "S0 F2 Z0",
+            #"Voltage AC with Auto-Zero": "F2 Z1",
+            "Voltage AC+DC": "S0 F3 Z0",
+            #"Voltage AC+DC with Auto-Zero": "F3 Z1",
+            #"Current DC": "CURR:DC", #current not available on 3456A
+            #"Current AC": "CURR:AC",
+            "2W-Resistance": "S0 F4 Z0",
+            #"2W-Resistance with Auto-Zero": "F4 Z1",
+            "4W-Resistance": "S0 F5 Z0",
+            #"4W-Resistance with Auto-Zero": "F5 Z1",
+            "O.C. 2W-Res.": "S1 F4 Z0", #Offset-Compensated 2-Wire Resistance Measurement; measurement function is selected just like on the frontpanel by pressing the SHIFT key (S1 command) first
+            #"O.C. 2W-Res. with Auto-Zero": "S1 F4 Z1",
+            "O.C. 4W-Res.": "S1 F5 Z0" #Offset-Compensated 4-Wire Resistance Measurement; measurement function is selected just like on the frontpanel by pressing the SHIFT key (S1 command) first
+            #"O.C. 4W-Res. with Auto-Zero": "S1 F5 Z1",
         }
 
         # this dictionary sets the unit of each mode
         self.mode_units = {
             "Voltage DC": "V",
+            #"Voltage DC with Auto-Zero": "V",
             "Voltage AC": "V",
+            #"Voltage AC with Auto-Zero": "V",
             "Voltage AC+DC": "V",
+            #"Voltage AC+DC with Auto-Zero": "V",
             "2W-Resistance": "Ohm",
+            #"2W-Resistance with Auto-Zero": "Ohm",
             "4W-Resistance": "Ohm",
+            #"4W-Resistance with Auto-Zero": "Ohm",
             "O.C. 2W-Res.": "Ohm",
+            #"O.C. 2W-Res. with Auto-Zero": "Ohm",
             "O.C. 4W-Res.": "Ohm"
+            #"O.C. 4W-Res. with Auto-Zero": "Ohm",
         }
         #number of displayed digits as dictionary
         self.resolutions = {
@@ -146,6 +160,12 @@ class Device(EmptyDevice):
         pass
 
     def configure(self):
+    
+        # Data Output Format
+        self.port.write("P0") # makes sure the device is set to the standard, unpacked ASCII format for data output
+        
+        # End-or-Identify Code
+        self.port.write("O1") # use the EOI mode for SCPI compatibility
 
         # Mode
         self.port.write("%s" % self.modes[self.mode])
@@ -184,13 +204,20 @@ class Device(EmptyDevice):
         # Display
         if self.display == "Off":
             self.port.write("D0")
+            
+        # Trigger on HOLD
+        self.port.write("T4") # sets the trigger on hold to wait for a manual trigger during the 'measure' routine
+        
 
     def unconfigure(self):
         if self.display == "Off":
             self.port.write("D1")  # We switch Display on again if it was switched off
+        
+        self.port.write("T1") # sets the trigger back to INTERNAL to enable the self-triggered measurements on the display again
 
     def measure(self):
-        self.data = self.port.read()  # retrieves current measurement data from the instrument
+        self.port.write("T3") # perform single trigger for a measurement
+        self.data = self.port.read()  # retrieves current measurement data from the instrument; no seperate SCPI data prepare command necessary
 
     def call(self):
         return [float(self.data)]
