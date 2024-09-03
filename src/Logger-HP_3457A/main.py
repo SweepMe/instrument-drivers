@@ -35,13 +35,12 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    description = """<p><strong>HP 3457A 6.5 (7.5 over GPIB) DMM.</strong><br><br> 
+    description = """<p><strong>HP 3457A 6.5 (7.5 over GPIB) DMM.</strong><br><br>
                      Notice: NPLC setting has priority and will interfere with resolution setting under certain conditions.<br><br>
                      7th digit resolution mode is implemented.</p>
                     """
 
     def __init__(self):
-
         EmptyDevice.__init__(self)
 
         self.shortname = "HP3457A"
@@ -64,7 +63,7 @@ class Device(EmptyDevice):
             "Current AC": "ACI",
             "Current AC+DC": "ACDCI",
             "Frequency": "FREQ",
-            "Period": "PER"
+            "Period": "PER",
         }
 
         # this dictionary sets the unit of each mode
@@ -78,21 +77,25 @@ class Device(EmptyDevice):
             "Current AC": "A",
             "Current AC+DC": "A",
             "Frequency": "Hz",
-            "Period": "s"
-        }
-        # measuring range as dictionary
-        self.ranges = {
-            "Auto": "AUTO"
-            # Setting manual ranges is currently not supported as the 3457A expects a floating point input with function dependend maximum values which would require several checks to be implemented to prevent violations
+            "Period": "s",
         }
 
-        # measuring resolution as dictionary; CAUTION: fast NPLC settings enforce low digit displays and will override this setting. Use it only to artificially restrict the number of digits for an exchange of refresh rate at certain NPLC settings
+        # measuring range as dictionary
+        # Setting manual ranges is currently not supported as the 3457A expects a floating point input with function
+        # dependent maximum values which would require several checks to be implemented to prevent violations
+        self.ranges = {
+            "Auto": "AUTO",
+        }
+
+        # measuring resolution as dictionary; CAUTION: fast NPLC settings enforce low digit displays and will override
+        # this setting. Use it only to artificially restrict the number of digits for an exchange of refresh rate at
+        # certain NPLC settings
         self.resolutions = {
             "7 Digits (if NPLC set to 10 or 100)": "7",
             "6 Digits (Standard)": "6",
             "5 Digits": "5",
             "4 Digits": "4",
-            "3 Digits": "3"
+            "3 Digits": "3",
         }
 
         self.nplc_types = {
@@ -101,12 +104,11 @@ class Device(EmptyDevice):
             "Fast (0.1)": "0.1",
             "Medium (1)": "1",
             "Slow (10)": "10",
-            "Very Slow (100)": "100"
+            "Very Slow (100)": "100",
         }
 
     def set_GUIparameter(self):
-
-        GUIparameter = {
+        return {
             "RouteOut": ["Front", "Rear"],
             "Mode": list(self.modes.keys()),
             "Resolution": list(self.resolutions.keys()),
@@ -116,17 +118,14 @@ class Device(EmptyDevice):
             "Display": ["On", "Off"],
         }
 
-        return GUIparameter
-
-    def get_GUIparameter(self, parameter={}):
-
-        self.route_out = parameter['RouteOut']
-        self.mode = parameter['Mode']
-        self.resolution = parameter['Resolution']
-        self.range = parameter['Range']
-        self.nplc = parameter['NPLC']
-        self.autozero = parameter['Auto-Zero']
-        self.display = parameter['Display']
+    def get_GUIparameter(self, parameter: dict):
+        self.route_out = parameter["RouteOut"]
+        self.mode = parameter["Mode"]
+        self.resolution = parameter["Resolution"]
+        self.range = parameter["Range"]
+        self.nplc = parameter["NPLC"]
+        self.autozero = parameter["Auto-Zero"]
+        self.display = parameter["Display"]
 
         self.port_string = parameter["Port"]
 
@@ -140,44 +139,44 @@ class Device(EmptyDevice):
         self.savetype = [True]  # True to save data
 
     def initialize(self):
+        # IMPORTANT: set to use End-Or-Identify command behaviour so that it acts like a usual SCPI based GPIB device
+        self.port.write("END 2")
 
-        self.port.write("END 2") # IMPORTANT: set to use End-Or-Identify command behaviour so that it acts like a usual SCPI based GPIB device
         self.port.write("ID?")
-        #idn=self.port.read()
-        #print("Identification: ", idn)
         self.port.write("CSB")  # clearing the status registers
         self.port.write("OFORMAT ASCII")  # makes sure that output is in ASCII format
 
-    def deinitialize(self):
-
-        pass
-
     def configure(self):
-        # route-out is checked for both cases so if needed, the additional special cases "open terminal" and "scanner card" can be added if required
+        # route-out is checked for both cases so if needed, the additional special cases "open terminal" and
+        # "scanner card" can be added if required
         if self.route_out == "Front":
-            self.port.write("TERM 1") # set to front terminal input
+            self.port.write("TERM 1")  # set to front terminal input
         elif self.route_out == "Rear":
-            self.port.write("TERM 2") # set to front terminal input
-        self.port.write("MFORMAT ASCII") # memory format ascii
-        self.port.write("TARM AUTO") # automatic trigger arming
-        self.port.write("NRDGS 1,AUTO")# number of readings per trigger
-        self.port.write("TRIG SGL") # set single trigger mode
+            self.port.write("TERM 2")  # set to front terminal input
+        self.port.write("MFORMAT ASCII")  # memory format ascii
+        self.port.write("TARM AUTO")  # automatic trigger arming
+        self.port.write("NRDGS 1,AUTO")  # number of readings per trigger
+        self.port.write("TRIG SGL")  # set single trigger mode
 
         # Mode and Range
-        self.port.write("%s %s" % (self.modes[self.mode],self.ranges[self.range]))
+        self.port.write("%s %s" % (self.modes[self.mode], self.ranges[self.range]))
 
         # Resolution
-        if self.resolutions[self.resolution] == "7": # if a 7th digit of resolution is requested:
-            if self.nplc_types[self.nplc] in ("10", "100"): # if the required amount of NPLC integration cycles is set:
-                self.port.write("NDIG 6") # apply command for 6 digit resolution and later retrieve the additional resolution digit out of the HIRES register of the RMATH command
+        if self.resolutions[self.resolution] == "7":  # if a 7th digit of resolution is requested:
+            if self.nplc_types[self.nplc] in ("10", "100"):  # if the required amount of NPLC integration cycles is set:
+                # apply command for 6 digit resolution and later retrieve the additional resolution digit out of the
+                # HIRES register of the RMATH command
+                self.port.write("NDIG 6")
             else:
-                msg=("7 digit resolution can only be used in combination with a NPLC setting of 10 or 100.")
+                msg = "7 digit resolution can only be used in combination with a NPLC setting of 10 or 100."
                 raise Exception(msg)
         else:
-            self.port.write("NDIG %s" % self.resolutions[self.resolution]) # for digits requested to be between 3 and 6, just send the appropiate command
-        
+            self.port.write(
+                "NDIG %s" % self.resolutions[self.resolution],
+            )  # for digits requested to be between 3 and 6, just send the appropiate command
+
         # NPLC Integration
-        self.port.write("NPLC %s" % self.nplc_types[self.nplc]) #apply the set amount of digits
+        self.port.write("NPLC %s" % self.nplc_types[self.nplc])  # apply the set amount of digits
 
         # Auto-Zero
         if self.autozero == "On":
@@ -194,13 +193,15 @@ class Device(EmptyDevice):
             self.port.write("DISP 1")  # We switch Display on again if it was switched off
 
     def measure(self):
-        self.port.write("?") # questionmark triggers single measuring event
+        self.port.write("?")  # questionmark triggers single measuring event
         self.data = self.port.read()  # retrieves current measurement data from the instrument
-        
-        if self.resolutions[self.resolution] == "7": # if a 7th digit of resolution is requested:
-            self.port.write("RMATH HIRES") # request output of the value of the 7th digit; it will be already correctly scaled so that it can just be added to the original 6-digit result by math addition
+
+        if self.resolutions[self.resolution] == "7":  # if a 7th digit of resolution is requested:
+            # request output of the value of the 7th digit; it will be already correctly scaled so that it can just be
+            # added to the original 6-digit result by math addition
+            self.port.write("RMATH HIRES")
             self.hiresdata = self.port.read()  # retrieve 7th digit resolution measurement value
-            self.data = float(self.data) + float(self.hiresdata) # add the 7th digit to the measurement
+            self.data = float(self.data) + float(self.hiresdata)  # add the 7th digit to the measurement
 
     def call(self):
         return [float(self.data)]
