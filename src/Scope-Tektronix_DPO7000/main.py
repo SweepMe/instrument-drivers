@@ -32,14 +32,14 @@
 # * Instrument: Tektronix DPO7000
 
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 import numpy as np
 
 class Device(EmptyDevice):
 
     description = """
-                     Most of the Scope module features are not yet supported and many properties must be set manually.
-                  """
+        Most of the Scope module features are not yet supported and many properties must be set manually.
+    """
 
     def __init__(self):
     
@@ -49,7 +49,7 @@ class Device(EmptyDevice):
         
         self.variables = ["Time"]
         self.units = ["s"]
-        self.plottype = [True] # True to plot data
+        self.plottype = [True]  # True to plot data
         self.savetype = [True]  # True to save data
         
         self.port_manager = True
@@ -57,21 +57,21 @@ class Device(EmptyDevice):
         self.port_identifications = ['TEKTRONIX,DPO7354C*'] 
        
         self.port_properties = {
-                                "timeout": 5.0,
-                                "delay": 1.0,
-                                }
+            "timeout": 5.0,
+            "delay": 1.0,
+        }
         
         self.commands = {
-                        "Channel 1": "CH1",
-                        "Channel 2": "CH2",
-                        "Channel 3": "CH3",
-                        "Channel 4": "CH4",
-                        "External": "EXT",
-                        "Line": "LINE",
-                        "None": "NONE",
-                        "Rising": "POS",
-                        "Falling": "NEG",
-                        }
+            "Channel 1": "CH1",
+            "Channel 2": "CH2",
+            "Channel 3": "CH3",
+            "Channel 4": "CH4",
+            "External": "EXT",
+            "Line": "LINE",
+            "None": "NONE",
+            "Rising": "POS",
+            "Falling": "NEG",
+        }
            
     def set_GUIparameter(self):
 
@@ -138,37 +138,37 @@ class Device(EmptyDevice):
     def initialize(self): 
     
         # This driver does not use Reset yet so that user can do measurements with changing options manually
-        #self.port.write("*RST")
+        # self.port.write("*RST")
 
         if len(self.channels) == 0:
             raise Exception("Please select at least one channel to be read out")
   
-        #self.port.write("*IDN?")                # Query device name
+        #self.port.write("*IDN?")  # Query device name
         #print("ID Checkup")
         #print(self.port.read())
 
-        self.port.write("ACQ:STOPAfter SEQ")     # single sequence measurement
+        self.port.write("ACQ:STOPAfter SEQ")  # single sequence measurement
         
-        self.port.write("DAT:STOP 999999999999") # ensure that the entire waveform is recorded
-        self.port.write("DAT:ENCdg ASCii")       # sets encoding
+        self.port.write("DAT:STOP 999999999999")  # ensure that the entire waveform is recorded
+        self.port.write("DAT:ENCdg ASCii")  # sets encoding
 
     def configure(self):
 
         # Acquisition
-        self.port.write("ACQuire:MODe AVE") # use acquisition mode "averaged" 
-        self.port.write("ACQ:NUMAV %s" %self.average)   # set averages
+        self.port.write("ACQuire:MODe AVE")  # use acquisition mode "averaged"
+        self.port.write("ACQ:NUMAV %s" % self.average)   # set averages
 
         # Trigger
         # set the trigger settings, first the trigger level and then the slope
         if self.triggersource == "As is" or self.triggersource == "None":
             pass
         else:
-            self.port.write("TRIGger:A:EDGE:SOUrce %s" %self.triggersource)
+            self.port.write("TRIGger:A:EDGE:SOUrce %s" % self.triggersource)
         
         self.port.write("TRIGger:A:EDGE:SOUrce?")
         triggerchannel = self.port.read() 
         
-        self.port.write("TRIGger:A:LEVel:%s %s" %(triggerchannel, self.triggerlevel))  # set trigger level
+        self.port.write("TRIGger:A:LEVel:%s %s" % (triggerchannel, self.triggerlevel))  # set trigger level
         
         if self.triggerlevel == 0:  # if no specific trigger level desired,
             self.port.write("TRIGger:A SETLevel;TRIGger:B SETLevel")  # sets the trigger level at 50%
@@ -200,9 +200,9 @@ class Device(EmptyDevice):
             
         elif self.timerange == "Record length":
             # set manual mode + RL
-            self.port.write("HORizontal:MODE:MANual;HORizontal:MODE:RECOrdlength %s" %self.timerangevalue)
+            self.port.write("HORizontal:MODE:MANual;HORizontal:MODE:RECOrdlength %s" % self.timerangevalue)
 
-        self.port.write("HORizontal:MODE:SAMPLERate %s" %self.samplingrate)  # set sampling rate in 1/s
+        self.port.write("HORizontal:MODE:SAMPLERate %s" % self.samplingrate)  # set sampling rate in 1/s
 
         # Channel properties
         for i in self.channels:
