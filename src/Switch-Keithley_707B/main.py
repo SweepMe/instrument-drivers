@@ -65,7 +65,7 @@ class Device(EmptyDevice):
         self.shortname = "Keithley 707B"
         
         self.port_manager = True
-        self.port_types = ['GPIB']
+        self.port_types = ['GPIB', 'TCPIP']
         self.port_properties = {    
                                     "timeout": 5,
                                     "EOL": "\r",
