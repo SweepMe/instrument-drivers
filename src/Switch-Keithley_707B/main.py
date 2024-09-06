@@ -5,7 +5,7 @@
 
 # MIT License
 
-# Copyright (c) 2021 SweepMe! GmbH
+# Copyright (c) 2021, 2024 SweepMe! GmbH (sweep-me.net)
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,11 +25,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# Contribution: We like to thank GRIP Molecular Technologies, Inc/John Myers-Bangsund, Ph.D. for providing the initial version of this driver.
+# Contribution:
+# We like to thank GRIP Molecular Technologies, Inc/John Myers-Bangsund, Ph.D.
+# for providing the initial version of this driver.
 
-# SweepMe! device class
-# Type: Switch
-# Device: Keithley 707B
+# SweepMe! driver
+# * Module: Switch
+# * Instrument: Keithley 707B
 
 
 # See sequencer procedure here: https://wiki.sweep-me.net/wiki/Sequencer_procedure
@@ -45,18 +47,18 @@ import re # For regex / string validation
 class Device(EmptyDevice):
 
     description = """
-                    <p><strong>Usage:</strong></p>
-                    <ul>
-                    <li>Enter comma separated configurations, e.g "1101; 1201; 1301".</li>
-                    <li>Only certain cards have a bank. For cards without a bank, just put 1 for the bank number.</li>
-                    <li>Open means the relay is open/disconnected. No current will flow through. Closed means the relay is closed/connected, and current will flow through.</li>
-                    <li>In the user manual (707B-901-01 Rev. B / January 2015) page 152 you can find how Matrix card channel specifiers are for this instrument.</li>
+        <p><strong>Usage:</strong></p>
+        <ul>
+        <li>Enter comma separated configurations, e.g "1101; 1201; 1301".</li>
+        <li>Only certain cards have a bank. For cards without a bank, just put 1 for the bank number.</li>
+        <li>Open means the relay is open/disconnected. No current will flow through. Closed means the relay is closed/connected, and current will flow through.</li>
+        <li>In the user manual (707B-901-01 Rev. B / January 2015) page 152 you can find how Matrix card channel specifiers are for this instrument.</li>
 
-                    </ul>
-                    <p>&nbsp;</p>
-                    <p><strong>Known issues:</strong></p>
-                    <p>In case SweepBox is used as Sweep value, comma-separated configurations can not be used at the moment as the comma is already used by the SweepBox to split the values to be set.</p>
-                """
+        </ul>
+        <p>&nbsp;</p>
+        <p><strong>Known issues:</strong></p>
+        <p>In case SweepBox is used as Sweep value, comma-separated configurations can not be used at the moment as the comma is already used by the SweepBox to split the values to be set.</p>
+    """
 
     def __init__(self):
         
@@ -65,7 +67,7 @@ class Device(EmptyDevice):
         self.shortname = "Keithley 707B"
         
         self.port_manager = True
-        self.port_types = ['GPIB']
+        self.port_types = ['GPIB', 'TCPIP']
         self.port_properties = {    
                                     "timeout": 5,
                                     "EOL": "\r",
@@ -78,13 +80,12 @@ class Device(EmptyDevice):
         #self.plottype = [True]
         #self.savetype = [True]
 
-
     def set_GUIparameter(self):
         
-        GUIparameter =  {
-                        "SweepMode" : ["Channels"],
-                        "Switch settling time in ms" : 20, # 4 ms switching time for the 3730 latching electromechanical relays
-                        }
+        GUIparameter = {
+            "SweepMode": ["Channels"],
+            "Switch settling time in ms": 20,  # 4 ms switching time for the 3730 latching electromechanical relays
+        }
         
         return GUIparameter
         
@@ -92,8 +93,6 @@ class Device(EmptyDevice):
         self.device = parameter['Device']
         self.switch_settling_time_s = float(parameter["Switch settling time in ms"])/1000
         self.sweepmode = parameter["SweepMode"]
-        self.sweepvalue = parameter["SweepValue"]
-
     
     def initialize(self):
         # print(self.get_identification())
