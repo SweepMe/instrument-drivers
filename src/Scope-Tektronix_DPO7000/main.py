@@ -103,7 +103,7 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter={}):
     
         self.triggersource = parameter["TriggerSource"]
-        self.triggercoupling = parameter["TriggerCoupling"]
+        # self.triggercoupling = parameter["TriggerCoupling"]  # not yet implemented
         self.triggerslope = parameter["TriggerSlope"]
         self.triggerlevel = parameter["TriggerLevel"]
         
