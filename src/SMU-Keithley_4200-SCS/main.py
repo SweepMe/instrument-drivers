@@ -61,6 +61,7 @@ if RUNNING_ON_4200SCS:
 
 
 class Device(EmptyDevice):
+    """Keithley 4200-SCS driver."""
     def __init__(self) -> None:
         """Initialize device parameters."""
         EmptyDevice.__init__(self)
@@ -83,6 +84,7 @@ class Device(EmptyDevice):
         }
 
         # unclear whether all ranges exist as the documentation does not get clear about it
+        self.current_range: str = "Auto"
         self.current_ranges = {
             "Auto": 0,
             "Fixed 10 mA": 1e-2,
@@ -116,12 +118,46 @@ class Device(EmptyDevice):
             "Slow": 10.0,
         }
 
+        # Communication Parameter
+        self.port_string: str = "192.168.0.1"
+        self.identifier: str = "Keithley_4200-SCS_" + self.port_string
+        self.command_set: str = "LPTlib"
+        self.card_id: int = 1
+
+        self.lpt: lpt | Proxy | None = None
+        self.param: param | Proxy | None = None
+
+        # Measurement parameter
+        self.route_out: str = "Rear"
+        self.source: str = "Voltage in V"
+        self.protection: float = 100e-6
+        self.speed: str = "Very fast"
+        self.channel: str = "SMU1"
+
+        self.card_name = "SMU" + self.channel[-1]
+        self.pulse_channel = None
+
+        # Pulse Mode Parameters
+        self.pulse_master = False
+        self.pulse_mode: bool = False
+
+        self.pulse_count: int = 1
+        self.pulse_meas_start: float = 50
+        self.pulse_meas_duration: float = 20
+        self.pulse_width: float = 0.5e-6
+        self.pulse_period: float = 2e-6
+        self.pulse_delay: float = 1e-9
+        self.pulse_base_level: float = 0.0
+        self.pulse_rise_time: float = 100e-9
+        self.pulse_fall_time: float = 100e-9
+        self.pulse_impedance: float = 1e6
+
     @staticmethod
     def find_ports() -> list[str]:
         """Find available ports."""
         return ["LPTlib"] if RUNNING_ON_4200SCS else ["LPTlib via xxx.xxx.xxx.xxx"]
 
-    def set_GUIparameter(self) -> dict:
+    def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
             "SweepMode": ["Voltage in V", "Current in A"],
@@ -144,12 +180,11 @@ class Device(EmptyDevice):
             "PulseImpedance": 1e6,
         }
 
-    def get_GUIparameter(self, parameter: dict) -> None:
+    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.port_string = parameter["Port"]
         self.identifier = "Keithley_4200-SCS_" + self.port_string
 
-        # self.four_wire = parameter['4wire']
         self.route_out = parameter["RouteOut"]
         self.current_range = parameter["Range"]
 
@@ -157,10 +192,6 @@ class Device(EmptyDevice):
 
         self.protection = parameter["Compliance"]
         self.speed = parameter["Speed"]
-        # self.pulse = parameter['CheckPulse']
-        # self.pulse_meas_time = parameter['PulseMeasTime']
-
-        # self.average = int(parameter['Average'])
 
         self.channel = parameter["Channel"]
 
@@ -195,7 +226,6 @@ class Device(EmptyDevice):
                 self.pulse_width = float(parameter["PulseOnTime"])
                 self.pulse_period = float(parameter["PulsePeriod"])
                 self.pulse_delay = float(parameter["PulseDelay"])
-                # self.pulse_toff = float(parameter["PulseOffTime"])
                 self.pulse_base_level = parameter["PulseOffLevel"]
                 self.pulse_rise_time = parameter["PulseRiseTime"]
                 self.pulse_fall_time = parameter["PulseFallTime"]
@@ -259,8 +289,7 @@ class Device(EmptyDevice):
                     msg = "When using KXCI only Auto current range is supported."
                     raise Exception(msg)
 
-                options = self.get_options()
-                # print("Options:", options)
+                self.get_options()
 
                 self.clear_buffer()
                 self.set_to_4200()
@@ -285,7 +314,9 @@ class Device(EmptyDevice):
             if float(self.pulse_width) >= float(self.pulse_period):
                 msg = "Pulse width must be smaller than pulse period!"
                 raise ValueError(msg)
-            if float(self.pulse_delay) < 20e-9:
+
+            min_pulse_delay = 20e-9
+            if float(self.pulse_delay) < min_pulse_delay:
                 msg = "Delay must be 20 ns or larger (not clear why)!"
                 raise ValueError(msg)
 
@@ -450,9 +481,7 @@ class Device(EmptyDevice):
         """Start the pulse measurement if in pulse mode."""
         if self.pulse_mode and self.pulse_master:
             # TODO: only the master driver instance needs to execute
-            self.lpt.pulse_exec(
-                mode=self.param.PULSE_MODE_SIMPLE,  # Alternatively self.param.PULSE_MODE_ADVANCED
-            )
+            self.lpt.pulse_exec(mode=self.param.PULSE_MODE_SIMPLE)  # Alternatively self.param.PULSE_MODE_ADVANCED
 
     def request_result(self) -> None:
         """Wait for pulse measurements to finish."""
@@ -705,10 +734,12 @@ class Device(EmptyDevice):
     def set_pulse_impedance(self, channel: str, impedance: str) -> str:
         """Set the pulse impedance of the device."""
         impedance = float(impedance)
-        if impedance < 1.0:
+        minimum_impedance = 1.0
+        maximum_impedance = 1e6
+        if impedance < minimum_impedance:
             msg = f"Impedance of {impedance} too low. Must be between 1.0 and 1e6."
             raise ValueError(msg)
-        if impedance > 1e6:
+        if impedance > maximum_impedance:
             msg = f"Impedance of {impedance} too high. Must be between 1.0 and 1e6."
             raise ValueError(msg)
 
@@ -774,14 +805,13 @@ class Device(EmptyDevice):
         self.port.write(f"GD {library} {module}")
         return self.port.read()
 
-    def kult_execute_module(self, library, module, *args) -> str:
+    def kult_execute_module(self, library: str, module: str, *args) -> str:
         arguments = ", ".join([str(x) for x in args])
         self.port.write(f"EX {library} {module}({arguments})")
 
         if self.port_string.startswith("TCPIP"):
             answer = self.port.read()
             print("EX TCPIP read:", answer)
-            # return answer
 
         return self.port.read()
 
@@ -789,7 +819,7 @@ class Device(EmptyDevice):
         """Abort KULT."""
         self.port.write("AB")
 
-    def kult_get_parameter(self, name_or_index, num_values=None) -> None:
+    def kult_get_parameter(self, name_or_index: str | int, num_values=None) -> None:
         """Retrieves information about the function arguments.
 
         Args:
