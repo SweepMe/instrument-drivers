@@ -30,7 +30,7 @@
 # * Instrument: Keithley 4200-SCS
 from __future__ import annotations
 
-import os
+import ctypes as c
 import time
 
 import numpy as np
@@ -40,17 +40,18 @@ from pysweepme.ErrorMessage import debug
 
 FolderManager.addFolderToPATH()
 
-import importlib
 
-import ProxyClass
+def running_on_device() -> bool:
+    """Check if the driver is executed directly on the Keithley 4200-SCS hardware by trying to import the lptlib.dll."""
+    dll_path = r"C:\s4200\sys\bin\lptlib.dll"
+    try:
+        _dll = c.WinDLL(dll_path)
+    except:
+        return False
+    return True
 
-importlib.reload(ProxyClass)
 
-from ProxyClass import Proxy
-
-# standard path for LPTlib.dll
-# If it exists, SweepMe! is running on the instruments PC
-RUNNING_ON_4200SCS = os.path.exists(r"C:\s4200\sys\bin\lptlib.dll")
+RUNNING_ON_4200SCS = running_on_device()
 
 if RUNNING_ON_4200SCS:
     # import LPT library functions
@@ -58,6 +59,14 @@ if RUNNING_ON_4200SCS:
     # not available yet -> # from pylptlib import inst
     # import LPT library parameter constants
     from pylptlib import lpt, param
+else:
+    import importlib
+
+    import ProxyClass
+
+    importlib.reload(ProxyClass)
+
+    from ProxyClass import Proxy
 
 
 class Device(EmptyDevice):
