@@ -54,7 +54,7 @@ class Device(EmptyDevice):
 
     def __init__(self):
 
-        super().__init__()
+        EmptyDevice.__init__(self)
 
         # Short name in sequencer
         self.shortname = "FA-448"
@@ -62,12 +62,12 @@ class Device(EmptyDevice):
         self.variables = ["Position"]
         self.units = ["#"]
         self.plottype = [True] # True to plot data
-        self.savetype = [False] # True to save data
+        self.savetype = [True] # True to save data
 
         # Filter positions
         self.positions = ["1","2","3","4","5","6"]
         # loads from further Filter configurations from Switch-Acton_FA-448.ini that is expected in public folder "CustomFiles"
-        self.positions_to_add = list(self.get_configoptions("Filter").values())
+        self.positions_to_add = list(self.getConfigOptions("Filter").values())  
 
 
         self.port_manager = True
@@ -100,7 +100,9 @@ class Device(EmptyDevice):
         self.filter_wavelengths = np.array(self.filter_readout[1::2], dtype = float)
 
         self.home = parameter["Home position"]
-
+        
+        self.config = parameter["Configuration"]
+        
 
     def connect(self):
         # figure out early whether a connection is established
@@ -112,6 +114,9 @@ class Device(EmptyDevice):
  
     def initialize(self):
         ''' set instrument at GUI selected state and ready for next commands'''
+        if len(self.config) > 1:
+            self.stop_Measurement("Please use a single filter in field 'Configuration' if you choose Set value.")
+            return False
         if self.sweepmode == "None":
             if len(self.pos_list) > 1:
                 self.stop_Measurement("Please use a single filter in field 'Filter position' if Sweep mode is None.")
@@ -172,6 +177,9 @@ class Device(EmptyDevice):
             self.port.write("?Filter")
             answer = (self.port.read())
         elif self.sweepmode == "Wavelength in nm":
+            # if self.value is below than 10, it's probably an energy and not a wavelength
+            if self.value < 10:
+                raise Exception("Check sweepmode. Wavelength expected, but probably energy or position received.")
             # do not send more than three digits after decimal separator
             self.wavelength_to_set = round(float(self.value),3)
             # Based on the wavelength the filter will be chosen
@@ -187,6 +195,9 @@ class Device(EmptyDevice):
             else:
                 self.port.write(str(int(filter_to_set)) + " Filter")
         elif self.sweepmode == "Energy in eV":
+            # if self.value is higher than 10, it's probably a wavelength and not an energy
+            if self.value > 10:
+                raise Exception("Check sweepmode. Energy expected, but probably wavelength received.")
             # if apply is pressed and not run, then value in "Values" is not set, if "Energy in eV" is selected
             
             # do not send more than three digits after decimal separator

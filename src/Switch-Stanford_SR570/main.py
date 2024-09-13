@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2019-2023 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2019, 2023 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -40,6 +40,8 @@ from ErrorMessage import error
 from EmptyDeviceClass import EmptyDevice
 
 import numpy as np
+
+import time
 
 class Device(EmptyDevice):
 
@@ -394,7 +396,7 @@ class Device(EmptyDevice):
         # Signal inverted
         self.port.write("INVT %i" % self.signal_inverted) # Sets the signal invert sense. 0=noninverted, 1=inverted.
         answer = self.port.read()
-        
+
         # Use bias voltage
         self.port.write("BSON %i" % self.use_bias_voltage) # Turn the bias voltage on (n=1) or off (n=0).
         answer = self.port.read()
@@ -417,6 +419,27 @@ class Device(EmptyDevice):
         
         # Blank front-end output
         self.port.write("BLNK %i" % self.blank_frontend) # Blanks the front-end output of the amplifier.
+        answer = self.port.read()
+
+    def reconfigure(self, parameter = {}, keys = []):
+        """ 
+        function to be overloaded if needed
+        
+        if a GUI parameter changes after replacement with global parameters, the device needs to be reconfigure.
+        Default behavior is that all parameters are set again and 'configure' is called.
+        The device class maintainer can redefine/overwrite 'reconfigure' with a more individual procedure. 
+        """
+        
+        print()
+        print("reconfigure")
+        print(keys)  # the ones that have changed
+        if (parameter["Bias voltage -5..+5 [V]"]) == "":
+            self.bias_voltage = 0
+        else:
+            self.bias_voltage = float(parameter["Bias voltage -5..+5 [V]"])
+        print("self.bias_voltage", self.bias_voltage)
+        # Bias voltage
+        self.port.write("BSLV %i" % int(round(self.bias_voltage * 1000))) # Sets the bias voltage level in the range. [-5000 ≤ n ≤ +5000] (-5.000 V to +5.000 V).
         answer = self.port.read()
 
     def apply(self):
@@ -457,6 +480,7 @@ class Device(EmptyDevice):
                     break
                 
             self.sensitivity = str(number) + " " + conversion[exp_step]
+            #time.sleep(1) #wait for the change in seconds
             # print(sensitivity)
             self.port.write("SENS %i" % self.sensitivities[self.sensitivity])
             answer = self.port.read()
