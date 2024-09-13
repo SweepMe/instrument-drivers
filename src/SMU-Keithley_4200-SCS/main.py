@@ -30,8 +30,10 @@
 # * Instrument: Keithley 4200-SCS
 from __future__ import annotations
 
-import os
+import ctypes as c
+import platform
 import time
+from pathlib import Path
 
 import numpy as np
 from pysweepme import FolderManager
@@ -40,17 +42,33 @@ from pysweepme.ErrorMessage import debug
 
 FolderManager.addFolderToPATH()
 
-import importlib
 
-import ProxyClass
+def running_on_device() -> bool:
+    """Check if the driver is executed directly on the Keithley 4200-SCS hardware by trying to import the lptlib.dll."""
+    dll_path = r"C:\s4200\sys\bin\lptlib.dll"
 
-importlib.reload(ProxyClass)
+    # If Clarius is not installed and the dll is not available, the driver is not running on the device
+    if not Path(dll_path).exists():
+        return False
 
-from ProxyClass import Proxy
+    # If the dll is available and can be imported, the driver is running on the device
+    try:
+        _dll = c.WinDLL(dll_path)
+    except:
+        # if the dll is available but cannot be imported, check the Python interpreter bitness
+        if platform.architecture()[0] != "32bit":
+            print(
+                "Keithley 4200-SCS: Installation of Clarius detected, but lptlib.dll cannot be loaded. Using remote "
+                "control via LPTlib server instead. If you are trying to run the driver directly on the device, use "
+                "32-Bit version of Python/SweepMe!.",
+            )
 
-# standard path for LPTlib.dll
-# If it exists, SweepMe! is running on the instruments PC
-RUNNING_ON_4200SCS = os.path.exists(r"C:\s4200\sys\bin\lptlib.dll")
+        return False
+
+    return True
+
+
+RUNNING_ON_4200SCS = running_on_device()
 
 if RUNNING_ON_4200SCS:
     # import LPT library functions
@@ -58,10 +76,19 @@ if RUNNING_ON_4200SCS:
     # not available yet -> # from pylptlib import inst
     # import LPT library parameter constants
     from pylptlib import lpt, param
+else:
+    import importlib
+
+    import ProxyClass
+
+    importlib.reload(ProxyClass)
+
+    from ProxyClass import Proxy
 
 
 class Device(EmptyDevice):
     """Keithley 4200-SCS driver."""
+
     def __init__(self) -> None:
         """Initialize device parameters."""
         EmptyDevice.__init__(self)
