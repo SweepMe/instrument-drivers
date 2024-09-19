@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2019, 2023 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -33,11 +33,9 @@
 # Device: Stanford SR570
 
 
-from collections import OrderedDict
+from pysweepme.ErrorMessage import error
 
-from ErrorMessage import error
-
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 import numpy as np
 
@@ -53,12 +51,13 @@ class Device(EmptyDevice):
         
         self.port_manager = True
         self.port_types = ["COM"]
-        self.port_properties = {"EOL" : "\r\n",
-                                "timeout": 3,
-                                "baudrate": 9600,
-                                "stopbits": 2,
-                                # "delay": 0.02,
-                                }
+        self.port_properties = {
+            "EOL": "\r\n",
+            "timeout": 3,
+            "baudrate": 9600,
+            "stopbits": 2,
+            # "delay": 0.02,
+        }
         
         # Text from the manual about the RS-232 communication #
         """                  
@@ -84,217 +83,217 @@ class Device(EmptyDevice):
         self.savetype = [True, True]
        
         self.sensitivities = {
-                              "1 pA/V": 0,
-                              "2 pA/V": 1,
-                              "5 pA/V": 2,
-                              
-                              "10 pA/V": 3,
-                              "20 pA/V": 4,
-                              "50 pA/V": 5,
-                              
-                              "100 pA/V": 6,
-                              "200 pA/V": 7,
-                              "500 pA/V": 8,
-                              
-                              "1 nA/V": 9,
-                              "2 nA/V": 10,
-                              "5 nA/V": 11,
-                              
-                              "10 nA/V": 12,
-                              "20 nA/V": 13,
-                              "50 nA/V": 14,
-                              
-                              "100 nA/V": 15,
-                              "200 nA/V": 16,
-                              "500 nA/V": 17,
+            "1 pA/V": 0,
+            "2 pA/V": 1,
+            "5 pA/V": 2,
 
-                              "1 µA/V": 18,
-                              "2 µA/V": 19,
-                              "5 µA/V": 20,   
+            "10 pA/V": 3,
+            "20 pA/V": 4,
+            "50 pA/V": 5,
 
-                              "10 µA/V": 21,
-                              "20 µA/V": 22,
-                              "50 µA/V": 23,    
+            "100 pA/V": 6,
+            "200 pA/V": 7,
+            "500 pA/V": 8,
 
-                              "100 µA/V": 24,
-                              "200 µA/V": 25,
-                              "500 µA/V": 26,                                                            
+            "1 nA/V": 9,
+            "2 nA/V": 10,
+            "5 nA/V": 11,
 
-                              "1 mA/V": 27,
-                            }
+            "10 nA/V": 12,
+            "20 nA/V": 13,
+            "50 nA/V": 14,
+
+            "100 nA/V": 15,
+            "200 nA/V": 16,
+            "500 nA/V": 17,
+
+            "1 µA/V": 18,
+            "2 µA/V": 19,
+            "5 µA/V": 20,
+
+            "10 µA/V": 21,
+            "20 µA/V": 22,
+            "50 µA/V": 23,
+
+            "100 µA/V": 24,
+            "200 µA/V": 25,
+            "500 µA/V": 26,
+
+            "1 mA/V": 27,
+        }
                             
         self.sentivities_value = {
-                              "1 pA/V": 1e-12,
-                              "2 pA/V": 2e-12,
-                              "5 pA/V": 5e-12,
-                              
-                              "10 pA/V": 10e-12,
-                              "20 pA/V": 20e-12,
-                              "50 pA/V": 50e-12,
-                              
-                              "100 pA/V": 100e-12,
-                              "200 pA/V": 200e-12,
-                              "500 pA/V": 500e-12,
-                              
-                              "1 nA/V": 1e-9,
-                              "2 nA/V": 2e-9,
-                              "5 nA/V": 5e-9,
-                              
-                              "10 nA/V": 10e-9,
-                              "20 nA/V": 20e-9,
-                              "50 nA/V": 50e-9,
-                              
-                              "100 nA/V": 100e-9,
-                              "200 nA/V": 200e-9,
-                              "500 nA/V": 500e-9,
+            "1 pA/V": 1e-12,
+            "2 pA/V": 2e-12,
+            "5 pA/V": 5e-12,
 
-                              "1 µA/V": 1e-6,
-                              "2 µA/V": 2e-6,
-                              "5 µA/V": 5e-6,   
+            "10 pA/V": 10e-12,
+            "20 pA/V": 20e-12,
+            "50 pA/V": 50e-12,
 
-                              "10 µA/V": 10e-6,
-                              "20 µA/V": 20e-6,
-                              "50 µA/V": 50e-6,    
+            "100 pA/V": 100e-12,
+            "200 pA/V": 200e-12,
+            "500 pA/V": 500e-12,
 
-                              "100 µA/V": 100e-6,
-                              "200 µA/V": 200e-6,
-                              "500 µA/V": 500e-6,                                                            
+            "1 nA/V": 1e-9,
+            "2 nA/V": 2e-9,
+            "5 nA/V": 5e-9,
 
-                              "1 mA/V": 1e-3,
-                            }
+            "10 nA/V": 10e-9,
+            "20 nA/V": 20e-9,
+            "50 nA/V": 50e-9,
+
+            "100 nA/V": 100e-9,
+            "200 nA/V": 200e-9,
+            "500 nA/V": 500e-9,
+
+            "1 µA/V": 1e-6,
+            "2 µA/V": 2e-6,
+            "5 µA/V": 5e-6,
+
+            "10 µA/V": 10e-6,
+            "20 µA/V": 20e-6,
+            "50 µA/V": 50e-6,
+
+            "100 µA/V": 100e-6,
+            "200 µA/V": 200e-6,
+            "500 µA/V": 500e-6,
+
+            "1 mA/V": 1e-3,
+        }
                             
         self.current_offset = {
-                              "1 pA": 0,
-                              "2 pA": 1,
-                              "5 pA": 2,
-                              
-                              "10 pA": 3,
-                              "20 pA": 4,
-                              "50 pA": 5,
-                              
-                              "100 pA": 6,
-                              "200 pA": 7,
-                              "500 pA": 8,
-                              
-                              "1 nA": 9,
-                              "2 nA": 10,
-                              "5 nA": 11,
-                              
-                              "10 nA": 12,
-                              "20 nA": 13,
-                              "50 nA": 14,
-                              
-                              "100 nA": 15,
-                              "200 nA": 16,
-                              "500 nA": 17,
+            "1 pA": 0,
+            "2 pA": 1,
+            "5 pA": 2,
 
-                              "1 µA": 18,
-                              "2 µA": 19,
-                              "5 µA": 20,   
+            "10 pA": 3,
+            "20 pA": 4,
+            "50 pA": 5,
 
-                              "10 µA": 21,
-                              "20 µA": 22,
-                              "50 µA": 23,    
+            "100 pA": 6,
+            "200 pA": 7,
+            "500 pA": 8,
 
-                              "100 µA": 24,
-                              "200 µA": 25,
-                              "500 µA": 26,                                                            
+            "1 nA": 9,
+            "2 nA": 10,
+            "5 nA": 11,
 
-                              "1 mA": 27,
-                              "1 mA": 28,  # TODO: Is this correct?
-                              "1 mA": 29,  # TODO: Is this correct?
-                            }
+            "10 nA": 12,
+            "20 nA": 13,
+            "50 nA": 14,
+
+            "100 nA": 15,
+            "200 nA": 16,
+            "500 nA": 17,
+
+            "1 µA": 18,
+            "2 µA": 19,
+            "5 µA": 20,
+
+            "10 µA": 21,
+            "20 µA": 22,
+            "50 µA": 23,
+
+            "100 µA": 24,
+            "200 µA": 25,
+            "500 µA": 26,
+
+            "1 mA": 27,
+            "1 mA": 28,  # TODO: Is this correct?
+            "1 mA": 29,  # TODO: Is this correct?
+        }
                             
         self.frequencies = {
-                           "0.03 Hz": 0,
-        
-                           "0.1 Hz": 1,
-                           "0.3 Hz": 2,
-                           
-                           "1 Hz": 3,
-                           "3 Hz": 4,
-                           
-                           "10 Hz": 5,
-                           "30 Hz": 6,
-                           
-                           "100 Hz": 7,
-                           "300 Hz": 8,
-                           
-                           "1 kHz": 9,
-                           "3 kHz": 10,
-                           
-                           "10 kHz": 11,
-                           "30 kHz": 12,
-                           
-                           "100 kHz": 13,
-                           "300 kHz": 14,
-                           
-                           "1 MHz": 15,
-                           }
+            "0.03 Hz": 0,
+
+            "0.1 Hz": 1,
+            "0.3 Hz": 2,
+
+            "1 Hz": 3,
+            "3 Hz": 4,
+
+            "10 Hz": 5,
+            "30 Hz": 6,
+
+            "100 Hz": 7,
+            "300 Hz": 8,
+
+            "1 kHz": 9,
+            "3 kHz": 10,
+
+            "10 kHz": 11,
+            "30 kHz": 12,
+
+            "100 kHz": 13,
+            "300 kHz": 14,
+
+            "1 MHz": 15,
+        }
                            
         self.gain_modes = {        
-                            "Low noise": 0,
-                            "High bandwidth": 1,
-                            "Low drift": 2,
-                            }
+            "Low noise": 0,
+            "High bandwidth": 1,
+            "Low drift": 2,
+        }
                             
         self.filters = {
-                        "6 db highpass": 0,
-                        "12 db highpass": 1,
-                        "6 db bandpass": 2,
-                        "6 db lowpass": 3,
-                        "12 db lowpass": 4,
-                        "None" : 5,
-                        }        
+            "6 db highpass": 0,
+            "12 db highpass": 1,
+            "6 db bandpass": 2,
+            "6 db lowpass": 3,
+            "12 db lowpass": 4,
+            "None" : 5,
+        }
                             
         # defined but not used at the moment
         unit_conversion = { 
-                            " pA/V": "1e-12",
-                            " nA/V": "1e-9",
-                            " µA/V": "1e-6",
-                            " mA/V": "1e-3",
-                           }
+            " pA/V": "1e-12",
+            " nA/V": "1e-9",
+            " µA/V": "1e-6",
+            " mA/V": "1e-3",
+        }
                            
         self.commands = {
-                        "Negative": 0,
-                        "Positive": 1, 
-                        }
+            "Negative": 0,
+            "Positive": 1,
+        }
 
     def set_GUIparameter(self):
         
-        gui_parameter =  {
-                        "SweepMode" : ["None", "Sensitivity in A/V", "Voltage in V"],
-                        
-                        "Bias voltage:" : None,
-                        "Use bias voltage": False,
-                        "Bias voltage -5..+5 [V]": "0.0",
-                        
-                        "Input offset current:" : None,
-                        "Use input offset current" :  False,
-                        "Input offset current sign": ["Negative", "Positive"],
-                        "Input offset current" : list(self.current_offset.keys()),
-                        "Input offset uncalibrated": False,
-                        "Uncalibrated input offset vernier -100..+100 [%]": 0.0,
-                        
-                        "Filter:" : None,
-                        "Filter": list(self.filters.keys()),
-                        "High pass filter": list(self.frequencies.keys())[0:-4], # only from 0.03 Hz to 10 kHz supported
-                        "Low pass filter": list(self.frequencies.keys())[::-1],
-                        
-                        "Sensitivity:" : None,
-                        "Sensitivity" : list(self.sensitivities.keys())[::-1], 
-                        "Sensitivity uncalibrated": False,
-                        "Uncalibrated sensitivity vernier 0..100 [%]": 0,
-                        
-                        "Other:" : None,
-                        "Gain mode": list(self.gain_modes.keys()),
-                        "Invert signal": False,
-                        "Blank front-end output": False,
-                        }
+        gui_parameter = {
+            "SweepMode": ["None", "Sensitivity in A/V", "Voltage in V"],
+
+            "Bias voltage:": None,
+            "Use bias voltage": False,
+            "Bias voltage -5..+5 [V]": "0.0",
+
+            "Input offset current:" : None,
+            "Use input offset current" :  False,
+            "Input offset current sign": ["Negative", "Positive"],
+            "Input offset current" : list(self.current_offset.keys()),
+            "Input offset uncalibrated": False,
+            "Uncalibrated input offset vernier -100..+100 [%]": 0.0,
+
+            "Filter:": None,
+            "Filter": list(self.filters.keys()),
+            "High pass filter": list(self.frequencies.keys())[0:-4],  # only from 0.03 Hz to 10 kHz supported
+            "Low pass filter": list(self.frequencies.keys())[::-1],
+
+            "Sensitivity:": None,
+            "Sensitivity": list(self.sensitivities.keys())[::-1],
+            "Sensitivity uncalibrated": False,
+            "Uncalibrated sensitivity vernier 0..100 [%]": 0,
+
+            "Other:": None,
+            "Gain mode": list(self.gain_modes.keys()),
+            "Invert signal": False,
+            "Blank front-end output": False,
+        }
         
         return gui_parameter
         
-    def get_GUIparameter(self, parameter = {}):
+    def get_GUIparameter(self, parameter={}):
         
         self.sensitivity = parameter["Sensitivity"]
         
@@ -342,7 +341,7 @@ class Device(EmptyDevice):
         # self.sweepvalue = parameter["SweepValue"]
 
     def initialize(self):
-        self.port.write("*RST") # reset to default settings
+        self.port.write("*RST")  # reset to default settings
         answer = self.port.read()
        
     def connect(self):
@@ -362,63 +361,78 @@ class Device(EmptyDevice):
         answer = self.port.read()
         
         # Sensitivity calibration mode
-        self.port.write("SUCM %i" % self.sensitivity_uncalibration) # The manual says: 0 = cal, 1 = uncal. but in reality it switches off with 0 ???? 
+        # The manual says: 0 = cal, 1 = uncal. but in reality it switches off with 0 ????
+        self.port.write("SUCM %i" % self.sensitivity_uncalibration)
         answer = self.port.read()
         
         # Uncalibrated sensitivity vernier
-        self.port.write("SUCV %i" % self.uncalibrated_sensitivity_vernier) #[0 ≤ n ≤ 100] (percent of full scale).
+        # [0 ≤ n ≤ 100] (percent of full scale).
+        self.port.write("SUCV %i" % self.uncalibrated_sensitivity_vernier)
         answer = self.port.read()
         
         # Input offset current
-        self.port.write("IOON %i" % self.use_input_offset_current) # IOON n Turn the input offset current on (n=1) or off (n=0).
+        # IOON n Turn the input offset current on (n=1) or off (n=0).
+        self.port.write("IOON %i" % self.use_input_offset_current)
         answer = self.port.read()
         
         # Input offset current
-        self.port.write("IOLV %i" % self.current_offset[self.input_offset_current]) # IOLV n Sets the calibrated input offset current level
+        # IOLV n Sets the calibrated input offset current level
+        self.port.write("IOLV %i" % self.current_offset[self.input_offset_current])
         answer = self.port.read()
         
         # Uncalibrated input offset vernier
-        self.port.write("IOUV %i" % int(round(self.uncalibrated_input_offset*10))) # IOUV n Sets the uncalibrated input offset vernier
+        # IOUV n Sets the uncalibrated input offset vernier
+        self.port.write("IOUV %i" % int(round(self.uncalibrated_input_offset*10)))
         answer = self.port.read()
         
         # Input offset current sign
-        self.port.write("IOSN %i" % self.commands[self.input_offset_current_sign]) # IOSN n Sets the input offset current sign
+        # IOSN n Sets the input offset current sign
+        self.port.write("IOSN %i" % self.commands[self.input_offset_current_sign])
         answer = self.port.read()
         
         # Input offset calibration mode
-        self.port.write("IOUC %i" % self.input_offset_uncalibration) # IOUC n Sets the input offset cal mode. 0 = cal, 1 = uncal.
+        # IOUC n Sets the input offset cal mode. 0 = cal, 1 = uncal.
+        self.port.write("IOUC %i" % self.input_offset_uncalibration)
         answer = self.port.read()
         
         # Gain mode
-        self.port.write("GNMD %i" % self.gain_modes[self.ground_mode]) # Sets the gain mode of the amplifier.
+        # Sets the gain mode of the amplifier.
+        self.port.write("GNMD %i" % self.gain_modes[self.ground_mode])
         answer = self.port.read()
         
         # Signal inverted
-        self.port.write("INVT %i" % self.signal_inverted) # Sets the signal invert sense. 0=noninverted, 1=inverted.
+        # Sets the signal invert sense. 0=noninverted, 1=inverted.
+        self.port.write("INVT %i" % self.signal_inverted)
         answer = self.port.read()
 
         # Use bias voltage
-        self.port.write("BSON %i" % self.use_bias_voltage) # Turn the bias voltage on (n=1) or off (n=0).
+        # Turn the bias voltage on (n=1) or off (n=0).
+        self.port.write("BSON %i" % self.use_bias_voltage)
         answer = self.port.read()
         
         # Bias voltage
-        self.port.write("BSLV %i" % int(round(self.bias_voltage * 1000))) # Sets the bias voltage level in the range. [-5000 ≤ n ≤ +5000] (-5.000 V to +5.000 V).
+        # Sets the bias voltage level in the range. [-5000 ≤ n ≤ +5000] (-5.000 V to +5.000 V).
+        self.port.write("BSLV %i" % int(round(self.bias_voltage * 1000)))
         answer = self.port.read()
         
         # Filter type
-        self.port.write("FLTT %i" % self.filters[self.filter]) # FLTT n Sets the filter type
+        # FLTT n Sets the filter type
+        self.port.write("FLTT %i" % self.filters[self.filter])
         answer = self.port.read()
         
         # Low pass
-        self.port.write("LFRQ %i" % self.frequencies[self.lowpass]) # Sets the value of the lowpass filter     
+        # Sets the value of the lowpass filter
+        self.port.write("LFRQ %i" % self.frequencies[self.lowpass])
         answer = self.port.read()
         
         # High pass
-        self.port.write("HFRQ %i" % self.frequencies[self.highpass]) # Sets the value of the lowpass filter
+        # Sets the value of the lowpass filter
+        self.port.write("HFRQ %i" % self.frequencies[self.highpass])
         answer = self.port.read()
         
         # Blank front-end output
-        self.port.write("BLNK %i" % self.blank_frontend) # Blanks the front-end output of the amplifier.
+        # Blanks the front-end output of the amplifier.
+        self.port.write("BLNK %i" % self.blank_frontend)
         answer = self.port.read()
 
     def reconfigure(self, parameter = {}, keys = []):
@@ -430,16 +444,14 @@ class Device(EmptyDevice):
         The device class maintainer can redefine/overwrite 'reconfigure' with a more individual procedure. 
         """
         
-        print()
-        print("reconfigure")
-        print(keys)  # the ones that have changed
         if (parameter["Bias voltage -5..+5 [V]"]) == "":
             self.bias_voltage = 0
         else:
             self.bias_voltage = float(parameter["Bias voltage -5..+5 [V]"])
-        print("self.bias_voltage", self.bias_voltage)
+
         # Bias voltage
-        self.port.write("BSLV %i" % int(round(self.bias_voltage * 1000))) # Sets the bias voltage level in the range. [-5000 ≤ n ≤ +5000] (-5.000 V to +5.000 V).
+        # Sets the bias voltage level in the range. [-5000 ≤ n ≤ +5000] (-5.000 V to +5.000 V).
+        self.port.write("BSLV %i" % int(round(self.bias_voltage * 1000)))
         answer = self.port.read()
 
     def apply(self):
@@ -447,13 +459,12 @@ class Device(EmptyDevice):
         if self.sweepmode.startswith("Sensitivity"):
         
             conversion = {
-                            1e-3: "mA/V",
-                            1e-6: "µA/V",
-                            1e-9: "nA/V",
-                            1e-12: "pA/V",
-                            }
-        
-            # print(self.value)
+                1e-3: "mA/V",
+                1e-6: "µA/V",
+                1e-9: "nA/V",
+                1e-12: "pA/V",
+            }
+
             self.value = float(self.value)
             
             for exp_step in list(conversion.keys()):
@@ -480,8 +491,7 @@ class Device(EmptyDevice):
                     break
                 
             self.sensitivity = str(number) + " " + conversion[exp_step]
-            #time.sleep(1) #wait for the change in seconds
-            # print(sensitivity)
+
             self.port.write("SENS %i" % self.sensitivities[self.sensitivity])
             answer = self.port.read()
 
@@ -498,10 +508,10 @@ class Device(EmptyDevice):
             self.bias_voltage = self.value
 
     def unconfigure(self):
-        self.port.write("ROLD") # Resets the filter capacitors to clear an overload condition.
+        self.port.write("ROLD")  # Resets the filter capacitors to clear an overload condition.
         answer = self.port.read()
         # Turn bias voltage off
-        self.port.write("BSON 0") # Turn the bias voltage on (n=1) or off (n=0).
+        self.port.write("BSON 0")  # Turn the bias voltage on (n=1) or off (n=0).
         
     def call(self):
         if not self.use_bias_voltage:
