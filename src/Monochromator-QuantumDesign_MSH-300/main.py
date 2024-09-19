@@ -5,7 +5,7 @@
 
 # MIT License
 
-# Copyright (c) 2022 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -44,7 +44,7 @@ import pathlib
 
 from collections import OrderedDict
 
-import FolderManager
+from pysweepme import FolderManager
 FoMa = FolderManager.FolderManager()
 FolderManager.addFolderToPATH()
 
@@ -142,10 +142,10 @@ class Device(EmptyDevice):
     def set_GUIparameter(self):
 
         gui_parameter = {
-                         "SweepMode": ["Wavelength in nm", "Energy in eV", "None"],  # "Reflection (zero order)", "Slitwidth [µm]" needs additional fix wavelength option
+                         "SweepMode": ["Wavelength in nm", "Energy in eV", "None"],
                          "EndPosition": "",
-                         "Input": list(self.slitinputs.keys()),  # TODO: Is this self.inport?
-                         "Output": list(self.slitoutputs.keys()),  # TODO: Is this self.outport?
+                         "Input": list(self.slitinputs.keys()),
+                         "Output": list(self.slitoutputs.keys()),
                          "Filter": ["Auto"] + self.filters,
                          "Grating": ["Auto"] + self.gratings,
                          # "SlitOutput": ["2000 (max)", "1500", "6 (min)"],
@@ -318,7 +318,10 @@ class Device(EmptyDevice):
             if float(self.value)>100:
                 self.set_wavelength(self.value)
             else:
-                wavelength_to_set = round(float(4.135667e-15*2.99792e8/(float(self.value)))*1e9,3) # conversion from eV to nm
+                # conversion from eV to nm
+                c = 2.99792e8  # speed of light in m/s
+                p = 4.135667e-15  # Planck constant in eV·s
+                wavelength_to_set = round(float(p*c/(float(self.value)))*1e9, 3)
                 self.set_wavelength(wavelength_to_set)
             
     def measure(self):
