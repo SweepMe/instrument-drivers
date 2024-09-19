@@ -5,7 +5,7 @@
 
 # MIT License
 
-# Copyright (c) 2021 SweepMe! GmbH
+# Copyright (c) 2024 SweepMe! GmbH
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,7 +31,7 @@
 # Type: Switch
 # Device: Acton FA-448
 
-from EmptyDeviceClass import EmptyDevice #sweepMe base class
+from pysweepme.EmptyDeviceClass import EmptyDevice
 import numpy as np
 
 import time
@@ -39,36 +39,35 @@ import time
 class Device(EmptyDevice):
 
     description =   """
-                        <p><strong>Usage:</strong></p>
-                        <ul>
-                        <li>If Sweep mode == "Position", the selected Sweep value is used.</li>
-                        <li>If Sweep mode == "Wavelength in nm", the filter is selected in accordance to the 'Filter position'.</li>
-                        <li>If Sweep mode == "Energy in eV", the filter is selected in accordance to the 'Filter position'.</li>
-                        To define custom filter and grating ranges, copy the template file Switch-Acton_FA-448.ini inside this driver folder to the "CustomFiles" folder of your public SweepMe! folder.<br>
-                        Define your own filter-wavelength dependencies using the format:<br>
-                        wl -> filter slot &lt;- wl -> filter slot &lt;- wl
-                        <li>If Sweep mode == "None", the position given in the field 'Value' is used, if button apply is pressed. It can be used as convenience setting for when no sweep is made (equivalent to one value sweep)</li>
-                        <li>If button "Apply" is pressed, the position given in the field 'Value' is set except for Sweep Mode "Energy in eV"</li>
-                        <li>Home position: position to return to at end of program ("None" = stay) or after pressing "Stop"</li>
-                    """
+        <p><strong>Usage:</strong></p>
+        <ul>
+        <li>If Sweep mode == "Position", the selected Sweep value is used.</li>
+        <li>If Sweep mode == "Wavelength in nm", the filter is selected in accordance to the 'Filter position'.</li>
+        <li>If Sweep mode == "Energy in eV", the filter is selected in accordance to the 'Filter position'.</li>
+        To define custom filter and grating ranges, copy the template file Switch-Acton_FA-448.ini inside this driver folder to the "CustomFiles" folder of your public SweepMe! folder.<br>
+        Define your own filter-wavelength dependencies using the format:<br>
+        wl -> filter slot &lt;- wl -> filter slot &lt;- wl
+        <li>If Sweep mode == "None", the position given in the field 'Value' is used, if button apply is pressed. It can be used as convenience setting for when no sweep is made (equivalent to one value sweep)</li>
+        <li>If button "Apply" is pressed, the position given in the field 'Value' is set except for Sweep Mode "Energy in eV"</li>
+        <li>Home position: position to return to at end of program ("None" = stay) or after pressing "Stop"</li>
+    """
 
     def __init__(self):
 
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         # Short name in sequencer
         self.shortname = "FA-448"
 
         self.variables = ["Position"]
         self.units = ["#"]
-        self.plottype = [True] # True to plot data
-        self.savetype = [True] # True to save data
+        self.plottype = [True]  # True to plot data
+        self.savetype = [True]  # True to save data
 
         # Filter positions
-        self.positions = ["1","2","3","4","5","6"]
-        # loads from further Filter configurations from Switch-Acton_FA-448.ini that is expected in public folder "CustomFiles"
+        self.positions = ["1", "2", "3", "4", "5", "6"]
+        # loads further filter options from Switch-Acton_FA-448.ini that is expected in public folder "CustomFiles"
         self.positions_to_add = list(self.getConfigOptions("Filter").values())  
-
 
         self.port_manager = True
         self.port_types = ["GPIB", "COM"]
@@ -80,14 +79,13 @@ class Device(EmptyDevice):
     
     def set_GUIparameter(self):
 
-
-        GUIparameter = {
+        gui_parameter = {
                          "Filter position" : self.positions + self.positions_to_add,
                          "Home position" : ["None"] + self.positions,
                          "SweepMode": ["Position", "None", "Wavelength in nm", "Energy in eV"],
                         }
         
-        return GUIparameter   
+        return gui_parameter
 
     def get_GUIparameter(self, parameter={}):
         
@@ -96,13 +94,12 @@ class Device(EmptyDevice):
         self.pos = (parameter["Filter position"])
         self.filter_readout = self.pos.replace("<", "").replace(">", "").replace("nm", "").replace(" ", "").split("-")
         
-        self.pos_list = np.array(self.filter_readout[::2], dtype = int)
-        self.filter_wavelengths = np.array(self.filter_readout[1::2], dtype = float)
+        self.pos_list = np.array(self.filter_readout[::2], dtype=int)
+        self.filter_wavelengths = np.array(self.filter_readout[1::2], dtype=float)
 
         self.home = parameter["Home position"]
         
         self.config = parameter["Configuration"]
-        
 
     def connect(self):
         # figure out early whether a connection is established
@@ -113,7 +110,7 @@ class Device(EmptyDevice):
         pass
  
     def initialize(self):
-        ''' set instrument at GUI selected state and ready for next commands'''
+        '''Set instrument at GUI selected state and ready for next commands'''
         if len(self.config) > 1:
             self.stop_Measurement("Please use a single filter in field 'Configuration' if you choose Set value.")
             return False
@@ -167,7 +164,8 @@ class Device(EmptyDevice):
             
     def apply(self):
         # if set value is not a filter position, return error
-        if self.sweepmode != "Wavelength in nm" and  self.sweepmode != "Energy in eV" and not str(int(self.value)) in self.positions:
+        if (self.sweepmode != "Wavelength in nm" and self.sweepmode != "Energy in eV"
+                and not str(int(self.value)) in self.positions):
             self.stop_Measurement("Filter position %s not in 1-6 range" % str(int(self.value)))
             return False
             
@@ -176,6 +174,7 @@ class Device(EmptyDevice):
             # for apply case: to confirm the latest command, send "?Filter" command
             self.port.write("?Filter")
             answer = (self.port.read())
+
         elif self.sweepmode == "Wavelength in nm":
             # if self.value is below than 10, it's probably an energy and not a wavelength
             if self.value < 10:
@@ -185,15 +184,16 @@ class Device(EmptyDevice):
             # Based on the wavelength the filter will be chosen
             # 1. step: find the index at which between two wavelengths, the filter has to be changed 
             # 2. step: find the filter slot based on that index
-            filter_to_set = self.pos_list[np.sum(np.array(self.filter_wavelengths, dtype = float) < self.wavelength_to_set)]
-            # if apply is pressed and not run, then value in "configuration box" is set, otherwise the filter in accordance to the "filter position box" is set
+            filter_to_set = self.pos_list[np.sum(np.array(self.filter_wavelengths, dtype=float) < self.wavelength_to_set)]
+            # if apply is pressed and not run, then value in "configuration box" is set,
+            # otherwise the filter in accordance to the "filter position box" is set
             if self.value in self.positions:
                 self.port.write(str(int(self.value)) + " Filter")
-                self.port.write("?Filter")
                 self.port.write("?Filter")
                 answer = (self.port.read())
             else:
                 self.port.write(str(int(filter_to_set)) + " Filter")
+
         elif self.sweepmode == "Energy in eV":
             # if self.value is higher than 10, it's probably a wavelength and not an energy
             if self.value > 10:
@@ -201,14 +201,17 @@ class Device(EmptyDevice):
             # if apply is pressed and not run, then value in "Values" is not set, if "Energy in eV" is selected
             
             # do not send more than three digits after decimal separator
-            # change eV into nm 
-            self.wavelength_to_set = round(float(4.135667e-15*2.99792e8/(float(self.value)*1e-9)),3)
+            # change eV into nm
+            c = 2.99792e8  # speed of light in m/s
+            p = 4.135667e-15  # Planck constant in eV·s
+            self.wavelength_to_set = round(float(p*c/(float(self.value)*1e-9)),3)
             # Based on the wavelength the filter will be chosen
             # 1. step: find the index at which between two wavelengths, the filter has to be changed 
             # 2. step: find the filter slot based on that index
             filter_to_set = self.pos_list[np.sum(np.array(self.filter_wavelengths, dtype = float) < self.wavelength_to_set)]
             self.port.write(str(int(filter_to_set)) + " Filter")
-        elif self.sweepmode == "None": #case for set value
+
+        elif self.sweepmode == "None":  # case for set value
             self.port.write(str(self.value) + " Filter")
             # for apply case: to confirm the latest command, send "?Filter" command
             self.port.write("?Filter")
@@ -220,7 +223,8 @@ class Device(EmptyDevice):
         answer = (self.port.read())
         
     def measure(self):
-        self.port.write("?Filter") # we ask for the filter in 'measure' and read the result in 'read_result', still necessary after each comment which was sent
+        # we ask for the filter in 'measure' and read the result in 'read_result'
+        self.port.write("?Filter")
     
     def read_result(self):
         self.answer = (self.port.read())
