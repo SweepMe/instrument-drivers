@@ -286,7 +286,6 @@ class Device(EmptyDevice):
                          "Channel1": ["None", "X", "R", "X noise", "AUX IN 1", "AUX IN 2"],
                          "Channel2": ["None", "Y", "Phi", "Y noise", "AUX IN 3", "AUX IN 4"],
                          "TimeConstant": list(self.timeconstants.keys()),  # ["Auto time", "As is"] +
-                         # "Gain": ["Auto gain", "As is"] + list(self.sensitivities.keys()),
                          "Sensitivity": ["Auto", "As is"] + list(self.sensitivities_voltages.keys()) + list(self.sensitivities_currents.keys()), 
                          "Slope": ["6dB", "12dB", "18dB", "24dB"],
                          "Coupling": ["AC", "DC"],
@@ -307,7 +306,6 @@ class Device(EmptyDevice):
         self.reserve = parameter["Reserve"]
         self.filter1 = parameter["Filter1"]
         self.filter2 = parameter["Filter2"]
-        self.gain = parameter["Gain"]
         self.sensitivity = parameter["Sensitivity"]
         self.timeconstant = parameter["TimeConstant"]
         self.channel1 = parameter["Channel1"]
