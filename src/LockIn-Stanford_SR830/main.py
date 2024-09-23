@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2021-2023 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2021-2024 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,15 +25,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# We like to thank Jakob Wolansky/TU Dresden for contributing to the improvement
-# of the driver.
+# Contribution: We like to thank Jakob Wolansky/TU Dresden for contributing
+# to the improvement of the driver.
 
 
-# SweepMe! device class
-# Type: LockIn
-# Device: SR830
+# SweepMe! driver
+# * Module: LockIn
+# * Instrument: SR830
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 import time
 from collections import OrderedDict
 
@@ -47,7 +47,8 @@ class Device(EmptyDevice):
                 
         # self.variables = ["Magnitude", "Phase", "Frequency", "X", "Y", "Channel 1", "Channel 2", "TimeConstant" ]
         # self.units = ["a.u.", "deg", "Hz", "a.u.", "a.u.", "V/sqrt(Hz)", "V/sqrt(Hz)", "s"]
-
+        
+        
         # here the port handling is done
         # the MeasClass automatically creates the PortObject during in the connect function of the MeasClass
         self.port_manager = True
@@ -276,37 +277,35 @@ class Device(EmptyDevice):
     def set_GUIparameter(self):
     
         gui_parameter = {
-                         "SweepMode": ["None", "Frequency in Hz", "Time constant in s", "Sensitivity in V", "Sensitivity in A"],
-                         "Source": ["Internal", "External (Sine)", "External (TTL Rising)", "External (TTL Falling)"],
-                         "Input": ["A", "A-B", "I@10^6", "I@10^8"],
-                         "Reserve": ["Low Noise", "Normal", "High Reserve"],
-                         "Filter1": ["No Filter", "Line", "2xLine", "Line + 2xLine"],
-                         "Filter2": ["No Sync Filter", "Sync Filter"],
-                         "Channel1": ["None", "X", "R", "X noise", "AUX IN 1", "AUX IN 2"],
-                         "Channel2": ["None", "Y", "Phi", "Y noise", "AUX IN 3", "AUX IN 4"],
-                         "TimeConstant": list(self.timeconstants.keys()),  # ["Auto time", "As is"] +
-                         # "Gain": ["Auto gain", "As is"] + list(self.sensitivities.keys()),
-                         "Sensitivity": ["Auto", "As is"] + list(self.sensitivities_voltages.keys()) + list(self.sensitivities_currents.keys()), 
-                         "Slope": ["6dB", "12dB", "18dB", "24dB"],
-                         "Coupling": ["AC", "DC"],
-                         "Ground": ["Float", "Ground"],
-                         "WaitTimeConstants": 4.0,
-                        }
+             "SweepMode": ["None", "Frequency in Hz", "Time constant in s", "Sensitivity in V", "Sensitivity in A"],
+             "Source": ["Internal", "External (Sine)", "External (TTL Rising)", "External (TTL Falling)"],
+             "Input": ["A", "A-B", "I@10^6", "I@10^8"],
+             "Reserve": ["Low Noise", "Normal", "High Reserve"],
+             "Filter1": ["No Filter", "Line", "2xLine", "Line + 2xLine"],
+             "Filter2": ["No Sync Filter", "Sync Filter"],
+             "Channel1": ["None", "X", "R", "X noise", "AUX IN 1", "AUX IN 2"],
+             "Channel2": ["None", "Y", "Phi", "Y noise", "AUX IN 3", "AUX IN 4"],
+             "TimeConstant": list(self.timeconstants.keys()),  # ["Auto time", "As is"] +
+             "Sensitivity": ["Auto", "As is"] + list(self.sensitivities_voltages.keys()) + list(self.sensitivities_currents.keys()),
+             "Slope": ["6dB", "12dB", "18dB", "24dB"],
+             "Coupling": ["AC", "DC"],
+             "Ground": ["Float", "Ground"],
+             "WaitTimeConstants": 4.0,
+        }
                         
         return gui_parameter
         
     def get_GUIparameter(self, parameter={}):
     
         self.sweepmode = parameter["SweepMode"]
-        self.source = parameter["Source"]            
-        self.input = parameter["Input"]      
-        self.coupling = parameter["Coupling"]   
-        self.slope = parameter["Slope"]   
+        self.source = parameter["Source"]
+        self.input = parameter["Input"]
+        self.coupling = parameter["Coupling"]
+        self.slope = parameter["Slope"]
         self.ground = parameter["Ground"]
         self.reserve = parameter["Reserve"]
         self.filter1 = parameter["Filter1"]
         self.filter2 = parameter["Filter2"]
-        self.gain = parameter["Gain"]
         self.sensitivity = parameter["Sensitivity"]
         self.timeconstant = parameter["TimeConstant"]
         self.channel1 = parameter["Channel1"]
@@ -414,9 +413,7 @@ class Device(EmptyDevice):
         self.port.write(self.commands[self.filter1])
         self.port.write(self.commands[self.filter2])
 
-        if self.sensitivity == "Auto":
-            pass
-        elif self.sensitivity == "As is":
+        if self.sensitivity == "Auto" or self.sensitivity == "As is":
             pass
         else:
             if (self.input_quantity == "Current") and "A" in self.sensitivity:
@@ -429,33 +426,52 @@ class Device(EmptyDevice):
         if self.timeconstant not in ["Auto time", "As is"] and self.timeconstant in self.timeconstants:
             self.port.write(self.timeconstants[self.timeconstant])
 
-    def reconfigure(self, parameters={}, keys=[]):
+    def reconfigure(self, parameter={}, keys=[]):
         """ 
         function to be overloaded if needed
         
-        if a GUI parameter changes after replacement with global parameters, the device needs to be reconfigure.
+        if a GUI parameter changes after replacement with global parameters, the device needs to be reconfigured.
         Default behavior is that all parameters are set again and 'configure' is called.
         The device class maintainer can redefine/overwrite 'reconfigure' with a more individual procedure. 
         """
-        
-        # print()
-        # print("reconfigure")
-        # print(keys)  # the ones that have changed
-        if "Sensitivity" in keys:
-            if self.sensitivity == "Auto":
+
+        """
+        if self.sweepmode == "Time constant in s":
+            try:
+                if self.value == "None":
+                    time_constant = self.timeconstants_values[self.timeconstant]
+                    if time_constant <= 1:
+                        pass
+                else:
+                    if self.value <= 1:
+                        pass
+            except:
+                time_constant = self.timeconstants_values[self.timeconstant]
+                if time_constant <= 1:
+                    pass
+        else:
+            time_constant = self.timeconstants_values[self.timeconstant]
+            if time_constant <= 1:
                 pass
-            elif self.sensitivity == "As is":
+        """
+
+        self.sensitivity = parameter["Sensitivity"]
+        if "Sensitivity" in keys:
+            if self.sensitivity == "Auto" or self.sensitivity == "As is":
                 pass
             else:
-                if (self.input_quantity == "Current") and "A" in self.sensitivity:
-                    self.port.write(self.sensitivities_all[self.sensitivity])
-                elif (self.input_quantity == "Voltage") and "V" in self.sensitivity:
-                    self.port.write(self.sensitivities_all[self.sensitivity])
-                else:
-                    raise Exception('The input mode and sensitivity should match.')
+                try:
+                    sensitivity = float(self.sensitivity)
+                    self.set_sensitivity(sensitivity)
+                except:
+                    if (self.input_quantity == "Current") and "A" in self.sensitivity:
+                        self.set_sensitivity(self.sensitivity)
+                    elif (self.input_quantity == "Voltage") and "V" in self.sensitivity:
+                        self.set_sensitivity(self.sensitivity)
+                    else:
+                        raise Exception('The input mode and sensitivity should match.')
           
-    def apply(self):
-
+    def apply(self): 
         if self.sweepmode.startswith("Frequency"):
             self.port.write("FREQ %s" % self.value)
         
@@ -473,8 +489,7 @@ class Device(EmptyDevice):
                 if self.value >= 0.65*exp_step:
             
                     number = round(self.value/exp_step, 0)
-                    # print(number)
-                    
+
                     for multiplicator in [1, 10, 100]:
                     
                         if number <= 2 * multiplicator:
@@ -487,27 +502,27 @@ class Device(EmptyDevice):
                     break
 
             self.timeconstant = str(number) + " " + conversion[exp_step]
-            # print("Time constant:", self.timeconstant)
             self.port.write(self.timeconstants[self.timeconstant])
             
         elif self.sweepmode.startswith("Sensitivity"):
-        
+            self.set_sensitivity(self.value)
+
+        """
             sensitivity_unit = self.sweepmode[-1]
-            # TODO: distinguish between V or A -> see update sweep modes "Sensitivity in V" and "Sensitivity in A"
             
             conversion = {
-                1e0: ("V or ", "muA"),
+                1e0 : ("V or ", "muA"),
                 1e-3: ("mV or ", "nA"),
                 1e-6: ("muV or ", "pA"),
                 1e-9: ("nV or ", "fA"),
                 }
-
             for exp_step in list(conversion.keys()):
-                # print("self.value", self.value)
+                #print("self.value", self.value)
                 if self.value >= 0.75*exp_step:
             
-                    number = round(self.value/exp_step, 0)
-                    # print(number)
+                    number = round(self.value/exp_step,0)
+                    
+                    #print(number)
                     
                     for multiplicator in [1, 10, 100]:
                     
@@ -522,12 +537,13 @@ class Device(EmptyDevice):
                         elif number <= 7.5 * multiplicator:
                             number = 5 * multiplicator
                             break
-
+                           
                     break
 
             self.sensitivity = str(number) + " " + conversion[exp_step][0] + str(number) + " " + conversion[exp_step][1]
-            # print(self.sensitivity)
+            #print(self.sensitivity)
             self.port.write(self.sensitivities_all[self.sensitivity])
+        """
 
     def adapt(self):
     
@@ -546,10 +562,10 @@ class Device(EmptyDevice):
         self.time_ref = time.perf_counter()
 
     def trigger_ready(self):
-        # make sure that at least several timeconstants have passed since 'Auto sensitivity' was called
+        # make sure that at least several time constants have passed since 'Auto sensitivity' was called
         delta_time = (self.waittimeconstants * self.unit_to_float(self.timeconstant)) - (time.perf_counter()-self.time_ref)
         if delta_time > 0.0:
-            # wait several timeconstants to allow for a renewal of the result     
+            # wait several time constants to allow for a renewal of the result
             time.sleep(delta_time)
     
     def measure(self):
@@ -570,27 +586,26 @@ class Device(EmptyDevice):
             self.Ch1 = float(self.port.read())
         if self.channel2 != "None":
             self.Ch2 = float(self.port.read())
-        self.sens = self.read_sensitivity()
-        self.timeconstant = self.read_timeconstant()
-
+        self.sens = self.get_sensitivity()
+        self.time_constant = self.get_timeconstant()
+    
     def call(self):
         results = [self.R, self.Phi, self.F, self.X, self.Y]
         if self.channel1 != "None":
             results += [self.Ch1]
         if self.channel2 != "None":
             results += [self.Ch2]
-        time_constant = self.timeconstants_values[self.timeconstant]
-        results += [time_constant]
+        results += [self.time_constant]
         results += [self.sens]
-        return results
 
-    # here convenience functions starts
+        return results
 
     @staticmethod
     def unit_to_float(unit):
         """Takes a string representing a sensitivity or time constant and gives back a corresponding float"""
         chars = OrderedDict([ 
                                 ("V", ""),
+                                ("A", ""),
                                 ("s", ""),
                                 (" ", ""),
                                 ("p", "e-12"),
@@ -610,40 +625,104 @@ class Device(EmptyDevice):
         self.port.write("*IDN?")
         return self.port.read()
 
-    def read_sensitivity(self):
-        tempSensDev = (self.port.read())
-        if self.input_quantity == "Current":
-            # tempSensSet is then a python set
-            tempSensSet = {s for s in self.sensitivities_currents if self.sensitivities_currents[s] == ("SENS " + tempSensDev)}
-        if self.input_quantity == "Voltage":
-            # tempSensSet is then a python set
-            tempSensSet = {s for s in self.sensitivities_voltages if self.sensitivities_voltages[s] == ("SENS " + tempSensDev)}
-        # print(tempSensSet)
-        tempSens = self.sensString_to_float(tempSensSet)
+    def set_sensitivity(self, sensitivity):
 
-        return tempSens
-
-    def read_timeconstant(self):
-        tempTimeConstantDev = (self.port.read())
-        # tempTimeConstantSet is then a python set
-        tempTimeConstantSet = {s for s in self.timeconstants if self.timeconstants[s] == ("OFLT " + tempTimeConstantDev)}
-        tempTimeConstant = self.timeConstantString_to_float(tempTimeConstantSet)
-        return tempTimeConstant
-
-    def sensString_to_float(self, sensSet):
-        """Takes a sensitivitiy string and extracts the float number"""
-        sensString = sensSet.pop()
-        if self.input_quantity == "Voltage":
-            tempCorrectSensitivityUnit = sensString[sensString.find("V")-1: sensString.find("V")]
+        if self.input_quantity == "Voltage":  # if sensitivity is already at max limit
+            if float(sensitivity) > 1:
+                self.sensitivity = str(1) + " V"
+                self.port.write(self.sensitivities_voltages[self.sensitivity])
+                return
+            else:
+                conversion = {
+                    1e0 : "V",
+                    1e-3: "mV",
+                    1e-6: "muV",
+                    1e-9: "nV",
+                    }
         else:
-            tempCorrectSensitivityUnit = sensString[sensString.find("A")-1: sensString.find("A")]
-        tempCorrectSensitivityValue = self.unit_to_float(sensString)
-        return tempCorrectSensitivityValue
+            if float(sensitivity) > 1e-6:  # if sensitivity is already at max limit
+                self.sensitivity = str(1) + " muA"
+                self.port.write(self.sensitivities_currents[self.sensitivity])
+                return
+            else:
+                conversion = {
+                    1e0 : "muA",
+                    1e-3: "nA",
+                    1e-6: "pA",
+                    1e-9: "fA",
+                    }
+        for exp_step in list(conversion.keys()):
+            if sensitivity >= 0.75*exp_step:
+        
+                number = round(sensitivity/exp_step,0)
 
-    def timeConstantString_to_float(self, timeConstantSet):
+                for multiplicator in [1, 10, 100]:
+                
+                    if number <= 1.5 * multiplicator:
+                        number = 1 * multiplicator
+                        break
+                    elif number <= 3.5 * multiplicator:
+                        number = 2 * multiplicator
+                        break
+                    elif number <= 7.5 * multiplicator:
+                        number = 5 * multiplicator
+                        break
+                       
+                break
+
+        self.sensitivity = str(number) + " " + conversion[exp_step]
+        if self.input_quantity == "Voltage":
+            self.port.write(self.sensitivities_voltages[self.sensitivity])
+        else:
+            self.port.write(self.sensitivities_currents[self.sensitivity])
+
+    def get_sensitivity(self):
+        temp_sens_dev = self.port.read()
+        if self.input_quantity == "Current":
+            # temp_sens_set is then a python set
+            temp_sens_set = {s for s in self.sensitivities_currents if self.sensitivities_currents[s] == ("SENS " + temp_sens_dev)}
+        if self.input_quantity == "Voltage":
+            # temp_sens_set is then a python set
+            temp_sens_set = {s for s in self.sensitivities_voltages if self.sensitivities_voltages[s] == ("SENS " + temp_sens_dev)}
+
+        temp_sens = self.sens_string_to_float(temp_sens_set)
+
+        return temp_sens
+
+    def get_timeconstant(self):
+        temp_time_constant_dev = (self.port.read())
+        # temp_time_constant_set is then a python set
+        temp_time_constant_set = {s for s in self.timeconstants if self.timeconstants[s] == ("OFLT " + temp_time_constant_dev)}
+        temp_time_constant = self.time_constant_string_to_float(temp_time_constant_set)
+
+        return temp_time_constant
+
+    def sens_string_to_float(self, sensSet):
+        """Takes a sensitivity string and extracts the float number"""
+        sensString = sensSet.pop()
+        temp_correct_sensitivity_value = self.unit_to_float(sensString)
+
+        return temp_correct_sensitivity_value
+
+    def time_constant_string_to_float(self, time_constant_set):
         """Takes a time constant string and extracts the float number"""
-        timeConstantString = timeConstantSet.pop()
-        # tempCorrectTimeConstantUnit = timeConstantString[timeConstantString.find("s")-1: timeConstantString.find("s")]
-        # tempCorrectTimeConstantValue = self.unit_to_float(timeConstantString)
-        return timeConstantString
 
+        time_constant_string = time_constant_set.pop()
+        time_constant = self.timeconstants_values[time_constant_string]
+
+        return time_constant
+
+    def sens_string_to_float_old(self, sens_set):
+        """Takes a sensitivity string and extracts the float number"""
+
+        sens_string = sens_set.pop()
+        if self.units[0] == "V":
+            index = sens_string.find("or")
+            temp_correct_sensitivity_str = sens_string[:index]
+            temp_correct_sensitivity_value = self.unit_to_float(temp_correct_sensitivity_str)
+        else:
+            index = sens_string.find("or") + len("or")
+            temp_correct_sensitivity_str = sens_string[index:]
+            temp_correct_sensitivity_value = self.unit_to_float(temp_correct_sensitivity_str)
+
+        return temp_correct_sensitivity_value
