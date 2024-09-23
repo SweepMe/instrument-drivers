@@ -432,11 +432,12 @@ class Device(EmptyDevice):
         """ 
         function to be overloaded if needed
         
-        if a GUI parameter changes after replacement with global parameters, the device needs to be reconfigure.
+        if a GUI parameter changes after replacement with global parameters, the device needs to be reconfigured.
         Default behavior is that all parameters are set again and 'configure' is called.
         The device class maintainer can redefine/overwrite 'reconfigure' with a more individual procedure. 
         """
 
+        """
         if self.sweepmode == "Time constant in s":
             try:
                 if self.value == "None":
@@ -449,10 +450,12 @@ class Device(EmptyDevice):
             except:
                 time_constant = self.timeconstants_values[self.timeconstant]
                 if time_constant <= 1:
+                    pass
         else:
             time_constant = self.timeconstants_values[self.timeconstant]
             if time_constant <= 1:
-                skip = True
+                pass
+        """
 
         self.sensitivity = parameter["Sensitivity"]
         if "Sensitivity" in keys:
