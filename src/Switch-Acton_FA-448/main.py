@@ -80,10 +80,11 @@ class Device(EmptyDevice):
     def set_GUIparameter(self):
 
         gui_parameter = {
-                         "Filter position" : self.positions + self.positions_to_add,
-                         "Home position" : ["None"] + self.positions,
-                         "SweepMode": ["Position", "None", "Wavelength in nm", "Energy in eV"],
-                        }
+            "Filter position" : self.positions + self.positions_to_add,
+            "Home position" : ["None"] + self.positions,
+            "SweepMode": ["Position", "None", "Wavelength in nm", "Energy in eV"],
+            "Configuration": "",
+        }
         
         return gui_parameter
 
@@ -110,7 +111,7 @@ class Device(EmptyDevice):
         pass
  
     def initialize(self):
-        '''Set instrument at GUI selected state and ready for next commands'''
+        """Set instrument at GUI selected state and ready for next commands"""
         if len(self.config) > 1:
             self.stop_Measurement("Please use a single filter in field 'Configuration' if you choose Set value.")
             return False
@@ -166,14 +167,15 @@ class Device(EmptyDevice):
         # if set value is not a filter position, return error
         if (self.sweepmode != "Wavelength in nm" and self.sweepmode != "Energy in eV"
                 and not str(int(self.value)) in self.positions):
-            self.stop_Measurement("Filter position %s not in 1-6 range" % str(int(self.value)))
+            msg = "Filter position %s not in 1-6 range" % str(int(self.value))
+            raise Exception(msg)
             return False
             
         if self.sweepmode == "Position":
             self.port.write(str(int(self.value)) + " Filter")
             # for apply case: to confirm the latest command, send "?Filter" command
             self.port.write("?Filter")
-            answer = (self.port.read())
+            answer = self.port.read()
 
         elif self.sweepmode == "Wavelength in nm":
             # if self.value is below than 10, it's probably an energy and not a wavelength
@@ -190,7 +192,7 @@ class Device(EmptyDevice):
             if self.value in self.positions:
                 self.port.write(str(int(self.value)) + " Filter")
                 self.port.write("?Filter")
-                answer = (self.port.read())
+                answer = self.port.read()
             else:
                 self.port.write(str(int(filter_to_set)) + " Filter")
 
@@ -215,19 +217,19 @@ class Device(EmptyDevice):
             self.port.write(str(self.value) + " Filter")
             # for apply case: to confirm the latest command, send "?Filter" command
             self.port.write("?Filter")
-            answer = (self.port.read())
+            answer = self.port.read()
             
     def reach(self):
         # makes sure the new filter is reached before the next measurement is done
         self.port.write("?Filter")
-        answer = (self.port.read())
+        answer = self.port.read()
         
     def measure(self):
         # we ask for the filter in 'measure' and read the result in 'read_result'
         self.port.write("?Filter")
     
     def read_result(self):
-        self.answer = (self.port.read())
+        self.answer = self.port.read()
         
     def call(self):
         return self.answer

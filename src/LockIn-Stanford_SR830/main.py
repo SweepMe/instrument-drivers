@@ -277,21 +277,21 @@ class Device(EmptyDevice):
     def set_GUIparameter(self):
     
         gui_parameter = {
-                         "SweepMode": ["None", "Frequency in Hz", "Time constant in s", "Sensitivity in V", "Sensitivity in A"],
-                         "Source": ["Internal", "External (Sine)", "External (TTL Rising)", "External (TTL Falling)"],
-                         "Input": ["A", "A-B", "I@10^6", "I@10^8"],
-                         "Reserve": ["Low Noise", "Normal", "High Reserve"],
-                         "Filter1": ["No Filter", "Line", "2xLine", "Line + 2xLine"],
-                         "Filter2": ["No Sync Filter", "Sync Filter"],
-                         "Channel1": ["None", "X", "R", "X noise", "AUX IN 1", "AUX IN 2"],
-                         "Channel2": ["None", "Y", "Phi", "Y noise", "AUX IN 3", "AUX IN 4"],
-                         "TimeConstant": list(self.timeconstants.keys()),  # ["Auto time", "As is"] +
-                         "Sensitivity": ["Auto", "As is"] + list(self.sensitivities_voltages.keys()) + list(self.sensitivities_currents.keys()), 
-                         "Slope": ["6dB", "12dB", "18dB", "24dB"],
-                         "Coupling": ["AC", "DC"],
-                         "Ground": ["Float", "Ground"],
-                         "WaitTimeConstants": 4.0,
-                        }
+             "SweepMode": ["None", "Frequency in Hz", "Time constant in s", "Sensitivity in V", "Sensitivity in A"],
+             "Source": ["Internal", "External (Sine)", "External (TTL Rising)", "External (TTL Falling)"],
+             "Input": ["A", "A-B", "I@10^6", "I@10^8"],
+             "Reserve": ["Low Noise", "Normal", "High Reserve"],
+             "Filter1": ["No Filter", "Line", "2xLine", "Line + 2xLine"],
+             "Filter2": ["No Sync Filter", "Sync Filter"],
+             "Channel1": ["None", "X", "R", "X noise", "AUX IN 1", "AUX IN 2"],
+             "Channel2": ["None", "Y", "Phi", "Y noise", "AUX IN 3", "AUX IN 4"],
+             "TimeConstant": list(self.timeconstants.keys()),  # ["Auto time", "As is"] +
+             "Sensitivity": ["Auto", "As is"] + list(self.sensitivities_voltages.keys()) + list(self.sensitivities_currents.keys()),
+             "Slope": ["6dB", "12dB", "18dB", "24dB"],
+             "Coupling": ["AC", "DC"],
+             "Ground": ["Float", "Ground"],
+             "WaitTimeConstants": 4.0,
+        }
                         
         return gui_parameter
         
