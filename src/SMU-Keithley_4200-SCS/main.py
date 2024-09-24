@@ -31,7 +31,9 @@
 from __future__ import annotations
 
 import ctypes as c
+import platform
 import time
+from pathlib import Path
 
 import numpy as np
 from pysweepme import FolderManager
@@ -44,10 +46,25 @@ FolderManager.addFolderToPATH()
 def running_on_device() -> bool:
     """Check if the driver is executed directly on the Keithley 4200-SCS hardware by trying to import the lptlib.dll."""
     dll_path = r"C:\s4200\sys\bin\lptlib.dll"
+
+    # If Clarius is not installed and the dll is not available, the driver is not running on the device
+    if not Path(dll_path).exists():
+        return False
+
+    # If the dll is available and can be imported, the driver is running on the device
     try:
         _dll = c.WinDLL(dll_path)
     except:
+        # if the dll is available but cannot be imported, check the Python interpreter bitness
+        if platform.architecture()[0] != "32bit":
+            print(
+                "Keithley 4200-SCS: Installation of Clarius detected, but lptlib.dll cannot be loaded. If you are "
+                "trying to run the driver directly on the device, use 32-Bit version of Python/SweepMe!. Using remote "
+                "control via LPTlib server instead.",
+            )
+
         return False
+
     return True
 
 
@@ -71,6 +88,7 @@ else:
 
 class Device(EmptyDevice):
     """Keithley 4200-SCS driver."""
+
     def __init__(self) -> None:
         """Initialize device parameters."""
         EmptyDevice.__init__(self)
