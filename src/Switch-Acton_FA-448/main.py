@@ -5,7 +5,7 @@
 
 # MIT License
 
-# Copyright (c) 2024 SweepMe! GmbH
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -113,12 +113,12 @@ class Device(EmptyDevice):
     def initialize(self):
         """Set instrument at GUI selected state and ready for next commands"""
         if len(self.config) > 1:
-            self.stop_Measurement("Please use a single filter in field 'Configuration' if you choose Set value.")
-            return False
+            msg = "Please use a single filter in field 'Configuration' if you choose Set value."
+            raise Exception(msg)
         if self.sweepmode == "None":
             if len(self.pos_list) > 1:
-                self.stop_Measurement("Please use a single filter in field 'Filter position' if Sweep mode is None.")
-                return False
+                msg = "Please use a single filter in field 'Filter position' if Sweep mode is None."
+                raise Exception(msg)
             
     def deinitialize(self):
         if self.home != "None":
@@ -134,6 +134,8 @@ class Device(EmptyDevice):
             """
             self.port.write("FHOME")
             self.port.write("?Filter")
+            answer = self.port.read()
+
             # set individual home position
             self.port.write(str(int(self.home)) + " Filter")
             self.port.write("?Filter")
@@ -158,6 +160,8 @@ class Device(EmptyDevice):
             """
             self.port.write("FHOME")
             self.port.write("?Filter")
+            answer = self.port.read()
+
             # set individual home position
             self.port.write(str(int(self.home)) + " Filter")
             self.port.write("?Filter")
@@ -169,18 +173,16 @@ class Device(EmptyDevice):
                 and not str(int(self.value)) in self.positions):
             msg = "Filter position %s not in 1-6 range" % str(int(self.value))
             raise Exception(msg)
-            return False
             
         if self.sweepmode == "Position":
             self.port.write(str(int(self.value)) + " Filter")
-            # for apply case: to confirm the latest command, send "?Filter" command
-            self.port.write("?Filter")
-            answer = self.port.read()
 
         elif self.sweepmode == "Wavelength in nm":
             # if self.value is below than 10, it's probably an energy and not a wavelength
             if self.value < 10:
-                raise Exception("Check sweepmode. Wavelength expected, but probably energy or position received.")
+                msg = "Check sweepmode. Wavelength expected, but probably energy or position received."
+                raise Exception(msg)
+
             # do not send more than three digits after decimal separator
             self.wavelength_to_set = round(float(self.value),3)
             # Based on the wavelength the filter will be chosen
@@ -191,15 +193,14 @@ class Device(EmptyDevice):
             # otherwise the filter in accordance to the "filter position box" is set
             if self.value in self.positions:
                 self.port.write(str(int(self.value)) + " Filter")
-                self.port.write("?Filter")
-                answer = self.port.read()
             else:
                 self.port.write(str(int(filter_to_set)) + " Filter")
 
         elif self.sweepmode == "Energy in eV":
             # if self.value is higher than 10, it's probably a wavelength and not an energy
             if self.value > 10:
-                raise Exception("Check sweepmode. Energy expected, but probably wavelength received.")
+                msg = "Check sweepmode. Energy expected, but probably wavelength received."
+                raise Exception(msg)
             # if apply is pressed and not run, then value in "Values" is not set, if "Energy in eV" is selected
             
             # do not send more than three digits after decimal separator
@@ -215,9 +216,10 @@ class Device(EmptyDevice):
 
         elif self.sweepmode == "None":  # case for set value
             self.port.write(str(self.value) + " Filter")
-            # for apply case: to confirm the latest command, send "?Filter" command
-            self.port.write("?Filter")
-            answer = self.port.read()
+
+        # for apply case: to confirm the latest command, send "?Filter" command
+        self.port.write("?Filter")
+        answer = self.port.read()
             
     def reach(self):
         # makes sure the new filter is reached before the next measurement is done
