@@ -27,9 +27,9 @@
 
 # Contribution: We like to thank TU Dresden/Jakob Wolansky for providing the initial version of this driver.
 
-# SweepMe! device class
-# Type: Switch
-# Device: Acton FA-448
+# SweepMe! driver
+# * Module: Switch
+# * Instrument: Acton FA-448
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 import numpy as np

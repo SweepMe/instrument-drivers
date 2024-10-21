@@ -29,9 +29,9 @@
 # Contribution: We like to thank TU Dresden (Toni Bärschneider and Jakob Wolansky) for
 # providing the initial version of this driver.
 
-# SweepMe! device class
-# Type: Monochromator
-# Device: Quantum Design MSH-300
+# SweepMe! driver
+# * Module: Monochromator
+# * Instrument: Quantum Design MSH-300
 
 import time
 import ctypes

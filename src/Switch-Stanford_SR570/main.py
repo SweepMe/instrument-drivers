@@ -28,9 +28,9 @@
 # We like to thank Jakob Wolansky/TU Dresden for contributing to the improvement
 # of the driver.
 
-# SweepMe! device class
-# Type: Switch
-# Device: Stanford SR570
+# SweepMe! driver
+# * Module: Switch
+# * Instrument: Stanford SR570
 
 
 from pysweepme.ErrorMessage import error
