@@ -200,8 +200,8 @@ class Device(EmptyDevice):
             "500 µA": 26,
 
             "1 mA": 27,
-            "1 mA": 28,  # TODO: Is this correct?
-            "1 mA": 29,  # TODO: Is this correct?
+            "2 mA": 28,
+            "5 mA": 29,
         }
                             
         self.frequencies = {
