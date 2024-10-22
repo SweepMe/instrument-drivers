@@ -5,7 +5,7 @@
 
 # MIT License
 
-# Copyright (c) 2022 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -29,9 +29,9 @@
 # Contribution: We like to thank TU Dresden (Toni Bärschneider and Jakob Wolansky) for
 # providing the initial version of this driver.
 
-# SweepMe! device class
-# Type: Monochromator
-# Device: Quantum Design MSH-300
+# SweepMe! driver
+# * Module: Monochromator
+# * Instrument: Quantum Design MSH-300
 
 import time
 import ctypes
@@ -44,7 +44,7 @@ import pathlib
 
 from collections import OrderedDict
 
-import FolderManager
+from pysweepme import FolderManager
 FoMa = FolderManager.FolderManager()
 FolderManager.addFolderToPATH()
 
@@ -142,10 +142,10 @@ class Device(EmptyDevice):
     def set_GUIparameter(self):
 
         gui_parameter = {
-                         "SweepMode": ["Wavelength in nm", "None"],  # "Reflection (zero order)", "Slitwidth [µm]" needs additional fix wavelength option
+                         "SweepMode": ["Wavelength in nm", "Energy in eV", "None"],
                          "EndPosition": "",
-                         "Input": list(self.slitinputs.keys()),  # TODO: Is this self.inport?
-                         "Output": list(self.slitoutputs.keys()),  # TODO: Is this self.outport?
+                         "Input": list(self.slitinputs.keys()),
+                         "Output": list(self.slitoutputs.keys()),
                          "Filter": ["Auto"] + self.filters,
                          "Grating": ["Auto"] + self.gratings,
                          # "SlitOutput": ["2000 (max)", "1500", "6 (min)"],
@@ -308,8 +308,21 @@ class Device(EmptyDevice):
     def apply(self):
 
         if self.sweep_mode.startswith("Wavelength"):
+            # if self.value is below than 10, it's probably an energy and not a wavelength
+            if float(self.value) < 10:
+                raise Exception("Check sweepmode. Wavelength expected, but probably energy received.")
             # Based on the wavelength the grating and the filter will be chosen automatically
             self.set_wavelength(self.value)
+        
+        elif self.sweep_mode.startswith("Energy"):
+            if float(self.value)>100:
+                self.set_wavelength(self.value)
+            else:
+                # conversion from eV to nm
+                c = 2.99792e8  # speed of light in m/s
+                p = 4.135667e-15  # Planck constant in eV·s
+                wavelength_to_set = round(float(p*c/(float(self.value)))*1e9, 3)
+                self.set_wavelength(wavelength_to_set)
             
     def measure(self):
 
