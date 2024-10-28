@@ -58,13 +58,21 @@ class Device(EmptyDevice):
         print(srunner)
         service = srunner.get_idsmu_service()
         print(service)
-        board = service.get_first_board()
-        print(board)
-
+        
+        print(dir(service))
+        
+        number_boards = service.get_number_of_boards()
+        print(number_boards)
+                
+        ports = service.get_board_addresses()
+        
+        # if len(ports) == 0:
+            # sim_boards = service.get_fake_board_addresses()
+            # print(sim_boards)
+            # ports = sim_boards
+        
         srunner.shutdown()
-
-        ports = []
-
+        
         return ports
 
     def set_GUIparameter(self):
