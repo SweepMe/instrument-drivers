@@ -58,8 +58,8 @@ class Device(EmptyDevice):
         print(srunner)
         service = srunner.get_idsmu_service()
         print(service)
-        # board = service.get_first_board()
-        # print(board)
+        board = service.get_first_board()
+        print(board)
 
         srunner.shutdown()
 
@@ -81,12 +81,19 @@ class Device(EmptyDevice):
         self.source = parameter['SweepMode']
         self.protection = parameter['Compliance']
 
-    def initialize(self):
+    def connect(self):
+        self.srunner = IdSmuServiceRunner()
+        print(self.srunner)
+        self.service = self.srunner.get_idsmu_service()
+        print(self.service)
 
+    def disconnect(self):
+        self.srunner.shutdown()
+
+    def initialize(self):
         pass
 
     def configure(self):
-
         pass
            
     def deinitialize(self):

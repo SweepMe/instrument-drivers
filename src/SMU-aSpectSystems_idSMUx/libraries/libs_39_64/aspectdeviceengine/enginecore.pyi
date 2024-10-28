@@ -100,7 +100,7 @@ class AD5522ChannelModel(AnalogChannelModel):
     @property
     def autorange(self) -> bool:
         """
-                 Property/Setter that gets/sets the state of the channels automatic current range functionality
+                 Property that gets/sets the state of the channels automatic current range functionality
         
                  Parameters
                  ----------
@@ -118,7 +118,7 @@ class AD5522ChannelModel(AnalogChannelModel):
     @property
     def clamp_enabled(self) -> bool:
         """
-                 Property/Setter that gets/sets the channel clamp enable state
+                 Property that gets/sets the channel clamp enable state
         
                  Parameters
                  ----------
@@ -135,7 +135,7 @@ class AD5522ChannelModel(AnalogChannelModel):
     @property
     def clamp_high_value(self) -> float:
         """
-                 Property/Setter that gets/sets the channel clamp high value
+                 Property that gets/sets the channel clamp high value
         
                  Parameters
                  ----------
@@ -153,7 +153,7 @@ class AD5522ChannelModel(AnalogChannelModel):
     @property
     def clamp_low_value(self) -> float:
         """
-                 Property/Setter that gets/sets the channel clamp low value
+                 Property that gets/sets the channel clamp low value
         
                  Parameters
                  ----------
@@ -171,7 +171,7 @@ class AD5522ChannelModel(AnalogChannelModel):
     @property
     def current(self) -> float:
         """
-                 Property/Setter that measures/sets the channel output current
+                 Property that measures/sets the channel output current
         
                  Parameters
                  ----------
@@ -189,7 +189,7 @@ class AD5522ChannelModel(AnalogChannelModel):
     @property
     def current_range(self) -> SmuCurrentRange:
         """
-                 Property/Setter that gets/sets the channel current reange
+                 Property that gets/sets the channel current reange
         
                  Parameters
                  ----------
@@ -207,7 +207,7 @@ class AD5522ChannelModel(AnalogChannelModel):
     @property
     def enabled(self) -> bool:
         """
-                 Property/Setter that gets/sets the channel enabled state
+                 Property that gets/sets the channel enabled state
         
                  Parameters
                  ----------
@@ -235,7 +235,7 @@ class AD5522ChannelModel(AnalogChannelModel):
     @property
     def name(self) -> str:
         """
-                 Property/Setter that gets/sets the channel name
+                 Property that gets/sets the channel name
         
                  Parameters
                  ----------
@@ -263,7 +263,7 @@ class AD5522ChannelModel(AnalogChannelModel):
     @property
     def voltage(self) -> float:
         """
-                 Property/Setter that measures/sets the channel output voltage
+                 Property that measures/sets the channel output voltage
         
                  Parameters
                  ----------
@@ -367,7 +367,7 @@ class AD5560ChannelModel(AnalogChannelModel):
     @property
     def autorange(self) -> bool:
         """
-                 Property/Setter that gets/sets the state of the channels automatic current range functionality
+                 Property that gets/sets the state of the channels automatic current range functionality
         
                  Parameters
                  ----------
@@ -385,7 +385,7 @@ class AD5560ChannelModel(AnalogChannelModel):
     @property
     def clamp_enabled(self) -> bool:
         """
-                 Property/Setter that gets/sets the channel clamp enable state
+                 Property that gets/sets the channel clamp enable state
         
                  Parameters
                  ----------
@@ -402,7 +402,7 @@ class AD5560ChannelModel(AnalogChannelModel):
     @property
     def clamp_low_value(self) -> float:
         """
-                 Property/Setter that gets/sets the channel clamp low value
+                 Property that gets/sets the channel clamp low value
         
                  Parameters
                  ----------
@@ -430,7 +430,7 @@ class AD5560ChannelModel(AnalogChannelModel):
     @property
     def current_range(self) -> DpsCurrentRange:
         """
-                 Property/Setter that gets/sets the channel current reange
+                 Property that gets/sets the channel current reange
         
                  Parameters
                  ----------
@@ -448,7 +448,7 @@ class AD5560ChannelModel(AnalogChannelModel):
     @property
     def enabled(self) -> bool:
         """
-                 Property/Setter that gets/sets the channel enabled state
+                 Property that gets/sets the channel enabled state
         
                  Parameters
                  ----------
@@ -476,7 +476,7 @@ class AD5560ChannelModel(AnalogChannelModel):
     @property
     def name(self) -> str:
         """
-                 Property/Setter that gets/sets the channel name
+                 Property that gets/sets the channel name
         
                  Parameters
                  ----------
@@ -504,7 +504,7 @@ class AD5560ChannelModel(AnalogChannelModel):
     @property
     def voltage(self) -> float:
         """
-                 Property/Setter that measures/sets the channel output voltage
+                 Property that measures/sets the channel output voltage
         
                  Parameters
                  ----------
@@ -532,12 +532,17 @@ class At:
     def __setitem__(self, arg0: tuple[int, str], arg1: str) -> None:
         ...
 class ChannelResult:
+    """
+    
+             The result of a ReadAdcCommandIdSmu
+        
+    """
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs):
         ...
     def get_values(self) -> list[float]:
         """
-                 Gets the measured values for a channel
+                 Returns the measurement values for a channel
         
                  Returns
                  -------
@@ -546,17 +551,48 @@ class ChannelResult:
         """
     @property
     def values(self) -> numpy.ndarray[numpy.float64]:
-        ...
+        """
+                 Returns the measurement values for a channel
+        
+                 Returns
+                 -------
+                 ndarray
+        """
 class CommandReply:
+    """
+    
+             The aspect device engine is a command driven framework. 
+             This is the base class of all command replies (and results).
+             The reply can be an error or a result.
+        
+    """
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs):
         ...
     def is_error(self) -> bool:
-        ...
+        """
+                 Indicates whether the response is a command error
+        
+                 Returns
+                 -------
+                 bool
+        """
     def is_result(self) -> bool:
-        ...
+        """
+                 Indicates whether the response is an command result
+        
+                 Returns
+                 -------
+                 bool
+        """
     def to_json(self) -> str:
-        ...
+        """
+                 Returns the reply as a JSON string
+        
+                 Returns
+                 -------
+                 str
+        """
 class CommandReplyFuture:
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs):
@@ -853,6 +889,11 @@ class DeviceModel:
     def _pybind11_conduit_v1_(*args, **kwargs):
         ...
 class DeviceResult(CommandReply):
+    """
+    
+             The result of a device detection command.
+        
+    """
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs):
         ...
@@ -1016,6 +1057,11 @@ class DpsCurrentRange:
     def value(self) -> int:
         ...
 class FirmwareVersion:
+    """
+    
+             Firmware version of a device detected by the engine.
+        
+    """
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs):
         ...
@@ -1077,6 +1123,12 @@ class FunctionGeneratorType:
     def value(self) -> int:
         ...
 class IdSmu1DeviceModel(IdSmuDeviceModel):
+    """
+    
+             IdSmuDeviceModel class that contains idSmu1 specific methods and properties.
+    
+        
+    """
     class Dps:
         """
         
@@ -1129,6 +1181,11 @@ class IdSmu1DeviceModel(IdSmuDeviceModel):
                       dps object
         """
 class IdSmu2DeviceModel(IdSmuDeviceModel):
+    """
+    
+             IdSmuDeviceModel class that contains idSmu2 specific methods and properties.
+        
+    """
     class Smu:
         """
         
@@ -1175,7 +1232,17 @@ class IdSmu2DeviceModel(IdSmuDeviceModel):
                       smu object
         """
 class IdSmuBoardModel:
+    """
+    
+             Container and controller vor idSmu modules and channels
+        
+    """
     class IdSmu1Modules:
+        """
+        
+                 This class represents all idSmu1 (DPS) modules on the board
+            
+        """
         @staticmethod
         def _pybind11_conduit_v1_(*args, **kwargs):
             ...
@@ -1184,13 +1251,25 @@ class IdSmuBoardModel:
         def as_list(self) -> list[IdSmu1DeviceModel]:
             ...
     class IdSmu2Modules:
+        """
+        
+                 This class represents all idSmu2 (SMU) modules on the board
+            
+        """
         @staticmethod
         def _pybind11_conduit_v1_(*args, **kwargs):
             ...
         def __getitem__(self, arg0: str) -> IdSmu2DeviceModel:
             ...
         def as_list(self) -> list[IdSmu2DeviceModel]:
-            ...
+            """
+                     Returns the force values that are used by the function_generator method
+            
+                     Returns
+                     -------
+                     List[IdSmu2DeviceModel]
+                          A list of IdSmu2DeviceModel objects
+            """
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs):
         ...
@@ -1989,7 +2068,7 @@ class IdSmuDeviceModel:
     @property
     def name(self) -> str:
         """
-                 Property/Setter that gets/sets the device name
+                 Property that gets/sets the device name
         
                  Parameters
                  ----------
@@ -2005,6 +2084,12 @@ class IdSmuDeviceModel:
     def name(self, arg1: str) -> None:
         ...
 class IdSmuService:
+    """
+    
+             Service class that detects and manages idSmu hardware.
+    
+        
+    """
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs):
         ...
@@ -2194,6 +2279,11 @@ class IdSmuService:
                  str
         """
 class IdSmuServiceRunner:
+    """
+    
+             Simplifies the starting of idSmu services and controls their lifetime.
+        
+    """
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs):
         ...
@@ -2223,7 +2313,7 @@ class IdSmuSettingsService:
                  filtered : bool
                       If this flag is set, the parameters are taken from the filtered version of the table
         
-                 board_address : str
+                 table_group_name : str
                       Optional table group name if only a group should be applied
         
                  Returns
@@ -2408,7 +2498,7 @@ class IdSmuSettingsService:
                  Returns
                  -------
                  IdqTable
-                      A DoubleList object
+                      A IdqTable object
         """
     def get_parameter_settings_names(self) -> list[str]:
         """
@@ -2479,7 +2569,7 @@ class IdSmuSettingsService:
                  str
                       Returns an error message if an error occured, else none
         """
-    def print_settings(self, setting_name: str, filtered: bool, column_information: bool) -> None:
+    def print_settings(self, setting_name: str, filtered: bool = False, column_information: bool = False, max_columns: int = -1) -> str:
         """
                  Prints the setting / board to the console
         
@@ -3112,6 +3202,11 @@ class Iloc:
     def __setitem__(self, arg0: tuple[int, int], arg1: str) -> None:
         ...
 class ListSweep:
+    """
+    
+             Class to perform a List Sweep on a idSmu module
+        
+    """
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs):
         ...
@@ -3201,6 +3296,11 @@ class ListSweep:
                       An array of timestamps, one entry for each measurement
         """
 class ListSweepChannelConfiguration:
+    """
+    
+             Instances of this class are needed to configure a List Sweep
+        
+    """
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs):
         ...
@@ -3496,6 +3596,11 @@ class RowFilter:
     def _pybind11_conduit_v1_(*args, **kwargs):
         ...
 class SequencingCommandResult(Result):
+    """
+    
+             The result of a sequencing command.
+        
+    """
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs):
         ...
@@ -3791,4 +3896,4 @@ def get_git_version() -> int:
              -------
              int
     """
-__version__: str = '0.9.547'
+__version__: str = '0.9.556'
