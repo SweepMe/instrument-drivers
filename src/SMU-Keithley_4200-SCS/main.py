@@ -164,6 +164,9 @@ class Device(EmptyDevice):
         self.card_name = "SMU" + self.channel[-1]
         self.pulse_channel = None
 
+        self.measured_voltage: float = 0.0
+        self.measured_current: float = 0.0
+
         # Pulse Mode Parameters
         self.pulse_master = False
         self.pulse_mode: bool = False
@@ -179,6 +182,16 @@ class Device(EmptyDevice):
         self.pulse_fall_time: float = 100e-9
         self.pulse_impedance: float = 1e6
 
+        # List Mode Parameters
+        self.list_mode: bool = False
+        self.list_sweep_values: list[float] = []
+        self.list_measurement_keys = {
+            "voltage": "voltage",
+            "current": "current",
+            "time": "time",
+        }
+        self.list_delay_time: float = 0.0
+
     @staticmethod
     def find_ports() -> list[str]:
         """Find available ports."""
@@ -193,6 +206,8 @@ class Device(EmptyDevice):
             "Speed": list(self.speed_dict.keys()),
             "Compliance": 100e-6,
             "Range": list(self.current_ranges.keys()),
+
+            # Pulse Mode Parameters
             "CheckPulse": False,
             "PulseCount": 1,
             "PulseMeasStart": 50,
@@ -205,6 +220,16 @@ class Device(EmptyDevice):
             "PulseRiseTime": 100e-9,
             "PulseFallTime": 100e-9,
             "PulseImpedance": 1e6,
+
+            # List Mode Parameters
+            "ListSweepCheck": False,
+            "ListSweepType": ["Sweep", "Custom"],
+            "ListSweepStart": 0.0,
+            "ListSweepEnd": 1.0,
+            "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
+            "ListSweepStepPointsValue": 0.1,
+            "ListSweepDual": False,
+            "ListSweepDelaytime": 0.0,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -241,6 +266,7 @@ class Device(EmptyDevice):
 
         self.port_manager = "lptlib" not in self.port_string.lower()
 
+        # Pulse Mode Parameters
         self.pulse_master = False
         self.pulse_mode = parameter["CheckPulse"]
         if self.pulse_mode:
@@ -259,6 +285,58 @@ class Device(EmptyDevice):
                 self.pulse_impedance = parameter["PulseImpedance"]
             except KeyError:
                 debug("Please update the SMU module to support all features of the Keithley 4200-SCS instrument driver")
+
+        # List Mode Parameters
+        if parameter["SweepValue"] == "List sweep":
+            self.list_mode = True
+            self.handle_list_sweep_parameter(parameter)
+
+    def handle_list_sweep_parameter(self, parameter: dict) -> None:
+        """Read out the list sweep parameters and create self.list_sweep_values."""
+        list_sweep_type = parameter["ListSweepType"]
+
+        if list_sweep_type == "Sweep":
+            # Create the list sweep values
+            start = float(parameter["ListSweepStart"])
+            end = float(parameter["ListSweepEnd"])
+
+            step_points_type = parameter["ListSweepStepPointsType"]
+            step_points_value = float(parameter["ListSweepStepPointsValue"])
+
+            if step_points_type.startswith("Step width"):
+                list_sweep_values = np.arange(start, end, step_points_value)
+                # include end value
+                self.list_sweep_values = np.append(list_sweep_values, end)
+
+            elif step_points_type.startswith("Points (lin.)"):
+                self.list_sweep_values = np.linspace(start, end, int(step_points_value))
+
+            elif step_points_type.startswith("Points (log.)"):
+                self.list_sweep_values = np.logspace(np.log10(start), np.log10(end), int(step_points_value))
+
+            else:
+                msg = f"Unknown step points type: {step_points_type}"
+                raise ValueError(msg)
+
+        elif list_sweep_type == "Custom":
+            custom_values = parameter["ListSweepCustomValues"]
+            self.list_sweep_values = [float(value) for value in custom_values.split(",")]
+
+        else:
+            msg = f"Unknown list sweep type: {list_sweep_type}"
+            raise ValueError(msg)
+
+        # Add the returning values in reverse order to the list
+        if parameter["ListSweepDual"]:
+            self.list_sweep_values = np.append(self.list_sweep_values, self.list_sweep_values[::-1])
+
+        self.list_delay_time = float(parameter["ListSweepDelaytime"])
+
+        # Add time staps to return values
+        self.variables.append("Time stamp")
+        self.units.append("s")
+        self.plottype.append(True)
+        self.savetype.append(True)
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -414,6 +492,9 @@ class Device(EmptyDevice):
             # compliance = 1e1
             # self.set_current_range(self.card_name[-1], range, compliance)
 
+        if self.list_mode:
+            self.configure_list_sweep()
+
     def configure_lptlib(self) -> None:
         """Configure the device using lptlib commands."""
         # can be used to change the limit indicator value
@@ -448,10 +529,26 @@ class Device(EmptyDevice):
         # Range delay off
         self.lpt.setmode(self.card_id, self.param.KI_RANGE_DELAY, 0.0)  # disable range delay
 
+    def configure_list_sweep(self) -> None:
+        """When using list mode, the results arrays must be registered to be read out in parallel."""
+        self.lpt.reset_measurement_dict()
+
+        current_key = self.list_measurement_keys["current"]
+        self.lpt.prepare_measurement("smeasi", current_key, self.card_id, array_size=len(self.list_sweep_values))
+
+        voltage_key = self.list_measurement_keys["voltage"]
+        self.lpt.prepare_measurement("smeasv", voltage_key, self.card_id, array_size=len(self.list_sweep_values))
+
+        time_key = self.list_measurement_keys["time"]
+        self.lpt.prepare_measurement("smeast", time_key, self.card_id, array_size=len(self.list_sweep_values))
+
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
         if self.pulse_mode and self.pulse_master:
             del self.device_communication[self.identifier]["Pulse master"]
+
+        if self.list_mode:
+            self.lpt.reset_measurement_dict()
 
     def poweroff(self) -> None:
         """Turn off the device."""
@@ -465,6 +562,13 @@ class Device(EmptyDevice):
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         if self.pulse_mode:
+            return
+
+        if self.list_mode:
+            if self.source == "Voltage in V":
+                self.lpt.asweepv(self.card_id, self.list_sweep_values, self.list_delay_time)
+            elif self.source == "Current in A":
+                self.lpt.asweepi(self.card_id, self.list_sweep_values, self.list_delay_time)
             return
 
         self.value = float(self.value)
@@ -539,23 +643,30 @@ class Device(EmptyDevice):
                 stop_index=buffer_size,
             )
 
-            self.v = np.average(v_meas)
-            self.i = np.average(i_meas)
+            self.measured_voltage = np.average(v_meas)
+            self.measured_current = np.average(i_meas)
 
     def call(self) -> list:
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables."""
+        if self.list_mode:
+            # Read out the registered lists of measured values
+            voltage = self.lpt.read_measurement(self.list_measurement_keys["voltage"])
+            current = self.lpt.read_measurement(self.list_measurement_keys["current"])
+            time_stamps = self.lpt.read_measurement(self.list_measurement_keys["time"])
+            return [voltage, current, time_stamps]
+
         if not self.pulse_mode:
             if self.command_set == "LPTlib":
-                self.v = self.lpt.intgv(self.card_id)
-                self.i = self.lpt.intgi(self.card_id)
+                self.measured_voltage = self.lpt.intgv(self.card_id)
+                self.measured_current = self.lpt.intgi(self.card_id)
 
                 # needed to give some time to update the plot
                 # it seems that the LPTlib access is somehow blocking the entire program
                 time.sleep(0.001)
 
             elif self.command_set == "US":
-                self.v = self.get_voltage(self.card_name[-1])
-                self.i = self.get_current(self.card_name[-1])
+                self.measured_voltage = self.get_voltage(self.card_name[-1])
+                self.measured_current = self.get_current(self.card_name[-1])
 
             """
             X Y Z +-N.NNNN E+-NN
@@ -565,7 +676,7 @@ class Device(EmptyDevice):
             +-N.NNNN E+-NN is the reading (mantissa and exponent)
             """
 
-        return [self.v, self.i]
+        return [self.measured_voltage, self.measured_current]
 
     """ here, convenience functions start """
 
