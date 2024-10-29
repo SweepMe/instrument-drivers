@@ -4,19 +4,19 @@
 # find those in the corresponding folders or contact the maintainer.
 #
 # MIT License
-# 
+#
 # Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -30,64 +30,71 @@
 # * Module: SMU
 # * Instrument: aSpectSystems idSMU modules
 
-import time
+from pysweepme import FolderManager as FoMa
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
-from pysweepme import FolderManager as FoMa
 FoMa.addFolderToPATH()
 
 from aspectdeviceengine.enginecore import IdSmuService, IdSmuServiceRunner, IdSmuBoardModel
 
 
 class Device(EmptyDevice):
-
-    def __init__(self):
-        
+    def __init__(self) -> None:
         EmptyDevice.__init__(self)
-        
+
         self.shortname = "idSMUx"
-        
+
         self.variables = ["Voltage", "Current"]
         self.units = ["V", "A"]
         self.plottype = [True, True]
         self.savetype = [True, True]
 
     def find_ports(self):
-
         srunner = IdSmuServiceRunner()
-        print(srunner)
+        # print(srunner)
         service = srunner.get_idsmu_service()
-        print(service)
-        
-        print(dir(service))
-        
-        number_boards = service.get_number_of_boards()
-        print(number_boards)
-                
+        # print(service)
+
+        # print(dir(service))
+
+        # number_boards = service.get_number_of_boards()
+        #
+        # print(number_boards)
+        #
+        # print(service.detect_devices())
+
         ports = service.get_board_addresses()
-        
+
+        first_board = service.get_first_board()
+        # print(first_board.idSmu2Modules.as_list())
+        print(first_board.hardware_id, first_board.name, first_board.channel_ids)
+
+
+
+        # print(dir(first_board))
+
+        # ports = addresses
+
         # if len(ports) == 0:
             # sim_boards = service.get_fake_board_addresses()
             # print(sim_boards)
             # ports = sim_boards
-        
+
         srunner.shutdown()
-        
+
         return ports
 
     def set_GUIparameter(self):
-        
-        gui_parameter = {
+        return {
             "SweepMode": ["Voltage in V", "Current in A"],
             "RouteOut": ["Front"],
             "Compliance": 0.1,
         }
-                        
-        return gui_parameter
-                                 
+
+
     def get_GUIparameter(self, parameter={}):
-        self.source = parameter['SweepMode']
-        self.protection = parameter['Compliance']
+        self.source = parameter["SweepMode"]
+        self.protection = parameter["Compliance"]
 
     def connect(self):
         self.srunner = IdSmuServiceRunner()
@@ -103,19 +110,19 @@ class Device(EmptyDevice):
 
     def configure(self):
         pass
-           
+
     def deinitialize(self):
         pass
 
     def poweron(self):
         pass
-        
+
     def poweroff(self):
         pass
-                 
+
     def apply(self):
         pass
-         
+
     def measure(self):
         self.i = 0
         self.v = 1
