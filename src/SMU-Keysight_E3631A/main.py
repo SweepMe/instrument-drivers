@@ -78,6 +78,7 @@ class Device(EmptyDevice):
             "Channel": list(self.channels_commands.keys()),
             "RouteOut": ["Front"],
             "Compliance": 1,
+            "Average": 1,
             # "RangeVoltage": ["15 V / 7 A", "30 V / 4 A"],  # no voltage range per channel on the E3631A
         }
 
@@ -88,6 +89,11 @@ class Device(EmptyDevice):
         self.source = parameter["SweepMode"]
         #self.route_out = parameter["RouteOut"]
         self.currentlimit = parameter["Compliance"]
+        self.average = int(parameter["Average"])
+        
+        if self.average == 0:
+            msg = ("Average of 0 not possible. Disable average by setting it to 1.")
+            raise Exception(msg)
         
         self.device = parameter['Device']
 
@@ -101,7 +107,7 @@ class Device(EmptyDevice):
 
         self.port.write("*CLS")
 
-        self.unique_identifier = self_device + "_" + self.port_string + "_channel"
+        self.unique_identifier = self.device + "_" + self.port_string + "_channel"
 
     def configure(self):
 
@@ -159,23 +165,23 @@ class Device(EmptyDevice):
         self.port.write("OUTP:STAT OFF")
 
     def apply(self):
-        if self.channel == "P6V" and self.value > 6:
+        if self.channel == "P6V" and float(self.value) > 6:
             msg = "Requested voltage out of range for this channel (max. 6 V)"
             raise Exception(msg)
         
         if self.channel == "P25V" or self.channel == "TRACK25V":
-            if abs(self.value) > 25:
+            if abs(float(self.value)) > 25:
                 msg = "Requested voltage out of range for this channel (max. +25 V)"
                 raise Exception(msg)
-            elif self.channel == "TRACK25V" and self.value < 0:
+            elif self.channel == "TRACK25V" and float(self.value) < 0:
                 msg = "Use positive values only in TRACK mode to request symmetric voltage on both channels."
                 raise Exception(msg)
         
         if self.channel == "N25V":
-            if abs(self.value) > 25:
+            if abs(float(self.value)) > 25:
                 msg = "Requested voltage out of range for this channel (max. -25 V)"
                 raise Exception(msg)
-            elif self.value > 0:
+            elif float(self.value) > 0:
                 msg = "Positive voltages not possible on this channel (N25V)."
                 raise Exception(msg)
         
@@ -183,11 +189,18 @@ class Device(EmptyDevice):
         self.port.write("VOLT:LEV:IMM %1.4f" % float(self.value))
 
     def measure(self):
+        self.v = 0
+        self.i = 0
+        
         self.select_channel()
-        self.port.write("MEAS:VOLT?")
-        self.v = float(self.port.read())
-        self.port.write("MEAS:CURR?")
-        self.i = float(self.port.read())
+        for n in range(self.average): 
+            self.port.write("MEAS:VOLT?")
+            self.v = self.v + float(self.port.read())
+            self.port.write("MEAS:CURR?")
+            self.i = self.i + float(self.port.read())
+        
+        self.v = self.v / self.average
+        self.i = self.i / self.average
 
     def call(self):
         return [self.v, self.i]
