@@ -75,6 +75,7 @@ class Device(EmptyDevice):
             "RouteOut": ["Front"],
             "Compliance": 1,
             "RangeVoltage": ["15 V / 7 A", "30 V / 4 A"],
+            "Average": 1,
         }
 
         return gui_parameter
@@ -90,7 +91,12 @@ class Device(EmptyDevice):
         # self.channel = int(parameter["Channel"])
 
         self.voltage_range = parameter["RangeVoltage"]
-
+        self.average = int(parameter["Average"])
+        
+        if self.average == 0:
+            msg = ("Average of 0 not possible. Disable average by setting it to 1.")
+            raise Exception(msg)
+            
     def initialize(self):
         self.port.write("*IDN?")
         identifier = self.port.read()
@@ -148,7 +154,7 @@ class Device(EmptyDevice):
         self.port.write("OUTP:STAT OFF")
 
     def apply(self):
-        if self.value > 15.45 and float(self.currentlimit) > 4.12:
+        if float(self.value) > 15.45 and float(self.currentlimit) > 4.12:
             msg = ("The next requested step would exceed 15.45 V with current limit higher than 4.12 A.\n\n"
                    "Please either stop at 15.45 V max or lower current compliance limit to 4.12 A max.")
             raise Exception(msg)
@@ -159,10 +165,16 @@ class Device(EmptyDevice):
             time.sleep(0.1)
 
     def measure(self):
-        self.port.write("MEAS:VOLT?")
-        self.v = float(self.port.read())
-        self.port.write("MEAS:CURR?")
-        self.i = float(self.port.read())
+        self.v = 0
+        self.i = 0
+        for n in range(self.average): 
+            self.port.write("MEAS:VOLT?")
+            self.v = self.v + float(self.port.read())
+            self.port.write("MEAS:CURR?")
+            self.i = self.i + float(self.port.read())
+        
+        self.v = self.v / self.average
+        self.i = self.i / self.average
 
     def call(self):
         return [self.v, self.i]
