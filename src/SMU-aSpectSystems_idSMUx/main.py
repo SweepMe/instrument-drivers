@@ -24,7 +24,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
+import time
 
 # SweepMe! driver
 # * Module: SMU
@@ -35,7 +35,7 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 FoMa.addFolderToPATH()
 
-from aspectdeviceengine.enginecore import IdSmuService, IdSmuServiceRunner, IdSmuBoardModel
+from aspectdeviceengine.enginecore import IdSmuService, IdSmuServiceRunner, IdSmuBoardModel, SmuCurrentRange
 
 
 class Device(EmptyDevice):
@@ -49,83 +49,101 @@ class Device(EmptyDevice):
         self.plottype = [True, True]
         self.savetype = [True, True]
 
-    def find_ports(self):
+        # Communication Parameters
+        self.srunner: IdSmuServiceRunner = None
+        self.service: IdSmuService = None
+        # self.smu: aspectdeviceengine.enginecore.IdSmu2Module = None
+        # self.channel: aspectdeviceengine.enginecore.AD5522ChannelModel = None
+
+        # Measurement Parameters
+        self.channels: list = [1, 2, 3, 4]
+        self.channel_number: int = 1
+        self.source: str = "Voltage in V"
+        self.protection: float = 0.1
+
+        self.current_ranges = {
+            "5uA": SmuCurrentRange._5uA,
+            "20uA": SmuCurrentRange._20uA,
+            "200uA": SmuCurrentRange._200uA,
+            "2mA": SmuCurrentRange._2mA,
+            "70mA": SmuCurrentRange._70mA,
+        }
+        self.current_range: SmuCurrentRange = SmuCurrentRange._70mA
+
+
+
+    @staticmethod
+    def find_ports() -> list:
+        """Return a list of connected devices."""
         srunner = IdSmuServiceRunner()
-        # print(srunner)
         service = srunner.get_idsmu_service()
-        # print(service)
 
-        # print(dir(service))
-
-        # number_boards = service.get_number_of_boards()
-        #
-        # print(number_boards)
-        #
-        # print(service.detect_devices())
-
+        # Get first board to automatically detect connected devices
+        first_board = service.get_first_board()
+        print(first_board.get_current_range("M1.S1.C1"))
         ports = service.get_board_addresses()
 
-        first_board = service.get_first_board()
-        # print(first_board.idSmu2Modules.as_list())
-        print(first_board.hardware_id, first_board.name, first_board.channel_ids)
+        # TODO: Need list of devices such as M1.S1, M1.S2, ... in case multiple boards are connected
 
-
-
-        # print(dir(first_board))
-
-        # ports = addresses
-
-        # if len(ports) == 0:
-            # sim_boards = service.get_fake_board_addresses()
-            # print(sim_boards)
-            # ports = sim_boards
-
+        # Always shut down the service runner
         srunner.shutdown()
 
         return ports
 
-    def set_GUIparameter(self):
+    def set_GUIparameter(self) -> dict:  # noqa: N802
+        """Set the standard GUI parameters."""
         return {
             "SweepMode": ["Voltage in V", "Current in A"],
+            "Channel": self.channels,
             "RouteOut": ["Front"],
             "Compliance": 0.1,
+            "Range": list(self.current_ranges),
+            # "RangeVoltage": [1],
         }
 
-
-    def get_GUIparameter(self, parameter={}):
+    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
+        """Handle the GUI parameters."""
         self.source = parameter["SweepMode"]
         self.protection = parameter["Compliance"]
 
-    def connect(self):
-        self.srunner = IdSmuServiceRunner()
-        print(self.srunner)
-        self.service = self.srunner.get_idsmu_service()
-        print(self.service)
+        # channel_ids = ["M1.S1.C1", "M1.S1.C2", "M1.S1.C3", "M1.S1.C4"]
+        self.channel_number = int(parameter["Channel"])
+        self.current_range = self.current_ranges[parameter["Range"]]
 
-    def disconnect(self):
+    def connect(self) -> None:
+        """Connect to the SMU."""
+        self.srunner = IdSmuServiceRunner()
+        self.service = self.srunner.get_idsmu_service()
+
+        first_board = self.service.get_first_board()
+
+        self.smu = first_board.idSmu2Modules["M1.S1"]
+        self.channel = self.smu.smu.channels[self.channel_number]
+
+    def disconnect(self) -> None:
+        """Terminate the connection to the SMU."""
         self.srunner.shutdown()
 
-    def initialize(self):
-        pass
+    def initialize(self) -> None:
+        """Enable the SMU channel."""
+        if not self.channel.enabled:
+            self.channel.enabled = True
 
     def configure(self):
-        pass
+        self.channel.current_range = self.current_range
 
-    def deinitialize(self):
-        pass
+    def apply(self) -> None:
+        """Set the voltage or current on the SMU."""
+        if self.source == "Voltage in V":
+            self.channel.voltage = float(self.value)
+        elif self.source == "Current in A":
+            self.channel.current = float(self.value)
 
-    def poweron(self):
-        pass
+    def measure(self) -> None:
+        """Read the voltage and current from the SMU."""
+        self.i = self.channel.current
+        self.v = self.channel.voltage
 
-    def poweroff(self):
-        pass
-
-    def apply(self):
-        pass
-
-    def measure(self):
-        self.i = 0
-        self.v = 1
-
-    def call(self):
+    def call(self) -> list:
+        """Return the voltage and current."""
         return [self.v, self.i]
