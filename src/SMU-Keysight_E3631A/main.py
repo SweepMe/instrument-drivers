@@ -4,7 +4,7 @@
 # find those in the corresponding folders or contact the maintainer.
 #
 # MIT License
-# 
+#
 # Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -36,8 +36,7 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    """
-    description =
+    """description =
     <p><strong>Notes:</strong></p>
     <ul>
     <li>COM Port untested as of 20240807</li>
@@ -47,11 +46,10 @@ class Device(EmptyDevice):
     """
 
     def __init__(self):
-
         super().__init__()
 
         self.shortname = "E3631A"
-        
+
         self.variables = ["Voltage", "Current"]
         self.units = ["V", "A"]
         self.plottype = [True, True]  # True to plot data
@@ -72,12 +70,12 @@ class Device(EmptyDevice):
         }
 
     def set_GUIparameter(self):
-
         gui_parameter = {
             "SweepMode": ["Voltage in V"],
             "Channel": list(self.channels_commands.keys()),
             "RouteOut": ["Front"],
             "Compliance": 1,
+            "Average": 1,
             # "RangeVoltage": ["15 V / 7 A", "30 V / 4 A"],  # no voltage range per channel on the E3631A
         }
 
@@ -86,12 +84,17 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter={}):
         self.port_string = parameter["Port"]
         self.source = parameter["SweepMode"]
-        #self.route_out = parameter["RouteOut"]
+        # self.route_out = parameter["RouteOut"]
         self.currentlimit = parameter["Compliance"]
-        
-        self.device = parameter['Device']
+        self.average = int(parameter["Average"])
 
-        channel_selection = parameter['Channel']
+        if self.average < 1:
+            msg = "Average smaller 1 not possible. Disable average by setting it to 1."
+            raise Exception(msg)
+
+        self.device = parameter["Device"]
+
+        channel_selection = parameter["Channel"]
         self.channel = self.channels_commands[channel_selection]
 
     def initialize(self):
@@ -101,10 +104,9 @@ class Device(EmptyDevice):
 
         self.port.write("*CLS")
 
-        self.unique_identifier = self_device + "_" + self.port_string + "_channel"
+        self.unique_identifier = self.device + "_" + self.port_string + "_channel"
 
     def configure(self):
-
         # NOT AVAILABLE ON E3631A: self.port.write("VOLT:PROT:STAT OFF") # output voltage protection disabled
         # NOT AVAILABLE ON E3631A: self.port.write("CURR:PROT:STAT OFF") # output current protection disabled
 
@@ -122,8 +124,8 @@ class Device(EmptyDevice):
             if float(self.currentlimit) > 5:
                 msg = "Lower compliance limit to max 5 A"
                 raise Exception(msg)
-        
-        elif self.channel == "P25V" or self.channel == "N25V" or self.channel == "TRACK25V":
+
+        elif self.channel in ("P25V", "N25V", "TRACK25V"):
             if float(self.currentlimit) > 1:
                 msg = "Lower compliance limit to max 1 A"
                 raise Exception(msg)
@@ -134,11 +136,11 @@ class Device(EmptyDevice):
         else:
             msg = "The input channel selection is not valid."
             raise Exception(msg)
-        
+
         self.select_channel()
         # set compliance limit for selected channel.
         self.port.write("CURR:LEV:IMM %1.4f" % float(self.currentlimit))
-        
+
     def unconfigure(self):
         self.select_channel()
 
@@ -159,18 +161,19 @@ class Device(EmptyDevice):
         self.port.write("OUTP:STAT OFF")
 
     def apply(self):
+        self.value = float(self.value)
         if self.channel == "P6V" and self.value > 6:
             msg = "Requested voltage out of range for this channel (max. 6 V)"
             raise Exception(msg)
-        
-        if self.channel == "P25V" or self.channel == "TRACK25V":
+
+        if self.channel in ("P25V", "TRACK25V"):
             if abs(self.value) > 25:
                 msg = "Requested voltage out of range for this channel (max. +25 V)"
                 raise Exception(msg)
             elif self.channel == "TRACK25V" and self.value < 0:
                 msg = "Use positive values only in TRACK mode to request symmetric voltage on both channels."
                 raise Exception(msg)
-        
+
         if self.channel == "N25V":
             if abs(self.value) > 25:
                 msg = "Requested voltage out of range for this channel (max. -25 V)"
@@ -178,40 +181,44 @@ class Device(EmptyDevice):
             elif self.value > 0:
                 msg = "Positive voltages not possible on this channel (N25V)."
                 raise Exception(msg)
-        
+
         self.select_channel()
-        self.port.write("VOLT:LEV:IMM %1.4f" % float(self.value))
+        self.port.write("VOLT:LEV:IMM %1.4f" % self.value)
 
     def measure(self):
+        self.v = 0
+        self.i = 0
+
         self.select_channel()
-        self.port.write("MEAS:VOLT?")
-        self.v = float(self.port.read())
-        self.port.write("MEAS:CURR?")
-        self.i = float(self.port.read())
+        for n in range(self.average):
+            self.port.write("MEAS:VOLT?")
+            self.v = self.v + float(self.port.read())
+            self.port.write("MEAS:CURR?")
+            self.i = self.i + float(self.port.read())
+
+        self.v = self.v / self.average
+        self.i = self.i / self.average
 
     def call(self):
         return [self.v, self.i]
 
     def display_off(self):
-
         self.port.write("DISP:STAT OFF")
         # wait for display shutdown procedure to complete
         # time.sleep(0.5)
 
     def display_on(self):
-
         self.port.write("DISP:STAT ON")
         # wait for display switch-on procedure to complete
         # time.sleep(0.5)
-        
+
     def select_channel(self):
-        """Selects the current channel as the receipt for following SCPI configuration commands.
-        """
-
+        """Selects the current channel as the receipt for following SCPI configuration commands."""
         # only if a channel was not set so far or another channel is request, we change the channel
-        if (self.unique_identifier not in self.device_communication or
-                self.device_communication[self.unique_identifier] != self.channel):
-
+        if (
+            self.unique_identifier not in self.device_communication
+            or self.device_communication[self.unique_identifier] != self.channel
+        ):
             if self.channel == "TRACK25V":
                 # when in TRACK mode (synced +/-25V channels), voltage on both channels can be set by
                 # setting P25V channel or N25V channel arbitrarily.
