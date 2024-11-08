@@ -4,7 +4,7 @@
 # find those in the corresponding folders or contact the maintainer.
 #
 # MIT License
-# 
+#
 # Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -36,8 +36,7 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    """
-    description =
+    """description =
     <p><strong>Notes:</strong></p>
     <ul>
     <li>COM Port untested as of 20240619</li>
@@ -47,7 +46,6 @@ class Device(EmptyDevice):
     """
 
     def __init__(self):
-
         EmptyDevice.__init__(self)
 
         self.shortname = "E3632A"
@@ -60,18 +58,16 @@ class Device(EmptyDevice):
         self.port_manager = True
         self.port_types = ["COM", "GPIB"]
 
-        self.port_properties = {"timeout": 1,
-                                }
+        self.port_properties = {
+            "timeout": 1,
+        }
 
     def set_GUIparameter(self):
-
         gui_parameter = {
             "SweepMode": ["Voltage in V"],
-
             # NOT NEEDED with E3632A as it is a single channel instrument
             # but will be used for other E36xxA instruments later.
             # "Channel": [1],
-
             "RouteOut": ["Front"],
             "Compliance": 1,
             "RangeVoltage": ["15 V / 7 A", "30 V / 4 A"],
@@ -92,11 +88,11 @@ class Device(EmptyDevice):
 
         self.voltage_range = parameter["RangeVoltage"]
         self.average = int(parameter["Average"])
-        
-        if self.average == 0:
-            msg = ("Average of 0 not possible. Disable average by setting it to 1.")
+
+        if self.average < 1:
+            msg = "Average smaller 1 not possible. Disable average by setting it to 1."
             raise Exception(msg)
-            
+
     def initialize(self):
         self.port.write("*IDN?")
         identifier = self.port.read()
@@ -107,7 +103,6 @@ class Device(EmptyDevice):
         self.display_off()
 
     def configure(self):
-
         # self.port.write("VOLT:PROT:STAT OFF")  # output voltage protection disabled
         # self.port.write("CURR:PROT:STAT OFF")  # output current protection disabled
 
@@ -154,12 +149,15 @@ class Device(EmptyDevice):
         self.port.write("OUTP:STAT OFF")
 
     def apply(self):
-        if float(self.value) > 15.45 and float(self.currentlimit) > 4.12:
-            msg = ("The next requested step would exceed 15.45 V with current limit higher than 4.12 A.\n\n"
-                   "Please either stop at 15.45 V max or lower current compliance limit to 4.12 A max.")
+        self.value = float(self.value)
+        if self.value > 15.45 and float(self.currentlimit) > 4.12:
+            msg = (
+                "The next requested step would exceed 15.45 V with current limit higher than 4.12 A.\n\n"
+                "Please either stop at 15.45 V max or lower current compliance limit to 4.12 A max."
+            )
             raise Exception(msg)
         else:
-            self.port.write("VOLT:LEV:IMM %1.4f" % float(self.value))
+            self.port.write("VOLT:LEV:IMM %1.4f" % self.value)
             # the adjustment of the output takes some time; without the delay, the timing is borderline and
             # can lead to an Error-113 as the instrument is not ready just yet to receive a new command
             time.sleep(0.1)
@@ -167,12 +165,12 @@ class Device(EmptyDevice):
     def measure(self):
         self.v = 0
         self.i = 0
-        for n in range(self.average): 
+        for n in range(self.average):
             self.port.write("MEAS:VOLT?")
             self.v = self.v + float(self.port.read())
             self.port.write("MEAS:CURR?")
             self.i = self.i + float(self.port.read())
-        
+
         self.v = self.v / self.average
         self.i = self.i / self.average
 
@@ -180,13 +178,11 @@ class Device(EmptyDevice):
         return [self.v, self.i]
 
     def display_off(self):
-
         self.port.write("DISP:STAT OFF")
         # wait for display shutdown procedure to complete
         # time.sleep(0.5)
 
     def display_on(self):
-
         self.port.write("DISP:STAT ON")
         # wait for display switch-on procedure to complete
         # time.sleep(0.5)
