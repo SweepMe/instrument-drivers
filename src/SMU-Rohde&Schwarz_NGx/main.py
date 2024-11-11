@@ -278,6 +278,9 @@ class Device(EmptyDevice):
         Returns:
             None
         """
+
+        # set channel is often used in the driver to change the activated driver before further commands are sent.
+        # This is why the model is checked here, because the NGU model does not seem to understand the INST:OUT command.
         if self.model != "NGU":
             self.port.write("INST:OUT%i" % int(channel))
 
