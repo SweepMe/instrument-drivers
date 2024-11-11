@@ -49,8 +49,8 @@ class Device(EmptyDevice):
         self.savetype = [True, True]
 
         # Communication Parameters
+        self.identifier: str = "idSMUx_"  # TODO: Maybe add the serial number here
         self.srunner: IdSmuServiceRunner = None
-        self.service: IdSmuService = None
         # self.smu: aspectdeviceengine.enginecore.IdSmu2Module = None
         # self.channel: aspectdeviceengine.enginecore.AD5522ChannelModel = None
 
@@ -59,6 +59,7 @@ class Device(EmptyDevice):
         self.channel_number: int = 1
         self.source: str = "Voltage in V"
         self.protection: float = 0.1
+        self.average: int = 1
 
         self.current_ranges = {
             "5uA": SmuCurrentRange._5uA,
@@ -75,6 +76,9 @@ class Device(EmptyDevice):
         self.i_min: float = -0.075
         self.i_max: float = 0.075
 
+        # Measured values
+        self.v: float = 0
+        self.i: float = 0
 
     @staticmethod
     def find_ports() -> list:
@@ -83,8 +87,7 @@ class Device(EmptyDevice):
         service = srunner.get_idsmu_service()
 
         # Get first board to automatically detect connected devices
-        first_board = service.get_first_board()
-        print(first_board.get_current_range("M1.S1.C1"))
+        board_model = service.get_first_board()
         ports = service.get_board_addresses()
 
         # TODO: Need list of devices such as M1.S1, M1.S2, ... in case multiple boards are connected
@@ -102,6 +105,7 @@ class Device(EmptyDevice):
             "RouteOut": ["Front"],
             "Compliance": 0.1,
             "Range": list(self.current_ranges),
+            "Average": 1,
             "CheckPulse": False,
             # "RangeVoltage": [1],
 
@@ -124,6 +128,8 @@ class Device(EmptyDevice):
         # channel_ids = ["M1.S1.C1", "M1.S1.C2", "M1.S1.C3", "M1.S1.C4"]
         self.channel_number = int(parameter["Channel"])
         self.current_range = self.current_ranges[parameter["Range"]]
+
+        self.average = int(parameter["Average"])
 
         # List Mode Parameters
         try:
@@ -189,23 +195,28 @@ class Device(EmptyDevice):
     def connect(self) -> None:
         """Connect to the SMU."""
         self.srunner = IdSmuServiceRunner()
-        self.service = self.srunner.get_idsmu_service()
-
-        first_board = self.service.get_first_board()
-
-        self.smu = first_board.idSmu2Modules["M1.S1"]
-        self.channel = self.smu.smu.channels[self.channel_number]
 
     def disconnect(self) -> None:
         """Terminate the connection to the SMU."""
         self.srunner.shutdown()
 
     def initialize(self) -> None:
-        """Enable the SMU channel."""
+        """Initialize the boards or receive initialized boards from other driver."""
+        if self.identifier in self.device_communication:
+            board_model = self.device_communication[self.identifier]
+        else:
+            service = self.srunner.get_idsmu_service()
+            board_model = service.get_first_board()
+            self.device_communication[self.identifier] = board_model
+
+        self.smu = board_model.idSmu2Modules["M1.S1"]
+        self.channel = self.smu.smu.channels[self.channel_number]
+
+    def configure(self) -> None:
+        """Enable the channel and set the current range on the SMU."""
         if not self.channel.enabled:
             self.channel.enabled = True
 
-    def configure(self):
         self.channel.current_range = self.current_range
 
         # Get output ranges
@@ -229,6 +240,14 @@ class Device(EmptyDevice):
         """Read the voltage and current from the SMU."""
         self.i = self.channel.current
         self.v = self.channel.voltage
+
+        if self.average > 1:
+            for _ in range(self.average - 1):
+                self.i += self.channel.current
+                self.v += self.channel.voltage
+
+            self.i = self.i / self.average
+            self.v = self.v / self.average
 
     def call(self) -> list:
         """Return the voltage and current."""
