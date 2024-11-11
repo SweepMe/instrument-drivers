@@ -34,11 +34,13 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 FoMa.addFolderToPATH()
 
-from aspectdeviceengine.enginecore import IdSmuServiceRunner, SmuCurrentRange
+from aspectdeviceengine.enginecore import IdSmuServiceRunner, SmuCurrentRange, MeasurementMode, ListSweepChannelConfiguration, ListSweep
 
 
 class Device(EmptyDevice):
+    """Device Class for the aSpectSystems idSMU modules."""
     def __init__(self) -> None:
+        """Initialize the Device Class."""
         EmptyDevice.__init__(self)
 
         self.shortname = "idSMUx"
@@ -50,6 +52,7 @@ class Device(EmptyDevice):
 
         # Communication Parameters
         self.identifier: str = "idSMUx_"  # TODO: Maybe add the serial number here
+        self.board_id: str = "M1.S1"
         self.srunner: IdSmuServiceRunner = None
 
         # Measurement Parameters
@@ -58,8 +61,12 @@ class Device(EmptyDevice):
         self.source: str = "Voltage in V"
         self.protection: float = 0.1
         self.average: int = 1
+        self.list_mode: bool = False
+
+        self.sweep: ListSweep = None
 
         self.current_ranges = {
+            "Auto": "Auto",
             "5uA": SmuCurrentRange._5uA,
             "20uA": SmuCurrentRange._20uA,
             "200uA": SmuCurrentRange._200uA,
@@ -74,9 +81,16 @@ class Device(EmptyDevice):
         self.i_min: float = -0.075
         self.i_max: float = 0.075
 
+        # List Mode Parameters
+        self.list_start: float = 0.0
+        self.list_end: float = 1.0
+        self.number_of_points: int = 10
+        self.list_delay_time: int = 100  # in ms
+
         # Measured values
         self.v: float = 0
         self.i: float = 0
+        self.t: float = 0
 
     @staticmethod
     def find_ports() -> list:
@@ -85,8 +99,8 @@ class Device(EmptyDevice):
         service = srunner.get_idsmu_service()
 
         # Get first board to automatically detect connected devices
-        service.get_first_board()
-        ports = service.get_board_addresses()
+        board = service.get_first_board()
+        ports = board.get_all_hardware_ids()
 
         # TODO: Need list of devices such as M1.S1, M1.S2, ... in case multiple boards are connected
 
@@ -107,12 +121,11 @@ class Device(EmptyDevice):
             "CheckPulse": False,
             # List Mode Parameters
             "ListSweepCheck": False,
-            "ListSweepType": ["Sweep", "Custom"],
+            "ListSweepType": ["Sweep"],
             "ListSweepStart": 0.0,
             "ListSweepEnd": 1.0,
-            "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
+            "ListSweepStepPointsType": ["Step width:", "Points (lin.):"],
             "ListSweepStepPointsValue": 0.1,
-            "ListSweepDual": False,
             "ListSweepDelaytime": 0.0,
         }
 
@@ -120,8 +133,9 @@ class Device(EmptyDevice):
         """Handle the GUI parameters."""
         self.source = parameter["SweepMode"]
         self.protection = float(parameter["Compliance"])
+        self.board_id = parameter["Port"]
+        self.identifier: str = "idSMUx_" + self.board_id
 
-        # channel_ids = ["M1.S1.C1", "M1.S1.C2", "M1.S1.C3", "M1.S1.C4"]
         self.channel_number = int(parameter["Channel"])
         self.current_range = self.current_ranges[parameter["Range"]]
 
@@ -136,49 +150,25 @@ class Device(EmptyDevice):
             sweep_value = None
 
         if sweep_value == "List sweep":
+            self.list_mode = True
             self.handle_list_sweep_parameter(parameter)
 
     def handle_list_sweep_parameter(self, parameter: dict) -> None:
         """Read out the list sweep parameters and create self.list_sweep_values."""
-        list_sweep_type = parameter["ListSweepType"]
+        self.list_start = float(parameter["ListSweepStart"])
+        self.list_end = float(parameter["ListSweepEnd"])
 
-        if list_sweep_type == "Sweep":
-            # Create the list sweep values
-            start = float(parameter["ListSweepStart"])
-            end = float(parameter["ListSweepEnd"])
-
-            step_points_type = parameter["ListSweepStepPointsType"]
-            step_points_value = float(parameter["ListSweepStepPointsValue"])
-
-            if step_points_type.startswith("Step width"):
-                list_sweep_values = np.arange(start, end, step_points_value)
-                # include end value
-                list_sweep_values = np.append(list_sweep_values, end)
-
-            elif step_points_type.startswith("Points (lin.)"):
-                list_sweep_values = np.linspace(start, end, int(step_points_value))
-
-            elif step_points_type.startswith("Points (log.)"):
-                list_sweep_values = np.logspace(np.log10(start), np.log10(end), int(step_points_value))
-
-            else:
-                msg = f"Unknown step points type: {step_points_type}"
-                raise ValueError(msg)
-
-        elif list_sweep_type == "Custom":
-            custom_values = parameter["ListSweepCustomValues"]
-            list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
-
+        step_points_type = parameter["ListSweepStepPointsType"]
+        if step_points_type.startswith("Step width"):
+            self.number_of_points = int((self.list_end - self.list_start) / float(parameter["ListSweepStepPointsValue"]))
         else:
-            msg = f"Unknown list sweep type: {list_sweep_type}"
+            self.number_of_points = int(parameter["ListSweepStepPointsValue"])
+
+        if self.number_of_points > 52:
+            msg = f"Number of points {self.number_of_points} is too high. Maximum is 52."
             raise ValueError(msg)
 
-        # Add the returning values in reverse order to the list
-        if parameter["ListSweepDual"]:
-            list_sweep_values = np.append(list_sweep_values, list_sweep_values[::-1])
-
-        self.list_delay_time = float(parameter["ListSweepDelaytime"])
-        self.list_sweep_values = list_sweep_values.tolist()
+        self.list_delay_time = int(float(parameter["ListSweepDelaytime"]) * 1000)
 
         # Add time staps to return values
         self.variables.append("Time stamp")
@@ -193,6 +183,8 @@ class Device(EmptyDevice):
     def disconnect(self) -> None:
         """Terminate the connection to the SMU."""
         self.srunner.shutdown()
+        if self.identifier in self.device_communication:
+            del self.device_communication[self.identifier]
 
     def initialize(self) -> None:
         """Initialize the boards or receive initialized boards from other driver."""
@@ -203,7 +195,7 @@ class Device(EmptyDevice):
             board_model = service.get_first_board()
             self.device_communication[self.identifier] = board_model
 
-        self.smu = board_model.idSmu2Modules["M1.S1"]
+        self.smu = board_model.idSmu2Modules[self.board_id]
         self.channel = self.smu.smu.channels[self.channel_number]
 
     def configure(self) -> None:
@@ -213,7 +205,12 @@ class Device(EmptyDevice):
 
         self.set_compliance(self.protection)
 
-        self.channel.current_range = self.current_range
+        # Current Range
+        if self.current_range == "Auto":
+            self.channel.autorange = True
+        else:
+            self.channel.autorange = False
+            self.channel.current_range = self.current_range
 
         # Get output ranges
         self.v_min, self.v_max, self.i_min, self.i_max = self.channel.output_ranges
@@ -223,7 +220,9 @@ class Device(EmptyDevice):
 
         The device automatically switches to voltage compliance when current is forced and vice versa.
         """
+        value = abs(value)
         self.channel.clamp_high_value = value
+        self.channel.clamp_low_value = -value
         self.channel.clamp_enabled = True
 
     def apply(self) -> None:
@@ -242,17 +241,45 @@ class Device(EmptyDevice):
 
     def measure(self) -> None:
         """Read the voltage and current from the SMU."""
+        if self.list_mode:
+            self.run_list_sweep()
+            return
+
         self.i = self.channel.current
         self.v = self.channel.voltage
 
         if self.average > 1:
             for _ in range(self.average - 1):
+                # TODO: Check if the value gets updated
                 self.i += self.channel.current
                 self.v += self.channel.voltage
 
             self.i = self.i / self.average
             self.v = self.v / self.average
 
+    def run_list_sweep(self) -> None:
+        """Run the list sweep."""
+        # TODO: What about current list mode?
+        mbx1 = self.srunner.get_idsmu_service().get_first_board()
+        # mbx1.set_measurement_mode(MeasurementMode.isense, [channel])
+        # self.channel.set
+        print(self.list_start, self.list_end, self.number_of_points)
+        self.config = ListSweepChannelConfiguration()
+        self.config.set_linear_sweep(self.list_start, self.list_end, self.number_of_points)
+        self.sweep = ListSweep(self.smu.name, mbx1)
+
+        # TODO: Can i add multiple channels for readout?
+        self.sweep.add_channel_configuration(self.channel.name, self.config)
+        self.sweep.set_measurement_delay(self.list_delay_time)
+        self.sweep.run()
+
+        self.v = self.sweep.get_measurement_result(self.channel.name)
+        self.i = self.config.force_values
+        self.t = self.sweep.timecode
+
     def call(self) -> list:
         """Return the voltage and current."""
+        if self.list_mode:
+            return [self.v, self.i, self.t]
+
         return [self.v, self.i]
