@@ -70,6 +70,11 @@ class Device(EmptyDevice):
         }
         self.current_range: SmuCurrentRange = SmuCurrentRange._70mA
 
+        # Output ranges
+        self.v_min: float = -11
+        self.v_max: float = 11
+        self.i_min: float = -0.075
+        self.i_max: float = 0.075
 
 
     @staticmethod
@@ -98,6 +103,7 @@ class Device(EmptyDevice):
             "RouteOut": ["Front"],
             "Compliance": 0.1,
             "Range": list(self.current_ranges),
+            "CheckPulse": False,
             # "RangeVoltage": [1],
         }
 
@@ -132,11 +138,21 @@ class Device(EmptyDevice):
     def configure(self):
         self.channel.current_range = self.current_range
 
+        # Get output ranges
+        self.v_min, self.v_max, self.i_min, self.i_max = self.channel.output_ranges
+
     def apply(self) -> None:
         """Set the voltage or current on the SMU."""
         if self.source == "Voltage in V":
+            if self.value > self.v_max or self.value < self.v_min:
+                msg = f"Voltage {self.value} V out of range {self.v_min} V to {self.v_max} V"
+                raise ValueError(msg)
             self.channel.voltage = float(self.value)
+
         elif self.source == "Current in A":
+            if self.value > self.i_max or self.value < self.i_min:
+                msg = f"Current {self.value} A out of range {self.i_min} A to {self.i_max} A"
+                raise ValueError(msg)
             self.channel.current = float(self.value)
 
     def measure(self) -> None:
