@@ -295,7 +295,14 @@ class Device(EmptyDevice):
                 debug("Please update the SMU module to support all features of the Keithley 4200-SCS instrument driver")
 
         # List Mode Parameters
-        if parameter["SweepValue"] == "List sweep":
+        try:
+            sweep_value = parameter["SweepValue"]
+        except KeyError:
+            # this might be the case when driver is used with pysweepme
+            # then, "SweepValue" is not defined during set_GUIparameter
+            sweep_value = None
+
+        if sweep_value == "List sweep":
             self.list_master = True
             self.list_receiver = False
             self.handle_list_sweep_parameter(parameter)
