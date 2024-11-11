@@ -24,8 +24,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-import time
-
+import numpy as np
 # SweepMe! driver
 # * Module: SMU
 # * Instrument: aSpectSystems idSMU modules
@@ -105,6 +104,16 @@ class Device(EmptyDevice):
             "Range": list(self.current_ranges),
             "CheckPulse": False,
             # "RangeVoltage": [1],
+
+            # List Mode Parameters
+            "ListSweepCheck": False,
+            "ListSweepType": ["Sweep", "Custom"],
+            "ListSweepStart": 0.0,
+            "ListSweepEnd": 1.0,
+            "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
+            "ListSweepStepPointsValue": 0.1,
+            "ListSweepDual": False,
+            "ListSweepDelaytime": 0.0,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -115,6 +124,67 @@ class Device(EmptyDevice):
         # channel_ids = ["M1.S1.C1", "M1.S1.C2", "M1.S1.C3", "M1.S1.C4"]
         self.channel_number = int(parameter["Channel"])
         self.current_range = self.current_ranges[parameter["Range"]]
+
+        # List Mode Parameters
+        try:
+            sweep_value = parameter["SweepValue"]
+        except KeyError:
+            # this might be the case when driver is used with pysweepme
+            # then, "SweepValue" is not defined during set_GUIparameter
+            sweep_value = None
+
+        if sweep_value == "List sweep":
+            # self.list_master = True
+            # self.list_receiver = False
+            self.handle_list_sweep_parameter(parameter)
+
+    def handle_list_sweep_parameter(self, parameter: dict) -> None:
+        """Read out the list sweep parameters and create self.list_sweep_values."""
+        list_sweep_type = parameter["ListSweepType"]
+
+        if list_sweep_type == "Sweep":
+            # Create the list sweep values
+            start = float(parameter["ListSweepStart"])
+            end = float(parameter["ListSweepEnd"])
+
+            step_points_type = parameter["ListSweepStepPointsType"]
+            step_points_value = float(parameter["ListSweepStepPointsValue"])
+
+            if step_points_type.startswith("Step width"):
+                list_sweep_values = np.arange(start, end, step_points_value)
+                # include end value
+                list_sweep_values = np.append(list_sweep_values, end)
+
+            elif step_points_type.startswith("Points (lin.)"):
+                list_sweep_values = np.linspace(start, end, int(step_points_value))
+
+            elif step_points_type.startswith("Points (log.)"):
+                list_sweep_values = np.logspace(np.log10(start), np.log10(end), int(step_points_value))
+
+            else:
+                msg = f"Unknown step points type: {step_points_type}"
+                raise ValueError(msg)
+
+        elif list_sweep_type == "Custom":
+            custom_values = parameter["ListSweepCustomValues"]
+            list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
+
+        else:
+            msg = f"Unknown list sweep type: {list_sweep_type}"
+            raise ValueError(msg)
+
+        # Add the returning values in reverse order to the list
+        if parameter["ListSweepDual"]:
+            list_sweep_values = np.append(list_sweep_values, list_sweep_values[::-1])
+
+        self.list_delay_time = float(parameter["ListSweepDelaytime"])
+        self.list_sweep_values = list_sweep_values.tolist()
+
+        # Add time staps to return values
+        self.variables.append("Time stamp")
+        self.units.append("s")
+        self.plottype.append(True)
+        self.savetype.append(True)
 
     def connect(self) -> None:
         """Connect to the SMU."""
