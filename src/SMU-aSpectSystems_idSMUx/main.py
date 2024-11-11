@@ -25,16 +25,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 import numpy as np
+
 # SweepMe! driver
 # * Module: SMU
 # * Instrument: aSpectSystems idSMU modules
-
 from pysweepme import FolderManager as FoMa
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 FoMa.addFolderToPATH()
 
-from aspectdeviceengine.enginecore import IdSmuService, IdSmuServiceRunner, IdSmuBoardModel, SmuCurrentRange
+from aspectdeviceengine.enginecore import IdSmuServiceRunner, SmuCurrentRange
 
 
 class Device(EmptyDevice):
@@ -51,8 +51,6 @@ class Device(EmptyDevice):
         # Communication Parameters
         self.identifier: str = "idSMUx_"  # TODO: Maybe add the serial number here
         self.srunner: IdSmuServiceRunner = None
-        # self.smu: aspectdeviceengine.enginecore.IdSmu2Module = None
-        # self.channel: aspectdeviceengine.enginecore.AD5522ChannelModel = None
 
         # Measurement Parameters
         self.channels: list = [1, 2, 3, 4]
@@ -87,7 +85,7 @@ class Device(EmptyDevice):
         service = srunner.get_idsmu_service()
 
         # Get first board to automatically detect connected devices
-        board_model = service.get_first_board()
+        service.get_first_board()
         ports = service.get_board_addresses()
 
         # TODO: Need list of devices such as M1.S1, M1.S2, ... in case multiple boards are connected
@@ -107,8 +105,6 @@ class Device(EmptyDevice):
             "Range": list(self.current_ranges),
             "Average": 1,
             "CheckPulse": False,
-            # "RangeVoltage": [1],
-
             # List Mode Parameters
             "ListSweepCheck": False,
             "ListSweepType": ["Sweep", "Custom"],
@@ -123,7 +119,7 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Handle the GUI parameters."""
         self.source = parameter["SweepMode"]
-        self.protection = parameter["Compliance"]
+        self.protection = float(parameter["Compliance"])
 
         # channel_ids = ["M1.S1.C1", "M1.S1.C2", "M1.S1.C3", "M1.S1.C4"]
         self.channel_number = int(parameter["Channel"])
@@ -140,8 +136,6 @@ class Device(EmptyDevice):
             sweep_value = None
 
         if sweep_value == "List sweep":
-            # self.list_master = True
-            # self.list_receiver = False
             self.handle_list_sweep_parameter(parameter)
 
     def handle_list_sweep_parameter(self, parameter: dict) -> None:
@@ -217,10 +211,20 @@ class Device(EmptyDevice):
         if not self.channel.enabled:
             self.channel.enabled = True
 
+        self.set_compliance(self.protection)
+
         self.channel.current_range = self.current_range
 
         # Get output ranges
         self.v_min, self.v_max, self.i_min, self.i_max = self.channel.output_ranges
+
+    def set_compliance(self, value: float) -> None:
+        """Set the compliance on the SMU.
+
+        The device automatically switches to voltage compliance when current is forced and vice versa.
+        """
+        self.channel.clamp_high_value = value
+        self.channel.clamp_enabled = True
 
     def apply(self) -> None:
         """Set the voltage or current on the SMU."""
