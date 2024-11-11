@@ -118,8 +118,7 @@ class Device(EmptyDevice):
         self.set_current_range(self.current_range)
 
         # Channel
-        if self.model != "NGU":
-            self.set_channel(self.channel)
+        self.set_channel(self.channel)
 
         # Source
         if self.source.startswith("Voltage"):
@@ -279,7 +278,8 @@ class Device(EmptyDevice):
         Returns:
             None
         """
-        self.port.write("INST:OUT%i" % int(channel))
+        if self.model != "NGU":
+            self.port.write("INST:OUT%i" % int(channel))
 
     def set_voltage(self, voltage):
         """
