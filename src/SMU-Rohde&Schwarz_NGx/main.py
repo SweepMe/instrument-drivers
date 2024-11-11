@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2022-2023 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022-2024 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,9 +25,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# SweepMe! device class
-# Type: SMU
-# Device: Rohde&Schwarz NGx
+# SweepMe! driver
+# * Module: SMU
+# * Instrument: Rohde&Schwarz NGx
 
 import time
 
@@ -63,14 +63,9 @@ class Device(EmptyDevice):
         self.port_types = ["COM", "USBTMC", "GPIB", "TCPIP"]
 
         self.port_properties = {"timeout": 1,
-                                # "delay": 0.05,
-                                # "Exception": False,
                                 }
 
-    #       self.commands = {
-    #                      "Voltage in V" : "VOLT",
-    #                      "Current in A" : "CURR",
-    #                      }
+        self.model = None
 
     def set_GUIparameter(self):
 
@@ -104,15 +99,29 @@ class Device(EmptyDevice):
                 self.port.port.write_termination = '\n'
                 self.port.port.read_termination = '\n'
 
-    def initialize(self):
+        # we do identification in connect as knowing the model is essential for further communication, e.g. because
+        # commands like set_channel do not work for NGU series
         identifier = self.get_identification()
         #print("Identifier:", identifier)  # can be used to check the instrument
+
+        if identifier.find("NGU") > 0:
+            self.model = "NGU"
+
+    def initialize(self):
+
         self.reset_instrument()
 
     def configure(self):
+
+        # Range
         self.set_voltage_range(self.voltage_range)
         self.set_current_range(self.current_range)
-        self.set_channel(self.channel)
+
+        # Channel
+        if self.model != "NGU":
+            self.set_channel(self.channel)
+
+        # Source
         if self.source.startswith("Voltage"):
             self.set_current_limit(self.protection)
             self.set_voltage(0.0)
@@ -121,6 +130,8 @@ class Device(EmptyDevice):
             self.set_voltage_limit(self.protection)
             self.set_current(0.0)
             self.set_voltage(self.protection)
+
+        # Speed
         if self.speed == "Fast":
             if self.model == "NGU":
                 self.set_nplc(0)
@@ -185,8 +196,6 @@ class Device(EmptyDevice):
         """
         self.port.write("*IDN?")
         answer = self.port.read()
-        if answer.find("NGU") > 0:
-            self.model = "NGU"
         
         return answer
 
@@ -262,14 +271,15 @@ class Device(EmptyDevice):
         """
         This function selects a channel as the active channel of the instrument. Then the channel does not need to be
         specified anymore with other commands.
+
+        It seems that this commands does not work with the NGU series
         Args:
             channel: int
 
         Returns:
             None
         """
-        if self.model != "NGU":
-            self.port.write("INST:OUT%i" % int(channel))
+        self.port.write("INST:OUT%i" % int(channel))
 
     def set_voltage(self, voltage):
         """
