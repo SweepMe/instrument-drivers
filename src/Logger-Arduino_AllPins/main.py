@@ -24,7 +24,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
+from __future__ import annotations
 
 # SweepMe! device class
 # Device: Arduino AllPins
@@ -93,11 +93,36 @@ class Device(EmptyDevice):
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set standard GUI parameter."""
+        return self.get_default_gui_parameters()
+
+    def get_default_gui_parameters(self) -> dict:  # noqa: N802
+        """Set standard GUI parameter."""
         return {
+            "Parameter mode": ["Normal", "Different", "Crazy"],
             "Digital channels": "2,3,4,5,6,7,8,9,10,11,12,13",
             "Analog channels": "0,1,2,3,4,5,6,7",
             "Analog unit": ["Volt", "Numerical"],
             "Resolution in Bit": 10,
+            "Channel bitmask": "01101011",
+            "IO mapping": "0xDEADBEEF",
+            "Your birthday": "01.01.1970",
+            "Happy?": True,
+        }
+
+    def update_gui_parameters(self, parameters: dict | None = None) -> dict:
+        if parameters is None:
+            parameters = {}
+
+        general_parameters = ["Parameter mode", "Resolution in Bit"]
+        specific_parameters = {
+            "Normal": ["Digital channels", "Analog channels", "Analog unit"],
+            "Different": ["Channel bitmask", "IO mapping"],
+            "Crazy": ["Your birthday", "Happy?"],
+        }
+        mode = parameters.get("Parameter mode", "Normal")
+        return {
+            k: v for k, v in self.get_default_gui_parameters().items()
+            if (k in general_parameters) or (k in specific_parameters[mode])
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
