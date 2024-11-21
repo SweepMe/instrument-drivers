@@ -107,7 +107,7 @@ class Device(EmptyDevice):
         self.list_sweep_values: np.ndarray = np.array([])
 
         self.list_sweep_holdtime: float = 0.0
-        self.list_sweep_delaytime: float = 0.0
+        self.list_sweep_delay_time: float = 0.0
 
         # Measured values
         self.variables: list[str] = []
@@ -145,6 +145,7 @@ class Device(EmptyDevice):
             "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
             "ListSweepStepPointsValue": 0.1,
             "ListSweepDual": False,
+            "ListSweepDelaytime": 0.0,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -252,6 +253,17 @@ class Device(EmptyDevice):
         if parameter["ListSweepDual"]:
             self.list_sweep_values = np.append(self.list_sweep_values, self.list_sweep_values[::-1])
 
+        # Delay time
+        delay_time = parameter["ListSweepDelaytime"]
+        if delay_time == "":
+            self.list_sweep_delay_time = 0.0
+        else:
+            self.list_sweep_delay_time = float(delay_time)
+
+        if 0 < self.list_sweep_delay_time < 100e-6:
+            msg = f"Invalid delay time of {self.list_sweep_delay_time}. The delay time must be greater than 100us."
+            raise ValueError(msg)
+
         # Add time staps to return values
         self.variables.append("Time stamp")
         self.units.append("s")
@@ -321,6 +333,7 @@ class Device(EmptyDevice):
 
         if self.use_list_sweep:
             self.set_list_mode()
+            self.set_step_delay(self.list_sweep_delay_time)
         else:
             # Set the display page to measurement in case a list sweep was used before
             self.port.write("DISP:PAGE MEAS")
@@ -560,3 +573,14 @@ class Device(EmptyDevice):
         """Get the timestamps of the list sweep."""
         self.port.write("LIST:SEQ:TST:DATA?")
         return self.port.read().split(",")
+
+    def set_step_delay(self, time_in_s: float) -> None:
+        """Set the delay time that the device waits after switching before starting the measurement.
+
+        Note: The device also enables setting a trigger delay time, which is the time between the trigger and setting of
+        the next value.
+        """
+        if time_in_s < 100e-6:
+            return
+
+        self.port.write(f"TRIG:DEL {time_in_s}")
