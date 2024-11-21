@@ -83,7 +83,7 @@ class Device(EmptyDevice):
                 
     def initialize(self):
 
-        identifier = self.get_identification(
+        identifier = self.get_identification()
         # print("Identifier:", identifier)
         
         # if not "CPX400" in identifier:
