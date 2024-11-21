@@ -177,7 +177,7 @@ class Device(EmptyDevice):
         self.pulse_meas_duration: float = 20
         self.pulse_width: float = 0.5e-6
         self.pulse_period: float = 2e-6
-        self.pulse_delay: float = 1e-9
+        self.pulse_delay: float = 20e-9
         self.pulse_base_level: float = 0.0
         self.pulse_rise_time: float = 100e-9
         self.pulse_fall_time: float = 100e-9
@@ -223,7 +223,7 @@ class Device(EmptyDevice):
             "PulseOnTime": 0.5e-6,
             "PulseWidth": 1e-6,
             "PulsePeriod": 2e-6,
-            "PulseDelay": 1e-9,
+            "PulseDelay": 20e-9,
             "PulseOffLevel": 0.0,
             "PulseRiseTime": 100e-9,
             "PulseFallTime": 100e-9,
@@ -669,6 +669,7 @@ class Device(EmptyDevice):
                     break
                 if elapsed_time > timeout:
                     self.lpt.dev_abort()
+                    break
 
     def read_result(self) -> None:
         """Read out results of pulse measurement."""
