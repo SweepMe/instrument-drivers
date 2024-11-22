@@ -56,8 +56,7 @@ class Device(EmptyDevice):
         self.port_identifications = ['RIGOL,DHO1*'] 
        
         self.port_properties = {
-                                "timeout": 10.0,
-                                "delay": 1.0,
+                                "timeout": 10.0
                                 }
 
         
@@ -271,9 +270,7 @@ class Device(EmptyDevice):
         # For normal (non-averaging) use, this is not a problem.
         
         while True:
-            # Ethernet access is super slow so for timeout, we need to create a stopclock
-            start = time.time()
-            # check if trigger counter ran into timeout limit; used also to exit CONTINUOUS triggering
+            # check if trigger counter ran into timeout limit;
             if trigcounter >= self.triggertimeout:
                 self.port.write(":STOP")
                 break
@@ -284,6 +281,7 @@ class Device(EmptyDevice):
             # observing the trigger status in the debug window
             print ("Trigger Status: ", triggerstat)
             # check if trigger is still running; for exiting SINGLE triggering as well as manual stopping the scope via button on instrument
+            # also: trigger status TD is only available shortly after triggering. For events with a low frequency of appearance, TD trigger state might be missed and exiting relies on the timeout counter.
             if triggerstat == "STOP":
                 break
             # check if an event was triggered in CONTINUOUS mode
@@ -291,11 +289,7 @@ class Device(EmptyDevice):
                 break
             else:
                 trigcounter += 1
-                stop = time.time()
-                #repeat stop time measurement until at least 1s has passed
-                print("Time", stop-start)
-                while stop-start < 1:
-                    stop = time.time()
+                time.sleep(1)
                 
 
         self.port.write("WAV:PRE?")
