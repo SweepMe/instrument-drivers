@@ -30,6 +30,8 @@
 # * Instrument: aSpectSystems idSMU modules
 
 import enum
+
+import numpy as np
 from pysweepme import FolderManager as FoMa
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
@@ -37,17 +39,11 @@ FoMa.addFolderToPATH()
 
 from aspectdeviceengine.enginecore import (
     IdSmuServiceRunner,
-    MeasurementMode,
     ListSweep,
     ListSweepChannelConfiguration,
+    MeasurementMode,
     SmuCurrentRange,
 )
-
-
-class SourceMode(enum.Enum):
-    """Enum class to define the different source modes of the SMU."""
-    VOLTAGE = enum.auto()
-    CURRENT = enum.auto()
 
 
 class Device(EmptyDevice):
@@ -77,7 +73,7 @@ class Device(EmptyDevice):
         # Measurement Parameters
         self.channels: list = [1, 2, 3, 4]
         self.channel_number: int = 1
-        self.source: SourceMode = SourceMode.VOLTAGE
+        self.source: str = "Voltage in V"
         self.protection: float = 0.1
         self.average: int = 1
         self.list_mode: bool = False
@@ -101,9 +97,7 @@ class Device(EmptyDevice):
         self.i_max: float = 0.075
 
         # List Mode Parameters
-        self.list_start: float = 0.0
-        self.list_end: float = 1.0
-        self.number_of_points: int = 10
+        self.list_sweep_values: list[float] = []
         self.list_delay_time: int = 100  # in ms
 
         self.list_master: bool = False
@@ -144,25 +138,21 @@ class Device(EmptyDevice):
             "Range": list(self.current_ranges),
             "Average": 1,
             "CheckPulse": False,
+
             # List Mode Parameters
             "ListSweepCheck": False,
-            "ListSweepType": ["Sweep"],
+            "ListSweepType": ["Sweep", "Custom"],
             "ListSweepStart": 0.0,
             "ListSweepEnd": 1.0,
-            "ListSweepStepPointsType": ["Step width:", "Points (lin.):"],
+            "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
             "ListSweepStepPointsValue": 0.1,
+            "ListSweepDual": False,
             "ListSweepDelaytime": 0.0,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Handle the GUI parameters."""
-        if parameter["SweepMode"].startswith("Voltage"):
-            self.source = SourceMode.VOLTAGE
-        elif parameter["SweepMode"].startswith("Current"):
-            self.source = SourceMode.CURRENT
-        else:
-            msg = f"Unknown source mode {parameter['SweepMode']}. Use 'Voltage in V' or 'Current in A'."
-            raise ValueError(msg)
+        self.source = parameter["SweepMode"]
 
         self.protection = float(parameter["Compliance"])
         self.board_id = parameter["Port"]
@@ -189,19 +179,48 @@ class Device(EmptyDevice):
 
     def handle_list_sweep_parameter(self, parameter: dict) -> None:
         """Read out the list sweep parameters and create self.list_sweep_values."""
-        self.list_start = float(parameter["ListSweepStart"])
-        self.list_end = float(parameter["ListSweepEnd"])
+        list_sweep_type = parameter["ListSweepType"]
 
-        step_points_type = parameter["ListSweepStepPointsType"]
-        if step_points_type.startswith("Step width"):
-            self.number_of_points = int(
-                (self.list_end - self.list_start) / float(parameter["ListSweepStepPointsValue"]),
-            )
+        if list_sweep_type == "Sweep":
+            # Create the list sweep values
+            start = float(parameter["ListSweepStart"])
+            end = float(parameter["ListSweepEnd"])
+
+            step_points_type = parameter["ListSweepStepPointsType"]
+            step_points_value = float(parameter["ListSweepStepPointsValue"])
+
+            if step_points_type.startswith("Step width"):
+                list_sweep_values = np.arange(start, end, step_points_value)
+                # include end value
+                list_sweep_values = np.append(list_sweep_values, end)
+
+            elif step_points_type.startswith("Points (lin.)"):
+                list_sweep_values = np.linspace(start, end, int(step_points_value))
+
+            elif step_points_type.startswith("Points (log.)"):
+                list_sweep_values = np.logspace(np.log10(start), np.log10(end), int(step_points_value))
+
+            else:
+                msg = f"Unknown step points type: {step_points_type}"
+                raise ValueError(msg)
+
+        elif list_sweep_type == "Custom":
+            custom_values = parameter["ListSweepCustomValues"]
+            list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
+
         else:
-            self.number_of_points = int(parameter["ListSweepStepPointsValue"])
+            msg = f"Unknown list sweep type: {list_sweep_type}"
+            raise ValueError(msg)
 
-        if self.number_of_points > 52:
-            msg = f"Number of points {self.number_of_points} is too high. Maximum is 52."
+        # Add the returning values in reverse order to the list
+        if parameter["ListSweepDual"]:
+            list_sweep_values = np.append(list_sweep_values, list_sweep_values[::-1])
+
+        # TODO: Simplify
+        self.list_sweep_values = list_sweep_values
+
+        if len(self.list_sweep_values) > 52:
+            msg = f"Number of points {len(self.list_sweep_values)} is too high. Maximum is 52."
             raise ValueError(msg)
 
         self.list_delay_time = int(float(parameter["ListSweepDelaytime"]) * 1000)
@@ -251,11 +270,13 @@ class Device(EmptyDevice):
                 msg = "Detected multiple channels with list modes. Please use only one channel for list mode."
                 raise Exception(msg)
 
-            self.device_communication[self.identifier].update({
-                "List master": self.channel_name,
-                "List receivers": [],
-                "List results": {},
-            })
+            self.device_communication[self.identifier].update(
+                {
+                    "List master": self.channel_name,
+                    "List receivers": [],
+                    "List results": {},
+                },
+            )
 
             # TODO: Needed?
             # self.device_communication[self.identifier]["List length"] = len(self.list_sweep_values)
@@ -278,8 +299,9 @@ class Device(EmptyDevice):
         self.v_min, self.v_max, self.i_min, self.i_max = self.channel.output_ranges
 
         # If another channel runs a list sweep, this channel must be a list receiver
-        # TODO: Measurement data will also be stored in device_communication
         if "List master" in self.device_communication[self.identifier] and not self.list_master:
+            list_master = self.device_communication[self.identifier]["List master"]
+            print(f"List master detected: {list_master}!")
             self.list_receiver = True
             self.device_communication[self.identifier]["List receivers"].append(self.channel_name)
 
@@ -295,13 +317,13 @@ class Device(EmptyDevice):
 
     def apply(self) -> None:
         """Set the voltage or current on the SMU."""
-        if self.source == SourceMode.VOLTAGE:
+        if self.source.startswith("Voltage"):
             if self.value > self.v_max or self.value < self.v_min:
                 msg = f"Voltage {self.value} V out of range {self.v_min} V to {self.v_max} V"
                 raise ValueError(msg)
             self.channel.voltage = float(self.value)
 
-        elif self.source == SourceMode.CURRENT:
+        elif self.source.startswith("Current"):
             if self.value > self.i_max or self.value < self.i_min:
                 msg = f"Current {self.value} A out of range {self.i_min} A to {self.i_max} A"
                 raise ValueError(msg)
@@ -343,18 +365,18 @@ class Device(EmptyDevice):
         list_receivers = self.device_communication[self.identifier]["List receivers"]
         channel_list = [self.channel_name, *list_receivers]
 
-        measurement_mode = MeasurementMode.isense if self.source == SourceMode.VOLTAGE else MeasurementMode.vsense
+        measurement_mode = MeasurementMode.isense if self.source.startswith("Voltage") else MeasurementMode.vsense
         mbx1.set_measurement_modes(measurement_mode, channel_list)
 
         # ListMode must be set by ListMaster channel
         config = ListSweepChannelConfiguration()
-        config.set_linear_sweep(self.list_start, self.list_end, self.number_of_points)
+        config.set_force_values(self.list_sweep_values)
         self.sweep = ListSweep(self.smu.name, mbx1)
         self.sweep.add_channel_configuration(self.channel.name, config)
 
         for receiver in list_receivers:
             receiver_config = ListSweepChannelConfiguration()
-            receiver_config.set_constant_force_mode(self.number_of_points + 1)  # +1 as first and last value are counted
+            receiver_config.set_constant_force_mode(len(self.list_sweep_values))
             self.sweep.add_channel_configuration(receiver, receiver_config)
 
         self.sweep.set_measurement_delay(self.list_delay_time)
@@ -369,12 +391,12 @@ class Device(EmptyDevice):
             else:
                 raise e
 
-        if self.source == SourceMode.VOLTAGE:
-            self.v = self.config.force_values
+        if self.source.startswith("Voltage"):
+            self.v = config.force_values
             self.i = measurement_result
         else:
             self.v = measurement_result
-            self.i = self.config.force_values
+            self.i = config.force_values
 
         # Store the results of the other channels in device_communication
         for receiver in list_receivers:
@@ -389,7 +411,9 @@ class Device(EmptyDevice):
             return [self.v, self.i, self.t]
 
         if self.list_receiver:
-            if self.source == SourceMode.VOLTAGE:
+            # As list receiver, the measurement data is read out by the List master and stored in device_communication
+            # Currently, the list mode reads only one parameter, so the source value is used for the other parameter
+            if self.source.startswith("Voltage"):
                 self.i = self.device_communication[self.identifier]["List results"][self.channel_name]
                 self.v = [float(self.value)] * len(self.i)
             else:
