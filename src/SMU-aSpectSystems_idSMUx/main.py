@@ -29,6 +29,7 @@
 # * Module: SMU
 # * Instrument: aSpectSystems idSMU modules
 
+import enum
 
 import numpy as np
 from pysweepme import FolderManager as FoMa
@@ -43,6 +44,13 @@ from aspectdeviceengine.enginecore import (
     MeasurementMode,
     SmuCurrentRange,
 )
+
+
+class SourceMode(enum.Enum):
+    """Enum class to define the type of action."""
+
+    VOLTAGE = enum.auto()
+    CURRENT = enum.auto()
 
 
 class Device(EmptyDevice):
@@ -66,13 +74,15 @@ class Device(EmptyDevice):
         """The channel can be given a custom name, which is used to set the mode and readout data in list mode."""
 
         self.srunner: IdSmuServiceRunner = None
+        self.board_model: aspectdeviceengine.enginecore.IdSmuBoardModel = None
         self.smu: aspectdeviceengine.enginecore.IdSmu2DeviceModel = None
         self.channel: aspectdeviceengine.enginecore.AD5522ChannelModel = None
 
         # Measurement Parameters
         self.channels: list = [1, 2, 3, 4]
         self.channel_number: int = 1
-        self.source: str = "Voltage in V"
+        self.source_identifier: str = "Voltage in V"
+        self.source: SourceMode = SourceMode.VOLTAGE
         self.protection: float = 0.1
         self.average: int = 1
         self.list_mode: bool = False
@@ -101,9 +111,12 @@ class Device(EmptyDevice):
 
         self.list_role: str = "None"
         """The role of the channel in the list sweep. Possible values:
-            'List master' : The first channel that registers as list mode. It sets up the list sweep and runs the measurement.
-            'List creator': If another channel also runs a list sweep, this channel creates its own list sweep configuration which is run in parallel.
-            'List receiver': If the channel applies only single values but another channel runs list mode, this channel is read out in parallel by the list master.
+            'List master' : The first channel that registers as list mode. It sets up the list sweep and runs the
+            measurement.
+            'List creator': If another channel also runs a list sweep, this channel creates its own list sweep
+            configuration which is run in parallel.
+            'List receiver': If the channel applies only single values but another channel runs list mode, this channel
+            is read out in parallel by the list master.
             'None': No channel is using list mode.
         """
 
@@ -152,7 +165,7 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Handle the GUI parameters."""
-        self.source = parameter["SweepMode"]
+        self.source_identifier = parameter["SweepMode"]
 
         self.protection = float(parameter["Compliance"])
         self.board_id = parameter["Port"]
@@ -191,13 +204,13 @@ class Device(EmptyDevice):
             if step_points_type.startswith("Step width"):
                 list_sweep_values = np.arange(start, end, step_points_value)
                 # include end value
-                list_sweep_values = np.append(list_sweep_values, end)
+                self.list_sweep_values = np.append(list_sweep_values, end)
 
             elif step_points_type.startswith("Points (lin.)"):
-                list_sweep_values = np.linspace(start, end, int(step_points_value))
+                self.list_sweep_values = np.linspace(start, end, int(step_points_value))
 
             elif step_points_type.startswith("Points (log.)"):
-                list_sweep_values = np.logspace(np.log10(start), np.log10(end), int(step_points_value))
+                self.list_sweep_values = np.logspace(np.log10(start), np.log10(end), int(step_points_value))
 
             else:
                 msg = f"Unknown step points type: {step_points_type}"
@@ -205,7 +218,7 @@ class Device(EmptyDevice):
 
         elif list_sweep_type == "Custom":
             custom_values = parameter["ListSweepCustomValues"]
-            list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
+            self.list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
 
         else:
             msg = f"Unknown list sweep type: {list_sweep_type}"
@@ -213,10 +226,7 @@ class Device(EmptyDevice):
 
         # Add the returning values in reverse order to the list
         if parameter["ListSweepDual"]:
-            list_sweep_values = np.append(list_sweep_values, list_sweep_values[::-1])
-
-        # TODO: Simplify
-        self.list_sweep_values = list_sweep_values
+            self.list_sweep_values = np.append(self.list_sweep_values, self.list_sweep_values[::-1])
 
         if len(self.list_sweep_values) > 52:
             msg = f"Number of points {len(self.list_sweep_values)} is too high. Maximum is 52."
@@ -247,19 +257,23 @@ class Device(EmptyDevice):
             - "Board": aspectdeviceengine.enginecore.IdSmuBoardModel, The board object from service.get_first_board().
             - "List master": str, The name of channel that runs the list sweep.
             - "List receivers": list[str], List of names of all other channels should be measured in parallel.
-            - "List creators": dict[str, ListSweepChannelConfiguration], Dictionary with channel name as key and ListSweepChannelConfiguration as value.
+            - "List creators": dict[str, ListSweepChannelConfiguration], Dictionary with channel name as key and
+            ListSweepChannelConfiguration as value.
             - "List length": int, Number of points in the list sweep.
-            - "List results": dict[str, list[float], Dictionary with channel name as key and list of measured values as value.
+            - "List results": dict[str, list[float], Dictionary with channel name as key and list of measured values as
+            value.
         """
+        self.source = SourceMode.VOLTAGE if self.source_identifier.startswith("Voltage") else SourceMode.CURRENT
+
         if self.identifier in self.device_communication:
-            board_model = self.device_communication[self.identifier]["Board"]
+            self.board_model = self.device_communication[self.identifier]["Board"]
         else:
             service = self.srunner.get_idsmu_service()
-            board_model = service.get_first_board()
+            self.board_model = service.get_first_board()
             self.device_communication[self.identifier] = {}
-            self.device_communication[self.identifier]["Board"] = board_model
+            self.device_communication[self.identifier]["Board"] = self.board_model
 
-        self.smu = board_model.idSmu2Modules[self.board_id]
+        self.smu = self.board_model.idSmu2Modules[self.board_id]
         self.channel = self.smu.smu.channels[self.channel_number]
         self.channel.name = self.channel_name
 
@@ -303,15 +317,18 @@ class Device(EmptyDevice):
         if "List master" in self.device_communication[self.identifier]:
             # Set the measurement mode - also for the list master itself
             # Maybe this can be done simpler, but it works
-            measurement_mode = MeasurementMode.isense if self.source.startswith("Voltage") else MeasurementMode.vsense
-            mbx1 = self.srunner.get_idsmu_service().get_first_board()
-            mbx1.set_measurement_modes(measurement_mode, [self.channel_name])
+            measurement_mode = MeasurementMode.isense if self.source == SourceMode.VOLTAGE else MeasurementMode.vsense
+            self.board_model.set_measurement_modes(measurement_mode, [self.channel_name])
 
             if self.list_role == "List creator":
                 # Check if the number of list points matches the list master
                 list_length = self.device_communication[self.identifier]["List length"]
                 if list_length != len(self.list_sweep_values):
-                    msg = f"Number of list sweep points {list_length} does not match the number of points of the list master: {len(self.list_sweep_values)}. Use the same number of points when combining list mode for multiple channels!"
+                    msg = (
+                        f"Number of list sweep points {list_length} does not match the number of points of the list "
+                        f"master: {len(self.list_sweep_values)}. Use the same number of points when combining list "
+                        f"mode for multiple channels!"
+                    )
                     raise ValueError(msg)
 
                 # If another channel runs a list sweep, this channel must provide a list sweep configuration
@@ -335,13 +352,13 @@ class Device(EmptyDevice):
 
     def apply(self) -> None:
         """Set the voltage or current on the SMU."""
-        if self.source.startswith("Voltage"):
+        if self.source == SourceMode.VOLTAGE:
             if self.value > self.v_max or self.value < self.v_min:
                 msg = f"Voltage {self.value} V out of range {self.v_min} V to {self.v_max} V"
                 raise ValueError(msg)
             self.channel.voltage = float(self.value)
 
-        elif self.source.startswith("Current"):
+        else:
             if self.value > self.i_max or self.value < self.i_min:
                 msg = f"Current {self.value} A out of range {self.i_min} A to {self.i_max} A"
                 raise ValueError(msg)
@@ -353,7 +370,7 @@ class Device(EmptyDevice):
             self.run_list_sweep()
             return
 
-        if self.list_role not in ("List receiver", "List creator"):
+        if self.list_role in ("List receiver", "List creator"):
             # as list receiver or creator, the measurement is started by the list master
             return
 
@@ -362,7 +379,6 @@ class Device(EmptyDevice):
 
         if self.average > 1:
             for _ in range(self.average - 1):
-                # TODO: Check if the value gets updated
                 self.i += self.channel.current
                 self.v += self.channel.voltage
 
@@ -371,8 +387,6 @@ class Device(EmptyDevice):
 
     def run_list_sweep(self) -> None:
         """Run the list sweep."""
-        mbx1 = self.srunner.get_idsmu_service().get_first_board()
-
         # Get all channels that should be measured
         list_receivers = self.device_communication[self.identifier]["List receivers"]
         list_creators = self.device_communication[self.identifier]["List creators"]
@@ -380,7 +394,7 @@ class Device(EmptyDevice):
         # Create list config for master channel
         config = ListSweepChannelConfiguration()
         config.set_force_values(self.list_sweep_values)
-        self.sweep = ListSweep(self.smu.name, mbx1)
+        self.sweep = ListSweep(self.smu.name, self.board_model)
         self.sweep.add_channel_configuration(self.channel.name, config)
 
         # Create only-read list config for all receiver channels
@@ -402,10 +416,9 @@ class Device(EmptyDevice):
             if str(e) == "invalid map<K, T> key":
                 msg = "Error in list readout. Try reducing the number of points if you are using multiple channels."
                 raise ValueError(msg) from e
-            else:
-                raise e
+            raise e
 
-        if self.source.startswith("Voltage"):
+        if self.source == SourceMode.VOLTAGE:
             self.v = config.force_values
             self.i = measurement_result
         else:
@@ -417,6 +430,7 @@ class Device(EmptyDevice):
             measurement_results = self.sweep.get_measurement_result(channel)
             self.device_communication[self.identifier]["List results"][channel] = measurement_results
 
+        self.device_communication[self.identifier]["Time stamp"] = self.sweep.timecode
         self.t = self.sweep.timecode
 
     def call(self) -> list:
@@ -427,18 +441,24 @@ class Device(EmptyDevice):
         if self.list_role != "None":
             # As list receiver/creator, the measurement data is read out by the List master
             results = self.device_communication[self.identifier]["List results"][self.channel_name]
+            time_stamp = self.device_communication[self.identifier]["Time stamp"]
 
             # Currently, the list mode reads only one parameter, so the source value is used for the other parameter
-            if self.list_role == "List receiver":
-                set_values = [float(self.value)] * len(results)
-            elif self.list_role == "List creator":
+            if self.list_role == "List creator":
                 set_values = self.list_sweep_values
+            else:
+                set_values = [float(self.value)] * len(results)
 
-            if self.source.startswith("Voltage"):
+            if self.source == SourceMode.VOLTAGE:
                 self.i = results
                 self.v = set_values
             else:
                 self.v = results
                 self.i = set_values
+
+            # Channels that use do not use list mode learn too late that they are list receivers and could return a time
+            # stamp.  Hence, the sweep time stamp from list master is returned only for list creators.
+            if self.list_role == "List creator":
+                return [self.v, self.i, time_stamp]
 
         return [self.v, self.i]
