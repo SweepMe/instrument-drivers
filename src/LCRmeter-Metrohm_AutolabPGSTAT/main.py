@@ -184,7 +184,11 @@ class Device(EmptyDevice):
         self.autolab.set_HardwareSetupFile(self.hardware_setup_file)
 
         # TODO: handle error if Nova is still running or not connected to the device
-        self.autolab.Connect()
+        try:
+            self.autolab.Connect()
+        except:
+            msg = "Autolab: Could not connect to the device. Ensure Nova is closed and the device is connected."
+            raise Exception(msg)
         self.is_connected = True
 
         self.Fra = self.autolab.Fra
@@ -322,8 +326,15 @@ class Device(EmptyDevice):
 
     def set_measure_range(self, measure_range: str) -> None:
         """Set the measurement range from the given ranges of format CR08_100mA."""
-        measure_range = getattr(self.Ei.EICurrentRange, measure_range)
-        self.Ei.CurrentRange = measure_range
+        measure_range_command = getattr(self.Ei.EICurrentRange, measure_range)
+        try:
+            self.Ei.CurrentRange = measure_range_command
+        except Exception as e:
+            if "Invalid argument." in str(e):
+                msg = f"Current Range {measure_range[5:]} not supported."
+                raise Exception(msg) from e
+            else:
+                raise e
 
     def handle_set_value(self, mode: str, value: float) -> None:
         """Depending on the mode, set the value."""
