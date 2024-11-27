@@ -102,8 +102,16 @@ class Device(EmptyDevice):
             #self.connect()
             self.get_config()
 
+        def new_del(self):
+            pass
+
         ea_psu_controller.PsuEA.__init__ = new_init  # where the monkey-patching happens
-        self.psu = ea_psu_controller.PsuEA(self.port.port)
+        ea_psu_controller.PsuEA.__del__ = new_del  # where the monkey-patching happens
+        try:
+            self.psu = ea_psu_controller.PsuEA(self.port.port)
+        except ea_psu_controller.psu_ea.ExceptionTimeout:
+            msg = "Unable to connect to EA PS2000 power supply"
+            raise Exception(msg)
 
         self.channel = int(self.channel)-1
 
@@ -114,9 +122,13 @@ class Device(EmptyDevice):
         desription = self.psu.get_device_description(self.channel)
         print("Description:", description)
 
-    def disconnect(self):
+    def deinitialize(self):
 
-        self.psu.remote_off(self.channel)
+        if hasattr(self, "psu"):
+            self.psu.remote_off(self.channel)
+
+    def disconnect(self):
+        pass
 
         # not needed anymore as we the SweepMe! COM port is closed by the port manager
         #self.psu.close(False, False)  # only close COM port
