@@ -29,23 +29,36 @@
 # * Module: Scope
 # * Instrument: Rohde&Schwarz RTA
 
+import numpy as np
 
 from EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
+    """Device class for the Rohde&Schwarz RTA Oscilloscope."""
+
     def __init__(self) -> None:
+        """Initialize the Device Class."""
         EmptyDevice.__init__(self)
 
-        self.shortname = "RTB"
 
+        self.shortname = "RTA"
+
+        # Communication Parameters
         self.port_manager = True
-        self.port_types = ["GPIB", "TCPIP"]
-
+        self.port_types = ["GPIB", "TCPIP", "USB"]
         self.port_properties = {
             "timeout": 2.0,
         }
 
+        # SweepMe Parameters
+        self.variables = ["Time"]
+        self.units = ["s"]
+        self.plottype = [True]  # True to plot data
+        self.savetype = [True]  # True to save data
+
+        # Measurement Parameters
+        self.sweepmode: str = "None"
         self.commands = {
             "Channel 1": "CHAN1",
             "Channel 2": "CHAN2",
@@ -59,14 +72,6 @@ class Device(EmptyDevice):
             "Falling": "NEG",
         }
 
-        self.trigger_source_levels = {
-            "Channel 1": "1",
-            "Channel 2": "2",
-            "Channel 3": "3",
-            "Channel 4": "4",
-            "External": "5",
-        }
-
         self.couplings = {
             "DC 50 Ohm": "DC",
             "DC 1 MOhm": "DCLimit",
@@ -76,8 +81,42 @@ class Device(EmptyDevice):
         self.max_time = 10.0
         self.data_format = "ASC"  # ASC | REAL,32 | INT,8 | INT,16
 
-    def set_GUIparameter(self):
-        GUIparameter = {
+        # Trigger
+        self.trigger_source: str = "As is"
+        self.trigger_source_levels = {
+            "Channel 1": "1",
+            "Channel 2": "2",
+            "Channel 3": "3",
+            "Channel 4": "4",
+            "External": "5",
+        }
+        self.trigger_coupling: str = "As is"
+        self.trigger_slope: str = "As is"
+        self.trigger_level: str = "As is"
+
+        # Timing
+        self.time_range: str = "As is"
+        self.time_range_value: float = 1e-3
+        self.time_offset_value: float = 0.0
+        self.time_values: np.ndarray = np.array([])
+
+        self.acquisition_mode: str = "As is"
+        self.average: str = "As is"
+        self.sampling_rate_type: str = "As is"
+        self.sampling_rate: str = "As is"
+
+        # Channels
+        self.channels: list = []
+        self.channel_names: dict = {}
+        self.channel_ranges: dict = {}
+        self.channel_offsets: dict = {}
+        self.channel_couplings: dict = {}
+        self.channel_impedances: dict = {}
+        self.channel_data: list = []
+
+    def set_GUIparameter(self) -> dict:  # noqa: N802
+        """Set the standard SweepMe GUI parameters."""
+        gui_parameter = {
             "SweepMode": ["None", "Time range in s", "Time scale in s/div", "Time offset in s"],
             "TriggerSlope": ["As is", "Rising", "Falling"],
             "TriggerSource": [
@@ -109,35 +148,31 @@ class Device(EmptyDevice):
         }
 
         for i in np.arange(4) + 1:
-            GUIparameter["Channel%i" % i] = False
-            GUIparameter["Channel%i_Name" % i] = "Ch%i" % i
-            GUIparameter["Channel%i_Range" % i] = ["As is", "1"]
-            GUIparameter["Channel%i_Offset" % i] = "As is"
-            GUIparameter["Channel%i_Coupling" % i] = ["As is", *list(self.couplings.keys())]
+            gui_parameter["Channel%i" % i] = False
+            gui_parameter["Channel%i_Name" % i] = "Ch%i" % i
+            gui_parameter["Channel%i_Range" % i] = ["As is", "1"]
+            gui_parameter["Channel%i_Offset" % i] = "As is"
+            gui_parameter["Channel%i_Coupling" % i] = ["As is", *list(self.couplings.keys())]
 
-        return GUIparameter
+        return gui_parameter
 
-    def get_GUIparameter(self, parameter={}):
+    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
+        """Handle the SweepMe GUI parameters."""
         self.sweepmode = parameter["SweepMode"]
 
-        self.triggersource = parameter["TriggerSource"]
-        self.triggercoupling = parameter["TriggerCoupling"]
-        self.triggerslope = parameter["TriggerSlope"]
-        self.triggerlevel = parameter["TriggerLevel"]
+        self.trigger_source = parameter["TriggerSource"]
+        self.trigger_coupling = parameter["TriggerCoupling"]
+        self.trigger_slope = parameter["TriggerSlope"]
+        self.trigger_level = parameter["TriggerLevel"]
 
-        self.timerange = parameter["TimeRange"]
-        self.timerangevalue = parameter["TimeRangeValue"]
-        self.timeoffsetvalue = parameter["TimeOffsetValue"]
+        self.time_range = parameter["TimeRange"]
+        self.time_range_value = parameter["TimeRangeValue"]
+        self.time_offset_value = parameter["TimeOffsetValue"]
 
         self.acquisition_mode = ["Acquisition"]
         self.average = parameter["Average"]
-        self.samplingratetype = parameter["SamplingRateType"]
-        self.samplingrate = parameter["SamplingRate"]
-
-        self.variables = ["Time"]
-        self.units = ["s"]
-        self.plottype = [True]  # True to plot data
-        self.savetype = [True]  # True to save data
+        self.sampling_rate_type = parameter["SamplingRateType"]
+        self.sampling_rate = parameter["SamplingRate"]
 
         # Adding the selected channels
         self.channels = []
@@ -152,23 +187,25 @@ class Device(EmptyDevice):
         self.channel_impedances = {}
 
         for i in self.channels:
-            self.channel_names[i] = parameter["Channel%i_Name" % (i)]
-            self.channel_ranges[i] = parameter["Channel%i_Range" % (i)]
-            self.channel_offsets[i] = parameter["Channel%i_Offset" % (i)]
-            self.channel_couplings[i] = parameter["Channel%i_Coupling" % (i)]
+            self.channel_names[i] = parameter[f"Channel{i}_Name"]
+            self.channel_ranges[i] = parameter[f"Channel{i}_Range"]
+            self.channel_offsets[i] = parameter[f"Channel{i}_Offset"]
+            self.channel_couplings[i] = parameter[f"Channel{i}_Coupling"]
 
-            self.variables.append(self.commands["Channel %i" % i] + " " + parameter["Channel%i_Name" % i])
+            self.variables.append(self.commands[f"Channel {i}"] + " " + parameter[f"Channel{i}_Name"])
             self.units.append("V")
             self.plottype.append(True)
             self.savetype.append(True)
 
-    def initialize(self):
+    def initialize(self) -> None:
+        """Initialize the device."""
         self.port.write("*CLS")
 
-        # dont' use "SYST:PRES" as it will destroy all settings which is in conflict with using 'As is'
+        # do not use "SYST:PRES" as it will destroy all settings which is in conflict with using 'As is'
 
         self.port.write("*IDN?")
-        self.port.read()
+        instrument_id = self.port.read()
+        print("Scope R&S RTA ID:", instrument_id)
 
         self.port.write(":FORM:DATA %s" % self.data_format)  # set the data format
 
@@ -180,68 +217,30 @@ class Device(EmptyDevice):
         self.port.write("SYST:DISP:UPD ON")  # display can be switched on or off
         self.port.write("SYST:KLOC ON")  # locks the local control during measurement
 
-        if self.timerange != "As is":
-            if self.timerangevalue == "":
-                self.stop_measurement("Emtpy time range. Please enter a number.")
-                return False
+        if self.time_range != "As is":
+            if self.time_range_value == "":
+                msg = "Empty time range. Please enter a number."
+                raise ValueError(msg)
 
-            if float(self.timerangevalue) == 0.0:
-                self.stop_measurement("Time range cannot be zero. Please enter a positive number.")
-                return False
+            if float(self.time_range_value) == 0.0:
+                msg = "Time range cannot be zero. Please enter a positive number."
+                raise ValueError(msg)
 
-            if self.timeoffsetvalue == "":
-                self.stop_measurement("Empty time offset. Please enter a number.")
-                return False
-            return None
-        return None
+            if self.time_offset_value == "":
+                msg = "Empty time offset. Please enter a number."
+                raise ValueError(msg)
 
-    def deinitialize(self):
+    def deinitialize(self) -> None:
+        """Deinitialize the device."""
         self.port.write("SYST:KLOC OFF")  # unlocks the local control during measurement
         self.read_errors()  # this functions reads out the error queue
 
-    def configure(self):
-        ########################## time ########################################################
+    def configure(self) -> None:
+        """Configure the measurement."""
+        self.set_time_range()
+        self.set_trigger()
 
-        if self.timerange != "As is":
-            if self.timerange == "Time range in s:":
-                self.port.write("TIM:RANG %s" % self.timerangevalue)
-            elif self.timerange == "Time scale in s/div:":
-                self.port.write("TIM:SCAL %s" % self.timerangevalue)
-
-            self.port.write("TIM:HOR:POS %s" % self.timeoffsetvalue)
-
-
-        ########################## trigger #####################################################
-
-        self.port.write("TRIG1:MODE NORM")  # measurement is only done if a trigger is received
-
-        if self.triggersource != "As is" and self.triggersource != "Software":
-            self.port.write("TRIG1:SOUR %s" % self.commands[self.triggersource])
-
-            if self.triggersource in list(self.trigger_source_levels.keys()):
-                if self.triggerlevel != "" or self.triggerlevel != "As is":
-                    self.port.write(
-                        f"TRIG1:LEV{self.trigger_source_levels[self.triggersource]} {float(self.triggerlevel):1.3e}",
-                    )  # LEV{1-4} is the trigger level of the four channels
-
-        if self.triggersource.startswith("External"):
-            self.port.write("TRIG1:TYEP ANED")  # ANalogEdge
-
-            if self.triggercoupling != "As is":
-                self.port.write("TRIG1:ANED:COUP %s" % self.triggercoupling)  # AC or DC
-
-            if self.triggerslope != "As is":
-                self.port.write("TRIG1:ANED:SLOP %s" % self.commands[self.triggerslope])  # POS or NEG
-
-        else:
-            self.port.write("TRIG1:TYPE EDGE")
-
-            if self.triggerslope != "As is":
-                self.port.write("TRIG1:EDGE:SLOP %s" % self.commands[self.triggerslope])
-
-        ########################## acquisition #####################################################
-
-        ## Modes ##
+        # Modes
         # RUNContinous -> Starts the continuous acquisition, same like RUN
         # RUN -> Starts the continuous acquisition.
         # RUNSingle -> Starts a defined number of acquisition cycles. The number of cycles is set with ACQuire:COUNt.
@@ -251,7 +250,7 @@ class Device(EmptyDevice):
         if self.acquisition_mode == "Continuous":
             self.port.write("RUN")
         elif self.acquisition_mode == "Single":
-            self.port.write("STOP")  # we stop any acquistion to to perform a single run during measure
+            self.port.write("STOP")  # we stop any acquistion to perform a single run during measure
 
         if self.average != "As is":
             self.port.write("ACQ:COUN %s" % self.average)
@@ -259,23 +258,7 @@ class Device(EmptyDevice):
         self.port.write("ACQ:COUN?")
         self.port.read()
 
-        if self.samplingratetype != "As is sampling rate":
-            if self.samplingratetype == "Auto sampling rate":
-                self.port.write("ACQ:POIN:AUTO RES")  # possible options RESolution | RECLength
-
-            else:
-                if self.samplingrate != "As is":
-                    if self.samplingratetype == "Sampling rate in Sa/s:":
-                        self.port.write("ACQ:SRR %s" % self.samplingrate)
-
-                    elif self.samplingratetype == "Samples per time range:":
-                        self.port.write("ACQ:POIN:VAL %s" % self.samplingrate)
-
-                    elif self.samplingratetype == "Sample resolution in s:":
-                        self.port.write("ACQ:RES %s" % self.samplingrate)
-
-                    elif self.samplingratetype == "Samples per time per div:":
-                        pass
+        self.set_sample_rate()
 
         # here all channels that are not selected are switched off as they may be activated from the last run
         for i in np.arange(4) + 1:
@@ -287,25 +270,25 @@ class Device(EmptyDevice):
             self.port.write("CHAN%i:TYPE SAMP" % i)
             self.port.write("CHAN%i:STAT ON" % i)
 
-            ## Range
+            # Range
             if self.channel_ranges[i] != "As is":
                 range_value = float(self.channel_ranges[i])
                 self.port.write("CHAN%i:RANG %s" % (i, range_value))
 
-            ## Position
+            # Position
             if self.channel_offsets[i] != "As is":
                 offset_value = float(self.channel_offsets[i])
                 self.port.write("CHAN%i:POS %s" % (i, offset_value))
 
-            ## Coupling
+            # Coupling
             if self.channel_couplings[i] != "As is":
                 coupling_value = self.couplings[self.channel_couplings[i]]
                 self.port.write("CHAN%i:COUP %s" % (i, coupling_value))
 
-            ## Impedance
+            # Impedance
             # if self.channel_impedances[i] != "As is":
 
-            ## All channel related properties
+            # All channel related properties
             # CHANnel<m>:STATe
             # CHANnel<m>:COUPling
             # CHANnel<m>:GND
@@ -323,27 +306,88 @@ class Device(EmptyDevice):
         self.port.write("*OPC?")
         self.port.read()
 
-    def apply(self):
+    def set_time_range(self) -> None:
+        """Set the time range."""
+        if self.time_range != "As is":
+            if self.time_range == "Time range in s:":
+                self.port.write("TIM:RANG %s" % self.time_range_value)
+            elif self.time_range == "Time scale in s/div:":
+                self.port.write("TIM:SCAL %s" % self.time_range_value)
+
+            self.port.write("TIM:HOR:POS %s" % self.time_offset_value)
+
+    def set_trigger(self) -> None:
+        """Set the trigger mode."""
+        self.port.write("TRIG1:MODE NORM")  # measurement is only done if a trigger is received
+
+        if self.trigger_source not in ("As is", "Software"):
+            self.port.write("TRIG1:SOUR %s" % self.commands[self.trigger_source])
+
+            if self.trigger_source in list(self.trigger_source_levels.keys()):
+                if self.trigger_level != "" or self.trigger_level != "As is":
+                    self.port.write(
+                        f"TRIG1:LEV{self.trigger_source_levels[self.trigger_source]} {float(self.trigger_level):1.3e}",
+                    )  # LEV{1-4} is the trigger level of the four channels
+
+        if self.trigger_source.startswith("External"):
+            self.port.write("TRIG1:TYEP ANED")  # ANalogEdge
+
+            if self.trigger_coupling != "As is":
+                self.port.write("TRIG1:ANED:COUP %s" % self.trigger_coupling)  # AC or DC
+
+            if self.trigger_slope != "As is":
+                self.port.write("TRIG1:ANED:SLOP %s" % self.commands[self.trigger_slope])  # POS or NEG
+
+        else:
+            self.port.write("TRIG1:TYPE EDGE")
+
+            if self.trigger_slope != "As is":
+                self.port.write("TRIG1:EDGE:SLOP %s" % self.commands[self.trigger_slope])
+
+    def set_sample_rate(self) -> None:
+        """Set the sample rate."""
+        if self.sampling_rate_type == "As is sampling rate":
+            return
+
+        if self.sampling_rate_type == "Auto sampling rate":
+            self.port.write("ACQ:POIN:AUTO RES")  # possible options RESolution | RECLength
+
+        elif self.sampling_rate != "As is":
+            if self.sampling_rate_type == "Sampling rate in Sa/s:":
+                self.port.write("ACQ:SRR %s" % self.sampling_rate)
+
+            elif self.sampling_rate_type == "Samples per time range:":
+                self.port.write("ACQ:POIN:VAL %s" % self.sampling_rate)
+
+            elif self.sampling_rate_type == "Sample resolution in s:":
+                self.port.write("ACQ:RES %s" % self.sampling_rate)
+
+            elif self.sampling_rate_type == "Samples per time per div:":
+                pass
+
+    def apply(self) -> None:
+        """Apply the sweep value."""
         if self.sweepmode != "None":
-            self.value = float(self.value)
+            value = float(self.value)
 
             if self.sweepmode == "Time range in s":
-                self.port.write("TIM:RANG %s" % self.value)
+                self.port.write("TIM:RANG %s" % value)
 
             elif self.sweepmode == "Time scale in s/div":
-                self.port.write("TIM:SCAL %s" % self.value)
+                self.port.write("TIM:SCAL %s" % value)
 
             elif self.sweepmode == "Time offset in s":
-                self.port.write("TIM:POS %s" % self.value)
+                self.port.write("TIM:POS %s" % value)
 
-    def measure(self):
+    def measure(self) -> None:
+        """Start the measurement."""
         # resets the averaging immediately, done to collect fresh data
         self.port.write("ACQ:ARES:IMM")
 
         if self.acquisition_mode == "Single":
             self.port.write("SING")
 
-        if self.triggersource == "Software":
+        if self.trigger_source == "Software":
             self.port.write("TRIG1:FORC")  # we do a Software triggering
 
         self.port.write("*OPC?")
@@ -353,11 +397,11 @@ class Device(EmptyDevice):
         pass
         # not used at the moment, but would be nice to split requesting and reading the results
 
-    def read_result(self):
+    def read_result(self) -> None:
+        """Read the measurement result."""
         self.channel_data = []
 
         for i in self.channels:
-            data = []
             self.port.write("CHAN%i:DATA?" % i)
             answer = self.port.read()
             answer = answer.split(",")
@@ -367,15 +411,14 @@ class Device(EmptyDevice):
             self.channel_data.append(data)
 
         self.port.write("CHAN%i:DATA:HEAD?" % self.channels[0])
-        Time_header_data = np.array(self.port.read().split(","))
-        self.Time_values = np.linspace(float(Time_header_data[0]), float(Time_header_data[1]), int(Time_header_data[2]))
+        time_header_data = np.array(self.port.read().split(","))
+        self.time_values = np.linspace(float(time_header_data[0]), float(time_header_data[1]), int(time_header_data[2]))
 
-    def call(self):
-        return [self.Time_values, *self.channel_data]
+    def call(self) -> list:
+        """Return the measurement result."""
+        return [self.time_values, *self.channel_data]
 
-    ### convenience function start here ###
-
-    def read_errors(self):
+    def read_errors(self) -> None:
         """Reads out all errors from the error queue and prints them to the debug."""
         self.port.write("SYST:ERR:COUN?")
         err_count = self.port.read()
