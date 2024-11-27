@@ -57,8 +57,6 @@ class Device(EmptyDevice):
         """Set the standard GUI parameters."""
         return {
             "SweepMode": [None],
-            "Channel": ["PMU1 - CH1", "PMU1 - CH2"],
-
             "Waveform": ["Pulse"],
             "PeriodFrequency": ["Period in s"],  # "Frequency in Hz"],
             "PeriodFrequencyValue": 2e-6,
@@ -70,35 +68,32 @@ class Device(EmptyDevice):
             "DelayPhaseValue": 0.0,
             "DutyCyclePulseWidth": ["Pulse width in s"],  # "Duty cycle in %",],
             "DutyCyclePulseWidthValue": 1e-6,
-
             "RiseTime": 100e-9,
             "FallTime": 100e-9,
-
             "Impedance": ["50", "1e6"],
-
             # "OperationMode": ["Range 20 V (slow)", "Range 5 V (fast)"]
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Get the GUI parameters."""
-        self.port_string = parameter['Port']
+        self.port_string = parameter["Port"]
         self.identifier = "Keithley_4200-SCS_" + self.port_string
 
-        self.waveform = parameter['Waveform']
-        self.periodfrequency = parameter['PeriodFrequency']
-        self.periodfrequencyvalue = float(parameter['PeriodFrequencyValue'])
-        self.amplitudehilevel = parameter['AmplitudeHiLevel']
-        self.amplitudehilevelvalue = float(parameter['AmplitudeHiLevelValue'])
-        self.offsetlolevel = parameter['OffsetLoLevel']
-        self.offsetlolevelvalue = float(parameter['OffsetLoLevelValue'])
-        self.dutycyclepulsewidth = parameter['DutyCyclePulseWidth']
-        self.dutycyclepulsewidthvalue = float(parameter['DutyCyclePulseWidthValue'])
-        self.delayphase = parameter['DelayPhase']
-        self.delayphasevalue = float(parameter['DelayPhaseValue'])
-        self.impedance_value = parameter['Impedance']
+        self.waveform = parameter["Waveform"]
+        self.periodfrequency = parameter["PeriodFrequency"]
+        self.periodfrequencyvalue = float(parameter["PeriodFrequencyValue"])
+        self.amplitudehilevel = parameter["AmplitudeHiLevel"]
+        self.amplitudehilevelvalue = float(parameter["AmplitudeHiLevelValue"])
+        self.offsetlolevel = parameter["OffsetLoLevel"]
+        self.offsetlolevelvalue = float(parameter["OffsetLoLevelValue"])
+        self.dutycyclepulsewidth = parameter["DutyCyclePulseWidth"]
+        self.dutycyclepulsewidthvalue = float(parameter["DutyCyclePulseWidthValue"])
+        self.delayphase = parameter["DelayPhase"]
+        self.delayphasevalue = float(parameter["DelayPhaseValue"])
+        self.impedance_value = parameter["Impedance"]
 
-        self.rise_time = parameter['RiseTime']
-        self.fall_time = parameter['FallTime']
+        self.rise_time = parameter["RiseTime"]
+        self.fall_time = parameter["FallTime"]
 
         self.channel = parameter["Channel"]
 
@@ -109,6 +104,9 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Connect to the device."""
+        self.port.write("IDN?")
+        ret = self.port.read()
+        print(f"Connected to: {ret}")
 
     def initialize(self) -> None:
         """Initialize the device."""
@@ -124,4 +122,3 @@ class Device(EmptyDevice):
 
     def call(self):
         return []
-
