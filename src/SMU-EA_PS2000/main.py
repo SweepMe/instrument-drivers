@@ -29,7 +29,7 @@
 
 
 # SweepMe! driver
-# * Module: Switch
+# * Module: SMU
 # * Instrument: Power supply EA-PS 20xx
 
 
@@ -99,7 +99,7 @@ class Device(EmptyDevice):
 
             # self.__find_devices(comport, sn, desi)
 
-            #self.connect()
+            # self.connect()
             self.get_config()
 
         def new_del(self):
@@ -130,7 +130,7 @@ class Device(EmptyDevice):
     def disconnect(self):
         pass
 
-        # not needed anymore as we the SweepMe! COM port is closed by the port manager
+        # not needed anymore as the SweepMe! COM port is closed by the port manager
         #self.psu.close(False, False)  # only close COM port
         
     def configure(self):
