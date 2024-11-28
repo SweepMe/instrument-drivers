@@ -49,23 +49,32 @@ class Device(EmptyDevice):
             "timeout": 20,
         }
 
+        # Parameters to restore the users device setting
         self.commands_to_restore = [
-            "FUNC:IMP",                 # Operating mode
-            "FUNC:IMP:RANG:AUTO",       # Auto range on/off
-            "DISP:LINE",                # Display line
+            "FUNC:IMP",  # Operating mode
+            "FUNC:IMP:RANG:AUTO",  # Auto range on/off
+            "DISP:LINE",  # Display line
             # "VOLT",                     # Oscillator strength
             # "CURR",                     # current oscillator
             # "BIAS:VOLT",                # bias level
-            "APER",                     # average
-            "FREQ",                     # Frequency
-            "AMPL:ALC",                 # Automatic level control
-            "CORR:LENG",                # Correction length
-            "FUNC:IMP:RANG",            # Range value -> must be last and
+            "APER",  # average
+            "FREQ",  # Frequency
+            "AMPL:ALC",  # Automatic level control
+            "CORR:LENG",  # Correction length
+            "FUNC:IMP:RANG",  # Range value -> must be last and
         ]
         self.vals_to_restore: dict = {}
 
         self.sweepmode: str = "None"
         self.stepmode: str = "None"
+
+        self.sweepmode_commands = {
+            "None": "None",
+            "Frequency in Hz": "FREQ",
+            "Voltage bias in V": "BIAS:VOLT",
+            "Current bias in A": "BIAS:CURR",
+            "Voltage RMS in V": "VOLT",
+        }
 
         # Bias
         self.bias_modes_variables = {"VOLT": "Voltage bias", "CURR": "Current bias"}
@@ -97,7 +106,7 @@ class Device(EmptyDevice):
         self.list_sweep_values: np.ndarray = np.array([])
 
         self.list_sweep_holdtime: float = 0.0
-        self.list_sweep_delaytime: float = 0.0
+        self.list_sweep_delay_time: float = 0.0
 
         # Measured values
         self.variables: list[str] = []
@@ -116,15 +125,15 @@ class Device(EmptyDevice):
         """Set standard GUI parameter."""
         return {
             "Average": ["1", "2", "4", "8", "16", "32", "64"],
-            "SweepMode": ["None", "Frequency in Hz", "Voltage bias in V", "Current bias in A", "Voltage RMS in V"],
+            "SweepMode": list(self.sweepmode_commands),
             "SweepValue": ["List"],
-            "StepMode": ["None", "Frequency in Hz", "Voltage bias in V", "Current bias in A", "Voltage RMS in V"],
+            "StepMode":  list(self.sweepmode_commands),
             "ValueTypeRMS": ["Voltage RMS in V:", "Current RMS in A:"],
             "ValueRMS": 0.02,
             "ValueTypeBias": ["Voltage bias in V:", "Current bias in A:"],
             "ValueBias": 0.0,
             "Frequency": 1000.0,
-            "OperatingMode": list(self.operating_modes.keys()),
+            "OperatingMode": list(self.operating_modes),
             "ALC": ["Off", "On"],
             "Integration": ["Short", "Medium", "Long"],
             "Trigger": ["Software", "Internal", "External"],
@@ -135,6 +144,7 @@ class Device(EmptyDevice):
             "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
             "ListSweepStepPointsValue": 0.1,
             "ListSweepDual": False,
+            "ListSweepDelaytime": 0.0,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -161,7 +171,7 @@ class Device(EmptyDevice):
         self.trigger_type = parameter["Trigger"]
 
         # List Mode
-        if parameter["SweepValue"] == "List":
+        if parameter["SweepValue"] == "List sweep":
             self.use_list_sweep = True
             self.handle_list_sweep_parameter(parameter)
 
@@ -242,8 +252,19 @@ class Device(EmptyDevice):
         if parameter["ListSweepDual"]:
             self.list_sweep_values = np.append(self.list_sweep_values, self.list_sweep_values[::-1])
 
+        # Delay time
+        delay_time = parameter["ListSweepDelaytime"]
+        if delay_time == "":
+            self.list_sweep_delay_time = 0.0
+        else:
+            self.list_sweep_delay_time = float(delay_time)
+
+        if 0 < self.list_sweep_delay_time < 100e-6:
+            msg = f"Invalid delay time of {self.list_sweep_delay_time}. The delay time must be greater than 100us."
+            raise ValueError(msg)
+
         # Add time staps to return values
-        self.variables.append("Time")
+        self.variables.append("Time stamp")
         self.units.append("s")
         self.plottype.append(True)
         self.savetype.append(True)
@@ -257,13 +278,11 @@ class Device(EmptyDevice):
             answer = self.port.read()
             self.vals_to_restore[cmd] = answer
 
-        # no reset anymore as the device starts with an oscillator amplitude of 1V
-        # which can influence sensitive devices.
-        # self.port.write("*RST") #  reset configuration
+        # no reset anymore as the device starts with an oscillator amplitude of 1V which
+        # can influence sensitive devices.
+        # self.port.write("*RST")  # reset configuration
 
         self.port.write("*CLS")  # clear memory
-
-        # self.port.write("DISP:LINE \"Remote control by SweepMe!\"")
 
     def deinitialize(self) -> None:
         """Restore the users device setting."""
@@ -317,6 +336,7 @@ class Device(EmptyDevice):
 
         if self.use_list_sweep:
             self.set_list_mode()
+            self.set_step_delay(self.list_sweep_delay_time)
         else:
             # Set the display page to measurement in case a list sweep was used before
             self.port.write("DISP:PAGE MEAS")
@@ -336,7 +356,7 @@ class Device(EmptyDevice):
         self.port.write("AMPL:ALC OFF")  # TODO: it is overwritten by the user setting in deinitialize
         # self.port.write("FREQ 1000HZ")
         self.port.write("VOLT 20 MV")
-        # self.port.write("FUNC:IMP CPD") 
+        # self.port.write("FUNC:IMP CPD")
 
         self.port.write("TRIG:SOUR INT")  # makes sure the trigger runs again
         self.port.write("INIT:CONT ON")  # starting internal trigger
@@ -409,30 +429,44 @@ class Device(EmptyDevice):
     def request_result(self) -> None:
         """Request the measured values for R+X (depending on measurement mode), F, and bias."""
         if self.use_list_sweep:
-            # Request list sweep data and time stamps
-            self.port.write("FETC?;LIST:SEQ:TST:DATA?")
+            # Request measured values and list sweep values
+            # The device cannot handle more than two requests for list values.
+            # Therefore, time stamps and bias are requested in the read_results step
+            request_command = f"FETC?;LIST:{self.sweepmode_commands[self.sweepmode]}?"
+            self.port.write(request_command)
         else:
             # Request measured values, frequency, and bias
-            self.port.write("FETC?;FREQ?;BIAS:VOLT?")
+            # TODO: Question Axel: Why always bias volt?
+            self.port.write(f"FETC?;FREQ?;BIAS:{self.bias_mode}?")
 
     def read_result(self) -> None:
         """Read the measured values for R+X (depending on measurement mode), F, and bias."""
         if self.use_list_sweep:
-            answer = self.port.read().split(",")
-            reshaped_answer = np.array(answer).reshape(-1, 5)
+            answer = self.port.read().split(";")
 
-            # TODO: Check this
-            self.value_1 = reshaped_answer[:, 0].astype(float).tolist()
-            self.value_2 = reshaped_answer[:, 1].astype(float).tolist()
-            self.measured_frequency = reshaped_answer[:, 2].astype(float).tolist()
-            self.bias = reshaped_answer[:, 3].astype(float).tolist()
-            self.time_stamps = reshaped_answer[:, 4].astype(float).tolist()
+            # Measured Values R+X
+            value_list = answer[0].split(",")
+            reshaped_values = np.array(value_list).reshape(-1, 4)
+            self.value_1 = reshaped_values[:, 0].astype(float).tolist()
+            self.value_2 = reshaped_values[:, 1].astype(float).tolist()
 
-            # resistance = [float(answer[i]) for i in range(0, len(answer), 4)]
-            # reactance = [float(answer[i + 1]) for i in range(1, len(answer), 4)]
-            # # TODO: Check this
-            # frequency = [float(answer[i + 2]) for i in range(2, len(answer), 4)]
-            # bias = [float(answer[i + 3]) for i in range(3, len(answer), 4)]
+            # List Sweep Values
+            if self.sweepmode.startswith("Frequency"):
+                self.measured_frequency = [float(frequency) for frequency in answer[1].split(",")]
+
+                self.port.write("BIAS:VOLT?")
+                self.bias = float(self.port.read())
+            else:
+                self.bias = [float(bias) for bias in answer[1].split(",")]
+
+                self.port.write("FREQ?")
+                self.measured_frequency = float(self.port.read())
+
+            # Time Stamps
+            self.port.write("LIST:SEQ:TST:DATA?")
+            answer = self.port.read()
+            self.time_stamps = [float(time_stamp) for time_stamp in answer.split(",")]
+
         else:
             answer = self.port.read().split(";")
             self.value_1, self.value_2 = map(float, answer[0].split(",")[0:2])
@@ -489,8 +523,9 @@ class Device(EmptyDevice):
         self.port.write("DISP:PAGE LIST")
 
         # TODO: Check Clear the list sweep setup
-        self.port.write("LIST:CLE:ALL")
+        # self.port.write("LIST:CLE:ALL")
 
+        # Set sequential list sweep
         self.port.write("LIST:MODE SEQ")
         # Clear the time stamp
         self.port.write("LIST:SEQ:TST:CLE")
@@ -541,3 +576,14 @@ class Device(EmptyDevice):
         """Get the timestamps of the list sweep."""
         self.port.write("LIST:SEQ:TST:DATA?")
         return self.port.read().split(",")
+
+    def set_step_delay(self, time_in_s: float) -> None:
+        """Set the delay time that the device waits after switching before starting the measurement.
+
+        Note: The device also enables setting a trigger delay time, which is the time between the trigger and setting of
+        the next value.
+        """
+        if time_in_s < 100e-6:
+            return
+
+        self.port.write(f"TRIG:DEL {time_in_s}")
