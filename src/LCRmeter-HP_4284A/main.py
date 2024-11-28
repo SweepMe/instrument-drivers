@@ -555,7 +555,8 @@ class Device(EmptyDevice):
         """Create a string of values."""
         maximum_number_of_values = 201
         if len(values) > maximum_number_of_values:
-            msg = f"The list sweep can only have a maximum of {maximum_number_of_values} values."
+            msg = (f"Number of values for list mode too high ({len(values)}). The device supports a maximum of "
+                   f"{maximum_number_of_values}.")
             raise ValueError(msg)
 
         return ",".join([f"{value:1.5e}" for value in values])

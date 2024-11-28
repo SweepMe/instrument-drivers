@@ -128,7 +128,7 @@ class Device(EmptyDevice):
             "Average": ["1", "2", "4", "8", "16", "32", "64"],
             "SweepMode": list(self.sweepmode_commands),
             "SweepValue": ["List"],
-            "StepMode":  list(self.sweepmode_commands),
+            "StepMode": list(self.sweepmode_commands),
             "ValueTypeRMS": ["Voltage RMS in V:", "Current RMS in A:"],
             "ValueRMS": 0.02,
             "ValueTypeBias": ["Voltage bias in V:", "Current bias in A:"],
@@ -552,7 +552,8 @@ class Device(EmptyDevice):
         """Create a string of values."""
         maximum_number_of_values = 201
         if len(values) > maximum_number_of_values:
-            msg = f"The list sweep can only have a maximum of {maximum_number_of_values} values."
+            msg = (f"Number of values for list mode too high ({len(values)}). The device supports a maximum of "
+                   f"{maximum_number_of_values}.")
             raise ValueError(msg)
 
         return ",".join([f"{value:1.5e}" for value in values])
