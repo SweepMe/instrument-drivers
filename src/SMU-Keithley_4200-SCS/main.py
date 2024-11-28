@@ -438,7 +438,7 @@ class Device(EmptyDevice):
             self.device_communication[self.identifier]["List master"] = self.channel
             self.device_communication[self.identifier]["List length"] = len(self.list_sweep_values)
             # Reset the dictionary of list results here before all channels register their arrays in 'configure'
-            self.lpt.reset_measurement_dict()
+            self.lpt.reset_measurement_cache()
 
     def check_test_parameter(self) -> None:
         """Check if the selected parameters can be run with the selected mode."""
@@ -592,7 +592,7 @@ class Device(EmptyDevice):
             del self.device_communication[self.identifier]["Pulse master"]
 
         if self.list_master:
-            self.lpt.reset_measurement_dict()
+            self.lpt.reset_measurement_cache()
 
     def poweroff(self) -> None:
         """Turn off the device."""
