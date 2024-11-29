@@ -345,13 +345,12 @@ class Device(EmptyDevice):
         elif list_sweep_type == "Custom":
             custom_values = parameter["ListSweepCustomValues"]
             if custom_values == "":
-                msg = "Please provide comma-separated custom values for the list sweep."
-                raise ValueError(msg)
+                list_sweep_values = np.array([])
+            else:
+                # Remove leading and trailing commas
+                custom_values = custom_values.strip(",")
 
-            # Remove leading and trailing commas
-            custom_values = custom_values.strip(",")
-
-            list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
+                list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
 
         else:
             msg = f"Unknown list sweep type: {list_sweep_type}"
@@ -365,10 +364,10 @@ class Device(EmptyDevice):
         self.list_sweep_values = list_sweep_values.tolist()
 
         # Add time staps to return values
-        self.variables.append("Time stamp")
-        self.units.append("s")
-        self.plottype.append(True)
-        self.savetype.append(True)
+        self.variables.extend(["Time stamp", "Time stamp zeroed"])
+        self.units.extend(["s", "s"])
+        self.plottype.extend([True, True])
+        self.savetype.extend([True, True])
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -536,14 +535,19 @@ class Device(EmptyDevice):
             # compliance = 1e1
             # self.set_current_range(self.card_name[-1], range, compliance)
 
+    def start(self) -> None:
+        """Preparation before applying a new value."""
         if self.list_master:
-            self.configure_list_sweep(len(self.list_sweep_values))
+            # Clear the result arrays
+            self.lpt.clrscn()
 
-        # Check if another channel is running a list sweep
-        elif "List master" in self.device_communication[self.identifier]:
-            # Need to know how long the measurement will be
-            self.list_receiver = True
-            self.configure_list_sweep(self.device_communication[self.identifier]["List length"])
+            # Update list length in case variable lists are used (e.g. by using ParameterSyntax of SweepMe)
+            list_length = len(self.list_sweep_values)
+            if list_length == 0:
+                msg = "List for List Sweep is empty."
+                raise ValueError(msg)
+
+            self.device_communication[self.identifier]["List length"] = list_length
 
     def configure_lptlib(self) -> None:
         """Configure the device using lptlib commands."""
@@ -653,6 +657,14 @@ class Device(EmptyDevice):
             # needed otherwise no voltage is applied
             self.lpt.pulse_output(self.card_id, self.pulse_channel, out_state=1)
 
+        # Register result arrays for list mode
+        if self.list_master:
+            self.configure_list_sweep(len(self.list_sweep_values))
+        elif "List master" in self.device_communication[self.identifier]:
+            # Check if another channel is running a list sweep
+            self.list_receiver = True
+            self.configure_list_sweep(self.device_communication[self.identifier]["List length"])
+
     def measure(self) -> None:
         """Start the pulse or list measurements. This cannot be done in 'apply' as the sweep value does not change."""
         if self.pulse_mode and self.pulse_master:
@@ -660,6 +672,11 @@ class Device(EmptyDevice):
             self.lpt.pulse_exec(mode=self.param.PULSE_MODE_SIMPLE)  # Alternatively self.param.PULSE_MODE_ADVANCED
 
         if self.list_master:
+            # Check if all elements of list_sweep_values are float
+            if not all(isinstance(value, float) for value in self.list_sweep_values):
+                msg = "Unsupported type detected in list values. Make sure all values are float"
+                raise ValueError(msg)
+
             if self.source == "Voltage in V":
                 self.lpt.asweepv(self.card_id, self.list_sweep_values, self.list_delay_time)
             elif self.source == "Current in A":
@@ -706,8 +723,8 @@ class Device(EmptyDevice):
             current = self.lpt.read_measurement(self.list_measurement_keys["current"])
             if self.list_master:
                 time_stamps = self.lpt.read_measurement(self.list_measurement_keys["time"])
-                time_stamps = [stamp - time_stamps[0] for stamp in time_stamps]  # start at 0
-                return [voltage, current, time_stamps]
+                time_stamps_zeroed = [stamp - time_stamps[0] for stamp in time_stamps]  # start at 0
+                return [voltage, current, time_stamps, time_stamps_zeroed]
             else:
                 return [voltage, current]
 
