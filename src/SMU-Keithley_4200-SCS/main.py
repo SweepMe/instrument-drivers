@@ -232,6 +232,7 @@ class Device(EmptyDevice):
             # List Mode Parameters
             "ListSweepCheck": False,
             "ListSweepType": ["Sweep", "Custom"],
+            "ListSweepCustomValues": "",
             "ListSweepStart": 0.0,
             "ListSweepEnd": 1.0,
             "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
@@ -343,6 +344,13 @@ class Device(EmptyDevice):
 
         elif list_sweep_type == "Custom":
             custom_values = parameter["ListSweepCustomValues"]
+            if custom_values == "":
+                msg = "Please provide comma-separated custom values for the list sweep."
+                raise ValueError(msg)
+
+            # Remove leading and trailing commas
+            custom_values = custom_values.strip(",")
+
             list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
 
         else:
