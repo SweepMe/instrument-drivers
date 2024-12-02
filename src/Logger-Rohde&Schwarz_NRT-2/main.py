@@ -68,6 +68,12 @@ class Device(EmptyDevice):
         self.port_types = ["GPIB", "USB", "Ethernet"]
         self.port_manager = True
         self.port_string: str = ""
+        self.port_properties = {
+            "baudrate": 38400,  # default
+            "EOL": "\n",
+            # "stopbits": 1,
+            # "parity": "N",
+        }
 
         # Device parameters
         self.measurement_type = {
@@ -106,15 +112,18 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
-        ret = self.port.write("*IDN?")
-        print(f"Connected to: {ret}")
+        self.port.write('*RST')
+        self.port.write("*IDN?")
+        idn = self.port.read()
+        print(f"Connected to: {idn}")
 
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
-        self.port.write("*RST")  # reset the device
+        # self.port.write("*RST")  # reset the device
+        # self.port.write("SPEC")
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -124,10 +133,21 @@ class Device(EmptyDevice):
         # Set result format
         # self.port.write("FORM:SREG ASC")  # ASC, BIN, HEX, OCT - see page 130
 
+        # self.port.write("APPL")
+        # ret = self.port.read()
+        # print(ret)
+
+        self.port.write("TRIG:MODE:FRE")
+
+
+        # self.port.write("SYST:HELP:HEAD?")
+        # ret = self.port.read()
+        # print(ret)
+
         # connected sensors
-        self.port.write("CAT?")
-        ret = self.port.read()
-        print(f"Connected sensors: {ret}")
+        # self.port.write("CAT?")
+        # ret = self.port.read()
+        # print(f"Connected sensors: {ret}")
 
         # # set resolution
         # resolution_dbm = {
@@ -141,15 +161,15 @@ class Device(EmptyDevice):
         # self.port.write("SYST:SPE FAST")  # set speed to fast, measured vaues are no longer displayed
 
         # Define measurement frequency - 1GHz
-        self.port.write("SENS1:FREQ 1 GHz")
+        # self.port.write("SENS1:FREQ 1 GHz")
 
         # Set 1st and 2nd measurement function to
         # Forward Power, Reverse Power
-        meas_type = "POW:FORW:AVER,POW:REV"
-        self.port.write(f"CALC1:CHAN{self.channel}:FEED{self.channel} '{meas_type}'")  # power forward average
+        # meas_type = "POW:FORW:AVER,POW:REV"
+        # self.port.write(f"CALC1:CHAN{self.channel}:FEED{self.channel} '{meas_type}'")  # power forward average
 
         # Set power unit to dBm
-        self.port.write("UNIT1:POWER DBM")
+        # self.port.write("UNIT1:POWER DBM")
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
@@ -158,6 +178,12 @@ class Device(EmptyDevice):
         """'measure' should be used to trigger the acquisition of new data."""
         sensor = 1
 
+        # Select sensorTRIG: MODE
+        #         FREerun
+        #         ::
+        #         TRIGger
+        #         SENSe: DATA?
+
         # Start the measurement
         self.port.write("TRIG:IMM")  # page 132
 
@@ -165,6 +191,10 @@ class Device(EmptyDevice):
         self.port.write("SENS1:DATA?")
         self.result = self.port.read()
         print(self.result)
+
+        # self.port.write("FTRG")
+        # ret = self.port.read()
+        # print(ret)
 
     def call(self) -> str:
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables."""
