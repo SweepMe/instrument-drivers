@@ -54,6 +54,9 @@ class Device(EmptyDevice):
 
         self.shortname = "AR 12S1G3"
 
+        self.variables = ["Gain"]
+        self.units = [""]
+
         # Communication Parameters
         self.port_string: str = ""
         self.port_manager = True
@@ -61,25 +64,20 @@ class Device(EmptyDevice):
         self.port_properties = {
             "EOL": "\r\n",
             "timeout": 3,
-            "baudrate": 76800,
-            "stopbits": 2,
+            # "baudrate": 76800,
+            # "stopbits": 2,
             # "delay": 0.02,
         }
-
-        # Device parameters
-        self.device_address: int = 16
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
             "SweepMode": ["Amplification"],
-            "Device address": 16,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.port_string = parameter["Port"]
-        self.device_address = int(parameter["Device address"])
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -87,6 +85,9 @@ class Device(EmptyDevice):
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
         self.port.write("R")  # Reset the device
+        # self.port.write("*IDN?")
+        # idn = self.port.read()
+        # print(idn)
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -98,7 +99,17 @@ class Device(EmptyDevice):
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        # TODO: Add input mode percent or bits
         self.set_gain(self.value)
+
+    def call(self) -> int:
+        """Measure the value of the device."""
+        self.port.write("G?")
+        ret = self.port.read()
+        gain = int(ret[1:])
+        print(ret, gain)
+
+        return gain
 
     def set_gain(self, gain: int) -> None:
         """Set the gain of the device."""
@@ -106,9 +117,10 @@ class Device(EmptyDevice):
             msg = "Gain must be between 0 and 4095."
             raise ValueError(msg)
 
-        gain = str(gain)
+        gain = str(int(gain))
         # Add 0 to the beginning of the string if the length is less than 4
         while len(gain) < 4:
             gain = "0" + gain
+        print(f"Setting Gain to {gain} from value {self.value}")
 
         self.port.write(f"G{gain}")
