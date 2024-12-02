@@ -40,7 +40,11 @@ class Device(EmptyDevice):
         EmptyDevice.__init__(self)
 
         self.port_manager = True
-        self.port_types = ["GPIB", "TCPIP"]
+        self.port_types = [
+            "USB",
+            # "GPIB",
+            "TCPIP"
+        ]
 
         self.variables = []
         self.units = []
@@ -77,34 +81,36 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Get the GUI parameters."""
         self.port_string = parameter["Port"]
-        self.identifier = "Keithley_4200-SCS_" + self.port_string
-
-        self.waveform = parameter["Waveform"]
-        self.periodfrequency = parameter["PeriodFrequency"]
-        self.periodfrequencyvalue = float(parameter["PeriodFrequencyValue"])
-        self.amplitudehilevel = parameter["AmplitudeHiLevel"]
-        self.amplitudehilevelvalue = float(parameter["AmplitudeHiLevelValue"])
-        self.offsetlolevel = parameter["OffsetLoLevel"]
-        self.offsetlolevelvalue = float(parameter["OffsetLoLevelValue"])
-        self.dutycyclepulsewidth = parameter["DutyCyclePulseWidth"]
-        self.dutycyclepulsewidthvalue = float(parameter["DutyCyclePulseWidthValue"])
-        self.delayphase = parameter["DelayPhase"]
-        self.delayphasevalue = float(parameter["DelayPhaseValue"])
-        self.impedance_value = parameter["Impedance"]
-
-        self.rise_time = parameter["RiseTime"]
-        self.fall_time = parameter["FallTime"]
-
-        self.channel = parameter["Channel"]
-
-        self.card_name = self.channel.split("-")[0].strip()
-        self.pulse_channel = int(self.channel.split("-")[1][-1])
-
-        self.shortname = "4200-SCS %s" % parameter["Channel"]
+        # self.identifier = "Keithley_4200-SCS_" + self.port_string
+        #
+        # self.waveform = parameter["Waveform"]
+        # self.periodfrequency = parameter["PeriodFrequency"]
+        # self.periodfrequencyvalue = float(parameter["PeriodFrequencyValue"])
+        # self.amplitudehilevel = parameter["AmplitudeHiLevel"]
+        # self.amplitudehilevelvalue = float(parameter["AmplitudeHiLevelValue"])
+        # self.offsetlolevel = parameter["OffsetLoLevel"]
+        # self.offsetlolevelvalue = float(parameter["OffsetLoLevelValue"])
+        # self.dutycyclepulsewidth = parameter["DutyCyclePulseWidth"]
+        # self.dutycyclepulsewidthvalue = float(parameter["DutyCyclePulseWidthValue"])
+        # self.delayphase = parameter["DelayPhase"]
+        # self.delayphasevalue = float(parameter["DelayPhaseValue"])
+        # self.impedance_value = parameter["Impedance"]
+        #
+        # self.rise_time = parameter["RiseTime"]
+        # self.fall_time = parameter["FallTime"]
+        #
+        # self.channel = parameter["Channel"]
+        #
+        # self.card_name = self.channel.split("-")[0].strip()
+        # self.pulse_channel = int(self.channel.split("-")[1][-1])
+        #
+        # self.shortname = "4200-SCS %s" % parameter["Channel"]
 
     def connect(self) -> None:
         """Connect to the device."""
-        self.port.write("IDN?")
+        self.port.write("*RST")
+        # self.port.write("*CLS")
+        self.port.write("*IDN?")
         ret = self.port.read()
         print(f"Connected to: {ret}")
 
