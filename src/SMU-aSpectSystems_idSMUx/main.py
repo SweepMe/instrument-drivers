@@ -310,6 +310,9 @@ class Device(EmptyDevice):
             self.channel.autorange = False
             self.channel.current_range = self.current_range
 
+        # Averaging
+        self.channel.sample_count = self.average
+
         # Get output ranges
         self.v_min, self.v_max, self.i_min, self.i_max = self.channel.output_ranges
 
@@ -376,14 +379,6 @@ class Device(EmptyDevice):
 
         self.i = self.channel.current
         self.v = self.channel.voltage
-
-        if self.average > 1:
-            for _ in range(self.average - 1):
-                self.i += self.channel.current
-                self.v += self.channel.voltage
-
-            self.i = self.i / self.average
-            self.v = self.v / self.average
 
     def run_list_sweep(self) -> None:
         """Run the list sweep."""
