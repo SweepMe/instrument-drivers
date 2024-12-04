@@ -311,6 +311,7 @@ class Device(EmptyDevice):
             self.channel.current_range = self.current_range
 
         # Averaging
+        # TODO: Only 2^n values are allowed. Check if the average is a power of 2
         self.channel.sample_count = self.average
 
         # Get output ranges
