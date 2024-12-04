@@ -43,10 +43,10 @@ class Device(EmptyDevice):
         """Initializes the device class."""
         super().__init__()
 
-        self.variables = ["R", "X", "Frequency", "Voltage bias"]
-        self.units = ["Ohm", "Ohm", "Hz", "V"]
-        self.plottype = [True, True, True, True]
-        self.savetype = [True, True, True, True]
+        self.variables = ["C", "G", "Voltage bias"]
+        self.units = ["F", "S", "V"]  # TODO: Check units
+        self.plottype = [True, True, True]
+        self.savetype = [True, True, True]
 
         self.port_manager = True
         self.port_types = ["GPIB"]
@@ -70,10 +70,6 @@ class Device(EmptyDevice):
         }
 
         self.frequency: str = "100kHz"
-        self.frequencies = {
-            100E6: "F0",
-            1E9: "F1",
-        }
 
         self.trigger: str = "One-shot, talk"
         self.trigger_modes = {
@@ -106,8 +102,9 @@ class Device(EmptyDevice):
             # "StepMode": ["None", "Frequency in Hz", "Voltage bias in V"],
             "ValueTypeBias": ["Voltage bias in V:"],
             "ValueBias": 0.0,
+            "OperatingMode": ["Parallel", "Series"],
             # "ValueRMS": 0.02,
-            "Frequency": list(self.frequencies.keys()),
+            "Frequency": 1E8,
             "Integration": list(self.reading_rates.keys()),
             "Average": 1,
             "Range": list(self.ranges.keys()),
@@ -129,13 +126,13 @@ class Device(EmptyDevice):
 
         self.value_level_rms = float(parameter["ValueRMS"])
 
-        self.frequency = round(float(parameter["Frequency"]))
-        if self.frequency not in self.frequencies:
-            msg = f"Frequency {self.frequency} not available. Choose either 100kHz (1E8) or 1MHz (1E9)."
-            raise ValueError(msg)
+        # TODO: Check for rounding errors
+        frequency = round(float(parameter["Frequency"]))
+        self.frequency = "1MHz" if frequency == 1E9 else "100kHz"
 
         self.reading_rate = parameter["Integration"]
 
+        # TODO: Move Exceptions to later
         self.average = int(parameter["Average"])
         if self.average < 1:
             msg = "Average must be greater than 0."
@@ -154,17 +151,18 @@ class Device(EmptyDevice):
         # self.trigger_delay = float(parameter["TriggerDelay"])
 
         # Only use Resistance and reactance measurement
-        self.operating_mode = "RjX"
+        # self.operating_mode = "RjX"
 
     def connect(self) -> None:
         """Connect to the Keithley 4200-SCS LCRmeter."""
-        self.port.write("*IDN?")
-        instrument_id = self.port.read()
-        print(f"instrument id: {instrument_id}")
+        # self.port.write("*RST")  # reset
+        # self.port.write("*IDN?")
+        # instrument_id = self.port.read()
+        # print(f"instrument id: {instrument_id}")
 
     def initialize(self) -> None:
         """Initialize the Keithley 4200-SCS LCRmeter."""
-        self.port.write("*RST")  # reset
+        self.port.write("RENX")  # Go to remote mode
         # TODO: Put device in remote mode
 
     def deinitialize(self) -> None:
@@ -197,40 +195,46 @@ class Device(EmptyDevice):
         """Retrieve Impedance results from device."""
         # self.port.write("A$")  # Sure? A command is used for plotting
         # Maybe wait for measurement to finish
+
+        # Retrieve trigger overrun error due to too fast request from SweepMe!
+
         self.port.write("B0X")  # Select current reading in buffer???
         # Example uses B3X
         # Why does the example wait for user input on the device???
 
         answer = self.port.read()
+        # print(f"Answer: {answer}")
 
         # Answer has type ZTSK 1.23E+0, 4.56E+0, 7.89E+0
         # Values are C, G, V
         # TODO: Use mode to receive resistance, reactance, frequency, and voltage bias
         answer = answer.split(",")
 
-        capacitance = float(answer[1])
-        conductance = float(answer[2])
-        self.measured_dc_bias = float(answer[3])  # Voltage
+        self.capacitance = float(answer[0][4:])  # Remove prefix of type ZTPK
+        self.conductance = float(answer[1])
+        self.measured_dc_bias = float(answer[2])  # Voltage
+        print(f"Capacitance: {self.capacitance}, conductance: {self.conductance}, voltage: {self.measured_dc_bias}")
+        #
+        # self.resistance = float(answer[1])
 
-        self.resistance = float(answer[1])
+        # # Only measurement mode RjX is used
+        # self.resistance, self.reactance = self.measure_impedance()
+        #
+        # self.measured_frequency = self.measure_frequency()
+        # self.measured_dc_bias = self.measure_dc_bias()
 
-        # Only measurement mode RjX is used
-        self.resistance, self.reactance = self.measure_impedance()
-
-        self.measured_frequency = self.measure_frequency()
-        self.measured_dc_bias = self.measure_dc_bias()
-
-    def call(self) -> list[float]:
+    def call(self) -> tuple:
         """Return ["R", "X", "Frequency", "Voltage bias" or "Voltage level"]."""
-        return [self.resistance, self.reactance, self.measured_frequency, self.measured_dc_bias]
+        return self.capacitance, self.conductance, self.measured_dc_bias
+        # return [self.resistance, self.reactance, self.measured_frequency, self.measured_dc_bias]
 
     """ here, convenience functions start """
     # TODO: See Manual 4-19 for more commands
 
     def set_frequency(self, frequency: str) -> None:
         """Set the measurement frequency."""
-        frequency_command = self.frequencies[frequency]
-        self.port.write(f"{frequency_command}X")
+        command = "F0X" if frequency == "100kHz" else "F1X"
+        self.port.write(command)
 
     def set_range(self, measurement_range: str) -> None:
         """Set the measurement range."""
