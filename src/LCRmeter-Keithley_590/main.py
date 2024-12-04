@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -43,8 +44,8 @@ class Device(EmptyDevice):
         """Initializes the device class."""
         super().__init__()
 
-        self.variables = ["C", "G", "Voltage bias"]
-        self.units = ["F", "S", "V"]  # TODO: Check units
+        self.variables = ["Capacitance", "Conductance", "Voltage bias"]
+        self.units = ["F", "S", "V"]
         self.plottype = [True, True, True]
         self.savetype = [True, True, True]
 
@@ -74,15 +75,15 @@ class Device(EmptyDevice):
         self.trigger: str = "One-shot, talk"
         self.trigger_modes = {
             "One-shot, talk": "T0,0",
-            "Sweep, talk": "T0,1",
-            "One-shot, GET": "T1,0",
-            "Sweep, GET": "T1,1",
-            "One-shot, X": "T2,0",
-            "Sweep, X": "T2,1",
-            "One-shot, external": "T3,0",
-            "Sweep, external": "T3,1",
-            "One-shot, front panel": "T4,0",
-            "Sweep, front panel": "T4,1",
+            # "Sweep, talk": "T0,1",
+            # "One-shot, GET": "T1,0",
+            # "Sweep, GET": "T1,1",
+            # "One-shot, X": "T2,0",
+            # "Sweep, X": "T2,1",
+            # "One-shot, external": "T3,0",
+            # "Sweep, external": "T3,1",
+            # "One-shot, front panel": "T4,0",
+            # "Sweep, front panel": "T4,1",
         }
 
         self.reading_rate: str = "1000 /s"
@@ -148,25 +149,15 @@ class Device(EmptyDevice):
 
         self.measure_range = parameter["Range"]
         self.trigger = parameter["Trigger"]
+        self.model = parameter["OperatingMode"]
         # self.trigger_delay = float(parameter["TriggerDelay"])
 
         # Only use Resistance and reactance measurement
         # self.operating_mode = "RjX"
 
-    def connect(self) -> None:
-        """Connect to the Keithley 4200-SCS LCRmeter."""
-        # self.port.write("*RST")  # reset
-        # self.port.write("*IDN?")
-        # instrument_id = self.port.read()
-        # print(f"instrument id: {instrument_id}")
-
     def initialize(self) -> None:
         """Initialize the Keithley 4200-SCS LCRmeter."""
-        self.port.write("RENX")  # Go to remote mode
-        # TODO: Put device in remote mode
-
-    def deinitialize(self) -> None:
-        """Reset device and close connection."""
+        self.port.write("RENX")  # Start remote mode
 
     def configure(self) -> None:
         """Set bias and measurement parameters with start values from GUI."""
@@ -175,6 +166,9 @@ class Device(EmptyDevice):
         self.set_zero_on()
         self.set_trigger_mode_and_source(self.trigger)
         self.set_reading_rate(self.reading_rate)
+
+        # No setting of model via O0 command needed
+        # Data is always stored and transmitted in parallel form. Conversion is only done when buffer data is displayed.
 
         self.set_data_format()
 
@@ -193,43 +187,31 @@ class Device(EmptyDevice):
 
     def measure(self) -> None:
         """Retrieve Impedance results from device."""
-        # self.port.write("A$")  # Sure? A command is used for plotting
-        # Maybe wait for measurement to finish
+        # Trigger a measurement (otherwise it will cause trigger overrun after 3 points)
+        # Currently only used mode is (One-shot, talk) because it works
+        self.port.write("T0,0X")
 
-        # Retrieve trigger overrun error due to too fast request from SweepMe!
-
-        self.port.write("B0X")  # Select current reading in buffer???
-        # Example uses B3X
-        # Why does the example wait for user input on the device???
-
+        # Read out buffer
+        self.port.write("B0X")
         answer = self.port.read()
-        # print(f"Answer: {answer}")
 
-        # Answer has type ZTSK 1.23E+0, 4.56E+0, 7.89E+0
-        # Values are C, G, V
-        # TODO: Use mode to receive resistance, reactance, frequency, and voltage bias
+        # Answer has type ZTSK 1.23E+0, 4.56E+0, 7.89E+0, values are C, G, V
         answer = answer.split(",")
 
         self.capacitance = float(answer[0][4:])  # Remove prefix of type ZTPK
         self.conductance = float(answer[1])
-        self.measured_dc_bias = float(answer[2])  # Voltage
-        print(f"Capacitance: {self.capacitance}, conductance: {self.conductance}, voltage: {self.measured_dc_bias}")
-        #
-        # self.resistance = float(answer[1])
+        # TODO: Convert to resistance and reactance for post-processing in module
+        # resistance = 1 / self.conductance
+        # frequency = 1E8 if self.frequency == "100kHz" else 1E9
+        # reactance = 1 / (2 * np.pi * frequency * self.capacitance)
 
-        # # Only measurement mode RjX is used
-        # self.resistance, self.reactance = self.measure_impedance()
-        #
-        # self.measured_frequency = self.measure_frequency()
-        # self.measured_dc_bias = self.measure_dc_bias()
+        self.measured_dc_bias = float(answer[2])  # Voltage
 
     def call(self) -> tuple:
-        """Return ["R", "X", "Frequency", "Voltage bias" or "Voltage level"]."""
+        """Return measured values."""
         return self.capacitance, self.conductance, self.measured_dc_bias
-        # return [self.resistance, self.reactance, self.measured_frequency, self.measured_dc_bias]
 
-    """ here, convenience functions start """
-    # TODO: See Manual 4-19 for more commands
+    """ Wrapped functions - See Manual 4-19 for more commands """
 
     def set_frequency(self, frequency: str) -> None:
         """Set the measurement frequency."""
@@ -239,6 +221,7 @@ class Device(EmptyDevice):
     def set_range(self, measurement_range: str) -> None:
         """Set the measurement range."""
         if self.frequency == "100kHz":
+            # TODO: Add 10x amplifier boolean
             ranges = {
                 "Auto": "R0",
                 "2pF/2uS": "R1",
@@ -263,11 +246,10 @@ class Device(EmptyDevice):
 
         try:
             range_command = ranges[measurement_range]
-        except KeyError:
+        except KeyError as e:
             msg = f"Range {measurement_range} not available for frequency {self.frequency}."
             range_command = ranges["Auto"]
-            print(msg)
-            # raise ValueError(msg)
+            raise ValueError(msg) from e
 
         self.port.write(f"{range_command}X")
 
@@ -291,11 +273,11 @@ class Device(EmptyDevice):
         command = "P1X" if filter_on else "P0X"
         self.port.write(command)
 
-    def set_voltage(self, voltage: float, list_mode: bool = False, averaging: int = 1) -> None:
+    def set_voltage(self, voltage: float, averaging: int = 1) -> None:
         """Set the voltage.
 
-        TODO: Check which parameters are used for which waveform type (manual 3.14)
         Note: minimum step size to be applied is 5mV.
+        TODO: Add list mode, check which parameters are used for which waveform type (manual 3.14)
         """
         max_voltage = 20
         if abs(voltage) > max_voltage:
@@ -304,14 +286,6 @@ class Device(EmptyDevice):
 
         # single voltage
         command = f"V,,,{voltage},{averaging}X"  # Commas needed to skip start, stop, and step values
-
-        if list_mode:
-            # TODO: Add List Mode
-            first = -voltage
-            last = voltage
-            step = voltage / 5
-            command = f"V {first},{last},{step}X"
-
         self.port.write(command)
 
     def set_waveform(self) -> None:
