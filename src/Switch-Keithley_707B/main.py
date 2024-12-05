@@ -36,16 +36,15 @@
 
 # See sequencer procedure here: https://wiki.sweep-me.net/wiki/Sequencer_procedure
 
-from collections import OrderedDict
 
-from ErrorMessage import error
+
+import re  # For regex / string validation
+import time
 
 from EmptyDeviceClass import EmptyDevice
-import time
-import re # For regex / string validation
+
 
 class Device(EmptyDevice):
-
     description = """
         <p><strong>Usage:</strong></p>
         <ul>
@@ -61,93 +60,93 @@ class Device(EmptyDevice):
     """
 
     def __init__(self):
-        
         EmptyDevice.__init__(self)
-        
+
         self.shortname = "Keithley 707B"
-        
+
         self.port_manager = True
-        self.port_types = ['GPIB', 'TCPIP']
-        self.port_properties = {    
-                                    "timeout": 5,
-                                    "EOL": "\r",
-                                }
-        self.port_identifications = ['Keithley Instruments,707B', 'Keithley Instruments Inc., Model 707B']
-        self.switch_settling_time_s = 0.004                   
+        self.port_types = ["GPIB", "TCPIP"]
+        self.port_properties = {
+            "timeout": 5,
+            "EOL": "\r",
+        }
+        self.port_identifications = ["Keithley Instruments,707B", "Keithley Instruments Inc., Model 707B"]
+        self.switch_settling_time_s = 0.004
 
         self.variables = ["Channels"]
         self.units = ["#"]
-        #self.plottype = [True]
-        #self.savetype = [True]
+        # self.plottype = [True]
+        # self.savetype = [True]
 
     def set_GUIparameter(self):
-        
         GUIparameter = {
             "SweepMode": ["Channels"],
             "Switch settling time in ms": 20,  # 4 ms switching time for the 3730 latching electromechanical relays
         }
-        
+
         return GUIparameter
-        
-    def get_GUIparameter(self, parameter = {}):
-        self.device = parameter['Device']
-        self.switch_settling_time_s = float(parameter["Switch settling time in ms"])/1000
+
+    def get_GUIparameter(self, parameter={}):
+        self.device = parameter["Device"]
+        self.switch_settling_time_s = float(parameter["Switch settling time in ms"]) / 1000
         self.sweepmode = parameter["SweepMode"]
-    
+
     def initialize(self):
         # print(self.get_identification())
         self.open_all()
         self.clear_errorqueue()
         self.clear_dataqueue()
         self.reset_channels()
-         
+
     def apply(self):
         self.open_all()
         self.channels = str(self.value)
-        if bool(re.compile(r'[^a-zA-Z0-9\,\;\:\ ]').search(self.channels)):
-            raise ValueError('Channel list contains unallowed characters. '+
-                             'Only digits, commas, semicolons, colons, or spaces are allowed. Some cards use letters.')
-   
-        self.exclusiveclose_channel(self.channels)   
+        if bool(re.compile(r"[^a-zA-Z0-9\,\;\:\ ]").search(self.channels)):
+            raise ValueError(
+                "Channel list contains unallowed characters. "
+                + "Only digits, commas, semicolons, colons, or spaces are allowed. Some cards use letters.",
+            )
+
+        self.exclusiveclose_channel(self.channels)
 
         # print("Closed channels:", self.get_closed_channels())
         # print("Closed channels:", self.check_channels(self.value))
-        
+
     def unconfigure(self):
         self.clear_errorqueue()
-        self.clear_dataqueue()        
+        self.clear_dataqueue()
         self.open_all()
-        # print("Closed channels: ", self.get_closed_channels())       
+        # print("Closed channels: ", self.get_closed_channels())
 
     def reach(self):
         time.sleep(self.switch_settling_time_s)
-        
+
     def call(self):
         return self.value
-        
+
     """ here, convenience functions start """
 
     def get_identification(self):
         self.port.write("*IDN?")
         answer = self.port.read()
         return answer
-    
+
     def get_operation_complete(self):
         self.port.write("*OPC?")
         answer = self.port.read()
         return answer
-    
+
     def open_all(self):
-        """
-        This function opens all relays.
+        """This function opens all relays.
+
         Returns:
             None
         """
         self.port.write('channel.open("allslots")')
 
     def exclusiveclose_channel(self, channels_to_close):
-        """
-        This function closes given channel string.
+        """This function closes given channel string.
+
         Args:
             channels_to_close: string
 
@@ -155,10 +154,10 @@ class Device(EmptyDevice):
             None
         """
         self.port.write('channel.close("%s")' % channels_to_close)
-    
+
     def open_channel(self, channels_to_open):
-        """
-        This function closes given channel string.
+        """This function closes given channel string.
+
         Args:
             channels_to_close: string
 
@@ -171,9 +170,9 @@ class Device(EmptyDevice):
         self.port.write('print(channel.getclose("allslots"))')
         answer = self.port.read()
         return answer
-    
+
     def check_channels(self, channel):
-        self.port.write('print(channel.getstate("%s"))' %channel)
+        self.port.write('print(channel.getstate("%s"))' % channel)
         answer = self.port.read()
         return answer
 
@@ -182,10 +181,10 @@ class Device(EmptyDevice):
 
     def clear_errorqueue(self):
         self.port.write("errorqueue.clear()")
-        
+
     def clear_dataqueue(self):
         self.port.write("dataqueue.clear()")
-        
+
     def beep(self):
         self.port.write("beeper.enable = beeper.ON")
         self.port.write("beeper.beep(2, 2400)")
