@@ -31,7 +31,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -73,6 +72,7 @@ class Device(EmptyDevice):
         self.frequency: str = "100kHz"
 
         self.trigger: str = "One-shot, talk"
+        # This dict contains all available trigger modes, currently only the first one is tested and used.
         self.trigger_modes = {
             "One-shot, talk": "T0,0",
             # "Sweep, talk": "T0,1",
@@ -95,23 +95,24 @@ class Device(EmptyDevice):
             "1 /s": "S4",
         }
 
+        # Measured values
+        self.capacitance: float = 0.0
+        self.conductance: float = 0.0
+        self.measured_dc_bias: float = 0.0
+
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set initial GUI parameter in SweepMe!."""
         return {
             "Address": "15",
             "SweepMode": ["None", "Voltage bias in V"],
-            # "StepMode": ["None", "Frequency in Hz", "Voltage bias in V"],
             "ValueTypeBias": ["Voltage bias in V:"],
             "ValueBias": 0.0,
-            "OperatingMode": ["Parallel", "Series"],
-            # "ValueRMS": 0.02,
             "Frequency": 1E8,
+            "MyCrazyParameter": True,
             "Integration": list(self.reading_rates.keys()),
-            "Average": 1,
+            # "Average": 1,  # Currently unclear if averaging works for non-sweep mode
             "Range": list(self.ranges.keys()),
             "Trigger": list(self.trigger_modes.keys()),
-            # "TriggerDelay": "0.1",
-
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -119,41 +120,21 @@ class Device(EmptyDevice):
         self.port_string = parameter["Port"]
 
         self.sweepmode = parameter["SweepMode"]
-
-        self.stepmode = parameter["StepMode"]
-
         self.bias_type = parameter["ValueTypeBias"]
         self.bias_value = float(parameter["ValueBias"])
 
-        self.value_level_rms = float(parameter["ValueRMS"])
+        frequency = float(parameter["Frequency"])
+        if frequency not in [1E8, 1E9]:
+            msg = "The device only supports frequency of 100kHz or 1MHz."
+            print(msg)
 
-        # TODO: Check for rounding errors
-        frequency = round(float(parameter["Frequency"]))
         self.frequency = "1MHz" if frequency == 1E9 else "100kHz"
 
         self.reading_rate = parameter["Integration"]
-
-        # TODO: Move Exceptions to later
-        self.average = int(parameter["Average"])
-        if self.average < 1:
-            msg = "Average must be greater than 0."
-            raise ValueError(msg)
-
-        elif self.average > 450 and self.reading_rate != "1000 /s":
-            msg = f"Average {self.average} is too high. Maximum is 450."
-            raise ValueError(msg)
-
-        elif self.average > 1350 and self.reading_rate == "1000 /s":
-            msg = f"Average {self.average} is too high. Maximum is 1350."
-            raise ValueError(msg)
+        self.average = 1  # int(parameter["Average"])  # uncomment if averaging is needed for non-sweep mode
 
         self.measure_range = parameter["Range"]
         self.trigger = parameter["Trigger"]
-        self.model = parameter["OperatingMode"]
-        # self.trigger_delay = float(parameter["TriggerDelay"])
-
-        # Only use Resistance and reactance measurement
-        # self.operating_mode = "RjX"
 
     def initialize(self) -> None:
         """Initialize the Keithley 4200-SCS LCRmeter."""
@@ -169,12 +150,26 @@ class Device(EmptyDevice):
 
         # No setting of model via O0 command needed
         # Data is always stored and transmitted in parallel form. Conversion is only done when buffer data is displayed.
-
         self.set_data_format()
 
+        self.verify_average_setting()
         if self.bias_type == "Voltage bias in V":
             self.set_bias_on(True)
             self.set_voltage(self.bias_value, averaging=self.average)
+
+    def verify_average_setting(self) -> None:
+        """Check if average setting is within limits."""
+        if self.average < 1:
+            msg = "Average must be greater than 0."
+            raise ValueError(msg)
+
+        if self.average > 450 and self.reading_rate != "1000 /s":
+            msg = f"Average {self.average} is too high. Maximum is 450 for reading rate < 1000/s."
+            raise ValueError(msg)
+
+        if self.average > 1350 and self.reading_rate == "1000 /s":
+            msg = f"Average {self.average} is too high. Maximum is 1350 for reading rate of 1000/s."
+            raise ValueError(msg)
 
     def unconfigure(self) -> None:
         """Reset device."""
@@ -183,7 +178,7 @@ class Device(EmptyDevice):
     def apply(self) -> None:
         """Apply settings."""
         if self.sweepmode == "Voltage bias in V":
-            self.set_voltage(float(self.value))
+            self.set_voltage(float(self.value), averaging=self.average)
 
     def measure(self) -> None:
         """Retrieve Impedance results from device."""
@@ -195,17 +190,17 @@ class Device(EmptyDevice):
         self.port.write("B0X")
         answer = self.port.read()
 
-        # Answer has type ZTSK 1.23E+0, 4.56E+0, 7.89E+0, values are C, G, V
+        # Answer has format ZTSK 1.23E+0, 4.56E+0, 7.89E+0, values are C, G, V
         answer = answer.split(",")
 
         self.capacitance = float(answer[0][4:])  # Remove prefix of type ZTPK
         self.conductance = float(answer[1])
-        # TODO: Convert to resistance and reactance for post-processing in module
+        self.measured_dc_bias = float(answer[2])
+
+        # TODO: Could convert to resistance and reactance for post-processing in module
         # resistance = 1 / self.conductance
         # frequency = 1E8 if self.frequency == "100kHz" else 1E9
         # reactance = 1 / (2 * np.pi * frequency * self.capacitance)
-
-        self.measured_dc_bias = float(answer[2])  # Voltage
 
     def call(self) -> tuple:
         """Return measured values."""
@@ -221,7 +216,7 @@ class Device(EmptyDevice):
     def set_range(self, measurement_range: str) -> None:
         """Set the measurement range."""
         if self.frequency == "100kHz":
-            # TODO: Add 10x amplifier boolean
+            # TODO: Add 10x amplifier boolean to GUI
             ranges = {
                 "Auto": "R0",
                 "2pF/2uS": "R1",
@@ -278,6 +273,7 @@ class Device(EmptyDevice):
 
         Note: minimum step size to be applied is 5mV.
         TODO: Add list mode, check which parameters are used for which waveform type (manual 3.14)
+        TODO: Verify if averaging is applied correctly in non-sweep mode.
         """
         max_voltage = 20
         if abs(voltage) > max_voltage:
