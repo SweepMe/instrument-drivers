@@ -137,7 +137,7 @@ class Device(EmptyDevice):
         self.trigger = parameter["Trigger"]
 
     def initialize(self) -> None:
-        """Initialize the Keithley 4200-SCS LCRmeter."""
+        """Initialize the Keithley 590 and enable remote control."""
         self.port.write("RENX")  # Start remote mode
 
     def configure(self) -> None:
@@ -174,6 +174,7 @@ class Device(EmptyDevice):
     def unconfigure(self) -> None:
         """Reset device."""
         self.set_bias_on(False)
+        self.set_zero_on(False)
 
     def apply(self) -> None:
         """Apply settings."""
@@ -259,13 +260,12 @@ class Device(EmptyDevice):
         self.port.write(command)
 
     def set_zero_on(self, set_on: bool = True) -> None:
-        """Set the zero."""
-        command = "Z1X" if set_on else "Z0X"
-        self.port.write(command)
+        """Enable/disable zero mode, an automatic baseline correction.
 
-    def set_filter_on(self, filter_on: bool = True) -> None:
-        """Set the filter."""
-        command = "P1X" if filter_on else "P0X"
+        When the command is called with an 'X', the devices does a measurement and stores the reading as baseline and
+        subtracts it from following measurements.
+        """
+        command = "Z1X" if set_on else "Z0X"
         self.port.write(command)
 
     def set_voltage(self, voltage: float, averaging: int = 1) -> None:
@@ -284,16 +284,8 @@ class Device(EmptyDevice):
         command = f"V,,,{voltage},{averaging}X"  # Commas needed to skip start, stop, and step values
         self.port.write(command)
 
-    def set_waveform(self) -> None:
-        """0 DC, 1 Single Staircase, 2 Dual Staircase, 3 Pulse Train, 4 External bias source."""
-        waveform = 1
-        start = 1  # s
-        stop = 10
-        step = 0.1
-        self.port.write(f"W {waveform},{start},{stop},{step}X")
-
     def set_bias_on(self, bias_on: bool = True) -> None:
-        """Turn the voltage on."""
+        """Turn the voltage on/off."""
         command = "N1X" if bias_on else "N0X"
         self.port.write(command)
 
@@ -333,3 +325,20 @@ class Device(EmptyDevice):
         """
         command = "G0X"
         self.port.write(command)
+
+    """ Currently unused functions """
+
+    def set_filter_on(self, filter_on: bool = True) -> None:
+        """Set the filter on/off. Currently not used."""
+        command = "P1X" if filter_on else "P0X"
+        self.port.write(command)
+
+    def set_waveform(self) -> None:
+        """Set the waveform for voltage sweeps. Currently not used."""
+        # Possible modes:
+        # 0 DC, 1 Single Staircase, 2 Dual Staircase, 3 Pulse Train, 4 External bias source
+        waveform = 1
+        start = 1  # s
+        stop = 10
+        step = 0.1
+        self.port.write(f"W {waveform},{start},{stop},{step}X")
