@@ -38,15 +38,16 @@ class Device(EmptyDevice):
     description = """
         <p><strong>Usage:</strong></p>
         <ul>
-        <li>Enter comma separated configurations to close a crosspoint, e.g "A1,A4,B14,C12".</li>
-        <li>Only certain cards have a bank. For cards without a bank, just put 1 for the bank number.</li>
-        <li>Open means the relay is open/disconnected. No current will flow through. Closed means the relay is closed/connected, and current will flow through.</li>
+        <li>Enter comma or semicolon separated configurations to close a crosspoint, e.g "A1,A4,C12" or "C3;D4".</li>
+        <li>Open means the relay is open/disconnected. No current will flow through. Closed means the relay is closed/
+        connected, and current will flow through.</li>
         <li>All crosspoints will be opened before setting a new value.</li>
 
         </ul>
         <p>&nbsp;</p>
         <p><strong>Known issues:</strong></p>
-        <p>In case SweepBox is used as Sweep value, comma-separated configurations can not be used at the moment as the comma is already used by the SweepBox to split the values to be set.</p>
+        <p>In case SweepBox is used as Sweep value, comma-separated configurations can not be used at the moment as the 
+        comma is already used by the SweepBox to split the values to be set.</p>
     """
 
     def __init__(self) -> None:
@@ -56,80 +57,86 @@ class Device(EmptyDevice):
         self.shortname = "Keithley 707A"
 
         self.port_manager = True
-        self.port_types = ["GPIB", "TCPIP"]
+        self.port_types = ["GPIB"]
         self.port_properties = {
             "timeout": 5,
             "EOL": "\r",
         }
-        self.port_identifications = ["Keithley Instruments,707B", "Keithley Instruments Inc., Model 707B"]
-        self.switch_settling_time_s = 0.004
 
         self.variables = []
         self.units = []
         self.plottype = []
         self.savetype = []
 
+        #     Measurement parameters
+        self.sweepmode: str = "Channels"
+
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
             "SweepMode": ["Channels"],
-            "Switch settling time in ms": 20,  # 4 ms switching time for the 3730 latching electromechanical relays
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.switch_settling_time_s = int(parameter["Switch settling time in ms"])
         self.sweepmode = parameter["SweepMode"]
 
     def initialize(self) -> None:
-        """Initialize the device."""
-        # Set Trigger on X
+        """Set Trigger on X."""
         self.port.write("T4X")
 
     def configure(self) -> None:
-        """Set the switch settling time."""
-        self.set_settling_time(self.switch_settling_time_s)
-        self.clear_all_relays()
+        """Clear all crosspoints."""
+        self.open_all_crosspoints()
 
     def apply(self) -> None:
-        """Open/Close the given cross points."""
-        # TODO: Should the complete setup be cleared before applying the new setup?
-        self.clear_all_relays()
+        """Open/Close the given cross points.
 
-        value = str(self.value)
-        # TODO: check if value is semicolon-separated list of multiple channels
-        # TODO: If more than 25 channels are given, split the list and apply in multiple steps
-        self.close_crosspoints_by_string(value)
+        Currently, all crosspoints are opened before setting the new value. Another mode could be implemented where the
+        crosspoints are not reset but rather building on the previous setup.
+        """
+        self.open_all_crosspoints()
 
-        # TODO: Other SweepModes needed?
-        #  Maybe one where crosspoints are not reset but rather building on the previous setup
+        crosspoint_string = self.value.replace(";", ",")
+        self.close_crosspoints_by_string(crosspoint_string)
 
     def unconfigure(self) -> None:
         """Open all channels."""
-        self.clear_all_relays()
+        self.open_all_crosspoints()
 
     def call(self) -> None:
-        """TODO: Return values?"""
-        # U2 command
+        """Could return the current state of the matrix as a string via the U2X command."""
 
     """ Wrapped Functions """
 
-    def clear_all_relays(self) -> None:
+    def open_all_crosspoints(self) -> None:
         """Open all crosspoint relays."""
         self.port.write("P0X")
 
     def close_crosspoints_by_string(self, command: str) -> None:
-        """Enable closing multiple crosspoints at once when given as comma-seperated string like A8,C7,C12."""
-        self.port.write(f"C{command}X")
+        """Enable closing multiple crosspoints at once when given as comma-separated string like A8,C7,C12."""
+        # The device can only handle 25 crosspoints at once
+        max_commands = 25
+        if len(command.split(",")) > max_commands:
+            crosspoints = command.split(",")
 
-    def close_crosspoint(self, row: str, column: str | int) -> None:
-        """Close a crosspoint at a given row and column."""
-        command = f"C{row}{column}X"
-        self.port.write(command)
+            for i in range(0, len(crosspoints), max_commands):
+                bundled_crosspoints = ",".join(crosspoints[i:i+max_commands])
+                self.port.write(f"C{bundled_crosspoints}X")
+
+        else:
+            self.port.write(f"C{command}X")
+
+    """Currently unused functions."""
 
     def open_crosspoint(self, row: str, column: str | int) -> None:
         """Open a crosspoint at a given row and column."""
         command = f"N{row}{column}X"
+        self.port.write(command)
+
+    def close_crosspoint(self, row: str, column: str | int) -> None:
+        """Close a crosspoint at a given row and column."""
+        command = f"C{row}{column}X"
         self.port.write(command)
 
     def set_settling_time(self, settling_time_ms: int) -> None:
