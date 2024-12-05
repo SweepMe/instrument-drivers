@@ -5,7 +5,7 @@
 
 # MIT License
 
-# Copyright (c) 2021, 2024 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -34,158 +34,146 @@
 # * Instrument: Keithley 707B
 
 
-# See sequencer procedure here: https://wiki.sweep-me.net/wiki/Sequencer_procedure
-
-from collections import OrderedDict
-
-from ErrorMessage import error
+import re  # For regex / string validation
+import time
 
 from EmptyDeviceClass import EmptyDevice
-import time
-import re # For regex / string validation
+
 
 class Device(EmptyDevice):
-
     description = """
         <p><strong>Usage:</strong></p>
         <ul>
         <li>Enter comma separated configurations, e.g "1101; 1201; 1301".</li>
         <li>Only certain cards have a bank. For cards without a bank, just put 1 for the bank number.</li>
-        <li>Open means the relay is open/disconnected. No current will flow through. Closed means the relay is closed/connected, and current will flow through.</li>
-        <li>In the user manual (707B-901-01 Rev. B / January 2015) page 152 you can find how Matrix card channel specifiers are for this instrument.</li>
+        <li>Open means the relay is open/disconnected. No current will flow through. Closed means the relay is closed/
+        connected, and current will flow through.</li>
+        <li>In the user manual (707B-901-01 Rev. B / January 2015) page 152 you can find how Matrix card channel 
+        specifiers are for this instrument.</li>
 
         </ul>
         <p>&nbsp;</p>
         <p><strong>Known issues:</strong></p>
-        <p>In case SweepBox is used as Sweep value, comma-separated configurations can not be used at the moment as the comma is already used by the SweepBox to split the values to be set.</p>
+        <p>In case SweepBox is used as Sweep value, comma-separated configurations can not be used at the moment as the 
+        comma is already used by the SweepBox to split the values to be set.</p>
     """
 
-    def __init__(self):
-        
+    def __init__(self) -> None:
+        """Set up device parameters."""
         EmptyDevice.__init__(self)
-        
+
         self.shortname = "Keithley 707B"
-        
+
         self.port_manager = True
-        self.port_types = ['GPIB', 'TCPIP']
-        self.port_properties = {    
-                                    "timeout": 5,
-                                    "EOL": "\r",
-                                }
-        self.port_identifications = ['Keithley Instruments,707B', 'Keithley Instruments Inc., Model 707B']
-        self.switch_settling_time_s = 0.004                   
+        self.port_types = ["GPIB", "TCPIP"]
+        self.port_properties = {
+            "timeout": 5,
+            "EOL": "\r",
+        }
+        self.port_identifications = ["Keithley Instruments,707B", "Keithley Instruments Inc., Model 707B"]
 
         self.variables = ["Channels"]
         self.units = ["#"]
-        #self.plottype = [True]
-        #self.savetype = [True]
+        self.plottype = [False]
+        self.savetype = [True]
 
-    def set_GUIparameter(self):
-        
-        GUIparameter = {
+        # Measurement parameters
+        self.sweepmode: str = "Channels"
+        self.switch_settling_time_s: float = 0.004
+
+    def set_GUIparameter(self) -> dict:  # noqa: N802
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+        return {
             "SweepMode": ["Channels"],
             "Switch settling time in ms": 20,  # 4 ms switching time for the 3730 latching electromechanical relays
         }
-        
-        return GUIparameter
-        
-    def get_GUIparameter(self, parameter = {}):
-        self.device = parameter['Device']
-        self.switch_settling_time_s = float(parameter["Switch settling time in ms"])/1000
+
+    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
+        self.device = parameter["Device"]
+        self.switch_settling_time_s = float(parameter["Switch settling time in ms"]) / 1000
         self.sweepmode = parameter["SweepMode"]
-    
-    def initialize(self):
-        # print(self.get_identification())
+
+    def initialize(self) -> None:
+        """Initialize the device."""
         self.open_all()
         self.clear_errorqueue()
         self.clear_dataqueue()
         self.reset_channels()
-         
-    def apply(self):
-        self.open_all()
-        self.channels = str(self.value)
-        if bool(re.compile(r'[^a-zA-Z0-9\,\;\:\ ]').search(self.channels)):
-            raise ValueError('Channel list contains unallowed characters. '+
-                             'Only digits, commas, semicolons, colons, or spaces are allowed. Some cards use letters.')
-   
-        self.exclusiveclose_channel(self.channels)   
 
-        # print("Closed channels:", self.get_closed_channels())
-        # print("Closed channels:", self.check_channels(self.value))
-        
-    def unconfigure(self):
+    def apply(self) -> None:
+        """Set new relay configuration."""
+        self.open_all()
+
+        channels = str(self.value)
+        if bool(re.compile(r"[^a-zA-Z0-9\,\;\:\ ]").search(channels)):
+            msg = ("Channel list contains unallowed characters. Only digits, commas, semicolons, colons, or spaces are "
+                   "allowed. Some cards use letters.")
+            raise ValueError(msg)
+
+        self.exclusiveclose_channel(channels)
+
+    def unconfigure(self) -> None:
+        """Restore the initial state of the device."""
         self.clear_errorqueue()
-        self.clear_dataqueue()        
+        self.clear_dataqueue()
         self.open_all()
-        # print("Closed channels: ", self.get_closed_channels())       
 
-    def reach(self):
+    def reach(self) -> None:
+        """Wait for the switch to settle. Could be done with OPC command instead."""
         time.sleep(self.switch_settling_time_s)
-        
-    def call(self):
+
+    def call(self) -> str:
+        """Return the applied state of the matrix as string."""
         return self.value
-        
+
     """ here, convenience functions start """
 
-    def get_identification(self):
+    def get_identification(self) -> str:
+        """Get the identification string of the device."""
         self.port.write("*IDN?")
-        answer = self.port.read()
-        return answer
-    
-    def get_operation_complete(self):
+        return self.port.read()
+
+    def get_operation_complete(self) -> str:
+        """Get the operation complete status of the device."""
         self.port.write("*OPC?")
-        answer = self.port.read()
-        return answer
-    
-    def open_all(self):
-        """
-        This function opens all relays.
-        Returns:
-            None
-        """
+        return self.port.read()
+
+    def open_all(self) -> None:
+        """This function opens all relays."""
         self.port.write('channel.open("allslots")')
 
-    def exclusiveclose_channel(self, channels_to_close):
-        """
-        This function closes given channel string.
-        Args:
-            channels_to_close: string
-
-        Returns:
-            None
-        """
+    def exclusiveclose_channel(self, channels_to_close: str) -> None:
+        """This function closes given channel string."""
         self.port.write('channel.close("%s")' % channels_to_close)
-    
-    def open_channel(self, channels_to_open):
-        """
-        This function closes given channel string.
-        Args:
-            channels_to_close: string
 
-        Returns:
-            None
-        """
-        self.port.write('channel.open("%s")' % channels_to_close)
+    def open_channel(self, channels_to_open: str) -> None:
+        """This function opens given channel string."""
+        self.port.write('channel.open("%s")' % channels_to_open)
 
-    def get_closed_channels(self):
+    def get_closed_channels(self) -> str:
+        """Return the closed channels."""
         self.port.write('print(channel.getclose("allslots"))')
-        answer = self.port.read()
-        return answer
-    
-    def check_channels(self, channel):
-        self.port.write('print(channel.getstate("%s"))' %channel)
-        answer = self.port.read()
-        return answer
+        return self.port.read()
 
-    def reset_channels(self):
+    def check_channels(self, channel: str) -> str:
+        """Return the state of the given channel."""
+        self.port.write('print(channel.getstate("%s"))' % channel)
+        return self.port.read()
+
+    def reset_channels(self) -> None:
+        """Reset all channels."""
         self.port.write('channel.reset("allslots")')
 
-    def clear_errorqueue(self):
+    def clear_errorqueue(self) -> None:
+        """Clear the error queue."""
         self.port.write("errorqueue.clear()")
-        
-    def clear_dataqueue(self):
+
+    def clear_dataqueue(self) -> None:
+        """Clear the data queue."""
         self.port.write("dataqueue.clear()")
-        
-    def beep(self):
+
+    def beep(self) -> None:
+        """Beep the device."""
         self.port.write("beeper.enable = beeper.ON")
         self.port.write("beeper.beep(2, 2400)")
