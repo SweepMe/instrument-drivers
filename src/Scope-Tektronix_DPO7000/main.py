@@ -30,18 +30,21 @@
 # SweepMe! driver
 # * Module: Scope
 # * Instrument: Tektronix DPO7000
-
+from __future__ import annotations
 
 import numpy as np
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
+    """Device class for the Tektronix DPO7000 Oscilloscope."""
+
     description = """
         Most of the Scope module features are not yet supported and many properties must be set manually.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize device and measurement parameters."""
         EmptyDevice.__init__(self)
 
         self.shortname = "DPO7000"
@@ -72,8 +75,28 @@ class Device(EmptyDevice):
             "Falling": "NEG",
         }
 
-    def set_GUIparameter(self):
-        GUIparameter = {
+        # Measurement Parameters
+        self.trigger_source: str = "As is"
+        self.trigger_slope: str = "As is"
+        self.trigger_level: float = 0
+
+        self.timerange: str = "Time range in s"
+        self.time_range_value: float = 5e-4
+        self.time_offset_value: float = 0.0
+        self.sampling_rate: int = int(1e7)
+
+        self.average: str = "2"
+
+        # Channel Properties
+        self.channels = []
+        self.channel_names = {}
+        self.channel_ranges = {}
+        self.channel_divs = {}
+        self.channel_offsets = {}
+
+    def set_GUIparameter(self) -> dict:  # noqa: N802
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+        gui_parameter = {
             "SweepMode": ["None"],
             "TriggerSlope": ["As is", "Rising", "Falling"],
             "TriggerSource": ["As is", "CH1", "CH2", "CH3", "CH4", "AUX", "LINE", "None"],
@@ -90,9 +113,9 @@ class Device(EmptyDevice):
         }
 
         for i in range(1, 5):
-            GUIparameter["Channel%i" % i] = True if i == 1 else False
-            GUIparameter["Channel%i_Name" % i] = "CH%i" % i
-            GUIparameter["Channel%i_Range" % i] = [
+            gui_parameter["Channel%i" % i] = i == 1
+            gui_parameter["Channel%i_Name" % i] = "CH%i" % i
+            gui_parameter["Channel%i_Range" % i] = [
                 "1e-2",
                 "2e-2",
                 "5e-2",
@@ -106,20 +129,21 @@ class Device(EmptyDevice):
                 "20",
                 "50",
             ]
-            GUIparameter["Channel%i_Offset" % i] = 0.0
+            gui_parameter["Channel%i_Offset" % i] = 0.0
 
-        return GUIparameter
+        return gui_parameter
 
-    def get_GUIparameter(self, parameter={}):
-        self.triggersource = parameter["TriggerSource"]
+    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
+        self.trigger_source = parameter["TriggerSource"]
         # self.triggercoupling = parameter["TriggerCoupling"]  # not yet implemented
-        self.triggerslope = parameter["TriggerSlope"]
-        self.triggerlevel = parameter["TriggerLevel"]
+        self.trigger_slope = parameter["TriggerSlope"]
+        self.trigger_level = parameter["TriggerLevel"]
 
         self.timerange = parameter["TimeRange"]
-        self.timerangevalue = float(parameter["TimeRangeValue"])
-        self.timeoffsetvalue = parameter["TimeOffsetValue"]
-        self.samplingrate = parameter["SamplingRate"]
+        self.time_range_value = float(parameter["TimeRangeValue"])
+        self.time_offset_value = parameter["TimeOffsetValue"]
+        self.sampling_rate = parameter["SamplingRate"]
 
         self.average = parameter["Average"]
 
@@ -143,12 +167,14 @@ class Device(EmptyDevice):
                 self.channel_divs[i] = self.channel_ranges[i] / 10
                 self.channel_offsets[i] = parameter["Channel%i_Offset" % i]
 
-    def initialize(self):
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
         # This driver does not use Reset yet so that user can do measurements with changing options manually
         # self.port.write("*RST")
 
         if len(self.channels) == 0:
-            raise Exception("Please select at least one channel to be read out")
+            msg = "Please select at least one channel to be read out"
+            raise Exception(msg)
 
         # self.port.write("*IDN?")  # Query device name
         # print("ID Checkup")
@@ -159,74 +185,84 @@ class Device(EmptyDevice):
         self.port.write("DAT:STOP 999999999999")  # ensure that the entire waveform is recorded
         self.port.write("DAT:ENCdg ASCii")  # sets encoding
 
-    def configure(self):
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
         # Acquisition
         self.port.write("ACQuire:MODe AVE")  # use acquisition mode "averaged"
         self.port.write("ACQ:NUMAV %s" % self.average)  # set averages
 
-        # Trigger
-        # set the trigger settings, first the trigger level and then the slope
-        if self.triggersource == "As is" or self.triggersource == "None":
-            pass
-        else:
-            self.port.write("TRIGger:A:EDGE:SOUrce %s" % self.triggersource)
+        self.configure_trigger()
+        self.configure_time_range()
 
-        self.port.write("TRIGger:A:EDGE:SOUrce?")
-        triggerchannel = self.port.read()
-
-        self.port.write("TRIGger:A:LEVel:%s %s" % (triggerchannel, self.triggerlevel))  # set trigger level
-
-        if self.triggerlevel == 0:  # if no specific trigger level desired,
-            self.port.write("TRIGger:A SETLevel;TRIGger:B SETLevel")  # sets the trigger level at 50%
-
-        if self.triggerslope == "As is":  # set trigger slope
-            pass
-        elif self.triggerslope == "Rising":
-            self.port.write("TRIG:A:EDGE:SLOpe RISe;TRIG:B:EDGE:SLOpe RISe")
-        elif self.triggerslope == "Falling":
-            self.port.write("TRIG:A:EDGE:SLOpe FALL;TRIG:B:EDGE:SLOpe FALL")
-
-        # Time range
-
-        # The device can operate in three different horizontal scaling modes. As the sampling rate is a parameter
-        # set by the user, one of these modes will be disregarded. The user can then decide whether to define
-        # the time range/time per division, or the total record length, which will cause the device to switch
-        # between auto and manual mode. This is done by checking if the parameter TimeRange is set to
-        # Record length, and then setting the horizontal scaling accordingly.
-
-        if self.timerange != "Record length":  # Entering into auto mode
-            self.port.write("HORizontal:MODE AUTO")
-            if self.timerange == "Time range in s":
-                self.divisions = self.timerangevalue / 10.0  # only accepts entries for the time scale
-            elif self.timerange == "Time scale in s/div":
-                self.divisions = self.timerangevalue
-
-            self.port.write("HORizontal:MODE:SCAle %s" % self.divisions)  # set time scale
-
-        elif self.timerange == "Record length":
-            # set manual mode + RL
-            self.port.write("HORizontal:MODE:MANual;HORizontal:MODE:RECOrdlength %s" % self.timerangevalue)
-
-        self.port.write("HORizontal:MODE:SAMPLERate %s" % self.samplingrate)  # set sampling rate in 1/s
+        self.port.write("HORizontal:MODE:SAMPLERate %s" % self.sampling_rate)  # set sampling rate in 1/s
 
         # Channel properties
         for i in self.channels:
             self.port.write("SEL:CH%s ON" % i)  # turn on selected channels
             self.port.write("CH%s:SCAle %s; :CH%s:OFFSet %s" % (i, self.channel_divs[i], i, self.channel_offsets[i]))
 
+    def configure_trigger(self) -> None:
+        """Set trigger settings, first trigger level and then slope."""
+        # Trigger
+        # set the trigger settings, first the trigger level and then the slope
+        if self.trigger_source in ("As is", "None"):
+            pass
+        else:
+            self.port.write("TRIGger:A:EDGE:SOUrce %s" % self.trigger_source)
+
+        self.port.write("TRIGger:A:EDGE:SOUrce?")
+        trigger_channel = self.port.read()
+
+        self.port.write("TRIGger:A:LEVel:%s %s" % (trigger_channel, self.trigger_level))  # set trigger level
+
+        if self.trigger_level == 0:  # if no specific trigger level desired,
+            self.port.write("TRIGger:A SETLevel;TRIGger:B SETLevel")  # sets the trigger level at 50%
+
+        if self.trigger_slope == "As is":  # set trigger slope
+            pass
+        elif self.trigger_slope == "Rising":
+            self.port.write("TRIG:A:EDGE:SLOpe RISe;TRIG:B:EDGE:SLOpe RISe")
+        elif self.trigger_slope == "Falling":
+            self.port.write("TRIG:A:EDGE:SLOpe FALL;TRIG:B:EDGE:SLOpe FALL")
+
+    def configure_time_range(self) -> None:
+        """Configure the time range of the device.
+
+        The device can operate in three different horizontal scaling modes. As the sampling rate is a parameter set by
+        the user, one of these modes will be disregarded. The user can then decide whether to define the time range/time
+        per division, or the total record length, which will cause the device to switch between auto and manual mode.
+        This is done by checking if the parameter TimeRange is set to Record length, and then setting the horizontal
+        scaling accordingly.
+        """
+        if self.timerange != "Record length":  # Entering into auto mode
+            self.port.write("HORizontal:MODE AUTO")
+            if self.timerange == "Time range in s":
+                self.divisions = self.time_range_value / 10.0  # only accepts entries for the time scale
+            elif self.timerange == "Time scale in s/div":
+                self.divisions = self.time_range_value
+
+            self.port.write("HORizontal:MODE:SCAle %s" % self.divisions)  # set time scale
+
+        elif self.timerange == "Record length":
+            # set manual mode + RL
+            self.port.write("HORizontal:MODE:MANual;HORizontal:MODE:RECOrdlength %s" % self.time_range_value)
+
     def apply(self):
         pass
 
-    def measure(self):
+    def measure(self) -> None:
+        """Trigger the acquisition of new data."""
         # ready acquisition state
         self.port.write("ACQ:STATE RUN")
 
         if self.average in ["As is", "Not supported"]:
             # avoid an infinite loop
-            raise Exception("Please select a correct number of averages to avoid an unending loop.")
+            msg = "Please select a correct number of averages to avoid an unending loop."
+            raise Exception(msg)
 
+        # Manual averaging
+        # TODO: Handle > 10 averages
         n = 0
-
         while True:  # evaluation only after correct number of averages performed
             n += 1
             self.port.write("ACQ:NUMACQ?")
@@ -237,10 +273,11 @@ class Device(EmptyDevice):
             else:
                 print("Averaging...", n, answer)
             if n > 10:  # Here, the while loop stops after 10 iterations which needs improvement
-                raise Exception(
+                msg = (
                     "Unable to achieve acquisitions for averaging. "
-                    "Please contact support@sweep-me.net if you need an improved driver.",
+                    "Please contact support@sweep-me.net if you need an improved driver."
                 )
+                raise Exception(msg)
 
         self.numbers = np.array(self.channels)  # array of channel numbers
         slot = 0  # run variable for data sorting
@@ -254,29 +291,29 @@ class Device(EmptyDevice):
             # for each data point. The header is queried using WFMO? above, and then split into the relevant entries
             # which are then accessed for the later necessary factors and offsets.
 
-            Preamble = self.port.read().split(";")  # split the header
+            preamble = self.port.read().split(";")  # split the header
             # print(Preamble)
 
             # number of time values + units
-            timesteps, time_unit = int(Preamble[5].split(",")[4].split()[0]), Preamble[-9]
+            timesteps, time_unit = int(preamble[5].split(",")[4].split()[0]), preamble[-9]
 
             if slot == 0:  # only for first measurement
-                record_length = int(Preamble[-11])  # number of data points
+                record_length = int(preamble[-11])  # number of data points
                 channels = len(self.channels)  # number of measured channels
                 self.voltages = np.zeros((record_length, channels))  # generate array of correct size for channels+data
 
             # The next section gathers the horizontal and vertical scaling and offset
             # to later calculate the data values from
             # the digitization levels of the oscilloscope.
-            X_Step, X_Offset, X_Zero = float(Preamble[-8]), float(Preamble[-7]), float(Preamble[-6])
-            Y_Mult, Y_Offset, Y_Zero, Y_unit = (
-                float(Preamble[-4]),
-                float(Preamble[-2]),
-                float(Preamble[-3]),
-                Preamble[-5],
+            x_step, x_offset, x_zero = float(preamble[-8]), float(preamble[-7]), float(preamble[-6])
+            y_mult, y_offset, y_zero, y_unit = (
+                float(preamble[-4]),
+                float(preamble[-2]),
+                float(preamble[-3]),
+                preamble[-5],
             )
 
-            self.Times = (np.arange(timesteps) - X_Zero) * X_Step  # generate time array
+            self.Times = (np.arange(timesteps) - x_zero) * x_step  # generate time array
 
             self.port.write("CURVe?")  # queries the waveform from the oscilloscope
             curve_points = self.port.read().split(",")  # turn str object from query into list
@@ -286,10 +323,11 @@ class Device(EmptyDevice):
                 data.append(int(curve_points[i]))  # sort the values as data
             data = np.array(data)  # convert list to data array
 
-            volt_data = (data - (Y_Offset + Y_Zero)) * Y_Mult  # calculates correct voltages
+            volt_data = (data - (y_offset + y_zero)) * y_mult  # calculates correct voltages
 
             self.voltages[:, slot] = volt_data  # inputs voltage data for channel i into correct column of data array
             slot += 1  # set correct column for next channel
 
-    def call(self):
+    def call(self) -> list[float]:
+        """Return the measured values."""
         return [self.Times] + [self.voltages[:, i] for i in range(self.voltages.shape[1])]
