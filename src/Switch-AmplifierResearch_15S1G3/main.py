@@ -39,12 +39,13 @@ class Device(EmptyDevice):
                     <h3>Amplifier Research 15S1G3</h3>
                     <p>Setup:</p>
                     <ul>
-                    <li>Enable remote control at device</li>
-                    <li>Set the device to the correct mode: Switch 6 in on position (1) enables RS-232, in off positio 
-                    (0) enables IEEE-488.</li>
-                    <li>Set the device to the correct baud rate using Switch 1-5: 76800 (Switch 5 on, all others off).
-                    After changing, the device must be restarted.</li>
-                    <li>Set the device to the correct address using Switch 1-5: 16 (Switch 5 on).</li>
+                    <li>Set the Remote-Local Switch to 'Remote'. The status display should show 'Remote'.</li>
+                    <li>Currently only GPIB communication is supported.</li>
+                    </ul>
+                    <p>Measurement:</p>
+                    <ul>
+                    <li>Amplification in Bit: Input between 0 - 4095</li>
+                    <li>Amplification in Percent: Input between 0 - 100</li>
                     </ul>
                     """
 
@@ -64,20 +65,21 @@ class Device(EmptyDevice):
         self.port_properties = {
             "EOL": "\r\n",
             "timeout": 3,
-            # "baudrate": 76800,
-            # "stopbits": 2,
-            # "delay": 0.02,
         }
+
+        # Measurement Parameters
+        self.mode: str = "Amplification in Bit"
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
-            "SweepMode": ["Amplification"],
+            "SweepMode": ["Amplification in Bit", "Amplification in Percent"],
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.port_string = parameter["Port"]
+        self.mode = parameter["SweepMode"]
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -85,9 +87,6 @@ class Device(EmptyDevice):
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
         self.port.write("R")  # Reset the device
-        # self.port.write("*IDN?")
-        # idn = self.port.read()
-        # print(idn)
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -99,17 +98,14 @@ class Device(EmptyDevice):
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-        # TODO: Add input mode percent or bits
-        self.set_gain(self.value)
+        gain = int(4095 * self.value / 100) if self.mode == "Amplification in Percent" else int(self.value)
+        self.set_gain(gain)
 
     def call(self) -> int:
         """Measure the value of the device."""
         self.port.write("G?")
         ret = self.port.read()
-        gain = int(ret[1:])
-        print(ret, gain)
-
-        return gain
+        return int(ret[1:])
 
     def set_gain(self, gain: int) -> None:
         """Set the gain of the device."""
@@ -118,9 +114,8 @@ class Device(EmptyDevice):
             raise ValueError(msg)
 
         gain = str(int(gain))
-        # Add 0 to the beginning of the string if the length is less than 4
+        # Command string must be of format 0000 - 4095
         while len(gain) < 4:
             gain = "0" + gain
-        print(f"Setting Gain to {gain} from value {self.value}")
 
         self.port.write(f"G{gain}")
