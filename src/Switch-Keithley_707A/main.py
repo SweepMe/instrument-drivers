@@ -63,10 +63,10 @@ class Device(EmptyDevice):
             "EOL": "\r",
         }
 
-        self.variables = []
-        self.units = []
-        self.plottype = []
-        self.savetype = []
+        self.variables = ["Channels"]
+        self.units = ["#"]
+        self.plottype = [False]
+        self.savetype = [True]
 
         #     Measurement parameters
         self.sweepmode: str = "Channels"
@@ -105,7 +105,8 @@ class Device(EmptyDevice):
         self.open_all_crosspoints()
 
     def call(self) -> None:
-        """Could return the current state of the matrix as a string via the U2X command."""
+        """Could return the current state of the matrix as a string via the U2,0X command."""
+        return self.value
 
     """ Wrapped Functions """
 
@@ -142,3 +143,13 @@ class Device(EmptyDevice):
     def set_settling_time(self, settling_time_ms: int) -> None:
         """Set the settling time for the switch."""
         self.port.write(f"S{int(settling_time_ms)}X")
+
+    def get_current_state(self) -> str:
+        """Get the current state of the matrix.
+
+        Need to set the data format first using the G command.
+        Currently not implemented, as the return matrix can be very large and would need to be transformed first.
+        Can be implemented for a measurement mode where the matrix is not reset at every apply command.
+        """
+        self.port.write("U2,0X")
+        return self.port.read()
