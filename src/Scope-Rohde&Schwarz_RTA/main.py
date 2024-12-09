@@ -30,7 +30,6 @@
 # * Instrument: Rohde&Schwarz RTA
 
 import numpy as np
-
 from EmptyDeviceClass import EmptyDevice
 
 
@@ -40,7 +39,6 @@ class Device(EmptyDevice):
     def __init__(self) -> None:
         """Initialize the Device Class."""
         EmptyDevice.__init__(self)
-
 
         self.shortname = "RTA"
 
@@ -152,6 +150,7 @@ class Device(EmptyDevice):
             gui_parameter["Channel%i_Name" % i] = "Ch%i" % i
             gui_parameter["Channel%i_Range" % i] = ["As is", "1"]
             gui_parameter["Channel%i_Offset" % i] = "As is"
+            gui_parameter["Channel%i_Impedance" % i] = ["As is", "50 Ohm"]
             gui_parameter["Channel%i_Coupling" % i] = ["As is", *list(self.couplings.keys())]
 
         return gui_parameter
@@ -191,6 +190,7 @@ class Device(EmptyDevice):
             self.channel_ranges[i] = parameter[f"Channel{i}_Range"]
             self.channel_offsets[i] = parameter[f"Channel{i}_Offset"]
             self.channel_couplings[i] = parameter[f"Channel{i}_Coupling"]
+            self.channel_impedances[i] = parameter[f"Channel{i}_Impedance"]
 
             self.variables.append(self.commands[f"Channel {i}"] + " " + parameter[f"Channel{i}_Name"])
             self.units.append("V")
@@ -200,12 +200,7 @@ class Device(EmptyDevice):
     def initialize(self) -> None:
         """Initialize the device."""
         self.port.write("*CLS")
-
         # do not use "SYST:PRES" as it will destroy all settings which is in conflict with using 'As is'
-
-        self.port.write("*IDN?")
-        instrument_id = self.port.read()
-        print("Scope R&S RTA ID:", instrument_id)
 
         self.port.write(":FORM:DATA %s" % self.data_format)  # set the data format
 
@@ -233,7 +228,7 @@ class Device(EmptyDevice):
     def deinitialize(self) -> None:
         """Deinitialize the device."""
         self.port.write("SYST:KLOC OFF")  # unlocks the local control during measurement
-        self.read_errors()  # this functions reads out the error queue
+        self.read_errors()  # read out the error queue
 
     def configure(self) -> None:
         """Configure the measurement."""
@@ -285,8 +280,10 @@ class Device(EmptyDevice):
                 coupling_value = self.couplings[self.channel_couplings[i]]
                 self.port.write("CHAN%i:COUP %s" % (i, coupling_value))
 
-            # Impedance
-            # if self.channel_impedances[i] != "As is":
+            # Impedance can only be set if an active probe is connected. Otherwise, 1 MOhm is automatically set.
+            if self.channel_impedances[i] == "50 Ohm":
+                # Use the DC coupling for 50 Ohm impedance. Other modes (DCLimit, ACLimit, GND) are untested.
+                self.port.write(f"CHANnel{i}:COUPling DC")
 
             # All channel related properties
             # CHANnel<m>:STATe
@@ -394,8 +391,7 @@ class Device(EmptyDevice):
         self.port.read()
 
     def request_result(self):
-        pass
-        # not used at the moment, but would be nice to split requesting and reading the results
+    """Not used at the moment, but would be nice to split requesting and reading the results."""
 
     def read_result(self) -> None:
         """Read the measurement result."""
@@ -406,7 +402,7 @@ class Device(EmptyDevice):
             answer = self.port.read()
             answer = answer.split(",")
 
-            data = np.array(answer, dtype=np.float)
+            data = np.array(answer, dtype=float)
 
             self.channel_data.append(data)
 
@@ -426,4 +422,9 @@ class Device(EmptyDevice):
             self.port.write("SYST:ERR:CODE:ALL?")
             answer = self.port.read()
             for err in answer.split(","):
-                print("Scope R&S RTE error:", err)
+                print("Scope R&S RTA error:", err)
+
+    def get_identification(self) -> str:
+        """Get the identification of the device."""
+        self.port.write("*IDN?")
+        return self.port.read()
