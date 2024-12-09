@@ -41,7 +41,6 @@ class Device(EmptyDevice):
         """Initialize the Device Class."""
         EmptyDevice.__init__(self)
 
-
         self.shortname = "RTA"
 
         # Communication Parameters
@@ -233,7 +232,7 @@ class Device(EmptyDevice):
     def deinitialize(self) -> None:
         """Deinitialize the device."""
         self.port.write("SYST:KLOC OFF")  # unlocks the local control during measurement
-        self.read_errors()  # this functions reads out the error queue
+        self.read_errors()  # read out the error queue
 
     def configure(self) -> None:
         """Configure the measurement."""
@@ -426,4 +425,4 @@ class Device(EmptyDevice):
             self.port.write("SYST:ERR:CODE:ALL?")
             answer = self.port.read()
             for err in answer.split(","):
-                print("Scope R&S RTE error:", err)
+                print("Scope R&S RTA error:", err)
