@@ -30,7 +30,6 @@
 # * Instrument: Rohde&Schwarz RTA
 
 import numpy as np
-
 from EmptyDeviceClass import EmptyDevice
 
 
@@ -40,7 +39,6 @@ class Device(EmptyDevice):
     def __init__(self) -> None:
         """Initialize the Device Class."""
         EmptyDevice.__init__(self)
-
 
         self.shortname = "RTA"
 
@@ -202,10 +200,7 @@ class Device(EmptyDevice):
         self.port.write("*CLS")
 
         # do not use "SYST:PRES" as it will destroy all settings which is in conflict with using 'As is'
-
-        self.port.write("*IDN?")
-        instrument_id = self.port.read()
-        print("Scope R&S RTA ID:", instrument_id)
+        print("Scope R&S RTA ID:", self.get_identification())
 
         self.port.write(":FORM:DATA %s" % self.data_format)  # set the data format
 
@@ -233,7 +228,7 @@ class Device(EmptyDevice):
     def deinitialize(self) -> None:
         """Deinitialize the device."""
         self.port.write("SYST:KLOC OFF")  # unlocks the local control during measurement
-        self.read_errors()  # this functions reads out the error queue
+        self.read_errors()  # read out the error queue
 
     def configure(self) -> None:
         """Configure the measurement."""
@@ -406,7 +401,7 @@ class Device(EmptyDevice):
             answer = self.port.read()
             answer = answer.split(",")
 
-            data = np.array(answer, dtype=np.float)
+            data = np.array(answer, dtype=float)
 
             self.channel_data.append(data)
 
@@ -426,4 +421,9 @@ class Device(EmptyDevice):
             self.port.write("SYST:ERR:CODE:ALL?")
             answer = self.port.read()
             for err in answer.split(","):
-                print("Scope R&S RTE error:", err)
+                print("Scope R&S RTA error:", err)
+
+    def get_identification(self) -> str:
+        """Get the identification of the device."""
+        self.port.write("*IDN?")
+        return self.port.read()
