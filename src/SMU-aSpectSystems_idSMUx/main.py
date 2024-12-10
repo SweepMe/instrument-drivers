@@ -300,6 +300,8 @@ class Device(EmptyDevice):
         firmware_version = self.smu.get_firmware_version()
         hardware_id = self.smu.get_hardware_id()
 
+        # must be evaluated in 'initialize' as it makes problems in 'get_GUIparameter' if
+        # self.channel_name is not properly defined at the beginning
         self.channel_number = int(self.channel_name[-1])
 
         self.channel = self.smu.smu.channels[self.channel_number]
