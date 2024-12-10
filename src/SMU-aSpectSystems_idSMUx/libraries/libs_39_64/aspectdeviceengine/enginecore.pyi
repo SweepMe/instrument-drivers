@@ -116,6 +116,42 @@ class AD5522ChannelModel(AnalogChannelModel):
     def autorange(self, arg1: bool) -> None:
         ...
     @property
+    def autorange_measurement_count(self) -> int:
+        """
+                 Property that gets/sets the effective number of measurements for autoranging, default is 100
+        
+                 Parameters
+                 ----------
+                 autorange_measurement_count : int
+                      Number of measurements
+        
+                 Returns
+                 -------
+                 int
+                      The number of measurements
+        """
+    @autorange_measurement_count.setter
+    def autorange_measurement_count(self, arg1: int) -> None:
+        ...
+    @property
+    def autorange_post_switch_delay(self) -> int:
+        """
+                  Property that gets/sets the delay after switching the range in autorange mode, default is 0ms
+        
+                 Parameters
+                 ----------
+                 autorange_post_switch_delay : int
+                      Delay in ms
+        
+                 Returns
+                 -------
+                 int
+                      The delay in ms
+        """
+    @autorange_post_switch_delay.setter
+    def autorange_post_switch_delay(self, arg1: int) -> None:
+        ...
+    @property
     def clamp_enabled(self) -> bool:
         """
                  Property that gets/sets the channel clamp enable state
@@ -399,6 +435,42 @@ class AD5560ChannelModel(AnalogChannelModel):
         """
     @autorange.setter
     def autorange(self, arg1: bool) -> None:
+        ...
+    @property
+    def autorange_measurement_count(self) -> int:
+        """
+                 Property that gets/sets the effective number of measurements for autoranging, default is 100
+        
+                 Parameters
+                 ----------
+                 autorange_measurement_count : int
+                      Number of measurements
+        
+                 Returns
+                 -------
+                 int
+                      The number of measurements
+        """
+    @autorange_measurement_count.setter
+    def autorange_measurement_count(self, arg1: int) -> None:
+        ...
+    @property
+    def autorange_post_switch_delay(self) -> int:
+        """
+                  Property that gets/sets the delay after switching the range in autorange mode, default is 0ms
+        
+                 Parameters
+                 ----------
+                 autorange_post_switch_delay : int
+                      Delay in ms
+        
+                 Returns
+                 -------
+                 int
+                      The delay in ms
+        """
+    @autorange_post_switch_delay.setter
+    def autorange_post_switch_delay(self, arg1: int) -> None:
         ...
     @property
     def clamp_enabled(self) -> bool:
@@ -2073,7 +2145,32 @@ class IdSmuDeviceModel:
                  CommandReplyFuture
                       A CommandReplyFuture
         """
+    @typing.overload
     def measure_channels_async(self, sample_count: int, repetitions: int, channel_numbers: list[int], wait_for_trigger: bool) -> CommandReplyFuture:
+        """
+                 Performs a measurement command on the listed channels. The method as "measure_channels", except the GIL scope is released in this version
+        
+                 Parameters
+                 ----------
+                 sample_count : int
+                      The number of samples for the measurement
+              
+                 repetitions : int
+                      The number repetitions of the measurement
+        
+                 channel_numbers : List[int]
+                      The channel numbers of the channels to measure
+        
+                 wait_for_trigger : bool
+                      If true, the measurement is executed with the next hardware trigger signal
+        
+                 Returns
+                 -------
+                 CommandReplyFuture
+                      A CommandReplyFuture 
+        """
+    @typing.overload
+    def measure_channels_async(self, sample_count: int, repetitions: int, channel_numbers: list[str], wait_for_trigger: bool) -> CommandReplyFuture:
         """
                  Performs a measurement command on the listed channels. The method as "measure_channels", except the GIL scope is released in this version
         
@@ -4046,4 +4143,4 @@ def get_git_version() -> int:
              -------
              int
     """
-__version__: str = '0.9.573'
+__version__: str = '0.9.576'
