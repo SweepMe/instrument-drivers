@@ -31,6 +31,7 @@
 
 import enum
 
+import time
 import numpy as np
 from pysweepme import FolderManager as FoMa
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -43,6 +44,7 @@ from aspectdeviceengine.enginecore import (
     ListSweepChannelConfiguration,
     MeasurementMode,
     SmuCurrentRange,
+    CurrentRange,
 )
 
 
@@ -91,13 +93,30 @@ class Device(EmptyDevice):
 
         self.current_ranges = {
             "Auto": "Auto",
-            "5uA": SmuCurrentRange._5uA,
-            "20uA": SmuCurrentRange._20uA,
-            "200uA": SmuCurrentRange._200uA,
-            "2mA": SmuCurrentRange._2mA,
-            "70mA": SmuCurrentRange._70mA,
+            "5 µA - idSMU2": CurrentRange.Range_5uA,
+            "20 µA - idSMU2": CurrentRange.Range_20uA_SMU,
+            "200 µA - idSMU2": CurrentRange.Range_200uA_SMU,
+            "2 mA - id SMU2": CurrentRange.Range_2mA_SMU,
+            "70 mA - idSMU2": CurrentRange.Range_70mA_SMU,
+            "5 µA - DPS": CurrentRange.Range_5uA,
+            "25 µA - DPS":  CurrentRange.Range_25uA_DPS,
+            "250 µA - DPS": CurrentRange.Range_250uA_DPS,
+            "2,5 mA - DPS": CurrentRange.Range_2500uA_DPS,
+            "25 mA - DPS": CurrentRange.Range_25mA_DPS,
+            "500 mA - DPS": CurrentRange.Range_500mA_DPS,
+            "1200 mA - DPS": CurrentRange.Range_1200mA_DPS,
         }
-        self.current_range: SmuCurrentRange = SmuCurrentRange._70mA
+
+        self.current_range: CurrentRange = CurrentRange.Range_70mA_SMU
+
+        # Only 2**n values are allowed
+        self.speed_options = {
+            "Very fast": 2**0,  # 1
+            "Fast": 2**2,  # 4
+            "Medium": 2**4,  # 16
+            "Slow": 2**6,  # 64
+            "Very slow": 2**8,  # 256
+        }
 
         # Output ranges
         self.v_min: float = -11
@@ -131,26 +150,31 @@ class Device(EmptyDevice):
         srunner = IdSmuServiceRunner()
         service = srunner.get_idsmu_service()
 
-        # Get first board to automatically detect connected devices
-        board = service.get_first_board()
-        ports = board.get_all_hardware_ids()
+        service.detect_devices()
 
-        # TODO: Need list of devices such as M1.S1, M1.S2, ... in case multiple boards are connected
+        board_addresses = service.get_board_addresses()
+
+        ports = []
+        for board_address in board_addresses:
+            board = service.get_board(board_address)
+            all_ids = board.get_all_hardware_ids()
+            ports += [x for x in all_ids if "C" in x]
 
         # Always shut down the service runner
         srunner.shutdown()
 
+        # returns list with strings like ["M1.S1.C1", M1.S1.C2", ... ]
         return ports
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set the standard GUI parameters."""
         return {
             "SweepMode": ["Voltage in V", "Current in A"],
-            "Channel": self.channels,
+            # "Channel": self.channels,
             "RouteOut": ["Front"],
-            "Compliance": 0.1,
+            "Compliance": 0.07,
             "Range": list(self.current_ranges),
-            "Average": 1,
+            "Speed": list(self.speed_options),
             "CheckPulse": False,
             # List Mode Parameters
             "ListSweepCheck": False,
@@ -168,14 +192,14 @@ class Device(EmptyDevice):
         self.source_identifier = parameter["SweepMode"]
 
         self.protection = float(parameter["Compliance"])
-        self.board_id = parameter["Port"]
+        self.channel_name = parameter["Port"]
+        self.board_id = self.channel_name[:-3]
         self.identifier: str = "idSMUx_" + self.board_id
 
-        self.channel_number = int(parameter["Channel"])
-        self.channel_name = f"{self.board_id}_CH{self.channel_number}"
-        self.current_range = self.current_ranges[parameter["Range"]]
+        self.channel_number = int(self.channel_name[-1])
 
-        self.average = int(parameter["Average"])
+        self.current_range = self.current_ranges[parameter["Range"]]
+        self.speed = parameter["Speed"]
 
         # List Mode Parameters
         try:
@@ -274,6 +298,10 @@ class Device(EmptyDevice):
             self.device_communication[self.identifier]["Board"] = self.board_model
 
         self.smu = self.board_model.idSmu2Modules[self.board_id]
+
+        firmware_version = self.smu.get_firmware_version()
+        hardware_id = self.smu.get_hardware_id()
+
         self.channel = self.smu.smu.channels[self.channel_number]
         self.channel.name = self.channel_name
 
@@ -308,11 +336,11 @@ class Device(EmptyDevice):
             self.channel.autorange = True
         else:
             self.channel.autorange = False
-            self.channel.current_range = self.current_range
+            self.board_model.set_current_ranges(self.current_range, [self.channel.name])
+            # self.channel.current_range = self.current_range
 
-        # Averaging
-        # TODO: Only 2^n values are allowed. Check if the average is a power of 2
-        self.channel.sample_count = self.average
+        # Speed/integration
+        self.channel.sample_count = self.speed_options[self.speed]
 
         # Get output ranges
         self.v_min, self.v_max, self.i_min, self.i_max = self.channel.output_ranges
@@ -344,15 +372,23 @@ class Device(EmptyDevice):
                 self.list_role = "List receiver"
                 self.device_communication[self.identifier]["List receivers"].append(self.channel_name)
 
-    def set_compliance(self, value: float) -> None:
-        """Set the compliance on the SMU.
+        # handling to read multiple channels in spotwise measurements
+        self.identifier_channel_names = "Active channel names"
+        if self.identifier_channel_names not in self.device_communication[self.identifier]:
+            self.device_communication[self.identifier][self.identifier_channel_names] = []
 
-        The device automatically switches to voltage compliance when current is forced and vice versa.
-        """
-        value = abs(value)
-        self.channel.clamp_high_value = value
-        self.channel.clamp_low_value = -value
-        self.channel.clamp_enabled = True
+        if len(self.device_communication[self.identifier][self.identifier_channel_names]) == 0:
+            self._is_retrieving_data = True
+        else:
+            self._is_retrieving_data = False
+
+        # adding channel name as the SMU gets active
+        self.device_communication[self.identifier][self.identifier_channel_names].append(self.channel.name)
+
+    def unconfigure(self):
+
+        # removing channel name if the SMU is no longer active
+        self.device_communication[self.identifier][self.identifier_channel_names].remove(self.channel.name)
 
     def apply(self) -> None:
         """Set the voltage or current on the SMU."""
@@ -378,8 +414,39 @@ class Device(EmptyDevice):
             # as list receiver or creator, the measurement is started by the list master
             return
 
-        self.i = self.channel.current
-        self.v = self.channel.voltage
+        if self._is_retrieving_data:
+            active_channel_names = self.device_communication[self.identifier][self.identifier_channel_names]
+
+            channel_numbers = [int(x[-1]) for x in active_channel_names]
+
+
+            self.board_model.set_measurement_modes(MeasurementMode.vsense, active_channel_names)
+            self.future_v = self.smu.measure_channels_async(sample_count=self.speed_options[self.speed],
+                                            repetitions=1,
+                                            channel_numbers=channel_numbers,
+                                            wait_for_trigger=False,
+                                            )
+
+            self.board_model.set_measurement_modes(MeasurementMode.isense, active_channel_names)
+            self.future_i = self.smu.measure_channels_async(sample_count=self.speed_options[self.speed],
+                                            repetitions=1,
+                                            channel_numbers=channel_numbers,
+                                            wait_for_trigger=False,
+                                            )
+    def read_result(self):
+
+        if self.list_role in ("List master", "List receiver", "List creator"):
+            return
+
+        if self._is_retrieving_data:
+            result_v = self.future_v.get()
+            result_i = self.future_i.get()
+            self.v = result_v.get_float_values(self.channel_name)[0]
+            self.i = result_i.get_float_values(self.channel_name)[0]
+            self.device_communication[self.identifier]["data"] = [result_v, result_i]
+        else:
+            self.v = self.device_communication[self.identifier]["data"][0].get_float_values(self.channel_name)[0]
+            self.i = self.device_communication[self.identifier]["data"][1].get_float_values(self.channel_name)[0]
 
     def run_list_sweep(self) -> None:
         """Run the list sweep."""
@@ -427,7 +494,7 @@ class Device(EmptyDevice):
             self.device_communication[self.identifier]["List results"][channel] = measurement_results
 
         self.device_communication[self.identifier]["Time stamp"] = self.sweep.timecode
-        self.t = self.sweep.timecode
+        self.t = self.sweep.timecode * 1e-6
 
     def call(self) -> list:
         """Return the voltage and current."""
@@ -458,3 +525,15 @@ class Device(EmptyDevice):
                 return [self.v, self.i, time_stamp]
 
         return [self.v, self.i]
+
+    """further convenience functions """
+
+    def set_compliance(self, value: float) -> None:
+        """Set the compliance on the SMU.
+
+        The device automatically switches to voltage compliance when current is forced and vice versa.
+        """
+        value = abs(value)
+        self.channel.clamp_high_value = value
+        self.channel.clamp_low_value = -value
+        self.channel.clamp_enabled = True
