@@ -112,10 +112,10 @@ class Device(EmptyDevice):
         # Only 2**n values are allowed
         self.speed_options = {
             "Very fast": 2**0,  # 1
-            "Fast": 2**2,  # 4
-            "Medium": 2**4,  # 16
-            "Slow": 2**6,  # 64
-            "Very slow": 2**8,  # 256
+            "Fast": 2**4,  # 16
+            "Medium": 2**8,  # 256
+            "Slow": 2**12,  # 4096
+            "Very slow": 2**16,  # 65536
         }
 
         # Output ranges
@@ -342,6 +342,10 @@ class Device(EmptyDevice):
         # Speed/integration
         self.channel.sample_count = self.speed_options[self.speed]
 
+        # Auto-ranging (can be used to fine-tune auto-ranging)
+        # self.channel.autorange_measurement_count = 100
+        # self.channel.autorange_post_switch_delay = 0
+
         # Get output ranges
         self.v_min, self.v_max, self.i_min, self.i_max = self.channel.output_ranges
 
@@ -417,20 +421,17 @@ class Device(EmptyDevice):
         if self._is_retrieving_data:
             active_channel_names = self.device_communication[self.identifier][self.identifier_channel_names]
 
-            channel_numbers = [int(x[-1]) for x in active_channel_names]
-
-
             self.board_model.set_measurement_modes(MeasurementMode.vsense, active_channel_names)
             self.future_v = self.smu.measure_channels_async(sample_count=self.speed_options[self.speed],
                                             repetitions=1,
-                                            channel_numbers=channel_numbers,
+                                            channel_numbers=active_channel_names,
                                             wait_for_trigger=False,
                                             )
 
             self.board_model.set_measurement_modes(MeasurementMode.isense, active_channel_names)
             self.future_i = self.smu.measure_channels_async(sample_count=self.speed_options[self.speed],
                                             repetitions=1,
-                                            channel_numbers=channel_numbers,
+                                            channel_numbers=active_channel_names,
                                             wait_for_trigger=False,
                                             )
     def read_result(self):
