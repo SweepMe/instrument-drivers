@@ -70,9 +70,9 @@ class Device(EmptyDevice):
         self.savetype = [True, True]
 
         # Communication Parameters
-        self.identifier: str = "idSMUx_"  # TODO: Maybe add the serial number here
-        self.board_id: str = "M1.S1"
-        self.channel_name: str = f"{self.board_id}_CH1"
+        self.identifier: str = ""
+        self.board_id: str = ""
+        self.channel_name: str = f""
         """The channel can be given a custom name, which is used to set the mode and readout data in list mode."""
 
         self.srunner: IdSmuServiceRunner = None
@@ -196,8 +196,6 @@ class Device(EmptyDevice):
         self.board_id = self.channel_name[:-3]
         self.identifier: str = "idSMUx_" + self.board_id
 
-        self.channel_number = int(self.channel_name[-1])
-
         self.current_range = self.current_ranges[parameter["Range"]]
         self.speed = parameter["Speed"]
 
@@ -301,6 +299,8 @@ class Device(EmptyDevice):
 
         firmware_version = self.smu.get_firmware_version()
         hardware_id = self.smu.get_hardware_id()
+
+        self.channel_number = int(self.channel_name[-1])
 
         self.channel = self.smu.smu.channels[self.channel_number]
         self.channel.name = self.channel_name
