@@ -54,7 +54,7 @@ class Device(EmptyDevice):
         self.port_manager = True
         self.port_types = ["GPIB", "TCPIP", "USB"]
         self.port_properties = {
-            "timeout": 2.0,
+            "timeout": 20,  # higher timeout if noise is measured, some mode need more time
         }
 
         # SweepMe return parameters
@@ -97,11 +97,14 @@ class Device(EmptyDevice):
             "Negative overshoot in %": "NOV",
         }
 
+        # Measurement places
+        self.maximum_measurement_places: int = 6
+
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
-        self.maximum_measurement_places = 6
         parameters = {
             "Use preset": False,
+            "Averaging": False,
         }
         # Each measurement place can be configured with a channel and a mode
         for i in range(1, self.maximum_measurement_places + 1):
@@ -115,26 +118,30 @@ class Device(EmptyDevice):
         self.port_string = parameter["Port"]
 
         self.use_preset = bool(parameter["Use preset"])
+        self.use_averaging = bool(parameter["Averaging"])
 
         self.measurement_places = {}
         """Use a dict to have the postion as the place number."""
-        # TODO: Should use dict bc place could be skipped
 
         if self.use_preset:
-            return
+            self.variables = [f"Place {n}" for n in range(1, self.maximum_measurement_places + 1)]
+            self.units = [""] * self.maximum_measurement_places
+            self.plottype = [True] * self.maximum_measurement_places
+            self.savetype = [True] * self.maximum_measurement_places
 
-        for place in range(1, self.maximum_measurement_places + 1):
-            channel = parameter[f"{place}. Place"]
-            mode = parameter[f"{place}. Mode"]
-            if channel != "None" and mode != "None":
-                channel_num = int(channel[-1])
-                self.measurement_places[place] = (channel_num, self.modes[mode])
+        else:
+            for place in range(1, self.maximum_measurement_places + 1):
+                channel = parameter[f"{place}. Place"]
+                mode = parameter[f"{place}. Mode"]
+                if channel != "None" and mode != "None":
+                    channel_num = int(channel[-1])
+                    self.measurement_places[place] = (channel_num, self.modes[mode])
 
-                mode_short = mode.split(" in ")[0]
-                self.variables.append(f"{channel} {mode_short}")
-                self.units.append(mode.split(" in ")[-1])
-                self.plottype.append(True)
-                self.savetype.append(True)
+                    mode_short = mode.split(" in ")[0]
+                    self.variables.append(f"{channel} {mode_short}")
+                    self.units.append(mode.split(" in ")[-1])
+                    self.plottype.append(True)
+                    self.savetype.append(True)
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -148,7 +155,7 @@ class Device(EmptyDevice):
                 self.port.write(f"MEAS{place}:MAIN?")
                 mode = self.port.read()
 
-                print(f"Place: {place}, Channel: {source}, Mode: {mode}")
+                # print(f"Place: {place}, Channel: {source}, Mode: {mode}")
                 if mode != "NONE":
                     self.measurement_places[place] = (source, mode)
 
@@ -173,11 +180,16 @@ class Device(EmptyDevice):
         """Configure the device. This function is called every time the device is used in the sequencer."""
         for place, (channel, mode) in self.measurement_places.items():
             if not self.use_preset:
-                print(f"Slot: {place}, Channel: {channel}, Mode: {mode}")
+                # print(f"Slot: {place}, Channel: {channel}, Mode: {mode}")
                 self.select_source(place, channel)
                 self.select_measurement_mode(place, mode)
 
-            self.reset_statistical_measurement(place)
+        if self.use_averaging or self.use_preset:
+            # Enable statistical evaluation for all places. Place number is irrelevant.
+            self.port.write("MEAS1:STAT:ENAB ON")
+
+            for place in self.measurement_places:
+                self.reset_statistical_measurement(place)
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
@@ -190,8 +202,9 @@ class Device(EmptyDevice):
 
         If all drivers use this function for this purpose, the data acquisition can start almost simultaneously.
         """
-        for place in self.measurement_places:
-            self.reset_statistical_measurement(place)
+        if self.use_averaging or self.use_preset:
+            for place in self.measurement_places:
+                self.reset_statistical_measurement(place)
 
     def call(self) -> list[float]:
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables.
@@ -200,7 +213,15 @@ class Device(EmptyDevice):
         """
         measured_results = []
         for place, (channel, mode) in self.measurement_places.items():
-            measured_results.append(self.get_measurement(place, mode))
+            if self.use_averaging:
+                measured_results.append(self.get_averaged_measurement(place))
+            else:
+                measured_results.append(self.get_measurement(place, mode))
+
+        # TODO: Handle missing values
+        if self.use_preset and len(measured_results) < self.maximum_measurement_places:
+            diff = self.maximum_measurement_places - len(measured_results)
+            measured_results += [None] * diff
 
         return measured_results
 
@@ -208,28 +229,31 @@ class Device(EmptyDevice):
 
     def select_source(self, place: int, channel: int) -> None:
         """Select the source channel for the measurement place."""
-        command = f"MEAS{place}:SOUR CH{channel}"
-        self.port.write(command)
+        self.port.write(f"MEAS{place}:SOUR CH{channel}")
 
     def select_measurement_mode(self, place: int, mode: str) -> None:
         """Select the measurement mode for the measurement place."""
-        command = f"MEAS{place}:MAIN {mode}"
-        self.port.write(command)
+        self.port.write(f"MEAS{place}:MAIN {mode}")
 
         # activate measurement
         self.port.write(f"MEAS{place}:ENAB ON")
 
     def reset_statistical_measurement(self, place: int) -> None:
-        """Deletes the statistical results of the indicated measurement. Starts a new statistical
-evaluation if the acquisition is running."""
-        return
-        command = f"MEAS{place}:STAT:RES"
-        self.port.write(command)
+        """Deletes the statistical results of the indicated measurement.
+
+        Starts a new statistical evaluation if the acquisition is running.
+        """
+        self.port.write(f"MEAS{place}:STAT:RES")
 
     def get_measurement(self, place: int, mode: str) -> float:
         """Read out the measurement value of the given place."""
-        command = f"MEAS{place}:RES:ACT? {mode}"
-        print(f"Retrieving measurement: {command}")
-        self.port.write(command)
+        self.port.write(f"MEAS{place}:RES:ACT? {mode}")
         ret = self.port.read()
-        return float(ret)
+        # 9.91E+37 is the error code
+        return float(ret) if ret != "9.91E+37" else float("nan")
+
+    def get_averaged_measurement(self, place: int) -> float:
+        """Read out the averaged measurement value of the given place."""
+        self.port.write(f"MEAS{place}:RES:AVG?")
+        ret = self.port.read()
+        return float(ret) if ret != "9.91E+37" else float("nan")
