@@ -117,9 +117,6 @@ class Device(EmptyDevice):
             msg = "Gain must be between 0 and 4095."
             raise ValueError(msg)
 
-        gain = str(int(gain))
         # Command string must be of format 0000 - 4095
-        while len(gain) < 4:
-            gain = "0" + gain
-
+        gain = f"{int(gain):04}"
         self.port.write(f"G{gain}")
