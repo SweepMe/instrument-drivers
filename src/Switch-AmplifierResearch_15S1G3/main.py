@@ -28,23 +28,27 @@
 
 # SweepMe! driver
 # * Module: Switch
-# * Instrument: Amplifier Research 15S1G3
+# * Instrument: AR Amplifier
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    """Child class to implement functionalities of a measurement device."""
+    """Switch driver for AR Amplifiers."""
+
     description = """
-                    <h3>Amplifier Research 15S1G3</h3>
+                    <h3>AR Amplifier</h3>
+                    <p>This driver controls Amplifier devices by Amplifier Research (Now Ametek) such as 15S1G3,
+                    30W1000B, and many more that share the same communication protocol.</p>
                     <p>Setup:</p>
                     <ul>
-                    <li>Set the Remote-Local Switch to 'Remote'. The status display should show 'Remote'.</li>
+                    <li>Set the Remote-Local Switch to 'Remote'. The status display should show 'POWER: STDBY REMOTE'.
+                    </li>
                     <li>Currently only GPIB communication is supported.</li>
                     </ul>
                     <p>Measurement:</p>
                     <ul>
-                    <li>Amplification in Bit: Input between 0 - 4095</li>
+                    <li>Amplification (12 Bit): Input between 0 - 4095</li>
                     <li>Amplification in Percent: Input between 0 - 100</li>
                     </ul>
                     """
@@ -68,12 +72,12 @@ class Device(EmptyDevice):
         }
 
         # Measurement Parameters
-        self.mode: str = "Amplification in Bit"
+        self.mode: str = "Amplification (12 Bit)"
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
-            "SweepMode": ["Amplification in Bit", "Amplification in Percent"],
+            "SweepMode": ["Amplification (12 Bit)", "Amplification in Percent"],
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
