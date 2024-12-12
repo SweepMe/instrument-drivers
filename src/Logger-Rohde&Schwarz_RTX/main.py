@@ -28,19 +28,27 @@
 
 # SweepMe! driver
 # * Module: Logger
-# * Instrument: Rohde&Schwarz RTX
+# * Instrument: Rohde&Schwarz RT-Series (RTA, RTB, ...)
+from __future__ import annotations
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    """Logger driver to read out MEAS channels of Rohde&Schwarz Oscilloscope RT(A-X)."""
+    """Logger driver to read out MEAS channels of Rohde&Schwarz Oscilloscope RT-Series (RTA, RTB, ...)."""
     description = """
                     <h3>Rohde & Schwarz Oscilloscope Meas Slots</h3>
+                    <p>This driver reads out the measurement 'places' of Rohde & Schwarz RT Oscilloscopes. Measurement
+                    places are measurements such as as Maximum peak height, periodicity, rise time, and much more. The
+                    measurement places can be definied on the device or via SweepMe! for given mode and source
+                    (e.g. Channel 1-4).
+                    <p>The driver has been tested with RTB2004, but should also work with other RT-Series devices.</p>
+                    </p>
                     <p>Setup:</p>
                     <ul>
-                    <li>Enable remote control at device</li>
-                    <li>If use preset, the defined measurement modes from the devices are used.</li>
+                    <li>Enable remote control at device.</li>
+                    <li>If use preset, the defined measurement places from the devices are used. Note that currently
+                    SweepMe! is unable to display the used measurement mode and units in preset mode.</li>
                     </ul>
                     """
 
@@ -54,7 +62,7 @@ class Device(EmptyDevice):
         self.port_manager = True
         self.port_types = ["GPIB", "TCPIP", "USB"]
         self.port_properties = {
-            "timeout": 20,  # higher timeout if noise is measured, some mode need more time
+            "timeout": 20,  # higher timeout if noise is measured, some modes need more time
         }
 
         # SweepMe return parameters
@@ -97,8 +105,14 @@ class Device(EmptyDevice):
             "Negative overshoot in %": "NOV",
         }
 
-        # Measurement places
-        self.maximum_measurement_places: int = 6
+        # Measurement places - The devices can have up to 6 measurement 'places' with predefined modes and sources to
+        # read out.
+        self.maximum_measurement_places: int = 6  # For RTB2004, might differ for other devices
+        self.measurement_places: dict[int, tuple[int, str]] = {}
+        """A dictionary with the place number as key and a tuple of channel and mode code as value."""
+
+        self.use_preset: bool = False
+        self.use_averaging: bool = False
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
@@ -115,15 +129,13 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.port_string = parameter["Port"]
-
         self.use_preset = bool(parameter["Use preset"])
         self.use_averaging = bool(parameter["Averaging"])
 
-        self.measurement_places = {}
-        """Use a dict to have the postion as the place number."""
+        self.measurement_places = {}  # Reset measurement places
 
         if self.use_preset:
+            # Define placeholder variables, because SweepMe! currently does not allow updating variables during runtime
             self.variables = [f"Place {n}" for n in range(1, self.maximum_measurement_places + 1)]
             self.units = [""] * self.maximum_measurement_places
             self.plottype = [True] * self.maximum_measurement_places
@@ -148,60 +160,31 @@ class Device(EmptyDevice):
         if self.use_preset:
             self.measurement_places = {}
             for place in range(1, self.maximum_measurement_places + 1):
-                command = f"MEAS{place}:SOUR?"
-                self.port.write(command)
-                source = self.port.read()
+                mode = self.get_measurement_mode(place)
 
-                self.port.write(f"MEAS{place}:MAIN?")
-                mode = self.port.read()
-
-                # print(f"Place: {place}, Channel: {source}, Mode: {mode}")
                 if mode != "NONE":
+                    source = self.get_source(place)
                     self.measurement_places[place] = (source, mode)
-
-                    self.variables.append(f"{source} {mode}")
-                    # TODO: Handle units for each mode
-                    self.units.append("")
-                    self.plottype.append(True)
-                    self.savetype.append(True)
-
-    def disconnect(self) -> None:
-        """Disconnect from the device. This function is called only once at the end of the measurement."""
+                    # If SweepMe! allows updating variables during runtime, this could be done here
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
         # do not use "SYST:PRES" as it will destroy all settings which is in conflict with using 'As is'
         self.port.write("*CLS")
 
-    def deinitialize(self) -> None:
-        """Deinitialize the device. This function is called only once at the end of the measurement."""
-
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        for place, (channel, mode) in self.measurement_places.items():
-            if not self.use_preset:
-                # print(f"Slot: {place}, Channel: {channel}, Mode: {mode}")
-                self.select_source(place, channel)
-                self.select_measurement_mode(place, mode)
+        if not self.use_preset:
+            for place, (channel, mode) in self.measurement_places.items():
+                self.set_source(place, channel)
+                self.set_measurement_mode(place, mode)
 
         if self.use_averaging or self.use_preset:
             # Enable statistical evaluation for all places. Place number is irrelevant.
             self.port.write("MEAS1:STAT:ENAB ON")
 
-            for place in self.measurement_places:
-                self.reset_statistical_measurement(place)
-
-    def unconfigure(self) -> None:
-        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
-
-    def apply(self) -> None:
-        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-
     def measure(self) -> None:
-        """'measure' should be used to trigger the acquisition of new data.
-
-        If all drivers use this function for this purpose, the data acquisition can start almost simultaneously.
-        """
+        """Trigger the acquisition of new data."""
         if self.use_averaging or self.use_preset:
             for place in self.measurement_places:
                 self.reset_statistical_measurement(place)
@@ -212,26 +195,36 @@ class Device(EmptyDevice):
         This function can only be omitted if no variables are defined in self.variables.
         """
         measured_results = []
-        for place, (channel, mode) in self.measurement_places.items():
+        for place, (_, mode) in self.measurement_places.items():
             if self.use_averaging:
                 measured_results.append(self.get_averaged_measurement(place))
             else:
                 measured_results.append(self.get_measurement(place, mode))
 
-        # TODO: Handle missing values
+        # If the preset uses less than the maximum number of places, fill the measured results with None as placeholder
         if self.use_preset and len(measured_results) < self.maximum_measurement_places:
             diff = self.maximum_measurement_places - len(measured_results)
-            measured_results += [None] * diff
+            measured_results += [float("nan")] * diff
 
         return measured_results
 
     """ Wrapped Functions """
 
-    def select_source(self, place: int, channel: int) -> None:
+    def set_source(self, place: int, channel: int) -> None:
         """Select the source channel for the measurement place."""
         self.port.write(f"MEAS{place}:SOUR CH{channel}")
 
-    def select_measurement_mode(self, place: int, mode: str) -> None:
+    def get_source(self, place: int) -> str:
+        """Read out the source of the given place."""
+        self.port.write(f"MEAS{place}:SOUR?")
+        return self.port.read()
+
+    def get_measurement_mode(self, place: int) -> str:
+        """Read out the measurement mode of the given place."""
+        self.port.write(f"MEAS{place}:MAIN?")
+        return self.port.read()
+
+    def set_measurement_mode(self, place: int, mode: str) -> None:
         """Select the measurement mode for the measurement place."""
         self.port.write(f"MEAS{place}:MAIN {mode}")
 
