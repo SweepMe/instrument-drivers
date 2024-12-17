@@ -54,7 +54,7 @@ class Device(EmptyDevice):
         
         self.port_manager = True
         self.port_types = ["USB", "GPIB", "TCPIP"]
-        self.port_identifications = ['TEKTRONIX,DPO7354C*'] 
+        # self.port_identifications = ['TEKTRONIX,DPO7354C*']
        
         self.port_properties = {
             "timeout": 5.0,
@@ -72,6 +72,13 @@ class Device(EmptyDevice):
             "Rising": "POS",
             "Falling": "NEG",
         }
+
+        self.trigger_couplings = {
+            "DC": "DC",
+            "HF rejection": "HFR",
+            "LF recection": "LFR",
+            "Noise rejection": "NOISE",
+        }
            
     def set_GUIparameter(self):
 
@@ -79,14 +86,15 @@ class Device(EmptyDevice):
             "SweepMode": ["None"],
 
             "TriggerSlope": ["As is", "Rising", "Falling"],
-            "TriggerSource": ["As is", "CH1", "CH2", "CH3", "CH4", "AUX", "LINE"],
-            # "TriggerCoupling": ["As is", "AC", "DC", "HF", "Auto level"],  # not yet implemented
+            "TriggerSource": ["As is", "CH1", "CH2", "CH3", "CH4", "AUX", "LINE", "None"],
+            "TriggerCoupling": ["As is"] + list(self.trigger_couplings.keys()),
             "TriggerLevel": 0,
             "TimeRange": ["Time range in s", "Time scale in s/div", "Record length"],
             "TimeRangeValue": 5e-4,
             "TimeOffsetValue": 0.0,
+            "SamplingRateType": ["Samples per s"],
             "SamplingRate": int(1e7),
-            # "Acquisition": ["Continuous", "Single"],
+            "Acquisition": ["As is", "Single", "Continuous"],
             # Average of 1 is not yet supported
             "Average": ["As is", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"],
             "VoltageRange": ["Voltage range in V"],
@@ -103,16 +111,19 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter={}):
     
         self.triggersource = parameter["TriggerSource"]
-        # self.triggercoupling = parameter["TriggerCoupling"]  # not yet implemented
+        self.triggercoupling = parameter["TriggerCoupling"]
         self.triggerslope = parameter["TriggerSlope"]
         self.triggerlevel = parameter["TriggerLevel"]
         
         self.timerange = parameter["TimeRange"]
         self.timerangevalue = float(parameter["TimeRangeValue"])
         self.timeoffsetvalue = parameter["TimeOffsetValue"]
+        self.samplingratetype = parameter["SamplingRateType"]
         self.samplingrate = parameter["SamplingRate"]
 
         self.average = parameter["Average"]
+
+        self.acquisition = parameter["Acquisition"]
         
         self.channels = []
         self.channel_names = {}
@@ -148,15 +159,28 @@ class Device(EmptyDevice):
 
         self.port.write("DAT:STOP 999999999999")  # ensure that the entire waveform is recorded
         self.port.write("DAT:ENCdg ASCii")  # sets encoding
+        self.port.write("WFMO:BYT_NR 2")  # set number of bytes
 
     def configure(self):
 
         # Acquisition
-        self.port.write("ACQ:STOPAfter SEQ")  # single sequence measurement
+        if self.acquisition == "As is":
+            state = self.get_acquisition_state()
+            # print("State:", state)
+
+        elif self.acquisition == "Continuous":
+            self.set_acquisition_state("RUN")
+            self.port.write("ACQ:STOPAfter RUNSTop")  # stops when acquisition state is set to STOP
+        elif self.acquisition == "Single":
+            self.set_acquisition_state("STOP")
+            self.port.write("ACQ:STOPAfter SEQuence")  # single sequence measurement
+        else:
+            msg = "Acquisition mode '{self.acquisition}' not supported."
+            raise Exception(msg)
+
+        self.acquisition_type = self.get_acquisition_type()
 
         # Averaging
-
-        self.port.write("ACQuire:MODe AVE")  # use acquisition mode "averaged"
         if self.average == "As is":
             self.port.write("ACQ:NUMAV?")  # set averages
             self.number_averages = int(self.port.read())
@@ -164,20 +188,23 @@ class Device(EmptyDevice):
             self.number_averages = int(self.average)
             self.port.write("ACQ:NUMAV %i" % self.number_averages)  # set averages
 
+            if self.number_averages == 1:
+                self.port.write("ACQuire:MODe SAM")  # use acquisition mode "Sample"
+            else:
+                self.port.write("ACQuire:MODe AVE")  # use acquisition mode "averaged"
+                # self.port.write("ACQuire:MODe HIRES")  # use acquisition mode "averaged"
+
+        self.acquisition_mode = self.get_acquisition_mode()
+
         # Trigger
-        # set the trigger settings, first the trigger level and then the slope
         if self.triggersource == "As is" or self.triggersource == "None":
             pass
         else:
             self.port.write("TRIGger:A:EDGE:SOUrce %s" % self.triggersource)
+            self.port.write("TRIGger:A:LEVel:%s %s" % (self.triggersource, self.triggerlevel))  # set trigger level
         
-        self.port.write("TRIGger:A:EDGE:SOUrce?")
-        triggerchannel = self.port.read() 
-        
-        self.port.write("TRIGger:A:LEVel:%s %s" % (triggerchannel, self.triggerlevel))  # set trigger level
-        
-        if self.triggerlevel == 0:  # if no specific trigger level desired
-            self.port.write("TRIG:A SETLevel;TRIG:B SETLevel")  # sets the trigger level at 50%
+            if self.triggerlevel == 0:  # if no specific trigger level desired
+                self.port.write("TRIG:A SETLevel;TRIG:B SETLevel")  # sets the trigger level at 50%
      
         if self.triggerslope == "As is":  # set trigger slope
             pass
@@ -185,6 +212,10 @@ class Device(EmptyDevice):
             self.port.write("TRIG:A:EDGE:SLOpe RISe;TRIG:B:EDGE:SLOpe RISe")
         elif self.triggerslope == "Falling":
             self.port.write("TRIG:A:EDGE:SLOpe FALL;TRIG:B:EDGE:SLOpe FALL")
+
+        if self.triggercoupling != "As is":
+            coupling = self.trigger_couplings[self.triggercoupling]
+            self.port.write(f"TRIGg:A:EDGE:COUP {coupling}")
 
         # Time range
 
@@ -208,6 +239,7 @@ class Device(EmptyDevice):
             # set manual mode + RL
             self.port.write("HORizontal:MODE:MANual;HORizontal:MODE:RECOrdlength %s" % self.timerangevalue)
 
+        # Sample rate
         self.port.write("HORizontal:MODE:SAMPLERate %s" % self.samplingrate)  # set sampling rate in 1/s
 
         # Channel properties
@@ -217,25 +249,22 @@ class Device(EmptyDevice):
 
     def measure(self):
 
-        # ready acquisition state
-        self.port.write("ACQ:STATE RUN")
+        # start acquisition if needed
+        if self.acquisition_type == "SEQUENCE":
+            self.set_acquisition_state("RUN")
 
-        # if self.average in ["As is", "Not supported"]:
-        #     # avoid an infinite loop
-        #     raise Exception("Please select a correct number of averages to avoid an unending loop.")
-
-        # reset averages here
-
-        if self.number_averages > 1:
+        if self.acquisition_mode != "SAMPLE" and self.acquisition_type == "SEQUENCE":
             while True:  # evaluation only after correct number of averages performed
 
                 if self.is_run_stopped():
                     return False
 
                 average_step = self.get_acquisition_number()
+                acquisition_state = self.get_acquisition_state()
 
-                print("Averaging...", average_step)
-                if average_step >= self.number_averages:
+                print("Averaging...", acquisition_state, average_step)
+
+                if acquisition_state == 0 and average_step >= self.number_averages:
                     break
 
         self.numbers = np.array(self.channels)  # array of channel numbers
@@ -278,6 +307,217 @@ class Device(EmptyDevice):
     def call(self):
         return [self.times] + [self.voltages[:,i] for i in range(self.voltages.shape[1])]
 
+    def process_data(self):
+        # self.port.write("MEASUrement?")
+        # answer = self.port.read()
+        # print("Measurement:", answer)
+
+        self.measure_types = {
+            "Amplitude": "AMPlitude",
+            "Area": "AREa",
+            "Burst": "BURst",
+            "Cycle area": "CARea",
+            "Cycle mean": "CMEan",
+            "Cycle rms": "CRMs",
+            "Delay": "DELay",
+            "Fall": "FALL",
+            "Frequency": "FREQuency",
+            "High": "HIGH",
+            "Histrogram hits": "HITS",
+            "Low": "LOW",
+            "Maximum": "MAXimum",
+            "Mean": "MEAN",
+            "Median": "MEDian",
+            "Minimum": "MINImum",
+            "Negative Duty Cycle": "NDUty",
+            "Negative edge count": "NEDGECount",
+            "Negative overshoot": "NOVershoot",
+            "Negative pulse count": "NPULSECount",
+            "Negative width": "NWIdth",
+            "Peak hits": "PEAKHits",
+            "Peak edge count": "PEDGECount",
+            "Positive duty cycle": "PDUty",
+            "Period": "PERIod",
+            "Phase": "PHAse",
+            "Peak to peak": "PK2Pk",
+            "Positive overshoot": "POVershoot",
+            "Positive pulse count": "PPULSECount",
+            "Positive width": "PWIdth",
+            "Rise time": "RISe",
+            "RMS": "RMS",
+            "1 sigma histogram": "SIGMA1",
+            "2 sigma histogram": "SIGMA2",
+            "3 sigma histogram": "SIGMA3",
+            "Standard deviation": "STDdev",
+            "Waveform count": "WAVEFORMS",
+        }
+
+        # unclear what an immediate measurement is
+        self.port.write("MEASUrement:IMMed?")
+        answer = self.port.read()
+        # print("Measurement immediate:", answer)
+
+        for i in range(1, 9, 1):
+            print()
+
+            self.port.write(f"MEASUrement:MEAS{i}:STATE ON")
+
+            # sets the measurement type to a measurement place
+            measure_type = self.measure_types[list(self.measure_types.keys())[i]]
+            self.port.write(f"MEASUrement:MEAS{i}:TYPe {measure_type}")
+
+            source = (i-1) % 4 + 1
+
+            # sets the channel to a meausurement place
+            self.port.write(f"MEASUrement:MEAS{i}:SOUrce1 CH{source}")  # from channel (used for single channel)
+            self.port.write(f"MEASUrement:MEAS{i}:SOUrce2 CH{source}")  # to channel
+
+            # clears the statistics
+            self.port.write("MEASUrement: STATIstics RESET")
+
+            self.port.write(f"MEASUrement:MEAS{i}?")
+            answer = self.port.read()
+            print("Measurement Meas:", i, answer)
+
+            self.port.write(f"MEASUrement:MEAS{i}:UNIts?")
+            answer = self.port.read()
+            print("Measurement Meas units:", i, answer)
+
+            self.port.write(f"MEASUrement:MEAS{i}:VALue?")
+            answer = self.port.read()
+            print("Measurement Meas value:", i, answer)
+
+            self.port.write(f"MEASUrement:MEAS{i}:MINImum?")
+            answer = self.port.read()
+            print("Measurement Meas minimum:", i, answer)
+
+            self.port.write(f"MEASUrement:MEAS{i}:MAXImum?")
+            answer = self.port.read()
+            print("Measurement Meas maximum:", i, answer)
+
+            self.port.write(f"MEASUrement:MEAS{i}:MEAN?")
+            answer = self.port.read()
+            print("Measurement Meas mean:", i, answer)
+
+            self.port.write(f"MEASUrement:MEAS{i}:STDdev?")
+            answer = self.port.read()
+            print("Measurement Meas standard deviation:", i, answer)
+
+
+
+        """
+        FORWARDS;
+        RISE;
+        RISE;
+        PERIOD;
+        "s";
+        CH1;
+        CH2;
+
+        FORWARDS;
+        FORWARDS;
+        FORWARDS;
+        FORWARDS;
+        FORWARDS;
+        FORWARDS;
+        FORWARDS;
+        FORWARDS;
+
+        RISE;
+        RISE;
+        RISE;
+        RISE;
+        RISE;
+        RISE;
+        RISE;
+        RISE;
+
+        RISE;
+        RISE;
+        RISE;
+        RISE;
+        RISE;
+        RISE;
+        RISE;
+        RISE;
+
+        FREQUENCY;
+        PK2PK;
+        PERIOD;
+        PERIOD;
+        PERIOD;
+        PERIOD;
+        PERIOD;
+        PERIOD;
+
+        "Hz";
+        "V";
+        "s";
+        "s";
+        "s";
+        "s";
+        "s";
+        "s";
+
+        CH1;
+        CH2;
+        CH1;
+        CH2;
+        CH1;
+        CH2;
+        CH1;
+        CH2;
+
+        CH1;
+        CH2;
+        CH1;
+        CH2;
+        CH1;
+        CH2;
+        CH1;
+        CH2;
+
+        1;
+        1;
+        0;
+        0;
+        0;
+        0;
+        0;
+        0;
+
+        AUTO;
+        PERCENT;
+
+        0.0E+0;
+        0.0E+0;
+        0.0E+0;
+        0.0E+0;
+        90.0000;
+        10.0000;
+        50.0000;
+        50.0000;
+
+        OFF;
+        0;
+        0;
+
+        99.0000E+36;
+        99.0000E+36;
+        99.0000E+36;
+        99.0000E+36;
+        99.0000E+36;
+        99.0000E+36;
+        99.0000E+36;
+        99.0000E+36;
+
+        ALL;
+
+        32;
+
+        SCREEN
+        """
+
     """ wrapped communication commands """
 
     def get_identification(self):
@@ -298,3 +538,47 @@ class Device(EmptyDevice):
         self.port.write("ACQ:NUMACQ?")
         answer = self.port.read()
         return int(answer)
+
+    def set_acquisition_state(self, state):
+        """
+        OFF, STOP, or 0 stops acquisitions.
+        ON, RUN, or 1 starts acquisitions.
+        """
+
+        self.port.write(f"ACQ:STATE {state}")
+
+    def get_acquisition_state(self):
+
+        self.port.write("ACQ:STATE?")
+        answer = self.port.read()
+        if answer == "RUN" or answer == "ON":
+            answer = 1
+        if answer == "STOP" or answer == "OFF":
+            answer = 0
+        return int(answer)
+
+    def get_acquisition_type(self):
+        """
+        returns:
+            RUNSTOP: str, Continuous
+            SEQUENCE: str, Single
+        """
+        self.port.write("ACQ:STOPAfter?")  # asks for the Continuous or Single measurement
+        answer = self.port.read()
+        return answer
+
+    def get_acquisition_mode(self):
+        """
+        returns:
+            SAMPLE: str, sample mode
+            AVERAGE: str, average mode
+        """
+
+        self.port.write("ACQuire:MODe?")
+        answer = self.port.read()
+        return answer
+
+    def get_trigger_source(self):
+        self.port.write("TRIGger:A:EDGE:SOUrce?")
+        answer = self.port.read()
+        return answer
