@@ -132,9 +132,7 @@ class Device(EmptyDevice):
 
     def unconfigure(self) -> None:
         """Unconfigure the device."""
-        self.port.write("SYST:ERR:ALL?")
-        ret = self.port.read()
-        print(ret)
+        self.check_errors()
 
         self.set_output_state(False)
         self.lock_user_interface(False)
@@ -161,7 +159,6 @@ class Device(EmptyDevice):
         """Return the measured values."""
         measured_frequency = self.get_frequency()
         measured_power = self.get_power_level()
-        # measured_impedance = self.get_impedance()
         return measured_frequency, measured_power  # , measured_impedance
 
     """Wrapper Functions"""
@@ -171,6 +168,13 @@ class Device(EmptyDevice):
         self.port.write("*TST?")
         ret = self.port.read()
         return ret == "0"
+
+    def check_errors(self) -> None:
+        """Check for errors. Currently no additional error handling implemented."""
+        self.port.write("SYST:ERR:ALL?")
+        ret = self.port.read()
+        if ret != "0,\"No error\"":
+            print(f"Error: {ret}")
 
     def set_frequency(self, frequency: float) -> None:
         """Set the frequency of the RF output."""
