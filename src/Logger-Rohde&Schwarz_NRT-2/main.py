@@ -28,14 +28,9 @@
 
 # SweepMe! driver
 # * Module: Logger
-# * Instrument: Template
+# * Instrument: Rohde & Schwarz NRT-ZXX
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
-# from pysweepme.ErrorMessage import debug, error
-
-# use the next two lines to add the folder of this device class to the PATH variable
-# from FolderManager import addFolderToPATH
-# addFolderToPATH()
 
 
 class Device(EmptyDevice):
@@ -49,20 +44,17 @@ class Device(EmptyDevice):
                     </ul>
                     """
 
-    # Requires VISA library
-    # Set up remote operation on device
-
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters."""
         super().__init__()
 
-        self.shortname = "Template"
+        self.shortname = "NRT-2"
 
         # SweepMe return parameters
-        self.variables = ["Variable1",]
-        self.units = ["Unit1",]
-        self.plottype = [True,]
-        self.savetype = [True,]
+        self.variables = ["Forward", "Reverse"]
+        self.units = ["W", "W"]
+        self.plottype = [True, True]
+        self.savetype = [True, True]
 
         # Communication Parameters
         self.port_types = ["GPIB", "USB", "Ethernet"]
@@ -71,8 +63,6 @@ class Device(EmptyDevice):
         self.port_properties = {
             "baudrate": 38400,  # default
             "EOL": "\n",
-            # "stopbits": 1,
-            # "parity": "N",
         }
 
         # Device parameters
@@ -82,71 +72,81 @@ class Device(EmptyDevice):
             "Relative forward": 3,
             "Relative reverse": 4,
         }
+        """
+        The device has 4 measurement types, and each type has some measurement modes (e.g. calculation/processing of data)
+        """
 
-        self.measurement_mode = [
-            "Forward Average",
-            "Forward CCDF",
-            "Forward PEP",
-            "Forward Absorption",
-            # etc. see manual page 41
-        ]
+        self.sensor: int = 1
+        self.sensors = [1, 2]  # Device supports 2 sensors
 
-        self.channel: int = 1
-        self.channels = {
-            "Forward": 1,
-            "Backward": 2,
+        self.carrier_frequency: float = 0.0
+        self.zeroing: bool = True
+
+        self.video_bandwidths = {
+            "4 kHz": 4e3,
+            "200 kHz": 2e5,
+            "600 kHz": 6e5,  # only Z14
+            "4 MHz": 4e6,  # only Z
         }
+        self.video_bandwidth: float = 2e5
+
+        # Measurement parameters
+        self.forward_result: float = 0.
+        self.reverse_result: float = 0.
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
-            "Measurement type": list(self.measurement_type.keys()),
-            "Channel": list(self.channels.keys()),
+            # "Measurement type": list(self.measurement_type.keys()),
+            "Channel": self.sensors,
+            "Zero offset correction": True,
+            "Carrier frequency in Hz": 0.0,
+            "Video bandwidth": list(self.video_bandwidths.keys()),
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.port_string = parameter["Port"]
-
-        self.channel = self.channels[parameter["Channel"]]
+        self.sensor = parameter["Channel"]
+        self.zeroing = parameter["Zero offset correction"]
+        self.video_bandwidth = self.video_bandwidths[parameter["Video bandwidth"]]
+        self.carrier_frequency = float(parameter["Carrier frequency in Hz"])
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
-        self.port.write('*RST')
-        self.port.write("*IDN?")
-        idn = self.port.read()
-        print(f"Connected to: {idn}")
 
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
-        # self.port.write("*RST")  # reset the device
-        # self.port.write("SPEC")
+        self.port.write("*RST")
+        print(f"Connected sensors: {self.get_sensors()}")
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        # # Trigger
-        # self.port.write("TRIG:NORM")  # normal trigger mode
+        if self.zeroing:
+            self.perform_zeroing()
+
+        if self.carrier_frequency != 0.0:
+            self.port.write(f"SENS{self.sensor}:FREQ {self.carrier_frequency}")
+
+        if self.video_bandwidth != 0.0:
+            self.set_video_bandwidth(self.video_bandwidth)
 
         # Set result format
         # self.port.write("FORM:SREG ASC")  # ASC, BIN, HEX, OCT - see page 130
 
-        # self.port.write("APPL")
-        # ret = self.port.read()
-        # print(ret)
+        # Use single trigger mode
+        # TODO: Check if this is the correct mode or if NORM should be used
+        self.port.write("TRIG:MODE:SING")
 
-        self.port.write("TRIG:MODE:FRE")
+        # Set measurement mode
+        # self.set_measurement_mode()
 
         # self.port.write("SYST:HELP:HEAD?")
         # ret = self.port.read()
         # print(ret)
-
-        # connected sensors
-        # self.port.write("CAT?")
-        # ret = self.port.read()
-        # print(f"Connected sensors: {ret}")
 
         # # set resolution
         # resolution_dbm = {
@@ -170,33 +170,80 @@ class Device(EmptyDevice):
         # Set power unit to dBm
         # self.port.write("UNIT1:POWER DBM")
 
-    def apply(self) -> None:
-        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-
-    def measure(self) -> None:
-        """'measure' should be used to trigger the acquisition of new data."""
-        sensor = 1
-
-        # Select sensorTRIG: MODE
-        #         FREerun
-        #         ::
-        #         TRIGger
-        #         SENSe: DATA?
-
-        # Start the measurement
-        self.port.write("TRIG:IMM")  # page 132
-
-        # Retrieve data
-        self.port.write("SENS1:DATA?")
-        self.result = self.port.read()
-        print(self.result)
-
-        # self.port.write("FTRG")
-        # ret = self.port.read()
-        # print(ret)
-
-    def call(self) -> str:
+    def call(self) -> [float, float]:
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables."""
-        return self.result
+        # Start the measurement
+        self.port.write("TRIG:IMM")  # see documentation page 132
+        return self.get_measurement()
 
     """Wrapper Functions"""
+
+    def perform_zeroing(self) -> None:
+        """Performs zeroing for the sensor that is connected to the selected port."""
+        # See manual page 161
+        self.port.write(f"CAL{self.sensor}:ZERO ONCE")
+        self.port.write("*WAI")  # wait for the zeroing to finish
+
+    def set_video_bandwidth(self, bandwidth: float) -> None:
+        """Set the video bandwidth of the device."""
+        if bandwidth == 4E3:
+            fnum = 0
+        elif bandwidth == 200E3:
+            fnum = 1
+        else:
+            # Full bandwidth, depending on sensor
+            fnum = 2
+
+        self.port.write(f"SENS{self.sensor}:BWID:VID:FNUM {fnum}")
+        self.port.read()
+
+    def get_measurement(self) -> [float, float]:
+        """Get the measurement values from the device."""
+        self.port.write(f"SENS{self.sensor}:DATA?")
+        result = self.port.read()
+        forward_result = float(result.split(",")[0])
+        reverse_result = float(result.split(",")[1])
+        return forward_result, reverse_result
+
+    """ Currently unused functions """
+
+    def set_measurement_mode(self) -> None:
+        """Determines the data that are processed."""
+        abs_forward_types = {
+            "Average power": "POWer:FORWard:AVERage",  # default
+            "Peak power of an amplitude-modulated signal": "POW:FORW:PEP",
+            "Absorbed average power": "POWer:ABSorption:AVERage",
+            "Absorbed peak envelope power (PEP)": "POWer:ABSorption:PEP",
+            "Average power within a burst": "POWer:FORWard:AVERage:BURSt",
+            "Absorbed burst average": "POWer:ABSorption:AVERage:BURSt",
+        }
+        abs_reverse_types = {
+            "Reflected power disabled": "POWer:OFF",
+            "Reflected power": "POWer:REVerse",
+        }
+
+        rel_forward_types = {
+            "Complementary cumulative distribution function": "POWer:FORWard:CCDFunction",
+            "Crest factor": "POWer:CFACtor",
+        }
+
+        rel_reverse_types = {
+            "Standing wave ratio": "POWer: SWRatio",
+            "Return loss": "POWer: RLOSs",
+            "Reflection coefficient": "POWer: RCOefficient",
+            "Reflection ratio": "POWer: RFRatio",
+        }
+
+        forward_channel = 1
+        command = f"CALC1:FEED{forward_channel}: 'POWer:FORWard:AVERage'"
+        self.port.write(command)
+
+    def get_sensors(self) -> str:
+        """Get the connected sensors."""
+        self.port.write("CAT?")
+        return self.port.read()
+
+    def get_identification(self) -> str:
+        """Return the identification string of the device."""
+        self.port.write("*IDN?")
+        return self.port.read()
