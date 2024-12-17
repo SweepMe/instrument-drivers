@@ -75,11 +75,11 @@ class Device(EmptyDevice):
            
     def set_GUIparameter(self):
 
-        GUIparameter = { 
+        gui_parameter = {
             "SweepMode": ["None"],
 
             "TriggerSlope": ["As is", "Rising", "Falling"],
-            "TriggerSource": ["As is", "CH1", "CH2", "CH3", "CH4", "AUX", "LINE", "None"],
+            "TriggerSource": ["As is", "CH1", "CH2", "CH3", "CH4", "AUX", "LINE"],
             # "TriggerCoupling": ["As is", "AC", "DC", "HF", "Auto level"],  # not yet implemented
             "TriggerLevel": 0,
             "TimeRange": ["Time range in s", "Time scale in s/div", "Record length"],
@@ -88,17 +88,17 @@ class Device(EmptyDevice):
             "SamplingRate": int(1e7),
             # "Acquisition": ["Continuous", "Single"],
             # Average of 1 is not yet supported
-            "Average": ["2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"],
+            "Average": ["As is", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"],
             "VoltageRange": ["Voltage range in V"],
         }
                        
         for i in range(1,5):
-            GUIparameter["Channel%i" % i] = True if i == 1 else False
-            GUIparameter["Channel%i_Name" % i] = "CH%i" % i
-            GUIparameter["Channel%i_Range" % i] = ["1e-2", "2e-2", "5e-2", "1e-1", "2e-1", "5e-1", "1", "2", "5", "10", "20", "50"]
-            GUIparameter["Channel%i_Offset" % i] = 0.0
+            gui_parameter["Channel%i" % i] = True if i == 1 else False
+            gui_parameter["Channel%i_Name" % i] = "CH%i" % i
+            gui_parameter["Channel%i_Range" % i] = ["1e-2", "2e-2", "5e-2", "1e-1", "2e-1", "5e-1", "1", "2", "5", "10", "20", "50"]
+            gui_parameter["Channel%i_Offset" % i] = 0.0
                      
-        return GUIparameter
+        return gui_parameter
 
     def get_GUIparameter(self, parameter={}):
     
@@ -138,25 +138,31 @@ class Device(EmptyDevice):
     def initialize(self): 
     
         # This driver does not use Reset yet so that user can do measurements with changing options manually
-        # self.port.write("*RST")
+        # self.reset()
 
         if len(self.channels) == 0:
-            raise Exception("Please select at least one channel to be read out")
-  
-        #self.port.write("*IDN?")  # Query device name
-        #print("ID Checkup")
-        #print(self.port.read())
+            raise Exception("Please select at least one channel to be read out.")
 
-        self.port.write("ACQ:STOPAfter SEQ")  # single sequence measurement
-        
+        identifier = self.get_identification()
+        print("Identifier:", identifier)
+
         self.port.write("DAT:STOP 999999999999")  # ensure that the entire waveform is recorded
         self.port.write("DAT:ENCdg ASCii")  # sets encoding
 
     def configure(self):
 
         # Acquisition
+        self.port.write("ACQ:STOPAfter SEQ")  # single sequence measurement
+
+        # Averaging
+
         self.port.write("ACQuire:MODe AVE")  # use acquisition mode "averaged"
-        self.port.write("ACQ:NUMAV %s" % self.average)   # set averages
+        if self.average == "As is":
+            self.port.write("ACQ:NUMAV?")  # set averages
+            self.number_averages = int(self.port.read())
+        else:
+            self.number_averages = int(self.average)
+            self.port.write("ACQ:NUMAV %i" % self.number_averages)  # set averages
 
         # Trigger
         # set the trigger settings, first the trigger level and then the slope
@@ -170,8 +176,8 @@ class Device(EmptyDevice):
         
         self.port.write("TRIGger:A:LEVel:%s %s" % (triggerchannel, self.triggerlevel))  # set trigger level
         
-        if self.triggerlevel == 0:  # if no specific trigger level desired,
-            self.port.write("TRIGger:A SETLevel;TRIGger:B SETLevel")  # sets the trigger level at 50%
+        if self.triggerlevel == 0:  # if no specific trigger level desired
+            self.port.write("TRIG:A SETLevel;TRIG:B SETLevel")  # sets the trigger level at 50%
      
         if self.triggerslope == "As is":  # set trigger slope
             pass
@@ -207,82 +213,88 @@ class Device(EmptyDevice):
         # Channel properties
         for i in self.channels:
             self.port.write("SEL:CH%s ON" % i)  # turn on selected channels
-            self.port.write("CH%s:SCAle %s; :CH%s:OFFSet %s" % (i, self.channel_divs[i],i, self.channel_offsets[i]))
+            self.port.write("CH%s:SCAle %s; :CH%s:OFFSet %s" % (i, self.channel_divs[i], i, self.channel_offsets[i]))
 
-    def apply(self):
-        pass
-        
     def measure(self):
 
         # ready acquisition state
         self.port.write("ACQ:STATE RUN")
 
-        if self.average in ["As is", "Not supported"]:
-            # avoid an infinite loop
-            raise Exception("Please select a correct number of averages to avoid an unending loop.")
+        # if self.average in ["As is", "Not supported"]:
+        #     # avoid an infinite loop
+        #     raise Exception("Please select a correct number of averages to avoid an unending loop.")
 
-        n = 0
-        
-        while True:  # evaluation only after correct number of averages performed
-            n += 1
-            self.port.write("ACQ:NUMACQ?")
-            answer = self.port.read()
+        # reset averages here
 
-            if int(answer) >= int(self.average):
-                break
-            else:
-                print("Averaging...", n, answer)
-            if n > 10:  # Here, the while loop stops after 10 iterations which needs improvement
-                raise Exception("Unable to achieve acquisitions for averaging. "
-                                "Please contact support@sweep-me.net if you need an improved driver.")
-        
-                
+        if self.number_averages > 1:
+            while True:  # evaluation only after correct number of averages performed
+
+                if self.is_run_stopped():
+                    return False
+
+                average_step = self.get_acquisition_number()
+
+                print("Averaging...", average_step)
+                if average_step >= self.number_averages:
+                    break
+
         self.numbers = np.array(self.channels)  # array of channel numbers
-        slot = 0  # run variable for data sorting
-        self.channel_data = self.numbers.reshape(1,-1) 
-               
-        
+        slot = -1  # run variable for data sorting
+        self.channel_data = self.numbers.reshape(1, -1)
+
         for i in self.channels:
-            self.port.write("DAT:SOU CH%i" % i)  # select channel to be read
-            self.port.write("WFMOutpre?")  # query the preamble for relevant parameters
+            slot += 1  # set correct column for next channel
+            self.port.write(f"DAT:SOU CH{i}")  # select channel to be read
 
             # First step is to obtain all relevant header data and generate an array containing the time value
             # for each data point. The header is queried using WFMO? above, and then split into the relevant entries
             # which are then accessed for the later necessary factors and offsets.
-
-            Preamble = self.port.read().split(";")  # split the header
-            # print(Preamble)
+            self.port.write("WFMOutpre?")  # query the preamble for relevant parameters
+            preamble = self.port.read().split(";")  # split the header
+            # print(preamble)
 
             # number of time values + units
-            timesteps, time_unit = np.int(Preamble[5].split(",")[4].split( )[0]), Preamble[-9]
+            # configuration = preamble[5].replace('\"', "").split(", ")
+            # timesteps = int(configuration[4].split()[0])  # number of points
+            timesteps = int(preamble[6])
 
             if slot == 0:  # only for first measurement
-                record_length = np.int(Preamble[-11])  # number of data points
+                record_length = int(preamble[6])  # number of data points
                 channels = len(self.channels)  # number of measured channels
                 self.voltages = np.zeros((record_length, channels))  # generate array of correct size for channels+data
 
-            # The next section gathers the horizontal and vertical scaling and offset
-            # to later calculate the data values from
-            # the digitization levels of the oscilloscope.
-            X_Step, X_Offset, X_Zero = np.float(Preamble[-8]), np.float(Preamble[-7]), np.float(Preamble[-6]) 
-            Y_Mult, Y_Offset, Y_Zero, Y_unit = np.float(Preamble[-4]), np.float(Preamble[-2]), np.float(Preamble[-3]), Preamble[-5]
+                x_step, x_offset, x_zero = float(preamble[9]), float(preamble[10]), float(preamble[11])
+                self.times = (np.arange(timesteps) - x_zero) * x_step  # generate time array
 
-            self.Times = (np.arange(timesteps) - X_Zero) * X_Step  # generate time array
-            
-            self.port.write("CURVe?")  # queries the waveform from the oscilloscope
-            curve_points = self.port.read().split(",")  # turn str object from query into list
-            
-            data = []
-            for i in np.arange(len(curve_points)):
-                data.append(np.int(curve_points[i]))  # sort the values as data
-            data = np.array(data)  # convert list to data array
+            # The next section gathers vertical scaling and offset to later calculate the data values from
+            # the digitization levels of the oscilloscope
+            y_mult, y_offset, y_zero = float(preamble[13]), float(preamble[14]), float(preamble[15])
 
-            volt_data = (data - (Y_Offset + Y_Zero)) * Y_Mult  # calculates correct voltages
+            data = self.get_waveform()
+            volt_data = (data - (y_offset + y_zero)) * y_mult  # calculates correct voltages
 
             self.voltages[:, slot] = volt_data  # inputs voltage data for channel i into correct column of data array
-            slot += 1  # set correct column for next channel
 
     def call(self):
-        return [self.Times] + [self.voltages[:,i] for i in range(self.voltages.shape[1])]
+        return [self.times] + [self.voltages[:,i] for i in range(self.voltages.shape[1])]
 
-        
+    """ wrapped communication commands """
+
+    def get_identification(self):
+        self.port.write("*IDN?")  # Query device name
+        answer = self.port.read()
+        return answer
+
+    def reset(self):
+        self.port.write("*RST")
+
+    def get_waveform(self):
+        self.port.write("CURVe?")  # queries the waveform from the oscilloscope
+        curve_points = self.port.read().split(",")  # turn str object from query into list
+        data = np.array(list(map(float, curve_points)))
+        return data
+
+    def get_acquisition_number(self):
+        self.port.write("ACQ:NUMACQ?")
+        answer = self.port.read()
+        return int(answer)
