@@ -41,7 +41,8 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
     """Child class to implement functionalities of a measurement device."""
     description = """
-                    <h3>Rohde&Schwarz NRT2 Power Reflection Meter</h3>
+                    <h3>Rohde&Schwarz NRT-ZXX Directional Power Sensor</h3>
+                    <p>Direct control of the sensor via NRT-Z3 adapter.</p>
                     <p>Setup:</p>
                     <ul>
                     <li>Requires VISA library</li>
