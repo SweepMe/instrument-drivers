@@ -56,13 +56,13 @@ class Device(EmptyDevice):
         """Initialize the device class and the instrument parameters."""
         super().__init__()
 
-        self.shortname = "Template"
+        self.shortname = "NRT-2"
 
         # SweepMe return parameters
-        self.variables = ["Variable1",]
-        self.units = ["Unit1",]
-        self.plottype = [True,]
-        self.savetype = [True,]
+        self.variables = ["Forward", "Reverse"]
+        self.units = ["MyUnit", "MyUnit"]
+        self.plottype = [True, True]
+        self.savetype = [True, True]
 
         # Communication Parameters
         self.port_types = ["GPIB", "USB", "Ethernet"]
@@ -97,11 +97,14 @@ class Device(EmptyDevice):
             "Backward": 2,
         }
 
+        self.forward_result: float = 0.
+        self.reverse_result: float = 0.
+
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
             "Measurement type": list(self.measurement_type.keys()),
-            "Channel": list(self.channels.keys()),
+            # "Channel": list(self.channels.keys()),
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -137,7 +140,7 @@ class Device(EmptyDevice):
         # ret = self.port.read()
         # print(ret)
 
-        self.port.write("TRIG:MODE:FRE")
+        self.port.write("TRIG:MODE:SING")
 
         # self.port.write("SYST:HELP:HEAD?")
         # ret = self.port.read()
@@ -188,15 +191,18 @@ class Device(EmptyDevice):
 
         # Retrieve data
         self.port.write("SENS1:DATA?")
-        self.result = self.port.read()
-        print(self.result)
+        result = self.port.read()
+        self.forward_result = float(result.split(",")[0])
+        self.reverse_result = float(result.split(",")[1])
+
+        print(f"Forward: {self.forward_result} {type(self.forward_result)}, Reverse: {self.reverse_result} {type(self.reverse_result)}")
 
         # self.port.write("FTRG")
         # ret = self.port.read()
         # print(ret)
 
-    def call(self) -> str:
+    def call(self) -> [float, float]:
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables."""
-        return self.result
+        return self.forward_result, self.reverse_result
 
     """Wrapper Functions"""
