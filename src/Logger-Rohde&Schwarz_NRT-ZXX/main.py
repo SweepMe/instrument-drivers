@@ -25,33 +25,28 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
 # SweepMe! driver
 # * Module: Logger
-# * Instrument: Template
+# * Instrument: Rohde&Schwarz NRT-ZXX
+
+import time
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
-# from pysweepme.ErrorMessage import debug, error
-
-# use the next two lines to add the folder of this device class to the PATH variable
-# from FolderManager import addFolderToPATH
-# addFolderToPATH()
 
 
 class Device(EmptyDevice):
     """Child class to implement functionalities of a measurement device."""
+
     description = """
-                    <h3>Rohde&Schwarz NRT-ZXX Directional Power Sensor</h3>
+                    <h3>Rohde&Schwarz NRT-Z14/44 Directional Power Sensor</h3>
                     <p>Direct control of the sensor via NRT-Z3 adapter.</p>
-                    <p>Setup:</p>
                     <ul>
-                    <li>Requires VISA library</li>
-                    <li>Set up remote operation on device</li>
+                    <li>Average power mode requires carrier frequency.</li>
+                    <li>Reverse power mode depends on selected forward measurement. Except for the crest factor, peak
+                    envelope power and complementary cumulative distribution function measurements, the command measures
+                    the reverse power corresponding to the selected forward measurement</li>
                     </ul>
                     """
-
-    # Requires VISA library
-    # Set up remote operation on device
 
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters."""
@@ -60,144 +55,203 @@ class Device(EmptyDevice):
         self.shortname = "Template"
 
         # SweepMe return parameters
-        self.variables = ["Variable1",]
-        self.units = ["Unit1",]
-        self.plottype = [True,]
-        self.savetype = [True,]
+        self.variables = ["Forward", "Reverse"]
+        self.units = ["Unit1", "Unit2"]
+        self.plottype = [True, True]
+        self.savetype = [True, True]
 
         # Communication Parameters
-        self.port_types = ["GPIB", "USB", "Ethernet"]
+        self.port_types = ["COM"]
         self.port_manager = True
         self.port_string: str = ""
         self.port_properties = {
             "baudrate": 38400,  # default
             "EOL": "\n",
-            # "stopbits": 1,
-            # "parity": "N",
         }
 
         # Device parameters
-        self.measurement_type = {
-            "Absolute forward": 1,
-            "Absolute reverse": 2,
-            "Relative forward": 3,
-            "Relative reverse": 4,
-        }
+        self.averaging_counts = [1, 2, 4, 8, 16, 32, 64, 128, 256]
+        self.averaging: int = 1
+        self.integration: float = 0.0
+        self.carrier_frequency: float = 0.0
 
-        self.measurement_mode = [
-            "Forward Average",
-            "Forward CCDF",
-            "Forward PEP",
-            "Forward Absorption",
-            # etc. see manual page 41
-        ]
-
-        self.channel: int = 1
-        self.channels = {
-            "Forward": 1,
-            "Backward": 2,
+        self.forward_modes = {
+            "Average power": "AVER",  # needs carrier frequency
+            # "Calculated burst average": "CBAV",  # needs BURS:WIDT and BURS:PER
+            "Complementary cumulative distribution function": "CCDF",  # Needs correct video bandwidth
+            "Crest factor": "CF",  # Needs correct video bandwidth
+            "Measured burst average": "MBAV",  # instead of duty cycle needs video bandwidth
+            # "Peak envelope power": "PEP",  # needs PEP:HOLD and PEP:TIME
         }
+        self.forward_mode: str = "Average power"
+
+        self.reverse_modes = {
+            "Reverse power": "POW",
+            "Reflection coefficient": "RCO",
+            "Return loss": "RL",
+            "Standing wave ratio": "SWR",
+        }
+        self.reverse_mode = "Return loss"
+
+        self.video_bandwidths = {
+            "4 kHz": 4e3,
+            "200 kHz": 2e5,
+            "600 kHz": 6e5,  # only Z14
+            "4 MHz": 4e6,  # only Z
+        }
+        self.video_bandwidth: float = 2e5
+
+        # Measurement results
+        self.forward_result: float = 0.0
+        self.reverse_result: float = 0.0
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
-            "Measurement type": list(self.measurement_type.keys()),
-            "Channel": list(self.channels.keys()),
+            "Forward mode": list(self.forward_modes.keys()),
+            "Reverse mode": list(self.reverse_modes.keys()),
+            "Carrier frequency in Hz": 0.0,
+            "Video bandwidth": list(self.video_bandwidths.keys()),
+            "Averaging": self.averaging_counts,
+            "Integration time in s": 0.0,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.port_string = parameter["Port"]
-
-        self.channel = self.channels[parameter["Channel"]]
+        self.forward_mode = parameter["Forward mode"]
+        self.reverse_mode = parameter["Reverse mode"]
+        self.carrier_frequency = float(parameter["Carrier frequency in Hz"])
+        self.averaging = int(parameter["Averaging"])
+        self.video_bandwidth = self.video_bandwidths[parameter["Video bandwidth"]]
+        self.integration = float(parameter["Integration time in s"])
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
-        self.port.write('*RST')
-        self.port.write("*IDN?")
-        idn = self.port.read()
-        print(f"Connected to: {idn}")
+        # The device starts with max 10s boot mode followed by 7s self test. Afterward it is ready and returns @8E oper
+        for _ in range(30):
+            self.port.write("APPL")
+            ret = self.port.read()
+            if ret.startswith("@8E oper"):
+                break
 
-    def disconnect(self) -> None:
-        """Disconnect from the device. This function is called only once at the end of the measurement."""
-
-    def initialize(self) -> None:
-        """Initialize the device. This function is called only once at the start of the measurement."""
-        # self.port.write("*RST")  # reset the device
-        # self.port.write("SPEC")
+            time.sleep(1)
+        else:
+            msg = "Device not ready"
+            raise Exception(msg)
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        # # Trigger
-        # self.port.write("TRIG:NORM")  # normal trigger mode
+        self.port.write("RESET")  # Reset the device
+        self.port.read()  # always read out after setting
 
-        # Set result format
-        # self.port.write("FORM:SREG ASC")  # ASC, BIN, HEX, OCT - see page 130
+        if self.forward_mode == "Average power":
+            self.set_carrier_frequency(self.carrier_frequency)
 
-        # self.port.write("APPL")
-        # ret = self.port.read()
-        # print(ret)
+        elif self.forward_mode in [
+            "Complementary cumulative distribution function",
+            "Crest factor",
+            "Measured burst average",
+        ]:
+            self.set_video_bandwidth(self.video_bandwidth)
 
-        self.port.write("TRIG:MODE:FRE")
+        # TODO: Check if both are necessary/possible
+        if self.integration > 0:
+            self.set_integration(self.integration)
 
-        # self.port.write("SYST:HELP:HEAD?")
-        # ret = self.port.read()
-        # print(ret)
+        self.set_averaging(self.averaging)
 
-        # connected sensors
-        # self.port.write("CAT?")
-        # ret = self.port.read()
-        # print(f"Connected sensors: {ret}")
+        # Sensor automatically assigns direction
+        self.port.write("DIR AUTO")
+        self.port.read()
 
-        # # set resolution
-        # resolution_dbm = {
-        #     "1": "I",
-        #     "0.1": "OI",
-        #     "0.01": "OOI",
-        #     "0.001": "OOOI",
-        # }
-        # self.port.write("CALC1:RES OOI")  # set resolution to 0.01 dB
-        #
-        # self.port.write("SYST:SPE FAST")  # set speed to fast, measured vaues are no longer displayed
-
-        # Define measurement frequency - 1GHz
-        # self.port.write("SENS1:FREQ 1 GHz")
-
-        # Set 1st and 2nd measurement function to
-        # Forward Power, Reverse Power
-        # meas_type = "POW:FORW:AVER,POW:REV"
-        # self.port.write(f"CALC1:CHAN{self.channel}:FEED{self.channel} '{meas_type}'")  # power forward average
-
-        # Set power unit to dBm
-        # self.port.write("UNIT1:POWER DBM")
-
-    def apply(self) -> None:
-        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        self.set_forward_mode(self.forward_mode)
+        self.set_reverse_mode(self.reverse_mode)
 
     def measure(self) -> None:
         """'measure' should be used to trigger the acquisition of new data."""
-        sensor = 1
+        self.forward_result, self.reverse_result = self.trigger_remote_controlled_measurement()
 
-        # Select sensorTRIG: MODE
-        #         FREerun
-        #         ::
-        #         TRIGger
-        #         SENSe: DATA?
-
-        # Start the measurement
-        self.port.write("TRIG:IMM")  # page 132
-
-        # Retrieve data
-        self.port.write("SENS1:DATA?")
-        self.result = self.port.read()
-        print(self.result)
-
-        # self.port.write("FTRG")
-        # ret = self.port.read()
-        # print(ret)
-
-    def call(self) -> str:
+    def call(self) -> [float, float]:
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables."""
-        return self.result
+        return self.forward_result, self.reverse_result
 
     """Wrapper Functions"""
+
+    def set_carrier_frequency(self, frequency: float) -> None:
+        """Set the carrier frequency of the device."""
+        if float(self.carrier_frequency) > 0:
+            self.port.write(f"FREQ {frequency}")
+            self.port.read()
+
+    def set_averaging(self, count: int) -> None:
+        """Set the averaging count of the device."""
+        if count not in [1, 2, 4, 8, 16, 32, 64, 128, 256]:
+            msg = f"Invalid averaging count {count}. Must be one of [1, 2, 4, 8, 16, 32, 64, 128, 256]."
+            raise ValueError(msg)
+
+        # automatically sets FILT:AVER:MODE to USER
+        self.port.write(f"FILT:AVER:COUN {count}")
+        self.port.read()
+
+    def set_integration(self, time_s: float) -> None:
+        """Set the integration time of the device."""
+        min_time = 5e-3
+        max_time = 0.1111
+        if time_s < min_time or time_s > max_time:
+            msg = f"Invalid integration time {time_s}. Must be in range [{min_time}, {max_time}]."
+            raise ValueError(msg)
+
+        # automatically sets FILT:INT:MODE to TIME
+        self.port.write(f"FILT:INT:TIME {time_s}")
+        self.port.read()
+
+    def trigger_remote_controlled_measurement(self) -> [float, float]:
+        """Start new measurement and read out result. If averaging is enabled it is used."""
+        self.port.write("RTRG")
+        ret = self.port.read()
+        split_answer = ret.split(" ")
+
+        forward_result = float(split_answer[1])
+        reverse_result = float(split_answer[2])
+        return forward_result, reverse_result
+
+    def set_forward_mode(self, mode: str) -> None:
+        """Set the forward measurement mode of the device."""
+        self.port.write(f"FOR:{self.forward_modes[mode]}")
+        self.port.read()
+
+    def set_reverse_mode(self, mode: str) -> None:
+        """Set the reverse measurement mode of the device."""
+        self.port.write(f"REV:{self.forward_modes[mode]}")
+        self.port.read()
+
+    def set_video_bandwidth(self, bandwidth: float) -> None:
+        """Set the video bandwidth of the device."""
+        self.port.write(f"FILT:VID {bandwidth}")
+        self.port.read()
+
+    """ Currently not used functions """
+
+    def get_idn(self) -> str:
+        """Get the identification string of the device."""
+        self.port.write("ID")
+        return self.port.read()
+
+    def clear_buffer(self) -> None:
+        """Clear the buffer of the device."""
+        self.port.write("PURGE")
+        self.port.read()
+
+    def start_continuous_measurement(self) -> [float, float]:
+        """Start the continues measurement and read out the last result.
+
+        Starts a continuous measurement at a high speed controlled by an internal timer, without any reference to an
+        external trigger. Reads the last result. No effect of set averaging.
+        """
+        self.port.write("FTRG")
+        ret = self.port.read()
+        split_answer = ret.split(" ")
+
+        forward_result = float(split_answer[1])
+        reverse_result = float(split_answer[2])
+        return forward_result, reverse_result
