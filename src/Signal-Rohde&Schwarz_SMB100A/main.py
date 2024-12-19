@@ -24,11 +24,12 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-import numpy as np
+
 # SweepMe! driver
 # * Module: Signal
 # * Instrument: Rohde&Schwarz SMB100A
 
+import numpy as np
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -60,7 +61,7 @@ class Device(EmptyDevice):
         self.amplitude: float = 0.1
 
         self.delay_mode: str = "Phase in deg"  # or "Delay in s"
-        self.delay: float = 0.
+        self.delay: float = 0.0
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set the standard GUI parameters."""
@@ -71,16 +72,9 @@ class Device(EmptyDevice):
             "PeriodFrequencyValue": 2e-6,
             "AmplitudeHiLevel": ["Amplitude in V", "High level in V"],
             "AmplitudeHiLevelValue": 1.0,
-            # "OffsetLoLevel": ["Low level in V"],  # "Offset in V"],
-            # "OffsetLoLevelValue": 0.0,
             "DelayPhase": ["Delay in s", "Phase in deg"],
             "DelayPhaseValue": 0.0,
-            # "DutyCyclePulseWidth": ["Pulse width in s"],  # "Duty cycle in %",],
-            # "DutyCyclePulseWidthValue": 1e-6,
-            # "RiseTime": 100e-9,
-            # "FallTime": 100e-9,
             "Impedance": ["50"],
-            # "OperationMode": ["Range 20 V (slow)", "Range 5 V (fast)"]
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -102,12 +96,6 @@ class Device(EmptyDevice):
         """Connect to the device."""
         self.port.write("*RST")
         # self.port.write("*CLS")
-        self.port.write("*IDN?")
-        ret = self.port.read()
-        print(f"Connected to: {ret}")
-
-    def initialize(self) -> None:
-        """Initialize the device."""
 
     def configure(self) -> None:
         """Configure the device."""
@@ -118,6 +106,7 @@ class Device(EmptyDevice):
 
         self.set_power_level(self.amplitude)
 
+        # Set frequency
         self.set_frequency_mode("CW")
 
         if self.frequency_input == "Period in s":  # else it is "Frequency in Hz"
@@ -142,18 +131,10 @@ class Device(EmptyDevice):
         self.value = float(self.value)
 
         if self.sweep_mode.startswith("Frequency"):
-            if self.value < 100e3 or self.value > 12.75e6:
-                msg = "Frequency out of range. Choose between 100 kHz and 12.75 MHz."
-                raise ValueError(msg)
             self.set_frequency(self.value)
-        elif self.sweep_mode.startswith("Power"):
-            if self.value < 0 or self.value > 7.071:
-                msg = "Power out of range. Choose between 0 and 7.071 V."
-                raise ValueError(msg)
-            self.set_power_level(self.value)
 
-    def measure(self) -> None:
-        """Retrieve measured values."""
+        elif self.sweep_mode.startswith("Power"):
+            self.set_power_level(self.value)
 
     def call(self) -> tuple:
         """Return the measured values."""
@@ -163,21 +144,14 @@ class Device(EmptyDevice):
 
     """Wrapper Functions"""
 
-    def run_self_test(self) -> bool:
-        """Run the self test."""
-        self.port.write("*TST?")
-        ret = self.port.read()
-        return ret == "0"
-
-    def check_errors(self) -> None:
-        """Check for errors. Currently no additional error handling implemented."""
-        self.port.write("SYST:ERR:ALL?")
-        ret = self.port.read()
-        if ret != "0,\"No error\"":
-            print(f"Error: {ret}")
-
     def set_frequency(self, frequency: float) -> None:
         """Set the frequency of the RF output."""
+        min_frequency = 100e3
+        max_frequency = 12.75e6
+        if self.value < min_frequency or self.value > max_frequency:
+            msg = f"Frequency {frequency} out of range. Choose between {min_frequency} and {max_frequency}."
+            raise ValueError(msg)
+
         self.port.write(f"SOUR:FREQ {frequency}")
 
     def get_frequency(self) -> float:
@@ -201,9 +175,15 @@ class Device(EmptyDevice):
 
     def set_power_level(self, power_level: float) -> None:
         """Set the power level of the RF output."""
+        max_power = 7.071
+        if self.value < 0 or self.value > max_power:
+            msg = f"Power {power_level} out of range. Choose between 0 and {max_power} V."
+            raise ValueError(msg)
+
         if self.amplitude_mode == "Amplitude in V":
             # This one is without offset
             self.port.write(f"SOUR:POW:POW {power_level}")
+
         elif self.amplitude_mode == "High level in V":
             # this one is with offset
             # TODO: See SOURce:POWer Subsystem
@@ -220,16 +200,6 @@ class Device(EmptyDevice):
 
         return float(self.port.read())
 
-    def set_rf_mode(self, mode: str = "normal") -> None:
-        """Low distortion, low noise, or normal."""
-        # TODO
-        level_modes = {
-            "Normal": "NORM",
-            "Low noise": "LOWN",
-            "Low distortion": "LOWD",
-        }
-        self.port.write(f"SOURC:POW:LMODE {level_modes[mode]}")
-
     def set_power_mode(self, mode: str) -> None:
         """Set the power mode of the RF output to either 'CW' or 'Sweep'."""
         state = "SWE" if mode == "SWE" else "CW"
@@ -242,27 +212,29 @@ class Device(EmptyDevice):
             raise ValueError(msg)
         self.port.write(f"UNIT:POW {unit}")
 
-    def get_power_unit(self) -> str:
-        """Get the power unit of the RF output."""
-        self.port.write("UNIT:POW?")
-        return self.port.read()
-
     def set_output_state(self, set_on: bool) -> None:
         """Set the RF output state."""
         state = "ON" if set_on else "OFF"
         self.port.write(f":OUTP {state}")
 
-    def get_output_state(self) -> bool:
-        """Get the RF output state."""
-        self.port.write("OUTP?")
-        state = self.port.read()
-        return state == 1
+    def check_errors(self) -> None:
+        """Check for errors. Currently, no additional error handling is implemented."""
+        self.port.write("SYST:ERR:ALL?")
+        ret = self.port.read()
+        if ret != '0,"No error"':
+            print(f"Error: {ret}")
+
+    def lock_user_interface(self, is_locked: bool) -> None:
+        """Lock or unlock manual control through the keyboard of the device."""
+        state = "DONL" if is_locked else "ENAB"
+        self.port.write(f"SYST:ULOC {state}")
+
+    """ Currently not implemented functions """
 
     def get_impedance(self) -> float:
         """Get the impedance of the RF output."""
         self.port.write(":OUTP:IMP?")
         answer = self.port.read()
-        # TODO: Check if this is correct and/or needed
         if answer == "G50":
             impedance = 50
         elif answer == "G1K":
@@ -271,10 +243,42 @@ class Device(EmptyDevice):
             impedance = -1
         return impedance
 
-    def lock_user_interface(self, is_locked: bool) -> None:
-        """Lock or unlock manual control through the keyboard of the device."""
-        state = "DONL" if is_locked else "ENAB"
-        self.port.write(f"SYST:ULOC {state}")
+    def set_rf_mode(self, mode: str = "normal") -> None:
+        """Low distortion, low noise, or normal."""
+        level_modes = {
+            "Normal": "NORM",
+            "Low noise": "LOWN",
+            "Low distortion": "LOWD",
+        }
+        self.port.write(f"SOURC:POW:LMODE {level_modes[mode]}")
+
+    def run_self_test(self) -> bool:
+        """Run the self test."""
+        self.port.write("*TST?")
+        ret = self.port.read()
+        return ret == "0"
+
+    def get_power_unit(self) -> str:
+        """Get the power unit of the RF output."""
+        self.port.write("UNIT:POW?")
+        return self.port.read()
+
+    def set_data_format(self) -> None:
+        """Set the format of the return data from the device."""
+        command = "FORM ASC"  # for ASCII
+        command = "FORM PACK"  # for packed binary
+        self.port.write(command)
+
+    def check_idn(self) -> str:
+        """Check the identification of the device."""
+        self.port.write("*IDN?")
+        return self.port.read()
+
+    def get_output_state(self) -> bool:
+        """Get the RF output state."""
+        self.port.write("OUTP?")
+        state = self.port.read()
+        return state == 1
 
     def get_manual_control(self) -> bool:
         """Get the manual control state. Return True if locked, False if unlocked."""
@@ -289,23 +293,3 @@ class Device(EmptyDevice):
     def shutdown_device(self) -> None:
         """Shutdown the device."""
         self.port.write(":SYST:SHUT")
-
-    """ Check if needed. """
-
-    def set_data_format(self) -> None:
-        """Set the format of the return data from the device."""
-        command = "FORM ASC"  # for ASCII
-        command = "FORM PACK"  # for packed binary
-        self.port.write(command)
-
-    """
-    SOURce Subsystem for configuring digital and analog signals.
-
-    Subsystems: AM, CORR, FM, FREQU, INP, LIST, MOD, PGEN, PHAS, PM, POW, PULM, ROSC, STER, SWE
-
-    Set RF limit:SOUR:POW:LIM:AMPL
-    """
-    # Probably need AM functions
-
-
-
