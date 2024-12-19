@@ -115,7 +115,7 @@ class Device(EmptyDevice):
 
         if len(ports) == 0:
             self.message_Box(
-                "No spectrometer found! Please make sure it is connected and the OceanDirect API is installed.")
+                "No spectrometer found! Please make sure a device is connected and Ocean View is closed.")
 
         # returns a list of ports
         return ports
@@ -159,11 +159,16 @@ class Device(EmptyDevice):
         self.calibration = parameter.get("Calibration", "")
         self.trigger_mode = parameter["Trigger"]
         self.trigger_delay = parameter.get("TriggerDelay", 0.0)
-        
+
+        self.units = ["nm", "", "s"]
+
+        # code can be enabled when calibration files are supported
+        """
         if self.calibration == "" or self.calibration == "None":
             self.units = ["nm", "", "s"]
         else:
             self.units = ["nm", "µJ", "s"]  # TODO: check unit intensity according to calibration
+        """
 
     def connect(self):
 
@@ -265,11 +270,11 @@ class Device(EmptyDevice):
     def check_oceandirect_api(self):
 
         if not api_path_defined:
-            msg = "Path to OceanDirect API not found. Please install OceanDirect API before using the driver."
+            msg = "Path to OceanDirect SDK not found. Please install OceanDirect before using the driver."
             raise Exception(msg)
 
         if not od_api_imported:
-            msg = "Unable to import OceanDirect API. Please install OceanDirect API before using the driver."
+            msg = "Unable to import OceanDirect API. Please install the OceanDirect SDK before using the driver."
             raise Exception(msg)
 
     def get_wavelengths(self):
