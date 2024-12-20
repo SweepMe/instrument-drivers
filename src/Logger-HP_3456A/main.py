@@ -91,7 +91,7 @@ class Device(EmptyDevice):
             # "O.C. 4W-Res. with Auto-Zero": "Ohm",
         }
         # number of displayed digits as dictionary
-        self.resolutions = {
+        self.ranges = {
             "Auto": "R1",
             "100 mV or 0.1 kOhm": "R2",
             "1 V or 1 kOhm": "R3",
@@ -104,7 +104,7 @@ class Device(EmptyDevice):
         }
 
         # measuring range as dictionary
-        self.ranges = {
+        self.resolutions = {
             "6 Digits (Standard)": "6STG",
             "5 Digits": "5STG",
             "4 Digits": "4STG",
