@@ -56,7 +56,7 @@ class Device(EmptyDevice):
 
         # SweepMe return parameters
         self.variables = ["Forward", "Reverse"]
-        self.units = ["Unit1", "Unit2"]
+        self.units = ["", ""]
         self.plottype = [True, True]
         self.savetype = [True, True]
 
@@ -74,22 +74,23 @@ class Device(EmptyDevice):
         self.averaging: int = 1
         self.integration: float = 0.0
         self.carrier_frequency: float = 0.0
+        self.zeroing: bool = True
 
         self.forward_modes = {
-            "Average power": "AVER",  # needs carrier frequency
+            "Average power": "AVER",  # needs carrier frequency, W
             # "Calculated burst average": "CBAV",  # needs BURS:WIDT and BURS:PER
-            "Complementary cumulative distribution function": "CCDF",  # Needs correct video bandwidth
-            "Crest factor": "CF",  # Needs correct video bandwidth
-            "Measured burst average": "MBAV",  # instead of duty cycle needs video bandwidth
+            "Complementary cumulative distribution function": "CCDF",  # in W, Needs correct video bandwidth
+            "Crest factor": "CF",  # in dB, Needs correct video bandwidth
+            "Measured burst average": "MBAV",  # in W, instead of duty cycle needs video bandwidth
             # "Peak envelope power": "PEP",  # needs PEP:HOLD and PEP:TIME
         }
         self.forward_mode: str = "Average power"
 
         self.reverse_modes = {
-            "Reverse power": "POW",
-            "Reflection coefficient": "RCO",
-            "Return loss": "RL",
-            "Standing wave ratio": "SWR",
+            "Reverse power": "POW",  # in W
+            "Reflection coefficient": "RCO",  # no unit
+            "Return loss": "RL",  # no unit
+            "Standing wave ratio": "SWR",  # no unit
         }
         self.reverse_mode = "Return loss"
 
@@ -114,6 +115,7 @@ class Device(EmptyDevice):
             "Video bandwidth": list(self.video_bandwidths.keys()),
             "Averaging": self.averaging_counts,
             "Integration time in s": 0.0,
+            "Zero offset correction": True,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -124,6 +126,11 @@ class Device(EmptyDevice):
         self.averaging = int(parameter["Averaging"])
         self.video_bandwidth = self.video_bandwidths[parameter["Video bandwidth"]]
         self.integration = float(parameter["Integration time in s"])
+        self.zeroing = parameter["Zero offset correction"]
+
+        forward_unit = "dB" if self.forward_mode == "Crest factor" else "W"
+        reverse_unit = "W" if self.reverse_mode == "Reverse power" else ""
+        self.units = [forward_unit, reverse_unit]
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -139,10 +146,16 @@ class Device(EmptyDevice):
             msg = "Device not ready"
             raise Exception(msg)
 
-    def configure(self) -> None:
-        """Configure the device. This function is called every time the device is used in the sequencer."""
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
         self.port.write("RESET")  # Reset the device
         self.port.read()  # always read out after setting
+
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
+        if self.zeroing:
+            self.port.write("ZERO")
+            self.port.read()
 
         if self.forward_mode == "Average power":
             self.set_carrier_frequency(self.carrier_frequency)
@@ -232,7 +245,7 @@ class Device(EmptyDevice):
 
     """ Currently not used functions """
 
-    def get_idn(self) -> str:
+    def get_identification(self) -> str:
         """Get the identification string of the device."""
         self.port.write("ID")
         return self.port.read()
