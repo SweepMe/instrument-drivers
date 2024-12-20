@@ -54,14 +54,15 @@ class Device(EmptyDevice):
 
         # Measurement Parameters
         self.sweep_mode: str = "None"
-        self.frequency_input: str = "Frequency in Hz"  # or "Period in s"
-        self.frequency: float = 2.2e9
+        self.period_frequency_mode: str = "Frequency in Hz"  # or "Period in s"
+        self.period_frequency_value: float = 2.2e9
 
-        self.amplitude_mode: str = "Amplitude in V"  # or "High level in V"
+        self.amplitude_modes = ["Amplitude in V", "Amplitude in dBm", "Amplitude in dBuV"]
+        self.amplitude_unit: str = "V"  # or "High level in V"
         self.amplitude: float = 0.1
 
-        self.delay_mode: str = "Phase in deg"  # or "Delay in s"
-        self.delay: float = 0.0
+        self.delay_phase_mode: str = "Phase in deg"  # or "Delay in s"
+        self.delay_phase_value: float = 0.0
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set the standard GUI parameters."""
@@ -70,15 +71,14 @@ class Device(EmptyDevice):
                 "None",
                 "Frequency in Hz",
                 "Period in s",
-                "Amplitude in V",
-                "High level in V",
+                *self.amplitude_modes,
                 "Phase in deg",
                 "Delay in s",
             ],
             "Waveform": ["Sinus"],
             "PeriodFrequency": ["Frequency in Hz", "Period in s"],
             "PeriodFrequencyValue": 2e-6,
-            "AmplitudeHiLevel": ["Amplitude in V", "High level in V"],
+            "AmplitudeHiLevel": self.amplitude_modes,
             "AmplitudeHiLevelValue": 1.0,
             "DelayPhase": ["Delay in s", "Phase in deg"],
             "DelayPhaseValue": 0.0,
@@ -88,44 +88,41 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Get the GUI parameters."""
         self.sweep_mode = parameter["SweepMode"]
-        self.frequency_input = parameter["PeriodFrequency"]
-        self.frequency = float(parameter["PeriodFrequencyValue"])
+        self.period_frequency_mode = parameter["PeriodFrequency"]
+        self.period_frequency_value = float(parameter["PeriodFrequencyValue"])
 
-        self.amplitude_mode = parameter["AmplitudeHiLevel"]
+        self.amplitude_unit = parameter["AmplitudeHiLevel"].split(" ")[-1]
         self.amplitude = float(parameter["AmplitudeHiLevelValue"])
 
-        self.delay_mode = parameter["DelayPhase"]
-        self.delay = float(parameter["DelayPhaseValue"])
+        self.delay_phase_mode = parameter["DelayPhase"]
+        self.delay_phase_value = float(parameter["DelayPhaseValue"])
 
-        self.variables = [self.frequency_input.split(" ")[0], self.amplitude_mode.split(" ")[0]]
-        self.units = [self.frequency_input.split(" ")[-1], self.amplitude_mode.split(" ")[-1]]
-
-    def connect(self) -> None:
-        """Connect to the device."""
-        self.port.write("*RST")
-        # self.port.write("*CLS")
+        self.variables = [self.period_frequency_mode.split(" ")[0], "RF Power level"]
+        self.units = [self.period_frequency_mode.split(" ")[-1], self.amplitude_unit]
 
     def configure(self) -> None:
         """Configure the device."""
+        self.port.write("*RST")
+        # self.port.write("*CLS")
         self.lock_user_interface(True)
 
-        self.set_power_mode("CW")
-        self.set_power_unit("V")
+        # Set power mode to CW
+        self.port.write(":SOUR:POW:MODE CW")
 
-        self.set_power_level(self.amplitude)
+        self.set_power_unit(self.amplitude_unit)
+        self.set_amplitude(self.amplitude)
 
         # Set frequency
         self.set_frequency_mode("CW")
-
-        if self.frequency_input == "Period in s":  # else it is "Frequency in Hz"
-            self.frequency = 1 / self.frequency
-        self.set_frequency(self.frequency)
+        if self.period_frequency_mode == "Period in s":  # else it is "Frequency in Hz"
+            self.period_frequency_value = 1 / self.period_frequency_value
+        self.set_frequency(self.period_frequency_value)
 
         # Set phase
-        if self.delay_mode == "Phase in deg":
-            self.set_phase(self.delay)
-        elif self.delay_mode == "Delay in s":
-            self.set_delay(self.delay)
+        if self.delay_phase_mode == "Phase in deg":
+            self.set_phase(self.delay_phase_value)
+        elif self.delay_phase_mode == "Delay in s":
+            self.set_delay(self.delay_phase_value)
 
         self.set_output_state(True)
 
@@ -140,26 +137,34 @@ class Device(EmptyDevice):
         """Apply new sweep value."""
         self.value = float(self.value)
 
-        if self.sweep_mode.startswith("Frequency"):
+        if self.sweep_mode in self.amplitude_modes:
+            # Update the power unit if necessary
+            unit = self.sweep_mode.split(" ")[-1]
+            if unit != self.amplitude_unit:
+                self.set_power_unit(self.amplitude_unit)
+
+            self.set_amplitude(self.value)
+
+        elif self.sweep_mode.startswith("Frequency"):
             self.set_frequency(self.value)
 
         elif self.sweep_mode.startswith("Period"):
             self.set_frequency(1 / self.value)
 
-        elif self.sweep_mode.startswith("Amplitude") or self.sweep_mode.startswith("High level"):
-            self.set_power_level(self.value)
-
         elif self.sweep_mode.startswith("Phase in deg"):
             self.set_phase(self.value)
 
         elif self.sweep_mode.startswith("Delay in s"):
-            self.set_phase(self.value * 360 / self.frequency)
+            self.set_delay(self.value)
 
     def call(self) -> tuple:
         """Return the measured values."""
         measured_frequency = self.get_frequency()
+
+        # If the power unit was changed in apply, change it back to the original unit because self.units is not updated
+        self.set_power_unit(self.amplitude_unit)
         measured_power = self.get_power_level()
-        return measured_frequency, measured_power  # , measured_impedance
+        return measured_frequency, measured_power
 
     """Wrapper Functions"""
 
@@ -194,50 +199,23 @@ class Device(EmptyDevice):
 
     def set_delay(self, delay: float) -> None:
         """Set the delay of the RF output."""
-        phase_degree = delay * 360 / self.frequency
+        phase_degree = delay * 360 / self.period_frequency_value
         self.set_phase(phase_degree % 360)
 
-    def set_power_level(self, power: float) -> None:
-        """Set the power level of the RF output."""
-        if self.amplitude_mode == "Amplitude in V":
-            self.set_amplitude(power)
-        elif self.amplitude_mode == "High level in V":
-            self.set_high_level(power)
+    def set_amplitude(self, high_level: float) -> None:
+        """Set the amplitude of the RF output. The power level will be [min level + offset ... max level + offset]."""
+        if self.amplitude_unit == "V":
+            max_power = 7.071
+            if self.value < 0 or self.value > max_power:
+                msg = f"Power {high_level} out of range. Choose between 0 and {max_power} V."
+                raise ValueError(msg)
 
-    def set_amplitude(self, amplitude: float) -> None:
-        """Set the amplitude of the RF output."""
-        max_power = 7.071
-        if self.value < 0 or self.value > max_power:
-            msg = f"Power {amplitude} out of range. Choose between 0 and {max_power} V."
-            raise ValueError(msg)
-        # This one is without offset
-        self.port.write(f"SOUR:POW:POW {amplitude}")
-
-    def set_high_level(self, high_level: float) -> None:
-        """Set the high level of the RF output."""
-        max_power = 7.071
-        if self.value < 0 or self.value > max_power:
-            msg = f"Power {high_level} out of range. Choose between 0 and {max_power} V."
-            raise ValueError(msg)
-
-        # this one is with offset
         self.port.write(f"SOUR:POW:LEV:IMM:AMPL {high_level}")
 
     def get_power_level(self) -> float:
-        """Get the power level of the RF output."""
-        if self.amplitude_mode == "Amplitude in V":
-            # This one is without offset
-            self.port.write("SOUR:POW:POW?")
-        elif self.amplitude_mode == "High level in V":
-            # this one is with offset
-            self.port.write("SOUR:POW:LEV:IMM:AMPL?")
-
+        """Get the power level of the RF output. It corresponds to amplitude+offset."""
+        self.port.write("SOUR:POW:POW?")
         return float(self.port.read())
-
-    def set_power_mode(self, mode: str) -> None:
-        """Set the power mode of the RF output to either 'CW' or 'Sweep'."""
-        state = "SWE" if mode == "SWE" else "CW"
-        self.port.write(f":SOUR:POW:MODE {state}")
 
     def set_power_unit(self, unit: str) -> None:
         """Set the power unit of the RF output."""
@@ -286,6 +264,14 @@ class Device(EmptyDevice):
         }
         self.port.write(f"SOURC:POW:LMODE {level_modes[mode]}")
 
+    def set_offset(self, offset_db: float) -> None:
+        """Set the level offset of the RF output."""
+        # This is only for compensating additional elements in the signal path
+        if offset_db < -100 or offset_db > 100:
+            msg = f"Offset {offset_db} out of range. Choose between -100 and 100 dB."
+            raise ValueError(msg)
+        self.port.write(f"SOUR:POW:LEV:IMM:OFFS {offset_db}")
+
     def run_self_test(self) -> bool:
         """Run the self test."""
         self.port.write("*TST?")
@@ -303,7 +289,7 @@ class Device(EmptyDevice):
         command = "FORM PACK"  # for packed binary
         self.port.write(command)
 
-    def check_idn(self) -> str:
+    def get_identification(self) -> str:
         """Check the identification of the device."""
         self.port.write("*IDN?")
         return self.port.read()
