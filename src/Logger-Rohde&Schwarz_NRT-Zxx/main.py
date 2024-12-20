@@ -27,7 +27,7 @@
 
 # SweepMe! driver
 # * Module: Logger
-# * Instrument: Rohde&Schwarz NRT-ZXX
+# * Instrument: Rohde&Schwarz NRT-Zxx
 
 import time
 
@@ -52,7 +52,7 @@ class Device(EmptyDevice):
         """Initialize the device class and the instrument parameters."""
         super().__init__()
 
-        self.shortname = "Template"
+        self.shortname = "NRT-Zxx"
 
         # SweepMe return parameters
         self.variables = ["Forward", "Reverse"]
