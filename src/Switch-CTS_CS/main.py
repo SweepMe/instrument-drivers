@@ -255,7 +255,7 @@ class Device(EmptyDevice):
         self.hold_time_min = parameter["Hold time in min"]
         self.temperature_set = parameter["Temperature in °C"]
         self.humidity_set = parameter["Humidity in %rF"]
-        self.reach_humidity = parameter["Reach humidity"]
+        self.reach_humidity = parameter["Reach humidity"] in ["1", "True", True]
         self.compressed_air_set = parameter["Compressed air"]
         
         self.reference_temperature = parameter["Reference temperature"]
@@ -313,8 +313,6 @@ class Device(EmptyDevice):
         else:
             self._temperature_set_value = None
 
-        self.reach_humidity = self.reach_humidity == "1" or self.reach_humidity == "True" or self.reach_humidity is True
-        
         if self.humidity_set != "" and self.humidity_set != "-":
 
             self._humidity_set_value = float(self.humidity_set)
