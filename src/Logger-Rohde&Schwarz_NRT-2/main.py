@@ -52,7 +52,7 @@ class Device(EmptyDevice):
 
         # SweepMe return parameters
         self.variables = ["Forward", "Reverse"]
-        self.units = ["MyUnit", "MyUnit"]
+        self.units = ["W", "W"]
         self.plottype = [True, True]
         self.savetype = [True, True]
 
@@ -97,9 +97,9 @@ class Device(EmptyDevice):
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
-            "Measurement type": list(self.measurement_type.keys()),
+            # "Measurement type": list(self.measurement_type.keys()),
             "Channel": self.sensors,
-            "Zeroing": True,
+            "Zero offset correction": True,
             "Carrier frequency in Hz": 0.0,
             "Video bandwidth": list(self.video_bandwidths.keys()),
         }
@@ -108,7 +108,7 @@ class Device(EmptyDevice):
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.port_string = parameter["Port"]
         self.sensor = parameter["Channel"]
-        self.zeroing = parameter["Zeroing"]
+        self.zeroing = parameter["Zero offset correction"]
         self.video_bandwidth = self.video_bandwidths[parameter["Video bandwidth"]]
         self.carrier_frequency = float(parameter["Carrier frequency in Hz"])
 
@@ -122,9 +122,6 @@ class Device(EmptyDevice):
         """Initialize the device. This function is called only once at the start of the measurement."""
         self.port.write("*RST")
         print(f"Connected sensors: {self.get_sensors()}")
-
-        # self.port.write("*RST")  # reset the device
-        # self.port.write("SPEC")
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -173,21 +170,11 @@ class Device(EmptyDevice):
         # Set power unit to dBm
         # self.port.write("UNIT1:POWER DBM")
 
-    def apply(self) -> None:
-        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-
-    def measure(self) -> None:
-        """'measure' should be used to trigger the acquisition of new data."""
-        # Start the measurement
-        self.port.write("TRIG:IMM")  # page 132
-
-        # Retrieve data
-        # TODO: Which sensor?
-        self.forward_result, self.reverse_result = self.get_measurement()
-
     def call(self) -> [float, float]:
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables."""
-        return self.forward_result, self.reverse_result
+        # Start the measurement
+        self.port.write("TRIG:IMM")  # see documentation page 132
+        return self.get_measurement()
 
     """Wrapper Functions"""
 
@@ -256,7 +243,7 @@ class Device(EmptyDevice):
         self.port.write("CAT?")
         return self.port.read()
 
-    def get_idn(self) -> str:
+    def get_identification(self) -> str:
         """Return the identification string of the device."""
         self.port.write("*IDN?")
         return self.port.read()
