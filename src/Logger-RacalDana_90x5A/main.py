@@ -56,9 +56,9 @@ class Device(EmptyDevice):
         self.port_types = ["GPIB"]
 
         self.port_properties = {
-            # timeout should be set to slightly above maximum gate time of 10s to cover all usecases
+            # timeout should be set to slightly above maximum gate time of 10s to cover all use cases
             "timeout": 13,
-            # needed for data retrieving as values are seperated by Carrier Return and Line Feed
+            # needed for data retrieving as values are separated by Carrier Return and Line Feed
             "GPIB_EOLread": "\r\n",
         }
 
@@ -79,7 +79,6 @@ class Device(EmptyDevice):
             "Average Pulse Fall Time": "F5M1",
             "Average Pulse Width": "F5M2",
         }
-        
 
         # this dictionary sets the unit of each mode
         self.mode_units = {
@@ -141,7 +140,7 @@ class Device(EmptyDevice):
         
         # input configuration
         self.inputconfigs = {
-            "Channel A & B seperate": "C0",
+            "Channel A & B separate": "C0",
             "Channel A & B common": "C1",
             "Test with internal 10 MHz clock": "C2",
         }
@@ -165,14 +164,14 @@ class Device(EmptyDevice):
         # trigger mode channel A
         self.triggermodes_a = {
             "Ch. A, AUTO trigger level at start": "auto",
-            "Ch. A, AUTO trigger level before each measurement": "aeach",
+            "Ch. A, AUTO trigger level before each measurement": "each",
             "Ch. A, MANUAL trigger level": "man",
         }
         
         # trigger mode channel B
         self.triggermodes_b = {
             "Ch. B, AUTO trigger level at start": "auto",
-            "Ch. B, AUTO trigger level before each measurement": "aeach",
+            "Ch. B, AUTO trigger level before each measurement": "each",
             "Ch. B, MANUAL trigger level": "man",
         }
         
@@ -202,8 +201,6 @@ class Device(EmptyDevice):
             "After successful transfer": "D1",
             "Immediately after measurement": "D2",
         }
-        
-
 
     def set_GUIparameter(self):
         return {
@@ -246,7 +243,8 @@ class Device(EmptyDevice):
         # here, the variables and units are defined, based on the selection of the user
         # we have as many variables as channels are selected
         if self.invert == "On":
-            # if the invert option is selected, we add the channel name to each variable, e.g "Frequency Channel A", plus the "inverted" appendix
+            # if the invert option is selected, we add the channel name to each variable,
+            # e.g "Frequency Channel A", plus the "inverted" appendix
             self.variables = [x + " (inverted)" for x in [self.mode]]
             # we add the corresponding units to the measured values in an inverted form
             self.units = [self.mode_units_inverted[self.mode]]
@@ -280,20 +278,21 @@ class Device(EmptyDevice):
         # Minimum trigger speed/frequency
         self.port.write("%s" % self.triggerspeeds[self.triggerspeed])
 
-        ### trigger mode CHANNEL A
+        # trigger mode CHANNEL A
         # setting manual trigger level on Channel A and formating it for GPIB command compatibility
         if self.triggermodes_a[self.triggermode_a] == "man":
             if self.triggerlevel_a >= -3.2 and self.triggerlevel_a <= +3.19:
-                #force into floating point format with x.xx for GPIB command compatibility
+                # force into floating point format with x.xx for GPIB command compatibility
                 triglev = f'{self.triggerlevel_a:1.2f}'
             elif self.triggerlevel_a >= -32.0 and self.triggerlevel_a <= +31.9:
-                #force into floating point format with xx.x for GPIB command compatibility
+                # force into floating point format with xx.x for GPIB command compatibility
                 triglev = f'{self.triggerlevel_a:2.1f}'
             elif self.triggerlevel_a >= -320 and self.triggerlevel_a <= +319:
-                #force into floating point format with xxx for GPIB command compatibility
+                # force into floating point format with xxx for GPIB command compatibility
                 triglev = f'{self.triggerlevel_a:3.0f}'
             elif self.triggerlevel_a < -320 and self.triggerlevel_a > +319:
-                msg = "Trigger level needs to be higher than or equal to -320 V and lower than or equal to +319 V maximum."
+                msg = ("Trigger level needs to be higher than or equal to -320 V and lower than or equal to"
+                       " +319 V maximum.")
                 raise Exception(msg)
             # send trigger level command to instrument
             self.port.write("LA%s" % triglev)
@@ -301,20 +300,21 @@ class Device(EmptyDevice):
             # configure instrument for automatic trigger level detection
             self.port.write("LAA")
             
-        #### trigger mode CHANNEL B
+        # trigger mode CHANNEL B
         # setting manual trigger level on Channel B and formating it for GPIB command compatibility
         if self.triggermodes_b[self.triggermode_b] == "man":
             if self.triggerlevel_b >= -3.2 and self.triggerlevel_b <= +3.19:
-                #force into floating point format with x.xx for GPIB command compatibility
+                # force into floating point format with x.xx for GPIB command compatibility
                 triglev = f'{self.triggerlevel_b:1.2f}'
             elif self.triggerlevel_b >= -32.0 and self.triggerlevel_b <= +31.9:
-                #force into floating point format with xx.x for GPIB command compatibility
+                # force into floating point format with xx.x for GPIB command compatibility
                 triglev = f'{self.triggerlevel_b:2.1f}'
             elif self.triggerlevel_b >= -320 and self.triggerlevel_b <= +319:
-                #force into floating point format with xxx for GPIB command compatibility
+                # force into floating point format with xxx for GPIB command compatibility
                 triglev = f'{self.triggerlevel_b:3.0f}'
             elif self.triggerlevel_b < -320 and self.triggerlevel_b > +319:
-                msg = "Trigger level needs to be higher than or equal to -320 V and lower than or equal to +319 V maximum."
+                msg = ("Trigger level needs to be higher than or equal to -320 V and lower than or equal to"
+                       " +319 V maximum.")
                 raise Exception(msg)
             # send trigger level command to instrument
             self.port.write("LB%s" % triglev)
@@ -329,16 +329,16 @@ class Device(EmptyDevice):
         # use of display on instrument for showing measurement results
         self.port.write("%s" % self.displaystates[self.displaystate])
         
-        ### here we are building the command for making a measurement 
-        ### so that we do not have to go through an additional IF statement each time
-        ### for running the trigger auto level commands seperately
+        # here we are building the command for making a measurement
+        # so that we do not have to go through an additional IF statement each time
+        # for running the trigger auto level commands seperately
         
-        # if triggermode is set to "aeach", auto triggerlevel (LAA/LAB) is done prior to each measurement (J2)
-        if self.triggermodes_a[self.triggermode_a] == "aeach" and self.triggermodes_b[self.triggermode_b] == "aeach":
+        # if triggermode is set to "each", auto triggerlevel (LAA/LAB) is done prior to each measurement (J2)
+        if self.triggermodes_a[self.triggermode_a] == "each" and self.triggermodes_b[self.triggermode_b] == "each":
             self.measurecmd = "LAALBAJ2"
-        elif self.triggermodes_a[self.triggermode_a] == "aeach":
+        elif self.triggermodes_a[self.triggermode_a] == "each":
             self.measurecmd = "LAAJ2"
-        elif self.triggermodes_b[self.triggermode_b] == "aeach":
+        elif self.triggermodes_b[self.triggermode_b] == "each":
             self.measurecmd = "LBAJ2"
         else:
             self.measurecmd = "J2"
@@ -356,21 +356,23 @@ class Device(EmptyDevice):
             # stop measurement
             self.port.write("S")
         else:
-            #perform measurement (for all other modes except totalizer)
+            # perform measurement (for all other modes except totalizer)
             self.port.write(self.measurecmd)
         
         self.data = self.port.read()
         
-        ### catch data overflow (which is indicated by an capital "O" at the beginning of the result data stream)
-        ### and the measurement result of 0 Hz because this is transfered by the instrument as an empty result
+        # catch data overflow (which is indicated by an capital "O" at the beginning of the result data stream)
+        # and the measurement result of 0 Hz because this is transfered by the instrument as an empty result
         
-        ### by integrating both cases into one command, there is just one instead of two IF statement being processed
-        ### every time a measurement is taken, saving processing time by scrificing some in the rare case of such an exception
+        # by integrating both cases into one command, there is just one instead of two IF statement being processed
+        # every time a measurement is taken, saving processing time by sacrificing some
+        # in the rare case of such an exception
         if self.data.startswith ("O") or self.data == "":
             # adjust 0Hz result because if the measured frequency is exactly 0 Hz, transmitted result is empty
             if self.data == "":
                 self.data = 0
-            # no need for checking if self.data starts with capital O because SweepMe would not have arrived at this point without
+            # no need for checking if self.data starts with capital O because SweepMe!
+            # would not have arrived at this point without
             else:
                 if self.overflowhandling.startswith("Set result to"):
                     # in case of overflow, set outlier outside maximum frequency of instrument
