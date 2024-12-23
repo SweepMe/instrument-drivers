@@ -5,7 +5,7 @@
 
 # MIT License
 
-# Copyright (c) 2024 SweepMe! GmbH
+# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,20 +25,21 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# SweepMe! device class
-# Type: Scope
-# Device: Rigol DHO1000 Series
+# SweepMe! driver
+# *Module: Scope
+# * Instrument: Rigol DHO1000 Series
 
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 import numpy as np
 import time as time
+
 
 class Device(EmptyDevice):
 
     description = """
-                     Basic functionality only.
-                  """
+        Basic functionality only.
+    """
 
     def __init__(self):
     
@@ -48,7 +49,7 @@ class Device(EmptyDevice):
         
         self.variables = ["Time"]
         self.units = ["s"]
-        self.plottype = [True] # True to plot data
+        self.plottype = [True]  # True to plot data
         self.savetype = [True]  # True to save data
         
         self.port_manager = True
@@ -60,7 +61,6 @@ class Device(EmptyDevice):
                                 "delay": 1.0,
                                 }
 
-        
         self.commands = {
                         "Channel 1": "CH1",
                         "Channel 2": "CH2",
@@ -81,7 +81,7 @@ class Device(EmptyDevice):
 
     def set_GUIparameter(self):
 
-        GUIparameter = { 
+        gui_parameter = {
                          "SweepMode": ["None"],
             
                          "TriggerSlope": ["As is", "Rising", "Falling"],
@@ -103,13 +103,12 @@ class Device(EmptyDevice):
                        }
                        
         for i in range(1,5):
-            GUIparameter["Channel%i" % i] = True if i == 1 else False
-            GUIparameter["Channel%i_Name" % i] = "CH%i" % i
-            GUIparameter["Channel%i_Range" % i] = ["2e-2", "4e-2", "8e-2", "2e-1", "4e-1", "8e-1", "2", "4", "8", "20", "40", "80", "200"]
-            GUIparameter["Channel%i_Offset" % i] = 0.0
+            gui_parameter["Channel%i" % i] = True if i == 1 else False
+            gui_parameter["Channel%i_Name" % i] = "CH%i" % i
+            gui_parameter["Channel%i_Range" % i] = ["2e-2", "4e-2", "8e-2", "2e-1", "4e-1", "8e-1", "2", "4", "8", "20", "40", "80", "200"]
+            gui_parameter["Channel%i_Offset" % i] = 0.0
                      
-        return GUIparameter
-        
+        return gui_parameter
 
     def get_GUIparameter(self, parameter={}):
     
@@ -135,8 +134,7 @@ class Device(EmptyDevice):
         self.channel_divs = {}
         self.channel_offsets = {}
         
-        for i in range(1,5):
-            
+        for i in range(1, 5):
             if parameter["Channel%i" % i]:
                 self.channels.append(i)
                 
@@ -149,7 +147,6 @@ class Device(EmptyDevice):
                 self.channel_ranges[i] = float(parameter["Channel%i_Range" % i])
                 self.channel_divs[i] = self.channel_ranges[i] / 8
                 self.channel_offsets[i] = parameter["Channel%i_Offset" % i]
-
         
     def initialize(self): 
         # This driver does not use Reset yet so that user can do measurements with changing options manually
@@ -158,28 +155,27 @@ class Device(EmptyDevice):
         self.port.write(":STOP")
 
         if len(self.channels) == 0:
-            msg=("Please select at least one channel to be read out")
+            msg = "Please select at least one channel to be read out."
             raise Exception(msg)
        
         # sets encoding to ASCii insetad of BYTE or WORD
         self.port.write("WAV:FORM ASC")
         # normal waveform capture, means capturing screen content
         self.port.write("WAV:MODE NORM")
-        
-                
+
     def configure(self):
         
-        ### Acquisition ###
-        # setting averaging and bit depth for aquisition
+        # Acquisition #
+        # setting averaging and bit depth for acquisition
         if self.adcresolution.startswith("12"):
             # activate AVERAGING function in standard 12bit ADC resolution mode, the only one wherein it is allowed
-            if self.average !="None":
+            if self.average != "None":
                 self.port.write("ACQ:TYPE AVER")
                 self.port.write("ACQ:AVER %s" % self.average)
         else:
             # if in any other ADC resolution than 12bit, throw an error if AVERAGING is selected
-            if self.average !="None":
-                msg=("This scope does not allow combining averaging with HighRes ADC mode")
+            if self.average != "None":
+                msg="This scope does not allow combining averaging with HighRes ADC mode."
                 raise Exception(msg)
                 
             # use BW limited HighRes Mode if bit depth higher than 12 is selected and AVERAGING is not activated
@@ -190,7 +186,7 @@ class Device(EmptyDevice):
         # sets the memory depth automatically and with that, sampling rate as well
         self.port.write("ACQ:MDEP AUTO") 
         
-        ### Trigger ###
+        # Trigger #
         # setting trigger coupling
         self.port.write("TRIG:COUP %s" % self.triggercoupling)
         
@@ -206,16 +202,17 @@ class Device(EmptyDevice):
         # set trigger slope
         if self.triggerslope == "As is":
             pass
-        elif self.triggerslope== "Rising":
+        elif self.triggerslope == "Rising":
             self.port.write("TRIG:EDGE:SLOP POS")
         elif self.triggerslope == "Falling":
             self.port.write("TRIG:EDGE:SLOP NEG")
             
-        # makes sure that NORMAL sweep (showing only triggered events) instead of AUTO is chosen for continuous triggering
+        # makes sure that NORMAL sweep (showing only triggered events)
+        # instead of AUTO is chosen for continuous triggering
         if self.aquisitiontype == "Continuous":
             self.port.write("TRIG:SWE NORM")
 
-        ### Time range ###
+        # Time range #
         # setting time range
         if self.timerangevalue == "As is":
             pass
@@ -230,7 +227,7 @@ class Device(EmptyDevice):
             # set timebase scale
             self.port.write("TIM:MAIN:SCAL %s" % t_div)
 
-        ### Channel properties ###
+        # Channel properties #
         # switch display of channels on/off and set vertical properties
         for i in range(1,5):
             if i in self.channels:
@@ -244,30 +241,28 @@ class Device(EmptyDevice):
             else:
                 # turn off unselected channels
                 self.port.write("CHAN%s:DISP OFF" % i)
-                
-            
-    def apply(self):
-        pass
-        
+
     def measure(self):
 
         time.sleep(float(self.triggerdelay))
         trigcounter = 0
 
-        # setting trigger sweep mode / trigger aquisition
+        # setting trigger sweep mode / trigger acquisition
         if self.aquisitiontype == "As is":
             pass
         else:
-            if self.average !="None" and self.aquisitiontype == "Single":
+            if self.average != "None" and self.aquisitiontype == "Single":
                 msg=("Averaging has to be used with continuous triggering")
                 raise Exception(msg)
-            # will execute either :RUN oder :SINGle SCPI command depending on choice of aquisition type (continuous or single)
+            # will execute either :RUN oder :SINGle SCPI command depending on
+            # choice of acquisition type (continuous or single)
             self.port.write("%s" % self.aquisitiontypes[self.aquisitiontype])
-        
-        
+
         # The RIGOL does not allow to determine the amount of successful acquired averaging samples.
-        # It also returns TD for trigger status during continuous triggering when a trigger was successful, but already waiting for a new one.
-        # Therefore, the only solution is to STOP the scope after a manual set trigger timeout period which has to be adjusted accordingly.
+        # It also returns TD for trigger status during continuous triggering when a trigger was successful,
+        # but already waiting for a new one.
+        # Therefore, the only solution is to STOP the scope after a manual set trigger timeout period
+        # which has to be adjusted accordingly.
         # For normal (non-averaging) use, this is not a problem.
         
         while True:
@@ -283,7 +278,8 @@ class Device(EmptyDevice):
             triggerstat=self.port.read()
             # observing the trigger status in the debug window
             print ("Trigger Status: ", triggerstat)
-            # check if trigger is still running; for exiting SINGLE triggering as well as manual stopping the scope via button on instrument
+            # check if trigger is still running; for exiting SINGLE triggering
+            # as well as manual stopping the scope via button on instrument
             if triggerstat == "STOP":
                 break
             # check if an event was triggered in CONTINUOUS mode
@@ -292,26 +288,25 @@ class Device(EmptyDevice):
             else:
                 trigcounter += 1
                 stop = time.time()
-                #repeat stop time measurement until at least 1s has passed
+                # repeat stop time measurement until at least 1s has passed
                 print("Time", stop-start)
                 while stop-start < 1:
                     stop = time.time()
-                
 
         self.port.write("WAV:PRE?")
         preamble = self.port.read().split(",")
             
-        # splitting preamble values into seperate variables for further use
+        # splitting preamble values into separate variables for further use
         wav_format=preamble[0]
         acq_mode=preamble[1]
         numberpoints=int(preamble[2])
-        av_count=int(preamble[3])
-        x_inc=float(preamble[4])
-        x_orig=float(preamble[5])
-        x_ref=float(preamble[6])
-        y_inc=float(preamble[7])
-        y_orig=float(preamble[8])
-        y_ref=float(preamble[9])
+        av_count = int(preamble[3])
+        x_inc = float(preamble[4])
+        x_orig = float(preamble[5])
+        x_ref = float(preamble[6])
+        y_inc = float(preamble[7])
+        y_orig = float(preamble[8])
+        y_ref = float(preamble[9])
         
         slot = 0
         
@@ -319,14 +314,14 @@ class Device(EmptyDevice):
             if 'inputarray' in locals():
                 del inputarray
             
-            #create empty inputarray array
+            # create empty input array
             inputarray = []
             
             # select channel to be read
             self.port.write("WAV:SOUR CHAN%s" % i)
             
             self.port.write("WAV:DATA?")
-            inputarray=self.port.read().split(",")
+            inputarray = self.port.read().split(",")
             
             # only for first measurement
             if slot == 0: 
@@ -351,4 +346,4 @@ class Device(EmptyDevice):
             slot += 1
             
     def call(self):
-        return  [self.timecode] + [self.voltages[:,i] for i in range(self.voltages.shape[1])]
+        return [self.timecode] + [self.voltages[:,i] for i in range(self.voltages.shape[1])]
