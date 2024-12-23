@@ -131,15 +131,24 @@ class Device(EmptyDevice):
             self.set_voltage(self.protection)
 
         # Speed
+        # NPLC settings for model NGU are
+        # 0, 5, 10, 50 and 100
+        # TODO: the entire Speed section needs a revision as the NPLC settings are only known for the NGU series
         if self.speed == "Fast":
             if self.model == "NGU":
                 self.set_nplc(0)
             else:
                 self.set_nplc(0.1)
         if self.speed == "Medium":
-            self.set_nplc(1)
+            if self.model == "NGU":
+                self.set_nplc(5)
+            else:
+                self.set_nplc(1)  # TODO: check whether other models support 1
         if self.speed == "Slow":
-            self.set_nplc(10)
+            if self.model == "NGU":
+                self.set_nplc(10)
+            else:
+                self.set_nplc(10)  # TODO: check whether other models support 10
 
     def unconfigure(self):
 
