@@ -76,7 +76,7 @@ class Device(EmptyDevice):
             "Compliance": 5.0,
             "Range": ["Auto", "10 µA", "1 mA", "10 mA", "100 mA", "3 A", "10 A"],
             "RangeVoltage": ["Auto", "20 V", "6 V"],
-            "Speed": ["Fast", "Medium", "Slow"],
+            "Speed": ["Very fast", "Fast", "Medium", "Slow", "Very slow"],
             # "4wire": False,
         }
 
@@ -131,22 +131,31 @@ class Device(EmptyDevice):
             self.set_voltage(self.protection)
 
         # Speed
-        # NPLC settings for model NGU are
-        # 0, 5, 10, 50 and 100
+        # Possible NPLC settings for model NGU are 0, 5, 10, 50 and 100
         # TODO: the entire Speed section needs a revision as the NPLC settings are only known for the NGU series
-        if self.speed == "Fast":
+        if self.speed == "Very fast":
             if self.model == "NGU":
                 self.set_nplc(0)
             else:
-                self.set_nplc(0.1)
-        if self.speed == "Medium":
+                self.set_nplc(0)  # TODO: check whether other models support 0
+        elif self.speed == "Fast":
             if self.model == "NGU":
                 self.set_nplc(5)
             else:
-                self.set_nplc(1)  # TODO: check whether other models support 1
-        if self.speed == "Slow":
+                self.set_nplc(0.1)  # TODO: check whether other models support 0.1
+        elif self.speed == "Medium":
             if self.model == "NGU":
                 self.set_nplc(10)
+            else:
+                self.set_nplc(1)  # TODO: check whether other models support 1
+        elif self.speed == "Slow":
+            if self.model == "NGU":
+                self.set_nplc(50)
+            else:
+                self.set_nplc(10)  # TODO: check whether other models support 10
+        elif self.speed == "Very slow":
+            if self.model == "NGU":
+                self.set_nplc(100)
             else:
                 self.set_nplc(10)  # TODO: check whether other models support 10
 
