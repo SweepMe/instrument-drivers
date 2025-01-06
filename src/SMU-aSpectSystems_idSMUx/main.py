@@ -49,13 +49,6 @@ from aspectdeviceengine.enginecore import (
 )
 
 
-class SourceMode(enum.Enum):
-    """Enum class to define the type of action."""
-
-    VOLTAGE = enum.auto()
-    CURRENT = enum.auto()
-
-
 class Device(EmptyDevice):
     """Device Class for the aSpectSystems idSMU modules."""
 
@@ -80,6 +73,14 @@ class Device(EmptyDevice):
         self.board_model: aspectdeviceengine.enginecore.IdSmuBoardModel = None
         self.smu: aspectdeviceengine.enginecore.IdSmu2DeviceModel = None
         self.channel: aspectdeviceengine.enginecore.AD5522ChannelModel = None
+
+        # Enum is defined here as definition in import section makes trouble when changing a driver version
+        # during a measurement run.
+        class SourceMode(enum.Enum):
+            """Enum class to define the type of action."""
+
+            VOLTAGE = enum.auto()
+            CURRENT = enum.auto()
 
         # Measurement Parameters
         self.channels: list = [1, 2, 3, 4]
@@ -398,6 +399,7 @@ class Device(EmptyDevice):
         self.device_communication[self.identifier][self.identifier_channel_names].remove(self.channel.name)
 
     def apply(self) -> None:
+
         """Set the voltage or current on the SMU."""
         if self.source == SourceMode.VOLTAGE:
             if self.value > self.v_max or self.value < self.v_min:
@@ -405,11 +407,15 @@ class Device(EmptyDevice):
                 raise ValueError(msg)
             self.channel.voltage = float(self.value)
 
-        else:
+        elif self.source == SourceMode.CURRENT:
             if self.value > self.i_max or self.value < self.i_min:
                 msg = f"Current {self.value} A out of range {self.i_min} A to {self.i_max} A"
                 raise ValueError(msg)
             self.channel.current = float(self.value)
+
+        else:
+            msg = f"Unknown source mode"
+            raise Exception(msg)
 
     def measure(self) -> None:
         """Read the voltage and current from the SMU."""
