@@ -35,6 +35,7 @@ import time
 import numpy as np
 from pysweepme import FolderManager as FoMa
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import debug
 
 FoMa.addFolderToPATH()
 
@@ -444,8 +445,22 @@ class Device(EmptyDevice):
         if self._is_retrieving_data:
             result_v = self.future_v.get()
             result_i = self.future_i.get()
-            self.v = result_v.get_float_values(self.channel_name)[0]
-            self.i = result_i.get_float_values(self.channel_name)[0]
+
+            if result_v.is_result() and result_i.is_result():
+                self.v = result_v.get_float_values(self.channel_name)[0]
+                self.i = result_i.get_float_values(self.channel_name)[0]
+            elif result_v.is_error():
+                msg = "idSMUx: Error during voltage measurement"
+                debug(result_v.to_json())
+                raise Exception(msg)
+            elif result_i.is_error():
+                msg = "idSMUx: Error during current measurement"
+                debug(result_i.to_json())
+                raise Exception(msg)
+            else:
+                msg = "idSMUx: Unknown error during measurement"
+                raise Exception(msg)
+
             self.device_communication[self.identifier]["data"] = [result_v, result_i]
         else:
             self.v = self.device_communication[self.identifier]["data"][0].get_float_values(self.channel_name)[0]
