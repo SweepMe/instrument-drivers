@@ -172,7 +172,7 @@ class Device(EmptyDevice):
         """Set the frequency of the RF output."""
         min_frequency = 100e3
         max_frequency = 12.75e6
-        if self.value < min_frequency or self.value > max_frequency:
+        if frequency < min_frequency or frequency > max_frequency:
             msg = f"Frequency {frequency} out of range. Choose between {min_frequency} and {max_frequency}."
             raise ValueError(msg)
 
@@ -206,7 +206,7 @@ class Device(EmptyDevice):
         """Set the amplitude of the RF output. The power level will be [min level + offset ... max level + offset]."""
         if self.amplitude_unit == "V":
             max_power = 7.071
-            if self.value < 0 or self.value > max_power:
+            if high_level < 0 or high_level > max_power:
                 msg = f"Power {high_level} out of range. Choose between 0 and {max_power} V."
                 raise ValueError(msg)
 
