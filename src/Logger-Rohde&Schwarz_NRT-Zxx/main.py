@@ -154,8 +154,7 @@ class Device(EmptyDevice):
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         if self.zeroing:
-            self.port.write("ZERO")
-            self.port.read()
+            self.perform_zeroing()
 
         if self.forward_mode == "Average power":
             self.set_carrier_frequency(self.carrier_frequency)
@@ -222,6 +221,10 @@ class Device(EmptyDevice):
         """Start new measurement and read out result. If averaging is enabled it is used."""
         self.port.write("RTRG")
         ret = self.port.read()
+        if "Error" in ret:
+            msg = f"Error during measurement: {ret}"
+            raise Exception(msg)
+
         split_answer = ret.split(" ")
 
         forward_result = float(split_answer[1])
@@ -235,7 +238,7 @@ class Device(EmptyDevice):
 
     def set_reverse_mode(self, mode: str) -> None:
         """Set the reverse measurement mode of the device."""
-        self.port.write(f"REV:{self.forward_modes[mode]}")
+        self.port.write(f"REV:{self.reverse_modes[mode]}")
         self.port.read()
 
     def set_video_bandwidth(self, bandwidth: float) -> None:
@@ -253,6 +256,13 @@ class Device(EmptyDevice):
     def clear_buffer(self) -> None:
         """Clear the buffer of the device."""
         self.port.write("PURGE")
+        self.port.read()
+
+    def perform_zeroing(self) -> None:
+        """Perform a zeroing of the device."""
+        # TODO: If possible, use device status to determine waiting time for Zeroing instead of hard coded 10s
+        self.port.write("ZERO")
+        time.sleep(10)
         self.port.read()
 
     def start_continuous_measurement(self) -> [float, float]:
