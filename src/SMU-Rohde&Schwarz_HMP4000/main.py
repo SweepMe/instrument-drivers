@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2022 SweepMe! GmbH
+# Copyright (c) 2022-2025 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,7 +31,9 @@
 # * Module: SMU
 # * Instrument: Rohde&Schwarz HMP4000
 
-from EmptyDeviceClass import EmptyDevice
+import time
+
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -75,7 +77,12 @@ class Device(EmptyDevice):
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
-            "SweepMode": ["Voltage in V", "Voltage in V (with wait)", "Current in A", "Current in A (with wait)"],
+            "SweepMode": [
+                "Voltage in V",
+                "Voltage in V (with wait)",
+                "Current in A",
+                "Current in A (with wait)",
+            ],
             "Channel": [1, 2, 3, 4],
             "RouteOut": ["Front"],
             "Compliance": 5.0,
@@ -111,10 +118,6 @@ class Device(EmptyDevice):
         # print("Residual message in buffer")
 
         # self.port.write("*CLS")  # clear status and output buffers of the HMP
-
-        # self.port.write("*IDN?")
-        # identifier = self.port.read()
-        # print("Identifier:", identifier)
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -176,3 +179,10 @@ class Device(EmptyDevice):
     def call(self) -> [float, float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return [self.v, self.i]
+
+    """ Currently unused functions """
+
+    def get_identification(self) -> str:
+        """Get the identification string of the device."""
+        self.port.write("*IDN?")
+        return self.port.read()
