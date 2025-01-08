@@ -77,7 +77,7 @@ class Device(EmptyDevice):
             ],
             "Waveform": ["Sinus"],
             "PeriodFrequency": ["Frequency in Hz", "Period in s"],
-            "PeriodFrequencyValue": 2e-6,
+            "PeriodFrequencyValue": 2e6,
             "AmplitudeHiLevel": self.amplitude_modes,
             "AmplitudeHiLevelValue": 1.0,
             "DelayPhase": ["Delay in s", "Phase in deg"],
@@ -100,12 +100,14 @@ class Device(EmptyDevice):
         self.variables = [self.period_frequency_mode.split(" ")[0], "RF Power level"]
         self.units = [self.period_frequency_mode.split(" ")[-1], self.amplitude_unit]
 
-    def configure(self) -> None:
-        """Configure the device."""
+    def initialize(self) -> None:
+        """Initialize the device."""
         self.port.write("*RST")
         # self.port.write("*CLS")
         self.lock_user_interface(True)
 
+    def configure(self) -> None:
+        """Configure the device."""
         # Set power mode to CW
         self.port.write(":SOUR:POW:MODE CW")
 
@@ -114,6 +116,7 @@ class Device(EmptyDevice):
 
         # Set frequency
         self.set_frequency_mode("CW")
+
         if self.period_frequency_mode == "Period in s":  # else it is "Frequency in Hz"
             self.period_frequency_value = 1 / self.period_frequency_value
         self.set_frequency(self.period_frequency_value)
@@ -171,7 +174,7 @@ class Device(EmptyDevice):
     def set_frequency(self, frequency: float) -> None:
         """Set the frequency of the RF output."""
         min_frequency = 100e3
-        max_frequency = 12.75e6
+        max_frequency = 12.75e9
         if frequency < min_frequency or frequency > max_frequency:
             msg = f"Frequency {frequency} out of range. Choose between {min_frequency} and {max_frequency}."
             raise ValueError(msg)
@@ -219,6 +222,7 @@ class Device(EmptyDevice):
 
     def set_power_unit(self, unit: str) -> None:
         """Set the power unit of the RF output."""
+        unit = unit.upper()
         if unit not in ["V", "DBUV", "DBM"]:
             msg = "Invalid power unit. Choose from 'V', 'DBUV', 'DBM'."
             raise ValueError(msg)
