@@ -29,13 +29,17 @@
 # SweepMe! driver
 # * Module: Logger
 # * Instrument: Rohde&Schwarz RT-Series (RTA, RTB, ...)
+
 from __future__ import annotations
+
+import time
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
     """Logger driver to read out MEAS channels of Rohde&Schwarz Oscilloscope RT-Series (RTA, RTB, ...)."""
+
     description = """
                     <h3>Rohde & Schwarz Oscilloscope Meas Slots</h3>
                     <p>This driver reads out the measurement 'places' of Rohde & Schwarz RT Oscilloscopes. Measurement
@@ -49,6 +53,7 @@ class Device(EmptyDevice):
                     <li>Enable remote control at device.</li>
                     <li>If use preset, the defined measurement places from the devices are used. Note that currently
                     SweepMe! is unable to display the used measurement mode and units in preset mode.</li>
+                    <li>Waveform count: Number of waveforms used to average. Set to 1 to retrieve current values.</li>
                     </ul>
                     """
 
@@ -112,13 +117,14 @@ class Device(EmptyDevice):
         """A dictionary with the place number as key and a tuple of channel and mode code as value."""
 
         self.use_preset: bool = False
-        self.use_averaging: bool = False
+        self.waveform_count: int = 1
+        """Number of waveform to average. If set to 1, no averaging is performed."""
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         parameters = {
             "Use preset": False,
-            "Averaging": False,
+            "Waveform count": 1,
         }
         # Each measurement place can be configured with a channel and a mode
         for i in range(1, self.maximum_measurement_places + 1):
@@ -130,7 +136,7 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.use_preset = bool(parameter["Use preset"])
-        self.use_averaging = bool(parameter["Averaging"])
+        self.waveform_count = int(parameter["Waveform count"])
 
         self.measurement_places = {}  # Reset measurement places
 
@@ -179,15 +185,22 @@ class Device(EmptyDevice):
                 self.set_source(place, channel)
                 self.set_measurement_mode(place, mode)
 
-        if self.use_averaging or self.use_preset:
+        if self.waveform_count > 1 or self.use_preset:
             # Enable statistical evaluation for all places. Place number is irrelevant.
             self.port.write("MEAS1:STAT:ENAB ON")
 
     def measure(self) -> None:
-        """Trigger the acquisition of new data."""
-        if self.use_averaging or self.use_preset:
+        """Reset the averaged values at the start of the measurement."""
+        if self.waveform_count or self.use_preset:
             for place in self.measurement_places:
                 self.reset_statistical_measurement(place)
+
+    def request_result(self) -> None:
+        """Wait until the given number of waveforms are acquired."""
+        if self.waveform_count > 1:
+            for place in self.measurement_places:
+                while self.get_waveform_count(place) < self.waveform_count:
+                    time.sleep(0.1)
 
     def call(self) -> list[float]:
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables.
@@ -196,7 +209,7 @@ class Device(EmptyDevice):
         """
         measured_results = []
         for place, (_, mode) in self.measurement_places.items():
-            if self.use_averaging:
+            if self.waveform_count > 1:
                 measured_results.append(self.get_averaged_measurement(place))
             else:
                 measured_results.append(self.get_measurement(place, mode))
@@ -237,6 +250,11 @@ class Device(EmptyDevice):
         Starts a new statistical evaluation if the acquisition is running.
         """
         self.port.write(f"MEAS{place}:STAT:RES")
+
+    def get_waveform_count(self, place: int) -> int:
+        """Read out the number of waveforms used for averaging."""
+        self.port.write(f"MEAS{place}:RES:WFMCount?")
+        return int(self.port.read())
 
     def get_measurement(self, place: int, mode: str) -> float:
         """Read out the measurement value of the given place."""
