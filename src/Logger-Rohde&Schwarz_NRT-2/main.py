@@ -202,7 +202,7 @@ class Device(EmptyDevice):
             fnum = 2
 
         self.port.write(f"SENS{self.sensor}:BWID:VID:FNUM {fnum}")
-        self.port.read()
+        # self.port.read()
 
     def get_measurement(self) -> [float, float]:
         """Get the measurement values from the device."""
