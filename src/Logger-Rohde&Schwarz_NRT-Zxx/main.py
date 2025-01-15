@@ -29,6 +29,7 @@
 # * Module: Logger
 # * Instrument: Rohde&Schwarz NRT-Zxx
 
+import math
 import time
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -77,7 +78,8 @@ class Device(EmptyDevice):
         self.zeroing: bool = True
 
         self.forward_modes = {
-            "Average power": "AVER",  # needs carrier frequency, W
+            "Average power in W": "AVER",  # needs carrier frequency, W
+            "Average power in dBm": "AVER",  # needs carrier frequency, W
             # "Calculated burst average": "CBAV",  # needs BURS:WIDT and BURS:PER
             "Complementary cumulative distribution function": "CCDF",  # in W, Needs correct video bandwidth
             "Crest factor": "CF",  # in dB, Needs correct video bandwidth
@@ -87,7 +89,8 @@ class Device(EmptyDevice):
         self.forward_mode: str = "Average power"
 
         self.reverse_modes = {
-            "Reverse power": "POW",  # in W
+            "Reverse power in W": "POW",  # in W
+            "Reverse power in dBm": "POW",  # in W
             "Reflection coefficient": "RCO",  # no unit
             "Return loss": "RL",  # no unit
             "Standing wave ratio": "SWR",  # no unit
@@ -128,8 +131,20 @@ class Device(EmptyDevice):
         self.integration = float(parameter["Integration time in s"])
         self.zeroing = parameter["Zero offset correction"]
 
-        forward_unit = "dB" if self.forward_mode == "Crest factor" else "W"
-        reverse_unit = "W" if self.reverse_mode == "Reverse power" else ""
+        if self.forward_mode == "Average power in dBm":
+            forward_unit = "dBm"
+        elif self.forward_mode == "Crest factor":
+            forward_unit = "dB"
+        else:
+            forward_unit = "W"
+
+        if self.reverse_mode == "Reverse power in dBm":
+            reverse_unit = "dBm"
+        elif self.reverse_mode == "Reverse power in W":
+            reverse_unit = "W"
+        else:
+            reverse_unit = ""
+
         self.units = [forward_unit, reverse_unit]
 
     def connect(self) -> None:
@@ -185,6 +200,12 @@ class Device(EmptyDevice):
 
     def call(self) -> [float, float]:
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables."""
+        if self.units[0] == "dBm":
+            self.forward_result = self.convert_w_to_dbm(self.forward_result)
+
+        if self.units[1] == "dBm":
+            self.reverse_result = self.convert_w_to_dbm(self.reverse_result)
+
         return self.forward_result, self.reverse_result
 
     """Wrapper Functions"""
@@ -245,6 +266,11 @@ class Device(EmptyDevice):
         """Set the video bandwidth of the device."""
         self.port.write(f"FILT:VID {bandwidth}")
         self.port.read()
+
+    @staticmethod
+    def convert_w_to_dbm(power: float) -> float:
+        """Convert power from W to dBm."""
+        return 10 * math.log10(power) + 30
 
     """ Currently not used functions """
 
