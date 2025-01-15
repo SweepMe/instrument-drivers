@@ -103,7 +103,6 @@ class Device(EmptyDevice):
     def initialize(self) -> None:
         """Initialize the device."""
         self.port.write("*RST")
-        # self.port.write("*CLS")
         self.lock_user_interface(True)
 
     def configure(self) -> None:
@@ -128,6 +127,28 @@ class Device(EmptyDevice):
             self.set_delay(self.delay_phase_value)
 
         self.set_output_state(True)
+
+    def reconfigure(self, parameters: dict, keys: list) -> None:
+        """If the GUI parameters are changed during a measurement this function is called.
+
+        This can happen when using the ParameterSystem in the SweepMe! GUI. Use reconfigure to only update the changed
+        parameters instead of calling configure which sets all parameters to their default values.
+        """
+        if "PeriodFrequencyValue" in keys:
+            new_frequency = float(parameters["PeriodFrequencyValue"])
+            if parameters["PeriodFrequency"] == "Period in s":
+                new_frequency = 1 / new_frequency
+
+            self.set_frequency(new_frequency)
+
+        if "AmplitudeHiLevelValue" in keys:
+            self.set_amplitude(float(parameters["AmplitudeHiLevelValue"]))
+
+        if "DelayPhaseValue" in keys:
+            if parameters["DelayPhase"] == "Phase in deg":
+                self.set_phase(float(parameters["DelayPhaseValue"]))
+            elif parameters["DelayPhase"] == "Delay in s":
+                self.set_delay(float(parameters["DelayPhaseValue"]))
 
     def unconfigure(self) -> None:
         """Unconfigure the device."""
