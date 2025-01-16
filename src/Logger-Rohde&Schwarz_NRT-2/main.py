@@ -174,7 +174,7 @@ class Device(EmptyDevice):
         # self.port.write("SENS1:FREQ 1 GHz")
 
         # Set power unit to dBm
-        # self.port.write("UNIT1:POWER DBM")
+        self.port.write("UNIT1:POWER DBM")
 
     def call(self) -> [float, float]:
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables."""
