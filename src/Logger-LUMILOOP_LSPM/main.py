@@ -32,6 +32,7 @@
 
 
 import numpy as np
+import time
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug, error
@@ -41,6 +42,20 @@ class Device(EmptyDevice):
     description = """
         <h3>LUMILOOP LPSM power meter</h3>
         <p>The driver communicates with the LUMILOOP TCP server</p>
+        
+        https://lumiloop.de/support/documents-and-downloads/
+        
+        Please enter the serial number before start.
+        Attention: LSPM 1.x and LSPM 2.x models can have the same serial numbers. In this case please contact us.
+        
+        Modes are described in the User manual. Mode 1 is a convenience mode that automatically switches between
+        the two detectors at the crossover frequency. 
+        
+        Tested with TCP server version 20240718
+        
+        Issues:
+            * How to distinguish between LSPM1.x and LSPM2.x
+            * add reconfigure to change compensation frequency
     """
 
     def __init__(self):
@@ -75,9 +90,9 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter):
 
-        self.sn = int(parameter["Serial number"])
+        self.sn = parameter.get("Serial number", "-1")
         self.channels = {}
-        for i in range(1,4):
+        for i in range(1, 4):
             self.channels[i] = parameter[f"Channel {i}"]
         self.all_channel_indices = [i-1 for i in self.channels if self.channels[i]]
 
@@ -92,62 +107,85 @@ class Device(EmptyDevice):
         self.automatic_video_bandwidth = parameter["Automatic video bandwidth"]
         self.video_bandwidth = float(parameter["Video bandwidth in Hz"])
 
-    def connect(self):
-        pass
-
-        # Problems
-        # *RST -> How to wait for the reset before continuing with further commands, *OPC? seems to respond immediately
-        # :SYST:COU? -> no response Error -113 Undefined header
-        # :MEASure[:PMeter]:RDY? [<MPMeter>] -> no response Error -113 Undefined header
-        #
-
     def initialize(self):
 
+        if self.sn in ["", "-1"]:
+            msg = "Please enter a valid serial number."
+            raise Exception(msg)
+        self.sn = int(self.sn)
+
         identifier = self.get_identification()
-        print("Identifier:", identifier)
+        # print("Identifier:", identifier)
 
         self.clear()
 
-        # self.reset()  # does not work yet as the reset is still ongoing when further commands are sent
-
         stb = self.get_status_byte()
-        print("STB:", stb)
+        # print("STB:", stb)
 
         opc = self.is_operation_complete()
-        print("OPC:", opc)
+        # print("OPC:", opc)
 
-        # count_meters = self.get_meter_count()  # does not work
+        count_meters = self.get_meter_count()  # works, but maybe needs latest TCP server
         # print("Number of power meters:", count_meters)
 
         self.port.write(f":MPM:SER {self.sn}, {self.sn}")
         self.pm_index = self.sn
 
-        print()
-        print(f"Power meter {self.pm_index} properties")
-        print("Channels:", self.get_meter_channels(self.pm_index))
-        print("Version:", self.get_meter_version(self.pm_index))
-        print("Model:", self.get_meter_model(self.pm_index))
-        print("Firmware:", self.get_meter_firmware(self.pm_index))
-        print("SN:", self.get_meter_serial_number(self.pm_index))
-        print("Maker:", self.get_meter_maker(self.pm_index))
-        # print("Ready:", self.get_meter_ready(self.pm_index))
+        def print_model_infos(pm_index):
+            print()
+            print(f"Properties of Power meter {pm_index}:")
+            print("  Version:", self.get_meter_version(pm_index))
+            print("  Model:", self.get_meter_model(pm_index))
+            print("  Firmware:", self.get_meter_firmware(pm_index))
+            print("  SN:", self.get_meter_serial_number(pm_index))
+            print("  Maker:", self.get_meter_maker(pm_index))
+            print("  Ready:", self.get_meter_ready(pm_index))
+            # print("  Channels:", self.get_meter_channels(pm_index))  # cannot be used if system is not ready
+            print()
+
+        print_model_infos(self.pm_index)
 
         ready = self.is_system_ready(self.pm_index)
-        print("Ready:", ready)
-
+        # print("Ready:", ready)
         if not ready:
-            msg = "System not ready. Please wait until temperature has reached."
-            raise Exception(msg)
+            msg = ("LUMILOOP LSPM: System not ready. Waiting until temperature has reached."
+                   "The measurement starts once the temperature is ok.\n"
+                   "You can close this message box now.")
+            debug(msg)
+            self.message_box(msg, blocking=False)
+
+            while True:
+                time.sleep(0.5)
+                if self.is_run_stopped():
+                    return None
+                ready = self.is_system_ready(self.pm_index)
+                # print("Ready:", ready)
+                if ready:
+                    break
+
+        # Channel check
+        number_channels = self.get_meter_channels(self.pm_index)
+        for i in self.channels:
+            if self.channels[i] and i > number_channels:
+                msg = f"LSPM has only {number_channels} channels. Please uncheck channel {i}."
+                raise Exception(msg)
+
+        # if not ready:
+        #     msg = "System not ready. Please wait until temperature has reached."
+        #     raise Exception(msg)
 
     def deinitialize(self):
-        self.print_all_errors()
+        self.print_all_errors()  # check whether any command made problems
 
     def configure(self):
 
         # Mode
         self.set_system_mode(self.pm_index, self.mode)
         mode = self.get_system_mode(self.pm_index)
-        print("Mode:", mode)
+        if mode != self.mode:
+            print("Mode:", mode)
+            msg = "Unable to set mode."
+            raise Exception(msg)
 
         self.max_frequency = self.get_maximum_frequency(self.pm_index)
         self.min_frequency = self.get_minimum_frequency(self.pm_index)
@@ -163,19 +201,24 @@ class Device(EmptyDevice):
         # Compensation Frequency
         self.set_frequency(self.pm_index, self.frequency)
         frequency = self.get_frequency(self.pm_index)
-        print("Frequency in Hz:", frequency)
+        if frequency != self.frequency:
+            print("Set Compensation frequency in Hz:", self.frequency)
+            print("Get Compensation frequency in Hz:", frequency)
+            msg = "Unable to set compensation frequency."
+            raise Exception(msg)
 
-        # Low-high frequency
-        self.set_frequency(self.pm_index, self.lhfrequency)
-        frequency = self.get_frequency(self.pm_index)
-        print("LH Frequency in Hz:", frequency)
+        if mode == 1:
+            # Low-high crossover frequency
+            self.set_LHfrequency(self.pm_index, self.lhfrequency)
+            frequency = self.get_LHfrequency(self.pm_index)
+            if frequency != self.lhfrequency:
+                print("Set LH Frequency in Hz:", self.lhfrequency)
+                print("Get LH Frequency in Hz:", frequency)
+                msg = "Unable to set crossover frequency."
+                raise Exception(msg)
 
-        # Video bandwidth
-        if self.automatic_video_bandwidth:
-            self.set_automatic_video_bandwidth(self.pm_index, self.automatic_video_bandwidth)
-        else:
-            self.set_automatic_video_bandwidth(self.pm_index, not self.automatic_video_bandwidth)
-            self.set_video_bandwidth(self.pm_index, self.video_bandwidth)
+        # Automatic video bandwidth
+        self.set_automatic_video_bandwidth(self.pm_index, True)
 
         # Triggering
 
@@ -192,9 +235,9 @@ class Device(EmptyDevice):
 
         while True:
             msg = self.get_error()
-            print("Error:", msg)
             if "No error" in msg:
                 break
+            print("Error:", msg)
 
     def get_identification(self):
         self.port.write("*IDN?")
@@ -202,6 +245,7 @@ class Device(EmptyDevice):
         return answer
 
     def reset(self):
+        """ not supported yet """
         self.port.write("*RST")
 
     def clear(self):
@@ -268,7 +312,7 @@ class Device(EmptyDevice):
         return int(answer)
 
     def get_meter_ready(self, index: int):
-        self.port.write(f":MEAS:READY? {index}")
+        self.port.write(f":MEAS:RDY? {index}")
         answer = self.port.read()
         return bool(int(answer))
 
