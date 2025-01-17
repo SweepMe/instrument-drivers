@@ -40,7 +40,7 @@ import os
 
 from pysweepme.ErrorMessage import error, debug
 
-from pyweepme.EmptyDeviceClass import EmptyDevice # Class comes with SweepMe!
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
 
@@ -150,7 +150,10 @@ class Device(EmptyDevice):
         self.flow_controller.master.start()
         
     def disconnect(self):
-        self.flow_controller.master.stop()
+
+        # check in case there is an exception in connect before flow_controller is created
+        if hasattr(self, "flow_controller"):
+            self.flow_controller.master.stop()
 
     def initialize(self):
    
