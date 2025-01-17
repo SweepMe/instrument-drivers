@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2020 Axel Fischer (sweep-me.net)
+# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,10 +26,9 @@
 # SOFTWARE.
 
 
-# SweepMe! device class
-# Type: Logger
-# Device: Bronkhorst Propar
-
+# SweepMe! driver
+# * Module: Logger
+# * Instrument: Bronkhorst Propar
 
 
 # must be done before 'import propar' to make sure libs folder is added to PATH
@@ -39,9 +38,9 @@ FoMa.addFolderToPATH()
 import propar
 import os
 
-from ErrorMessage import error, debug
+from pysweepme.ErrorMessage import error, debug
 
-from EmptyDeviceClass import EmptyDevice # Class comes with SweepMe!
+from pyweepme.EmptyDeviceClass import EmptyDevice # Class comes with SweepMe!
 
 class Device(EmptyDevice):
 
@@ -113,7 +112,6 @@ class Device(EmptyDevice):
         self.use_custom_unit = parameter["Custom unit (c.u.)"] != ""
         self.custom_unit = parameter["Custom unit (c.u.)"]
         self.conversion_factor = parameter["Flow in c.u. at 100%"]
-        
 
         if self.use_custom_unit:
         
@@ -127,19 +125,17 @@ class Device(EmptyDevice):
             self.units = ["%", "%", "°C", "g/l"] 
             self.plottype = [True, True, True, True] 
             self.savetype = [True, True, True, True]
-        
-        
+
     """ here, semantic standard function start """
             
     def connect(self):
                     
-        ## Please find a full list of all parameters at the bottom of this file. ##
+        # Please find a full list of all parameters at the bottom of this file. #
         
         self.database = propar.database()
         # print("Database:", self.database)
         
         self.create_friendly_parameter_list()
-
                
         if self.address == "RS232":
             self.flow_controller = propar.instrument(self.port_string, baudrate = int(self.baudrate))
@@ -155,8 +151,7 @@ class Device(EmptyDevice):
         
     def disconnect(self):
         self.flow_controller.master.stop()
-        
-        
+
     def initialize(self):
    
         identification = self.get_identification()
@@ -178,8 +173,6 @@ class Device(EmptyDevice):
             if self.conversion_factor == 0.0:
                 self.stop_Measurement("Conversion factor cannot be zero.")
                 return False
-                            
-        
 
     def apply(self):
     
@@ -194,51 +187,46 @@ class Device(EmptyDevice):
     def reach(self):
         pass
         # we might have to add some code here to ensure the new flow value has been reached
-                
-        
+
     def request_result(self):
         self.flow_rate = self.get_measured_flow_rate()
         self.temperature = self.get_temperature()
         self.density = self.get_density()
         
-        ## Comment: Pressure is not read out yet, as not all controllers provide a pressure sensor
-        ## It means that one needs to check whether the controller has a pressure sensor first or 
-        ## whether the value is returned with status Ok
+        # Comment: Pressure is not read out yet, as not all controllers provide a pressure sensor
+        # It means that one needs to check whether the controller has a pressure sensor first or
+        # whether the value is returned with status Ok
 
-            
     def call(self):
     
         if self.use_custom_unit:
-        
             if self.sweepmode == "Flow in %":
                 return self.flow_rate*self.conversion_factor, self.flow_rate, self.value*self.conversion_factor, self.value, self.temperature, self.density
             elif self.sweepmode == "Flow in custom unit": 
                 return self.flow_rate*self.conversion_factor, self.flow_rate, self.value, self.value/self.conversion_factor, self.temperature, self.density
-                
-                
         else:
             return self.flow_rate, self.value, self.temperature, self.density
-    
 
     """ convenience functions """
-    
-    
+
         # get all parameters
         # print(self.database.get_all_parameters())
                 
         # returns a dictionary with dde number, process number, parameter number, parameter type, and parameter name
         # print(self.database.get_parameter(8))#
-        
-        
+
     def create_friendly_parameter_list(self):
         """ we create it every time as it does not take much time """
         
         self.parameters_dict = {}
-        for index in range(1,379,1):
+        for index in range(1, 379, 1):
             try:
                 params = self.database.get_parameter(index)
                 self.parameters_dict[params["parm_name"]] = index
-            except IndexError:
+            except (IndexError, KeyError):
+                # We skip errors related to non-existing items
+                # IndexError is needed for SweepMe! 1.5.5/Python 3.6
+                # KeyError is needed for SweepMe! 1.5.6/Python 3.9
                 pass
         
         return self.parameters_dict
@@ -282,15 +270,13 @@ class Device(EmptyDevice):
         params.update({"data": value})
         values = self.flow_controller.write_parameters([params])
 
-        
     """ setter/getter functions start here """
     
     def get_identification(self):
         """ returns the identification number including the serial number as string """
 
         return self.get_parameter("Identification string")
-    
-    
+
     def get_flow_rate(self):
         """ get the setpoint flowrate in % """
         
@@ -299,8 +285,7 @@ class Device(EmptyDevice):
         value = float(value)/32000 * 100.0  # conversion to %
         
         return value
-    
-    
+
     def set_flow_rate(self, value):
         """ set the setpoint flow rate in % """
         
