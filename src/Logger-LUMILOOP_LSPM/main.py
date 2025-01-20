@@ -31,9 +31,7 @@
 # * Instrument: LUMILOOP LSPM
 
 
-# TODO: How to distinguish between LSPM1.x and LSPM2.x
-# TODO: add reconfigure to change compensation frequency
-# TODO: add default crossover frequency
+# TODO: How to distinguish between LSPM1.x and LSPM2.x, e.g. when they have same serial number
 
 import numpy as np
 import time
@@ -44,8 +42,8 @@ from pysweepme.ErrorMessage import debug, error
 
 class Device(EmptyDevice):
     description = """
-<h3>LUMILOOP LPSM power meter</h3>
-<p>This SweepMe! driver communicates with a LSPM power meter from LUMILOOP. If you need support for a LSProbe please let us know and we can create a new instrument driver.<br /><br />The driver was created with&nbsp;TCP server version 20240718.</p>
+<h3>LUMILOOP LSPM power meter</h3>
+<p>This SweepMe! driver communicates with a LSPM power meter from LUMILOOP. If you need support for a LSProbe please let us know and we can create a new instrument driver.<br /><br />The driver was created with&nbsp;TCP server version 20240718.<br /></p>
 <p><strong>Communication</strong></p>
 <ul>
 <li>First, install the LUMILOOP application. You can find all downloads here:<br /><a href="https://lumiloop.de/support/documents-and-downloads/">https://lumiloop.de/support/documents-and-downloads/</a></li>
@@ -66,7 +64,7 @@ class Device(EmptyDevice):
 <p>&nbsp;</p>
 <p><strong>Known issues</strong></p>
 <ul>
-<li>LSPM 1.x and LSPM2.x device both work with the same SweepMe! instrument driver, but can have the same serial number. So far, the SweepMe! driver does not handle this very rare case. Please contact us in case you have this issue.&nbsp;</li>
+<li>Both, LSPM 1.0 and LSPM2.0 devices, work with the same SweepMe! instrument driver, but can have the same serial number. So far, the SweepMe! driver does not handle this very rare case. Please contact us in case you have this issue.&nbsp;</li>
 </ul>
 <p>&nbsp;</p>
     """
@@ -94,7 +92,7 @@ class Device(EmptyDevice):
             "Channel 3": False,
             "Compensation frequency in Hz": "1e9",
             "Mode": ["0", "1", "2", "3"],
-            "Crossover frequency in Hz (Mode 1)": "0",
+            "Crossover frequency in Hz (Mode 1)": "1e9",
             # "Automatic video bandwidth": True,
             # "Video bandwidth in Hz": "3e6",
         }
@@ -152,12 +150,15 @@ class Device(EmptyDevice):
             print("  Firmware:", self.get_meter_firmware(pm_index))
             print("  SN:", self.get_meter_serial_number(pm_index))
             print("  Maker:", self.get_meter_maker(pm_index))
-            print("  Ready:", self.get_meter_ready(pm_index))
-            # print("  Channels:", self.get_meter_channels(pm_index))  # cannot be used if system is not ready
+            print("  Meter ready:", self.get_meter_ready(pm_index))
+            print("  Cold temperature in °C:", self.get_cold_temperature(pm_index))
+            print("  Hot temperature in °C:", self.get_hot_temperature(pm_index))
+            # print("  Channels:", self.get_meter_channels(pm_index))  # cannot be used if meter is not ready
             print()
 
         print_model_infos(self.pm_index)
 
+        # Waiting until system ready (e.g. temperature has reached)
         ready = self.is_system_ready(self.pm_index)
         # print("Ready:", ready)
         if not ready:
@@ -176,6 +177,15 @@ class Device(EmptyDevice):
                 if ready:
                     break
 
+        # Meter ready check
+        meter_ready = self.get_meter_ready(self.pm_index)
+        # print("Meter ready:", meter_ready)
+        if not meter_ready:
+            msg = ("Meter is not ready. This can happen if parameters are not set correctly in a previous run. "
+                   "Please check with LUMILOOP GUI application whether parameters like crossover frequency or "
+                   "compensation frequency are in the correct range.")
+            raise Exception(msg)
+
         # Channel check
         number_channels = self.get_meter_channels(self.pm_index)
         for i in self.channels:
@@ -187,8 +197,11 @@ class Device(EmptyDevice):
         #     msg = "System not ready. Please wait until temperature has reached."
         #     raise Exception(msg)
 
+        self.check_for_error()
+
     def deinitialize(self):
-        self.print_all_errors()  # check whether any command made problems
+
+        self.check_for_error()
 
     def configure(self):
 
@@ -220,14 +233,25 @@ class Device(EmptyDevice):
             msg = "Unable to set compensation frequency."
             raise Exception(msg)
 
+        self.check_for_error()
+
         if mode == 1:
             # Low-high crossover frequency
+            old_frequency = self.get_LHfrequency(self.pm_index)
             self.set_LHfrequency(self.pm_index, self.lhfrequency)
             frequency = self.get_LHfrequency(self.pm_index)
             if frequency != self.lhfrequency:
                 print("Set LH Frequency in Hz:", self.lhfrequency)
                 print("Get LH Frequency in Hz:", frequency)
                 msg = "Unable to set crossover frequency."
+                raise Exception(msg)
+
+            # if the meter is not ready after changing the crossover frequency, an exception is raised
+            # and the old crossover frequency is restored.
+            meter_ready = self.get_meter_ready(self.pm_index)
+            if not meter_ready:
+                self.set_LHfrequency(self.pm_index, old_frequency)
+                msg = "Unable to set crossover frequency"
                 raise Exception(msg)
 
         # Automatic video bandwidth
@@ -237,6 +261,23 @@ class Device(EmptyDevice):
 
         # Sweep times
 
+        self.check_for_error()
+
+    def reconfigure(self, parameters, keys):
+
+        # Compensation Frequency
+        if "Compensation frequency in Hz" in keys:
+            new_frequency = float(parameters["Compensation frequency in Hz"])
+            self.set_frequency(self.pm_index, new_frequency)
+            frequency = self.get_frequency(self.pm_index)
+            if frequency != new_frequency:
+                print("Set Compensation frequency in Hz:", new_frequency)
+                print("Get Compensation frequency in Hz:", frequency)
+                msg = "Unable to set compensation frequency."
+                raise Exception(msg)
+
+            self.check_for_error()
+
     def measure(self):
         self.results = self.get_meter_power(self.pm_index)  # retrieves all power values from 1st device
 
@@ -244,13 +285,24 @@ class Device(EmptyDevice):
 
         return list(np.array(self.results)[self.all_channel_indices])
 
-    def print_all_errors(self):
 
+    def check_for_error(self):
+
+        errors = self.get_all_errors()
+        for msg in errors:
+            print(msg)
+        if len(errors) > 0:
+            msg = errors[0]
+            raise Exception(msg)
+
+    def get_all_errors(self):
+        errors = []
         while True:
             msg = self.get_error()
             if "No error" in msg:
                 break
-            print("Error:", msg)
+            errors.append(msg)
+        return errors
 
     def get_identification(self):
         self.port.write("*IDN?")
@@ -277,7 +329,7 @@ class Device(EmptyDevice):
     def is_system_ready(self, index: int):
         self.port.write(f":SYST:RDY? {index}")
         answer = self.port.read()
-        return int(answer)
+        return bool(int(answer))
 
     def get_error(self):
         self.port.write(":SYST:ERR?")
@@ -295,7 +347,7 @@ class Device(EmptyDevice):
         return int(answer)
 
     def get_meter_serial_number(self, index: int):
-        self.port.write(f":SYST:SER? {index}")
+        self.port.write(f":MEAS:SER? {index}")
         answer = self.port.read()
         return int(answer)
 
@@ -370,6 +422,16 @@ class Device(EmptyDevice):
 
     def get_LHfrequency(self, index: int):
         self.port.write(f":SYST:LHF? {index}")
+        answer = self.port.read()
+        return float(answer)
+
+    def get_cold_temperature(self, index: int):
+        self.port.write(f":MEAS:TC? {index}")
+        answer = self.port.read()
+        return float(answer)
+
+    def get_hot_temperature(self, index: int):
+        self.port.write(f":MEAS:TH? {index}")
         answer = self.port.read()
         return float(answer)
 
