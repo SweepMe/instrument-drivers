@@ -227,7 +227,7 @@ class Device(EmptyDevice):
         # Compensation Frequency
         self.set_frequency(self.pm_index, self.frequency)
         frequency = self.get_frequency(self.pm_index)
-        if frequency != self.frequency:
+        if abs(frequency - self.frequency)/self.frequency > 1e-6:
             print("Set Compensation frequency in Hz:", self.frequency)
             print("Get Compensation frequency in Hz:", frequency)
             msg = "Unable to set compensation frequency."
@@ -240,7 +240,7 @@ class Device(EmptyDevice):
             old_frequency = self.get_LHfrequency(self.pm_index)
             self.set_LHfrequency(self.pm_index, self.lhfrequency)
             frequency = self.get_LHfrequency(self.pm_index)
-            if frequency != self.lhfrequency:
+            if abs(frequency - self.lhfrequency) / self.lhfrequency > 1e-6:
                 print("Set LH Frequency in Hz:", self.lhfrequency)
                 print("Get LH Frequency in Hz:", frequency)
                 msg = "Unable to set crossover frequency."
@@ -270,7 +270,7 @@ class Device(EmptyDevice):
             new_frequency = float(parameters["Compensation frequency in Hz"])
             self.set_frequency(self.pm_index, new_frequency)
             frequency = self.get_frequency(self.pm_index)
-            if frequency != new_frequency:
+            if abs(frequency - new_frequency) / new_frequency > 1e-6:
                 print("Set Compensation frequency in Hz:", new_frequency)
                 print("Get Compensation frequency in Hz:", frequency)
                 msg = "Unable to set compensation frequency."
