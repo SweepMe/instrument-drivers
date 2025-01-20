@@ -31,6 +31,10 @@
 # * Instrument: LUMILOOP LSPM
 
 
+# TODO: How to distinguish between LSPM1.x and LSPM2.x
+# TODO: add reconfigure to change compensation frequency
+# TODO: add default crossover frequency
+
 import numpy as np
 import time
 
@@ -40,28 +44,37 @@ from pysweepme.ErrorMessage import debug, error
 
 class Device(EmptyDevice):
     description = """
-        <h3>LUMILOOP LPSM power meter</h3>
-        <p>The driver communicates with the LUMILOOP TCP server</p>
-        
-        https://lumiloop.de/support/documents-and-downloads/
-        
-        Please enter the serial number before start.
-        Attention: LSPM 1.x and LSPM 2.x models can have the same serial numbers. In this case please contact us.
-        
-        Modes are described in the User manual. Mode 1 is a convenience mode that automatically switches between
-        the two detectors at the crossover frequency. 
-        
-        Tested with TCP server version 20240718
-        
-        Issues:
-            * How to distinguish between LSPM1.x and LSPM2.x
-            * add reconfigure to change compensation frequency
+<h3>LUMILOOP LPSM power meter</h3>
+<p>This SweepMe! driver communicates with a LSPM power meter from LUMILOOP. If you need support for a LSProbe please let us know and we can create a new instrument driver.<br /><br />The driver was created with&nbsp;TCP server version 20240718.</p>
+<p><strong>Communication</strong></p>
+<ul>
+<li>First, install the LUMILOOP application. You can find all downloads here:<br /><a href="https://lumiloop.de/support/documents-and-downloads/">https://lumiloop.de/support/documents-and-downloads/</a></li>
+<li>Next, please copy your calibration files to the cal folder of the LUMILOOP application, for example.<br />C:\Program Files (x86)\LUMILOOP\cal\lspm<br />The calibration files should match your LSPM version and serial number. For example, the folder of your calibration files could have the name&nbsp;2v0sn11 if you use version 2.0 and have a device with serial number 11.</li>
+<li>Start the LUMILOOP TCP server. It should indicate that calibration files have been found.</li>
+<li>You can run the LUMILOOP GUI application to check the connection to the device. The LUMILOOP GUI application also allows to create a virtual device. Please note that a virtual device must be registered with a serial number for which calibration files are available.</li>
+<li>The SweepMe! driver communicates with&nbsp;the LUMILOOP TCP server which must always be running.</li>
+<li>Register a VISA resource using a raw socket port. This can be done for example with NI MAX that comes with the installation of the NI VISA runtime. If you have a different VISA runtime installed, there will be other tools to register a TCPIP resource. A valid resource would be:<br />TCPIP0::127.0.0.1::10001::SOCKET<br />where port 10001 is typically used for LSPM devices and 127.0.0.1 is the localhost IP that must be used if SweepMe! and the LUMILOOP TCP server run on the same computer.</li>
+<li>Enter the serial number of your device into the Parameters section of the driver.<br /><br /></li>
+</ul>
+<p><strong>Usage</strong></p>
+<ul>
+<li>Operation modes are described in the User manual. Mode 1 is a convenience mode that automatically switches between the two detectors at the crossover frequency, typically recommeded if you like to span a large range of frequencies.</li>
+<li>The power meter needs to know at which frequency the detected signal is working. Therefore, the compensation frquency must be entered. This frequency is the frequency at which the frequency dependent calibration correction is applied. In case you are sweeping the frequency, you can use the Parameter syntax {...} to handover a value from another module, e.g. the sweep value of a signal generator being a frequency.</li>
+<li>Select the channels that should be read out.</li>
+<li>The crossover frequency is the one at which the detector is switched in mode 1.</li>
+</ul>
+<p>&nbsp;</p>
+<p><strong>Known issues</strong></p>
+<ul>
+<li>LSPM 1.x and LSPM2.x device both work with the same SweepMe! instrument driver, but can have the same serial number. So far, the SweepMe! driver does not handle this very rare case. Please contact us in case you have this issue.&nbsp;</li>
+</ul>
+<p>&nbsp;</p>
     """
 
     def __init__(self):
         super().__init__()
 
-        self.shortname = "LPSM"
+        self.shortname = "LSPM"
 
         self.port_manager = True
         self.port_types = ["TCPIP"]  # could be extended to SOCKET to circumvent use of VISA runtime
@@ -79,11 +92,11 @@ class Device(EmptyDevice):
             "Channel 1": True,
             "Channel 2": False,
             "Channel 3": False,
-            "Mode": ["0", "1", "2", "3"],
             "Compensation frequency in Hz": "1e9",
-            "Crossover frequency in Hz": "0",
-            "Automatic video bandwidth": True,
-            "Video bandwidth in Hz": "3e6",
+            "Mode": ["0", "1", "2", "3"],
+            "Crossover frequency in Hz (Mode 1)": "0",
+            # "Automatic video bandwidth": True,
+            # "Video bandwidth in Hz": "3e6",
         }
 
         return gui_parameter
@@ -103,9 +116,9 @@ class Device(EmptyDevice):
 
         self.mode = int(parameter["Mode"])
         self.frequency = float(parameter["Compensation frequency in Hz"])
-        self.lhfrequency = float(parameter["Crossover frequency in Hz"])
-        self.automatic_video_bandwidth = parameter["Automatic video bandwidth"]
-        self.video_bandwidth = float(parameter["Video bandwidth in Hz"])
+        self.lhfrequency = float(parameter["Crossover frequency in Hz (Mode 1)"])
+        # self.automatic_video_bandwidth = parameter["Automatic video bandwidth"]
+        # self.video_bandwidth = float(parameter["Video bandwidth in Hz"])
 
     def initialize(self):
 
