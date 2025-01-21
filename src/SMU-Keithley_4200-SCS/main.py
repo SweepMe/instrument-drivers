@@ -416,12 +416,13 @@ class Device(EmptyDevice):
 
             try:
                 self.lpt.initialize()
-            except ConnectionRefusedError:
-                debug(
-                    "Unable to connect to a lptlib server application running on the 4200-SCS. Please check your "
-                    "network settings and make sure the server application is running.",
-                )
-                raise
+            except ConnectionRefusedError as e:
+                msg = ("Unable to connect to a lptlib server application running on the 4200-SCS. Please check your"
+                       "network settings and make sure the server application is running.")
+                raise ConnectionRefusedError(msg) from e
+            except Exception as e:
+                msg = "Error during lpt.initialize"
+                raise Exception(msg) from e
 
             self.card_id = self.lpt.getinstid(self.card_name)
 
@@ -551,20 +552,6 @@ class Device(EmptyDevice):
             # compliance = 1e1
             # self.set_current_range(self.card_name[-1], range, compliance)
 
-    def start(self) -> None:
-        """Preparation before applying a new value."""
-        if self.list_master:
-            # Clear the result arrays
-            self.lpt.clrscn()
-
-            # Update list length in case variable lists are used (e.g. by using ParameterSyntax of SweepMe)
-            list_length = len(self.list_sweep_values)
-            if list_length == 0:
-                msg = "List for List Sweep is empty."
-                raise ValueError(msg)
-
-            self.device_communication[self.identifier]["List length"] = list_length
-
     def configure_lptlib(self) -> None:
         """Configure the device using lptlib commands."""
         # can be used to change the limit indicator value
@@ -598,6 +585,20 @@ class Device(EmptyDevice):
 
         # Range delay off
         self.lpt.setmode(self.card_id, self.param.KI_RANGE_DELAY, 0.0)  # disable range delay
+
+    def start(self) -> None:
+        """Preparation before applying a new value."""
+        if self.list_master:
+            # Clear the result arrays
+            self.lpt.clrscn()
+
+            # Update list length in case variable lists are used (e.g. by using ParameterSyntax of SweepMe)
+            list_length = len(self.list_sweep_values)
+            if list_length == 0:
+                msg = "List for List Sweep is empty."
+                raise ValueError(msg)
+
+            self.device_communication[self.identifier]["List length"] = list_length
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
