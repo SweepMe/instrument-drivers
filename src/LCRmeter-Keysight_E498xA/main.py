@@ -138,8 +138,11 @@ class Device(EmptyDevice):
             "ALC": ["Off", "On"],
             "Integration": ["Short", "Medium", "Long"],
             "Trigger": ["Software", "Internal", "External"],
+
+            # List Mode
             "ListSweepCheck": True,
             "ListSweepType": ["Sweep", "Custom"],
+            "ListSweepCustomValues": "",
             "ListSweepStart": 0.0,
             "ListSweepEnd": 1.0,
             "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
@@ -243,7 +246,13 @@ class Device(EmptyDevice):
 
         elif list_sweep_type == "Custom":
             custom_values = parameter["ListSweepCustomValues"]
-            self.list_sweep_values = [float(value) for value in custom_values.split(",")]
+            if custom_values == "":
+                self.list_sweep_values = np.array([])
+            else:
+                # Remove leading and trailing commas
+                custom_values = custom_values.strip(",")
+
+                self.list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
 
         else:
             msg = f"Unknown list sweep type: {list_sweep_type}"
@@ -578,10 +587,10 @@ class Device(EmptyDevice):
         return self.port.read().split(",")
 
     def set_step_delay(self, time_in_s: float) -> None:
-        """Set the delay time that the device waits after switching before starting the measurement.
+        """Set the delay time that the device waits after switching before starting the measurement. -> this is hold
 
         Note: The device also enables setting a trigger delay time, which is the time between the trigger and setting of
-        the next value.
+        the next value. -> this is delay
         """
         if time_in_s < 100e-6:
             return
