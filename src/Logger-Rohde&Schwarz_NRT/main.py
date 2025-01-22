@@ -27,7 +27,7 @@
 
 # SweepMe! driver
 # * Module: Logger
-# * Instrument: Rohde & Schwarz NRT-2
+# * Instrument: Rohde & Schwarz NRT
 
 import time
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -36,7 +36,7 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
     """Child class to implement functionalities of a measurement device."""
     description = """
-                    <h3>Rohde&Schwarz NRT2 Power Reflection Meter</h3>
+                    <h3>Rohde&Schwarz NRT Power Reflection Meter</h3>
                     <p>Setup:</p>
                     <ul>
                     <li>Requires VISA library</li>
@@ -48,7 +48,7 @@ class Device(EmptyDevice):
         """Initialize the device class and the instrument parameters."""
         super().__init__()
 
-        self.shortname = "NRT-2"
+        self.shortname = "NRT"
 
         # SweepMe return parameters
         self.variables = ["Forward", "Reverse"]
@@ -151,6 +151,8 @@ class Device(EmptyDevice):
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
         self.port.write("*RST")
+        self.port.write("*CLS")
+        self.port.write("*WAI")
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -160,13 +162,35 @@ class Device(EmptyDevice):
         # if self.carrier_frequency != 0.0:
         #     self.port.write(f"SENS{self.sensor}:FREQ {self.carrier_frequency}")
 
-        self.set_video_bandwidth(self.video_bandwidth)
+        # self.set_video_bandwidth(self.video_bandwidth)
 
         # Use single trigger mode
         # TODO: Check if this is the correct mode or if NORM should be used
-        self.port.write("TRIG:MODE:SING")
+        # self.port.write("TRIG:MODE:SING")
 
-        self.set_measurement_mode()
+        # self.set_measurement_mode()
+
+        self.port.write(f":SENS{self.sensor}:FUNC:OFF:ALL")
+        func = "POW:FORW:AVER"
+
+        self.port.write(f':SENS{self.sensor}:FUNC "{func}"')
+        self.port.write(f':SENS{self.sensor}:FUNC:STAT? "{func}"')
+        print(self.port.read())
+        self.port.write(f":SENS{self.sensor}:FUNC?")
+        print(self.port.read())
+
+        # self.port.write(f":SENS{self.sensor}:FUNC 'POW:REFL'")
+
+        sensor = 0
+        self.port.write(f":SENS{sensor}:FUNC:OFF:ALL")
+        func = "POW:REV"
+
+        self.port.write(f':SENS{sensor}:FUNC "{func}"')
+        self.port.write(f':SENS{sensor}:FUNC:STAT? "{func}"')
+        print(self.port.read())
+
+        self.port.write(f":SENS{self.sensor}:FUNC?")
+        print(self.port.read())
 
         # self.port.write("SYST:SPE FAST")  # set speed to fast, measured vaues are no longer displayed
 
@@ -187,9 +211,19 @@ class Device(EmptyDevice):
     def perform_zeroing(self) -> None:
         """Performs zeroing for the sensor that is connected to the selected port."""
         # See manual page 161
-        self.port.write(f"CAL{self.sensor}:ZERO")
-        time.sleep(8)
+        self.port.write(f":CAL{self.sensor}:ZERO")
+        # time.sleep(8)
         self.port.write("*WAI")  # wait for the zeroing to finish
+
+        status = False
+        while status is False:
+            try:
+                self.port.write("SYST:ERR?")
+                ret = self.port.read()
+            except Exception as e:
+                time.sleep(0.5)
+            else:
+                status = ret.startswith("0")
 
     def set_video_bandwidth(self, bandwidth: float) -> None:
         """Set the video bandwidth of the device."""
@@ -208,6 +242,7 @@ class Device(EmptyDevice):
         """Get the measurement values from the device."""
         self.port.write(f"SENS{self.sensor}:DATA?")
         result = self.port.read()
+        print(f"Result: {result}")
         forward_result = result.split(",")[0]
         forward_result = float("nan") if "NAN" in forward_result else float(forward_result)
 
