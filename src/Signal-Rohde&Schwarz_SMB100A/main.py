@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -246,6 +246,25 @@ class Device(EmptyDevice):
         self.port.write(f"SYST:ULOC {state}")
 
     """ Currently not implemented functions """
+
+    def set_amplitude_modulation_state(self, turn_on: bool = False) -> None:
+        """Set the amplitude modulation on or off."""
+        state = "ON" if turn_on else "OFF"
+        self.port.write(f":SOUR:AM:STAT {state}")
+
+    def set_amplitude_modulation(self, depth_percent: float = 0.0, use_exponential_modulation: bool = False) -> None:
+        """Set the amplitude modulation to linear or exponential."""
+        if depth_percent < 0 or depth_percent > 100:
+            msg = f"Depth {depth_percent} out of range. Choose between 0 and 100%."
+            raise ValueError(msg)
+
+        if not use_exponential_modulation:
+            self.port.write(":SOUR:AM:TYPE LIN")
+            self.port.write(f":SOUR:AM:DEPT {depth_percent}")
+        else:
+            self.port.write(":SOUR:AM:TYPE EXP")
+            # Test if EXP or LIN in command, manual is ambiguous
+            self.port.write(f":SOUR:AM:DEPT:EXP {depth_percent}")
 
     def get_impedance(self) -> float:
         """Get the impedance of the RF output."""
