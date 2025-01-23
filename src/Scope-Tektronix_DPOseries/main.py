@@ -29,7 +29,7 @@
 
 # SweepMe! driver
 # * Module: Scope
-# * Instrument: Tektronix DPO7000
+# * Instrument: Tektronix DPOseries
 
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
