@@ -340,6 +340,7 @@ class Device(EmptyDevice):
     def read_result(self) -> None:
         """Read the measured data from a buffer that was requested during 'request_result'."""
         channel = 1
+        self.results = []
 
         # UNCLEAR WHETHER THIS RETURNS ASCII DATA
         frequencies_raw = self.get_applied_frequency_data(channel=channel)
