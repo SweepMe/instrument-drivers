@@ -33,24 +33,24 @@
 
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
-import numpy as np
+
 
 class Device(EmptyDevice):
-
+    """Device class configure and read out measure slots in Tektronix DPO Series Oscilloscopes."""
     description = """
-        Driver to configure and read out meausure slots
+        Driver to configure and read out measure slots
     """
 
-    def __init__(self):
-    
-        EmptyDevice.__init__(self)
-        
+    def __init__(self) -> None:
+        """Initialize the device class and the instrument parameters."""
+        super().__init__()
+
         self.shortname = "DPOseries"
 
         self.port_manager = True
         self.port_types = ["USB", "GPIB", "TCPIP"]
         # self.port_identifications = ['TEKTRONIX,DPO7354C*']
-       
+
         self.port_properties = {
             "timeout": 5.0,
             "delay": 1.0,
@@ -136,21 +136,24 @@ class Device(EmptyDevice):
             "Waveform count": "",
         }
 
+        # Measurement Parameters
+        self.slot_channels: dict = {}
+        self.slot_measure_types: dict = {}
+        self.statistics_count: int = 0
+        self.results: list = []
 
-    def set_GUIparameter(self):
-
-        gui_parameter = {
-            "Count": "1"
-        }
+    def set_GUIparameter(self) -> dict:  # noqa: N802
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+        gui_parameter = {"Count": "1"}
 
         for slot in range(1, 9):
             gui_parameter[f"Slot {slot} channel"] = ["None", "1", "2", "3", "4"]
-            gui_parameter[f"Slot {slot} measure type"] = ["None"] + list(self.measure_types.keys())
+            gui_parameter[f"Slot {slot} measure type"] = ["None", *list(self.measure_types.keys())]
 
         return gui_parameter
 
-    def get_GUIparameter(self, parameter={}):
-
+    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.slot_channels = {}
         self.slot_measure_types = {}
         self.variables = []
@@ -170,13 +173,13 @@ class Device(EmptyDevice):
 
         self.statistics_count = int(parameter["Count"])
 
-    def initialize(self):
-
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
         identifier = self.get_identification()
         print("Identifier:", identifier)
 
-    def configure(self):
-
+    def configure(self) -> None:
+        """Configure the measurement slots."""
         self.set_measure_statistics_mode(True)
 
         for slot in range(1, 9):
@@ -197,8 +200,8 @@ class Device(EmptyDevice):
 
         self.set_measure_statistics_count(self.statistics_count)
 
-    def measure(self):
-
+    def measure(self) -> None:
+        """Trigger the acquisition of new data."""
         # self.port.write("MEASUrement?")
         # answer = self.port.read()
         # print("Measurement:", answer)
@@ -223,7 +226,8 @@ class Device(EmptyDevice):
                     if std_dev != 0.0:
                         break
 
-    def request_result(self):
+    def request_result(self) -> None:
+        """Retrieve measured data."""
         for slot in range(1, 9):
             if self.slot_channels[slot] != "None" and self.slot_measure_types[slot] != "None":
                 if self.statistics_count == 1:
@@ -233,10 +237,11 @@ class Device(EmptyDevice):
                     value = self.get_measure_mean(slot)
                     self.results.append(value)
 
-    def call(self):
+    def call(self) -> [float, float]:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
         return self.results
 
-        """
+    """
         FORWARDS;
         RISE;
         RISE;
@@ -347,124 +352,115 @@ class Device(EmptyDevice):
         32;
 
         SCREEN
-        """
+    """
 
     """ wrapped communication commands """
 
-    def get_identification(self):
+    def get_identification(self) -> str:
+        """Query the device name."""
         self.port.write("*IDN?")  # Query device name
-        answer = self.port.read()
-        return answer
+        return self.port.read()
 
-    def reset(self):
+    def reset(self) -> None:
+        """Reset the device."""
         self.port.write("*RST")
 
-    def get_acquisition_number(self):
+    def get_acquisition_number(self) -> int:
+        """Get the number of acquisitions."""
         self.port.write("ACQ:NUMACQ?")
         answer = self.port.read()
         return int(answer)
 
-    def get_measure_type(self, slot: int):
+    def get_measure_type(self, slot: int) -> str:
+        """Get the measurement type of a slot."""
         self.port.write(f"MEASUrement:MEAS{slot}?")
-        answer = self.port.read()
-        return answer
+        return self.port.read()
 
-    def get_measure_unit(self, slot: int):
+    def get_measure_unit(self, slot: int) -> str:
+        """Get the measurement unit of a slot."""
         self.port.write(f"MEASUrement:MEAS{slot}:UNIts?")
-        answer = self.port.read()
-        return answer
+        return self.port.read()
 
-    def get_measure_value(self, slot: int):
+    def get_measure_value(self, slot: int) -> float:
+        """Get the measurement value of a slot."""
         self.port.write(f"MEASUrement:MEAS{slot}:VALue?")
         answer = self.port.read()
         return float(answer)
 
-    def get_measure_minimum(self, slot: int):
+    def get_measure_minimum(self, slot: int) -> float:
+        """Get the minimum measurement value of a slot."""
         self.port.write(f"MEASUrement:MEAS{slot}:MINImum?")
         answer = self.port.read()
         return float(answer)
 
-    def get_measure_maximum(self, slot: int):
+    def get_measure_maximum(self, slot: int) -> float:
+        """Get the maximum measurement value of a slot."""
         self.port.write(f"MEASUrement:MEAS{slot}:MAXImum?")
         answer = self.port.read()
         return float(answer)
 
-    def get_measure_mean(self, slot: int):
+    def get_measure_mean(self, slot: int) -> float:
+        """Get the mean measurement value of a slot."""
         self.port.write(f"MEASUrement:MEAS{slot}:MEAN?")
         answer = self.port.read()
         return float(answer)
 
-    def get_measure_standard_deviation(self, slot: int):
+    def get_measure_standard_deviation(self, slot: int) -> float:
+        """Get the standard deviation of a slot."""
         self.port.write(f"MEASUrement:MEAS{slot}:STDdev?")
         answer = self.port.read()
         return float(answer)
 
-    def set_measure_state(self, slot: int, state: (str, bool, int)):
-
-        if isinstance(state, bool):
-            if state is True:
-                state = "ON"
-            elif state is False:
-                state = "OFF"
-
-        elif isinstance(state, int):
-            if state == 1:
-                state = "ON"
-            elif state == 0:
-                state = "OFF"
-            else:
-                msg = "Only integers 0 and 1 are accepted"
-                raise ValueError(msg)
-
-        elif isinstance(state, str):
-           if state not in ["ON", "OFF"]:
-               msg = "Only ON or OFF are accepted"
-               raise ValueError(msg)
-
+    def set_measure_state(self, slot: int, state: (str, bool, int)) -> None:
+        """Set the state of a measurement slot."""
+        state = self.convert_state_to_string(state)
         self.port.write(f"MEASUrement:MEAS{slot}:STATE {state}")
 
-    def get_measurement_statistics(self):
-        self.port.write("MEASUrement:STATIstics?")
-        answer = self.port.read()
-        return answer
-
-    def reset_measurement_statistics(self):
-        self.port.write("MEASUrement:STATIstics RESET")
-
-    def set_measure_statistics_mode(self, state: (str, bool, int)):
-
+    @staticmethod
+    def convert_state_to_string(state: (str, bool, int)) -> str:
+        """Convert a state of type str, bool, or int to a string."""
         if isinstance(state, bool):
-            if state is True:
-                state = "ON"
-            elif state is False:
-                state = "OFF"
+            state = "ON" if state else "OFF"
 
         elif isinstance(state, int):
-            if state == 1:
-                state = "ON"
-            elif state == 0:
-                state = "OFF"
-            else:
+            if state not in [0, 1]:
                 msg = "Only integers 0 and 1 are accepted"
                 raise ValueError(msg)
+            state = "ON" if state == 1 else "OFF"
 
         elif isinstance(state, str):
-           if state not in ["ON", "OFF"]:
-               msg = "Only ON or OFF are accepted"
-               raise ValueError(msg)
+            if state.lower() not in ["on", "off"]:
+                msg = "Only ON or OFF are accepted"
+                raise ValueError(msg)
+            state = state.upper()
 
-        self.port.write("MEASUrement:STATIstics:MODE {state}")
+        return state
 
-    def get_measure_statistics_mode(self):
+    def get_measurement_statistics(self) -> str:
+        """Get the measurement statistics."""
+        self.port.write("MEASUrement:STATIstics?")
+        return self.port.read()
+
+    def reset_measurement_statistics(self) -> None:
+        """Reset the measurement statistics."""
+        self.port.write("MEASUrement:STATIstics RESET")
+
+    def set_measure_statistics_mode(self, state: (str, bool, int)) -> None:
+        """Set the measurement statistics mode on or off."""
+        state = self.convert_state_to_string(state)
+        self.port.write(f"MEASUrement:STATIstics:MODE {state}")
+
+    def get_measure_statistics_mode(self) -> str:
+        """Get the measurement statistics mode."""
         self.port.write("MEASUrement:STATIstics:MODE?")
-        answer = self.port.read()
-        return answer
+        return self.port.read()
 
-    def set_measure_statistics_count(self, count: int):
+    def set_measure_statistics_count(self, count: int) -> None:
+        """Set the measurement statistics count."""
         self.port.write(f"MEASUrement:STATIstics:WEIghting {count}")
 
-    def get_measure_statistics_count(self):
+    def get_measure_statistics_count(self) -> int:
+        """Get the measurement statistics count."""
         self.port.write("MEASUrement:STATIstics:WEIghting?")
         answer = self.port.read()
         return int(answer)
-
