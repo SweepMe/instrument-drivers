@@ -32,35 +32,36 @@
 # * Instrument: Tektronix DPOseries
 
 
-from pysweepme.EmptyDeviceClass import EmptyDevice
 import numpy as np
+from pysweepme.EmptyDeviceClass import EmptyDevice
+
 
 class Device(EmptyDevice):
-
+    """Device class for Tektronix DPO Oscilloscopes."""
     description = """
         Most of the Scope module features are not yet supported and many properties must be set manually.
     """
 
-    def __init__(self):
-    
-        EmptyDevice.__init__(self)
-        
+    def __init__(self) -> None:
+        """Initialize the device class and the instrument parameters."""
+        super().__init__()
+
         self.shortname = "DPO7000"
-        
+
         self.variables = ["Time"]
         self.units = ["s"]
         self.plottype = [True]  # True to plot data
         self.savetype = [True]  # True to save data
-        
+
         self.port_manager = True
         self.port_types = ["USB", "GPIB", "TCPIP"]
         # self.port_identifications = ['TEKTRONIX,DPO7354C*']
-       
+
         self.port_properties = {
             "timeout": 5.0,
             "delay": 1.0,
         }
-        
+
         self.commands = {
             "Channel 1": "CH1",
             "Channel 2": "CH2",
@@ -79,15 +80,14 @@ class Device(EmptyDevice):
             "LF recection": "LFR",
             "Noise rejection": "NOISE",
         }
-           
-    def set_GUIparameter(self):
 
+    def set_GUIparameter(self) -> dict:  # noqa: N802
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         gui_parameter = {
             "SweepMode": ["None"],
-
             "TriggerSlope": ["As is", "Rising", "Falling"],
             "TriggerSource": ["As is", "CH1", "CH2", "CH3", "CH4", "AUX", "LINE", "None"],
-            "TriggerCoupling": ["As is"] + list(self.trigger_couplings.keys()),
+            "TriggerCoupling": ["As is", *list(self.trigger_couplings.keys())],
             "TriggerLevel": 0,
             "TimeRange": ["Time range in s", "Time scale in s/div", "Record length"],
             "TimeRangeValue": 5e-4,
@@ -99,22 +99,35 @@ class Device(EmptyDevice):
             "Average": ["As is", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"],
             "VoltageRange": ["Voltage range in V"],
         }
-                       
-        for i in range(1,5):
-            gui_parameter["Channel%i" % i] = True if i == 1 else False
+
+        for i in range(1, 5):
+            gui_parameter["Channel%i" % i] = i == 1
             gui_parameter["Channel%i_Name" % i] = "CH%i" % i
-            gui_parameter["Channel%i_Range" % i] = ["1e-2", "2e-2", "5e-2", "1e-1", "2e-1", "5e-1", "1", "2", "5", "10", "20", "50"]
+            gui_parameter["Channel%i_Range" % i] = [
+                "1e-2",
+                "2e-2",
+                "5e-2",
+                "1e-1",
+                "2e-1",
+                "5e-1",
+                "1",
+                "2",
+                "5",
+                "10",
+                "20",
+                "50",
+            ]
             gui_parameter["Channel%i_Offset" % i] = 0.0
-                     
+
         return gui_parameter
 
-    def get_GUIparameter(self, parameter={}):
-    
+    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.triggersource = parameter["TriggerSource"]
         self.triggercoupling = parameter["TriggerCoupling"]
         self.triggerslope = parameter["TriggerSlope"]
         self.triggerlevel = parameter["TriggerLevel"]
-        
+
         self.timerange = parameter["TimeRange"]
         self.timerangevalue = float(parameter["TimeRangeValue"])
         self.timeoffsetvalue = parameter["TimeOffsetValue"]
@@ -124,35 +137,35 @@ class Device(EmptyDevice):
         self.average = parameter["Average"]
 
         self.acquisition = parameter["Acquisition"]
-        
+
         self.channels = []
         self.channel_names = {}
         self.channel_ranges = {}
         self.channel_divs = {}
         self.channel_offsets = {}
-        
-        for i in range(1,5):
-            
+
+        for i in range(1, 5):
             if parameter["Channel%i" % i]:
                 self.channels.append(i)
-                
+
                 self.variables.append(self.commands["Channel %i" % i] + " " + parameter["Channel%i_Name" % i])
                 self.units.append("V")
                 self.plottype.append(True)
                 self.savetype.append(True)
-                
+
                 self.channel_names[i] = parameter["Channel%i_Name" % i]
                 self.channel_ranges[i] = float(parameter["Channel%i_Range" % i])
                 self.channel_divs[i] = self.channel_ranges[i] / 10
                 self.channel_offsets[i] = parameter["Channel%i_Offset" % i]
 
-    def initialize(self): 
-    
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
         # This driver does not use Reset yet so that user can do measurements with changing options manually
         # self.reset()
 
         if len(self.channels) == 0:
-            raise Exception("Please select at least one channel to be read out.")
+            msg = "Please select at least one channel to be read out."
+            raise ValueError(msg)
 
         identifier = self.get_identification()
         print("Identifier:", identifier)
@@ -161,8 +174,8 @@ class Device(EmptyDevice):
         self.port.write("DAT:ENCdg ASCii")  # sets encoding
         self.port.write("WFMO:BYT_NR 2")  # set number of bytes
 
-    def configure(self):
-
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
         # Acquisition
         if self.acquisition == "As is":
             state = self.get_acquisition_state()
@@ -202,10 +215,10 @@ class Device(EmptyDevice):
         else:
             self.port.write("TRIGger:A:EDGE:SOUrce %s" % self.triggersource)
             self.port.write("TRIGger:A:LEVel:%s %s" % (self.triggersource, self.triggerlevel))  # set trigger level
-        
+
             if self.triggerlevel == 0:  # if no specific trigger level desired
                 self.port.write("TRIG:A SETLevel;TRIG:B SETLevel")  # sets the trigger level at 50%
-     
+
         if self.triggerslope == "As is":  # set trigger slope
             pass
         elif self.triggerslope == "Rising":
@@ -222,19 +235,18 @@ class Device(EmptyDevice):
         # The device can operate in three different horizontal scaling modes. As the sampling rate is a parameter
         # set by the user, one of these modes will be disregarded. The user can then decide whether to define
         # the time range/time per division, or the total record length, which will cause the device to switch
-        # between auto and manual mode. This is done by checking if the parameter TimeRange is set to 
+        # between auto and manual mode. This is done by checking if the parameter TimeRange is set to
         # Record length, and then setting the horizontal scaling accordingly.
-                
-        if self.timerange != "Record length":  # Entering into auto mode
 
+        if self.timerange != "Record length":  # Entering into auto mode
             self.port.write("HORizontal:MODE AUTO")
             if self.timerange == "Time range in s":
                 self.divisions = self.timerangevalue / 10.0  # only accepts entries for the time scale
             elif self.timerange == "Time scale in s/div":
                 self.divisions = self.timerangevalue
- 
+
             self.port.write("HORizontal:MODE:SCAle %s" % self.divisions)  # set time scale
-            
+
         elif self.timerange == "Record length":
             # set manual mode + RL
             self.port.write("HORizontal:MODE:MANual;HORizontal:MODE:RECOrdlength %s" % self.timerangevalue)
@@ -247,15 +259,14 @@ class Device(EmptyDevice):
             self.port.write("SEL:CH%s ON" % i)  # turn on selected channels
             self.port.write("CH%s:SCAle %s; :CH%s:OFFSet %s" % (i, self.channel_divs[i], i, self.channel_offsets[i]))
 
-    def measure(self):
-
+    def measure(self) -> None:
+        """Trigger the acquisition of new data."""
         # start acquisition if needed
         if self.acquisition_type == "SEQUENCE":
             self.set_acquisition_state("RUN")
 
         if self.acquisition_mode != "SAMPLE" and self.acquisition_type == "SEQUENCE":
             while True:  # evaluation only after correct number of averages performed
-
                 if self.is_run_stopped():
                     return False
 
@@ -304,70 +315,62 @@ class Device(EmptyDevice):
 
             self.voltages[:, slot] = volt_data  # inputs voltage data for channel i into correct column of data array
 
-    def call(self):
-        return [self.times] + [self.voltages[:,i] for i in range(self.voltages.shape[1])]
+    def call(self) -> list:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
+        return [self.times] + [self.voltages[:, i] for i in range(self.voltages.shape[1])]
 
     """ start of wrapped communication commands"""
 
-    def get_identification(self):
+    def get_identification(self) -> str:
+        """Return the device name."""
         self.port.write("*IDN?")  # Query device name
-        answer = self.port.read()
-        return answer
+        return self.port.read()
 
-    def reset(self):
+    def reset(self) -> None:
+        """Reset the device."""
         self.port.write("*RST")
 
-    def get_waveform(self):
+    def get_waveform(self) -> np.array:
+        """Return the waveform data."""
         self.port.write("CURVe?")  # queries the waveform from the oscilloscope
         curve_points = self.port.read().split(",")  # turn str object from query into list
-        data = np.array(list(map(float, curve_points)))
-        return data
+        return np.array(list(map(float, curve_points)))
 
-    def get_acquisition_number(self):
+    def get_acquisition_number(self) -> int:
+        """Return the number of acquisitions."""
         self.port.write("ACQ:NUMACQ?")
         answer = self.port.read()
         return int(answer)
 
-    def set_acquisition_state(self, state):
-        """
+    def set_acquisition_state(self, state: str) -> None:
+        """Start or stop the acquisition.
+
         OFF, STOP, or 0 stops acquisitions.
         ON, RUN, or 1 starts acquisitions.
         """
-
         self.port.write(f"ACQ:STATE {state}")
 
-    def get_acquisition_state(self):
-
+    def get_acquisition_state(self) -> int:
+        """Return the acquisition state. Returns 1 for running and 0 for stopped."""
         self.port.write("ACQ:STATE?")
         answer = self.port.read()
-        if answer == "RUN" or answer == "ON":
+        if answer in ("RUN", "ON"):
             answer = 1
-        if answer == "STOP" or answer == "OFF":
+        if answer in ("STOP", "OFF"):
             answer = 0
         return int(answer)
 
-    def get_acquisition_type(self):
-        """
-        returns:
-            RUNSTOP: str, Continuous
-            SEQUENCE: str, Single
-        """
+    def get_acquisition_type(self) -> str:
+        """Return the acquisition type. Returns RUNSTOP for continuous and SEQUENCE for single."""
         self.port.write("ACQ:STOPAfter?")  # asks for the Continuous or Single measurement
-        answer = self.port.read()
-        return answer
+        return self.port.read()
 
-    def get_acquisition_mode(self):
-        """
-        returns:
-            SAMPLE: str, sample mode
-            AVERAGE: str, average mode
-        """
-
+    def get_acquisition_mode(self) -> str:
+        """Return the acquisition mode. Returns SAMPLE for sample and AVERAGE for average mode."""
         self.port.write("ACQuire:MODe?")
-        answer = self.port.read()
-        return answer
+        return self.port.read()
 
-    def get_trigger_source(self):
+    def get_trigger_source(self) -> str:
+        """Return the trigger source."""
         self.port.write("TRIGger:A:EDGE:SOUrce?")
-        answer = self.port.read()
-        return answer
+        return self.port.read()
