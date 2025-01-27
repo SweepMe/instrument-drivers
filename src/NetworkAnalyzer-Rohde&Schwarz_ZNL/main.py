@@ -44,7 +44,7 @@ FoMa = FolderManager()
 VERBOSE = False
 ZNL_DEFAULT_CAL_DIR = r"C:\Users\Public\Documents\Rohde-Schwarz\ZNL\Calibration\Data"
 DATA_FMT = "REAL,32"  # valid: "ASCII", "REAL,64", "REAL,32"
-#DATA_FMT = "ASCII"
+# DATA_FMT = "ASCII"
 """ VNA nomenclature
     Trace: empty/filled complex data container
         - data trace
@@ -66,7 +66,6 @@ class Device(EmptyDevice):
     """
 
     def __init__(self):
-
         EmptyDevice.__init__(self)
 
         self.shortname = "ZNL"  # short name will be shown in the sequencer
@@ -102,46 +101,36 @@ class Device(EmptyDevice):
         self.calibration_file_extensions = [".cal"]
 
     def set_GUIparameter(self):
-
         gui_parameters = {
-            "Terminals":
-            "1,2",
-            "Sparameters":
-            "",
+            "Terminals": "1,2",
+            "Sparameters": "",
             # Calibrations file from Module not from driver
             "Calibration": [""],
-            "Average":
-            1,
+            "Average": 1,
             "SourcePower": ["Min", "Max"] + [f"{i}" for i in range(-95, 30, 5)],
             "SourceAttenuation": ["Auto"] + [f"{i}" for i in range(0, 70, 5)],
-            "IFBandwidth": [f"{str(int(x))}" for x in self.IF_bandwidth_values],
+            "IFBandwidth": [f"{int(x)!s}" for x in self.IF_bandwidth_values],
             "Correction": ["On", "Off"],
             "Trigger": [
                 "Internal",
                 "External",
             ],  # IMMediate | EXTernal | MANual | MULTiple
-            "TriggerDelay":
-            0.0,
+            "TriggerDelay": 0.0,
             # All frequencies in Hz
-            "FrequencyStart":
-            10e6,
-            "FrequencyEnd":
-            50e6,
+            "FrequencyStart": 10e6,
+            "FrequencyEnd": 50e6,
             "FrequencyStepPointsType": [
                 "Linear (points)",
                 "Linear (steps in Hz)",
                 "Logarithmic (points)",
             ],
-            "FrequencyStepPoints":
-            1e6,
-            "Display":
-            True,
+            "FrequencyStepPoints": 1e6,
+            "Display": True,
         }
 
         return gui_parameters
 
     def get_GUIparameter(self, parameter):
-
         # to see all available keys you get from the GUI:
         # print(parameter)
         self.f_start = parameter["FrequencyStart"]
@@ -196,17 +185,20 @@ class Device(EmptyDevice):
         self.savetype += [True] * len(self.Sparam_names)
 
     def initialize(self):
-
         # check whether S-parameters are correctly defined
         if len(self.Sparam_names) == 0:
-            raise ValueError("""Unable to parse S-parameters. Please define S-parameters
+            raise ValueError(
+                """Unable to parse S-parameters. Please define S-parameters
                 in the field 'S-parameters  "e.g. 'S11, S21' or check terminals
-                are  correctly defined eg. 1,2""")
+                are  correctly defined eg. 1,2""",
+            )
 
         # check whether terminals are defined
         if len(self.terminals) == 0:
-            raise ValueError(""" Unable to parse terminal numbers. Please define the
-                terminals to be used in the field 'Terminals' e.g. '1, 2'.""")
+            raise ValueError(
+                """ Unable to parse terminal numbers. Please define the
+                terminals to be used in the field 'Terminals' e.g. '1, 2'.""",
+            )
 
         # Clear the event status registers and empty the error queue
         print("Connected to ZNL: ", self.port.get_identification())
@@ -218,15 +210,14 @@ class Device(EmptyDevice):
         self.delete_all_traces()
         self.set_trigger_continuous(0)
 
-        #clear all errors
-        self.port.write('SYSTem:ERRor:CLEar:ALL')
-        self.port.write('SYSTem:ERRor:CLEar:REMote')
+        # clear all errors
+        self.port.write("SYSTem:ERRor:CLEar:ALL")
+        self.port.write("SYSTem:ERRor:CLEar:REMote")
 
         self.set_data_transfer_format(self.data_format_type)
 
     def configure(self):
-        """ configure the ZNL VNA"""
-
+        """Configure the ZNL VNA"""
         self.window_number = 1
         channel_number = 1  # only one channel is needed
         self.f_start = float(self.f_start)
@@ -305,7 +296,7 @@ class Device(EmptyDevice):
         if len(self.calibration_file_name) > 0 & correction_on:
             self.apply_calibration(channel=1, from_file=self.calibration_file_name)
         elif correction_on and not self.calibration_file_name:
-            raise IOError("Correction 'ON' Requested but no calibration file specified.")
+            raise OSError("Correction 'ON' Requested but no calibration file specified.")
 
     def poweron(self):
         self.set_output_on()
@@ -314,7 +305,6 @@ class Device(EmptyDevice):
         self.set_output_off()
 
     def unconfigure(self):
-
         self.check_errors()
 
         # abort all ongoing sweeps
@@ -328,14 +318,12 @@ class Device(EmptyDevice):
         pass
 
     def measure(self):
-
         channel = 1
         # in case long meas
         meas_time = float(self.get_sweep_duration(channel=channel))
         if VERBOSE:
             print("Expected measurement time ", meas_time)
-        self.port.port.timeout = max(200.0,
-                                     meas_time * float(self.number_averages) * 1.6 * 1000.0)  # ms
+        self.port.port.timeout = max(200.0, meas_time * float(self.number_averages) * 1.6 * 1000.0)  # ms
 
         # In case n averages require n software trigs (1 ext)
         n_software_trig = 1
@@ -347,7 +335,7 @@ class Device(EmptyDevice):
 
             if VERBOSE:
                 print(f"done {j} of {len(range(n_software_trig))} measurements")
-                print("data read and transfered in {:.2f}s".format(time.time() - start_t))
+                print(f"data read and transfered in {time.time() - start_t:.2f}s")
 
         self.port.port.timeout = self.timeout * 1000  # ms
         if VERBOSE:
@@ -357,14 +345,13 @@ class Device(EmptyDevice):
         self.check_operation_complete()
 
     def read_result(self):
-
         channel = 1
 
         # UNCLEAR WHETHER THIS RETURNS ASCII DATA
         frequencies_raw = self.get_applied_frequency_data(channel=channel)
         # print("raw frequencies number = ", len(frequencies_raw))
         frequencies = self.parse_data(frequencies_raw)  # X-axis is ASCII or BIN
-        #frequencies = np.fromstring(frequencies_raw, sep=",", dtype="d")  # x-axis is ASCII only
+        # frequencies = np.fromstring(frequencies_raw, sep=",", dtype="d")  # x-axis is ASCII only
         # print("Parsed frequencies = ", frequencies.shape)
         self.results.append(frequencies)
 
@@ -385,31 +372,31 @@ class Device(EmptyDevice):
     # """ further function as needed by this device class are defined here """
 
     def binblock_raw(self, data_in, dtype_) -> np.array:
-        """convert binary data to numeric"""
-
+        """Convert binary data to numeric"""
         # Grab the beginning section of the data file, which will contain the header.
         header = str(data_in[0:12])
         # Find the start position of the IEEE header, which starts with a '#'.
         startpos = header.find("#")
         # check for problem with start position.
         if startpos < 0:
-            raise IOError("No start of block found")
+            raise OSError("No start of block found")
 
         # number after '#' symbol is the number of digits in the block length.
         digits_block_length = int(header[startpos + 1])
 
         # Now we know how many digits are in the size value, get the size of the data file
-        image_size = int(header[startpos + 2:startpos + 2 + digits_block_length])
+        image_size = int(header[startpos + 2 : startpos + 2 + digits_block_length])
 
         # Get the length from the header
         offset = startpos + digits_block_length
 
         dtype_ = np.dtype(dtype_)
-        return np.frombuffer(data_in[offset:offset + image_size], dtype=dtype_)
+        return np.frombuffer(data_in[offset : offset + image_size], dtype=dtype_)
 
     def find_calibrations(self, cal_dir=ZNL_DEFAULT_CAL_DIR) -> list:
-        """called by the sweepMe NetworkAnalyser module returns avalable calibrations on ZNL
-         at default driectory"""
+        """Called by the sweepMe NetworkAnalyser module returns avalable calibrations on ZNL
+        at default driectory
+        """
         try:
             search_pattern = os.path.join(cal_dir, "*.cal")
             return self.list_available_calibrations(search_pattern)
@@ -419,7 +406,7 @@ class Device(EmptyDevice):
             return []
 
     def parse_data(self, data_str):
-        """parse the incoming ASCII or BIN data which generally is complex"""
+        """Parse the incoming ASCII or BIN data which generally is complex"""
         # For ascii data represented as a flat str 'R1, Z1, R2, Z2,...'
         if self.data_format_type == "ASCII":
             data = np.fromstring(data_str, sep=",", dtype="d")
@@ -454,36 +441,37 @@ class Device(EmptyDevice):
     def apply_calibration(self, channel=1, from_file=""):
         """Calculates the sys error correction data from the
         acquired calibration meas. results stores it and applies it to
-        the calibrated channel(s)."""
+        the calibrated channel(s).
+        """
         if not from_file:
             # use cal in active memmory
             self.port.write(f":SENSe{channel}:CORRection:COLLect:SAVE:SELected")
         else:
-            if not from_file == "None":
+            if from_file != "None":
                 self.port.write(f":MMEM:LOAD:CORR {channel}, '{from_file}'")
 
     def list_available_calibrations(self, search_pattern=r"*.cal") -> list:
-
         self.port.write(f"MMEM:CAT? {search_pattern}")
         return self.port.read().split(",")
 
     def delete_all_traces(self):
-        """delete traces for all or a specific channel"""
+        """Delete traces for all or a specific channel"""
         self.port.write("CALC:PAR:DEL:ALL")
 
     def del_specific_trace(self, channel, tr_name):
         self.port.write(f"CALC{channel}:PAR:DEL {tr_name}")
 
     def load_calibration_from_file(self, fname, channel=1):
-        """analyzer always uses default cal pool dir
-        C:\\Users\\Public\\Documents\\Rohde-Schwarz\\ZNL\\Calibration\\Data."""
-
-        if not fname == "None":
+        """Analyzer always uses default cal pool dir
+        C:\\Users\\Public\\Documents\\Rohde-Schwarz\\ZNL\\Calibration\\Data.
+        """
+        if fname != "None":
             self.port.write(f"MMEM:LOAD:CORR {channel}, {fname}")
 
     def save_calibration(self, channel=1, fname=""):
-        """saved to C:\\Users\\Public\\Documents\\Rohde-Schwarz\\ZNL\\Calibration\\Data
-        with a .cal extension"""
+        """Saved to C:\\Users\\Public\\Documents\\Rohde-Schwarz\\ZNL\\Calibration\\Data
+        with a .cal extension
+        """
         if not fname:
             fname = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M") + "sweepMe_ZNL"
 
@@ -515,7 +503,7 @@ class Device(EmptyDevice):
         self.port.write(f"SENSe{channel}:CORR {onoff}")
 
     def set_continuous_meas(self, channel=1, on: bool = 0):
-        """set continuous meas on 1 or all (None) channel"""
+        """Set continuous meas on 1 or all (None) channel"""
         onoff = "ON" if on else "OFF"
         self.port.write(f":INIT{channel}:CONT {onoff}")
         if channel is None:
@@ -531,8 +519,8 @@ class Device(EmptyDevice):
         """Selects the fmt for numeric data transfer to & from the analyzer."""
         allowed_fmts = ["ASCII", "REAL,64", "REAL,32"]
 
-        if not fmt_type.upper() in allowed_fmts:
-            raise IOError(f"Data format {fmt_type} not in{allowed_fmts}")
+        if fmt_type.upper() not in allowed_fmts:
+            raise OSError(f"Data format {fmt_type} not in{allowed_fmts}")
         self.port.write(f":FORM:DATA {fmt_type}")
 
     def get_data_transfer_format(self):
@@ -543,7 +531,6 @@ class Device(EmptyDevice):
         self.port.write(f"MMEMory:CDIRectory DEFault {dir_path}")
 
     def display_traces(self, state: bool, tr_names: list, win_num=1):
-
         onoff = "ON" if state else "OFF"
         for name in tr_names:
             # tr_num = self.get_trace_number(name)
@@ -556,8 +543,9 @@ class Device(EmptyDevice):
         self.port.write(f"DISP:WIND{window_num}:TRACe DALL")
 
     def get_displayed_traces(self, win_number):
-        """list all displayed traces
-        returns unparsed string of style 'Tr_num, Tr_number' ..."""
+        """List all displayed traces
+        returns unparsed string of style 'Tr_num, Tr_number' ...
+        """
         self.port.write(f"DISP:WIND{win_number}:TRAC:CAT?")
         # should do some parsing because will get trace numbers too
         # 'Tr_num, Tr_number'
@@ -576,12 +564,13 @@ class Device(EmptyDevice):
         self.port.write(f":DISP:WIND{win_number}:NAME 'SweepMe!'")
 
     def set_IF_bandwidth(self, bandwidth, channel=1):
-        """set intermediate frequency filter BW"""
+        """Set intermediate frequency filter BW"""
         self.port.write(f"SENS{channel}:BWID {bandwidth}")
 
     def set_IF_selectivity(self, selectivity, channel=1):
         """SENSe<Ch>:]BWIDth[:RESolution]:SELect
-        NORMal | MEDium | HIGH"""
+        NORMal | MEDium | HIGH
+        """
         # TODO do we need to change settling time somewhere?
         self.port.write(f"SENS{channel}:BWID:SEL {selectivity}")
 
@@ -599,7 +588,7 @@ class Device(EmptyDevice):
         self.set_output_enabled(1)
 
     def set_power_level(self, power_dB: float, channel: int = 1):
-        """set the source power level for a channel"""
+        """Set the source power level for a channel"""
         # TO DO int or float?
         self.port.write(f"SOUR{channel}:POW {power_dB}")
 
@@ -607,8 +596,9 @@ class Device(EmptyDevice):
     #     self.port.write(f"SENSE:SWEEP:MODE {mode}")
 
     def get_applied_frequency_data(self, channel=1):
-        """get the frequencies that were applied during sweep (as
-        opposed to the requested frequencies)"""
+        """Get the frequencies that were applied during sweep (as
+        opposed to the requested frequencies)
+        """
         self.port.write(f"CALC{channel}:DATA:STIM?")
 
         if self.data_format_type == "ASCII":
@@ -618,19 +608,19 @@ class Device(EmptyDevice):
         return out
 
     def set_averaging(self, n_avg, channel=1):
-
         onoff = "OFF" if n_avg == 1 else "ON"
         self.port.write(f":SENS{channel}:AVER:COUN {n_avg}; :AVER {onoff}; *WAI")
         self.port.write(f"SENS{channel}:SWE:COUN {n_avg}")
 
     def set_sweep_frequency_limits(self, start, end, channel=1):
-        """set frequency sweep start and end.
-        Multi segment sweeps not supported"""
+        """Set frequency sweep start and end.
+        Multi segment sweeps not supported
+        """
         self.port.write(f"SENS{channel}:FREQ:START {start}")
         self.port.write(f"SENS{channel}:FREQ:STOP {end}")
 
     def get_sweep_frequency_limits(self, channel=1):
-        """get sweep frequency limits"""
+        """Get sweep frequency limits"""
         self.port.write(f"SENS{channel}:FREQ:STAR?; STOP?")
         # self.port.write(f"SENS{channel}SEGM:FREQ:STAR?; STOP?")
         return self.port.read()
@@ -648,7 +638,6 @@ class Device(EmptyDevice):
         raise NotImplementedError
 
     def set_sweep_duration(self, dt_in_s="Auto", channel=1):
-
         if dt_in_s == "Auto":
             self.port.write(f":SENS{channel}:SWE:TIME:AUTO ON")
         else:
@@ -657,9 +646,10 @@ class Device(EmptyDevice):
             # self.port.write(f":SENS{channel}:SWE:TIME {int(dt_in_s)}")
 
     def set_sweep_dwell_time(self, channel=1, dt=0):
-        """set delay between partial measurements
+        """Set delay between partial measurements
         If Sparam choices require two port configurations and meas mode is 'chopped'
-        this delay is applied twice per freq, else once"""
+        this delay is applied twice per freq, else once
+        """
         self.port.write(f":SENS{channel}:SWE:DWELL {dt}")
 
     def set_sweep_type(self, sweep_type, channel=1):
@@ -675,7 +665,7 @@ class Device(EmptyDevice):
         return self.port.read()
 
     def get_error_list(self):
-        """ get all errors as list. Empty list if no error"""
+        """Get all errors as list. Empty list if no error"""
         self.port.write("SYST:ERR:LIST? REMote")
         errors_str = self.port.read()
         errors_str = errors_str.replace("'", "").replace('"', "")
@@ -699,7 +689,7 @@ class Device(EmptyDevice):
             return error
 
     def check_errors(self):
-        """ check for errors in err buffer"""
+        """Check for errors in err buffer"""
         errors = self.get_error_list()
         if errors:
             print(f"ZNL errors: {'; '.join(errors)}")
@@ -711,12 +701,12 @@ class Device(EmptyDevice):
         return self.port.read()  # opc
 
     def get_trace_data(self, channel, trace_name, fmt="SDAT"):
-        """get the trace data from the ZNL - fmt specifies data processing
+        """Get the trace data from the ZNL - fmt specifies data processing
         SDAT: unprocessed (correction ?)
         MDAT: sdat + mathematics from :CALCULATE commands
         UCData: uncalibrated
-        FDATA: formatted for display on ZNL window (|Z|, Re(Z), etc"""
-
+        FDATA: formatted for display on ZNL window (|Z|, Re(Z), etc
+        """
         self.port.write(f":CALCULATE{channel}:DATA:TRAC? '{trace_name}', {fmt}")
         t0 = time.time()
         if self.data_format_type == "ASCII":
@@ -724,7 +714,7 @@ class Device(EmptyDevice):
             self.check_operation_complete()
             t1 = time.time()
             if VERBOSE:
-                print("spar data read and transfered in {:.4f}s".format(t1 - t0))
+                print(f"spar data read and transfered in {t1 - t0:.4f}s")
             return ascdata_in
         else:
             # read_raw needed if driver used outside sweepMe
@@ -732,7 +722,7 @@ class Device(EmptyDevice):
             self.check_operation_complete()
             t1 = time.time()
             if VERBOSE:
-                print("spar data read and transfered in {:.2f}s".format(t1 - t0))
+                print(f"spar data read and transfered in {t1 - t0:.2f}s")
             return bindata_in
 
     def get_trace_number(self, tr_name):
@@ -747,7 +737,8 @@ class Device(EmptyDevice):
 
     def set_trigger_source(self, trigger_source, channel=1):
         """IMMediate | EXTernal | MANual | MULTiple
-        sequence not supported"""
+        sequence not supported
+        """
         trig_src_cmd = trigger_source
         if trigger_source == "Internal":
             trig_src_cmd = "IMM"
@@ -766,19 +757,16 @@ class Device(EmptyDevice):
         self.port.write("SYSTem:DISPlay:UPDate ONCE")
 
     def set_vna_mode(self):
-        """in case B1 option was purchased"""
+        """In case B1 option was purchased"""
         self.port.write("INST:SEL VNA")  # SAN for spectr analyser
 
     def get_znl_working_dir(self):
-
         self.port.write("MMEMory:CDIRectory?")
         return self.port.read()
 
     def set_znl_working_dir(self, dir_=""):
-        """set the ZNL's internal current working directory"""
-        default_dir = (
-            r"C:\Users\Public\Documents\Rohde-Schwarz\Vna"  # \Calibration\Data"
-        )
+        """Set the ZNL's internal current working directory"""
+        default_dir = r"C:\Users\Public\Documents\Rohde-Schwarz\Vna"  # \Calibration\Data"
         #  = r"C:\Users\Public\Documents\Rohde-Schwarz\ZNL\Calibration\Data"
         if not dir_:
             dir_ = default_dir
