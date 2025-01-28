@@ -63,6 +63,7 @@ class Device(EmptyDevice):
         self.port_properties = {
             "baudrate": 38400,  # default
             "EOL": "\n",
+            "timeout": 50,
         }
 
         # Device parameters
@@ -170,27 +171,61 @@ class Device(EmptyDevice):
 
         # self.set_measurement_mode()
 
-        self.port.write(f":SENS{self.sensor}:FUNC:OFF:ALL")
-        func = "POW:FORW:AVER"
+        self.port.write(f":SENS{self.sensor}:FUNC:CONC ON")
 
+        self.port.write(f":SENS{self.sensor}:FUNC:OFF:ALL1")
+        self.port.write(f":SENS{self.sensor}:FUNC?")
+        print("FUNC?", self.port.read())
+
+        # Set off modes for forward (1) and reverse (2) channels
+        # Must set off reverse before I can turn on POW:REV mode bc it is exclusive with existing SWR mode
+        # It seems that I cannot turn off SWR manually bc then it would be empty
+        self.port.write(f":SENS{self.sensor}:FUNC:OFF:ALL2")
+        self.port.write(f":SENS{self.sensor}:FUNC?")
+        print("FUNC?", self.port.read())
+
+        # self.port.write(f':SENS{self.sensor}:OFF "POW:S11"')
+        # self.port.write(f':SENS{self.sensor}:ON "POWer:REVerse"')
+        # self.port.write(f":SENS{self.sensor}:FUNC?")
+        # print("FUNC?", self.port.read())
+
+        func = "POW:REV"
         self.port.write(f':SENS{self.sensor}:FUNC "{func}"')
         self.port.write(f':SENS{self.sensor}:FUNC:STAT? "{func}"')
-        print(self.port.read())
+        print("REV STAT?", self.port.read())
+        # POW:REV and POW:S11 are mutally exclusive
+        # List all turned off modes
+        self.port.write(f":SENS{self.sensor}:FUNC:OFF?")
+        print("FUNC OFF?", self.port.read())
+
+        func = "POW:FORW:AVER"
+        self.port.write(f':SENS{self.sensor}:FUNC "{func}"')
+        self.port.write(f':SENS{self.sensor}:FUNC:STAT? "{func}"')
+        print("AVER STAT?", self.port.read())
+
+        # Set RFL instead of
+        # Cannot set REV in forward channel
+
+        self.port.write(f':UNIT{self.sensor}:POW:REFL RL')
+
+        # func = "POW:REV"
+        # func = "POWer:FORWard:PEP"
+        # self.port.write(f':SENS{self.sensor}:FUNC:ON "{func}"')
         self.port.write(f":SENS{self.sensor}:FUNC?")
-        print(self.port.read())
+        print("FUNC?", self.port.read())
 
         # self.port.write(f":SENS{self.sensor}:FUNC 'POW:REFL'")
 
-        sensor = 0
-        self.port.write(f":SENS{sensor}:FUNC:OFF:ALL")
-        func = "POW:REV"
-
-        self.port.write(f':SENS{sensor}:FUNC "{func}"')
-        self.port.write(f':SENS{sensor}:FUNC:STAT? "{func}"')
-        print(self.port.read())
-
-        self.port.write(f":SENS{self.sensor}:FUNC?")
-        print(self.port.read())
+        # sensor = 0
+        # self.port.write(f":SENS{sensor}:FUNC:OFF:ALL")
+        # func = "POW:REV"
+        #
+        # self.port.write(f':SENS{sensor}:FUNC "{func}"')
+        # self.port.write(f':SENS{sensor}:FUNC:STAT? "{func}"')
+        # print(self.port.read())
+        #
+        # self.port.write(f":SENS{self.sensor}:FUNC?")
+        # print("FUNC?", self.port.read())
 
         # self.port.write("SYST:SPE FAST")  # set speed to fast, measured vaues are no longer displayed
 
@@ -198,7 +233,8 @@ class Device(EmptyDevice):
         # self.port.write("SENS1:FREQ 1 GHz")
 
         # Set power unit to dBm
-        self.port.write("UNIT1:POWER DBM")
+        self.port.write(f"UNIT{self.sensor}:POWER DBM")
+        # self.port.write(f"UNIT{self.sensor}:POWER:REFL RCO")
 
     def call(self) -> [float, float]:
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables."""
