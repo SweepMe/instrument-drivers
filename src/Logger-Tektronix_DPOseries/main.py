@@ -37,8 +37,15 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
     """Device class configure and read out measure slots in Tektronix DPO Series Oscilloscopes."""
+
     description = """
-        Driver to configure and read out measure slots
+        <h3>Tektronix DPO Series Oscilloscope Slot Measurement</h3>
+        <p>This driver allows read out of measurement slots for DPO devices.</p>
+        <p>Parameters:</p>
+        <ul>
+        <li>Count: Number of points measured for one result.</li>
+        <li>Weighting: Number of waveforms that are averaged for one point.</li>
+        </ul>
     """
 
     def __init__(self) -> None:
@@ -135,20 +142,41 @@ class Device(EmptyDevice):
             "Standard deviation": "V",
             "Waveform count": "",
         }
+        self.measure_statistics = [
+            "Current",
+            "Average",
+            "Minimum",
+            "Maximum",
+        ]
 
         # Measurement Parameters
         self.slot_channels: dict = {}
+        """Dict with slot 1-9 as key and the measured channel (1-4) as value."""
+
         self.slot_measure_types: dict = {}
-        self.statistics_count: int = 0
+        """Dict with slot 1-9 as key and the measurement type (Amplitude, ...) as value."""
+
+        self.slot_statistics: dict = {}
+        """Dict with slot 1-9 as key and the used statistics mode (Current, Average, Minimum, Maximum) as value."""
+
+        # The device waits for 'weighting' number of waveforms for a single point. The device then calculates the mean/
+        # min/max/... of 'count' number of points.
+        self.statistics_count: int = 0  # Number of points measured for one result
+        self.statistics_weighting: int = 10  # Number of waveforms that are averaged for one point
         self.results: list = []
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
-        gui_parameter = {"Count": "1"}
+        gui_parameter = {
+            "Count": "1",
+            "Weighting": "10",
+        }
 
         for slot in range(1, 9):
+            gui_parameter[" " * slot] = None  # Empty line
             gui_parameter[f"Slot {slot} channel"] = ["None", "1", "2", "3", "4"]
             gui_parameter[f"Slot {slot} measure type"] = ["None", *list(self.measure_types.keys())]
+            gui_parameter[f"Slot {slot} statistics"] = ["None", *self.measure_statistics]
 
         return gui_parameter
 
@@ -156,6 +184,7 @@ class Device(EmptyDevice):
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.slot_channels = {}
         self.slot_measure_types = {}
+        self.slot_statistics = {}
         self.variables = []
         self.units = []
         self.plottype = []
@@ -164,6 +193,7 @@ class Device(EmptyDevice):
         for slot in range(1, 9):
             self.slot_channels[slot] = parameter[f"Slot {slot} channel"]
             self.slot_measure_types[slot] = parameter[f"Slot {slot} measure type"]
+            self.slot_statistics[slot] = parameter[f"Slot {slot} statistics"]
 
             if self.slot_channels[slot] != "None" and self.slot_measure_types[slot] != "None":
                 self.variables.append("Ch" + self.slot_channels[slot] + " - " + self.slot_measure_types[slot])
@@ -172,15 +202,15 @@ class Device(EmptyDevice):
                 self.savetype.append(True)
 
         self.statistics_count = int(parameter["Count"])
+        self.statistics_weighting = int(parameter["Weighting"])
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
-        identifier = self.get_identification()
-        print("Identifier:", identifier)
 
     def configure(self) -> None:
         """Configure the measurement slots."""
         self.set_measure_statistics_mode(True)
+        self.set_statistics_weighting(self.statistics_weighting)
 
         for slot in range(1, 9):
             if self.slot_channels[slot] != "None" and self.slot_measure_types[slot] != "None":
@@ -201,158 +231,50 @@ class Device(EmptyDevice):
         self.set_measure_statistics_count(self.statistics_count)
 
     def measure(self) -> None:
-        """Trigger the acquisition of new data."""
-        # self.port.write("MEASUrement?")
-        # answer = self.port.read()
-        # print("Measurement:", answer)
+        """Trigger the acquisition of new data.
 
-        # unclear what an immediate measurement is
-        # self.port.write("MEASUrement:IMMed?")
-        # answer = self.port.read()
-        # print("Measurement immediate:", answer)
-
+        Alternative measurement modes are "MEASUrement?" and "MEASUrement:IMMed?".
+        """
         # empty list to store the value of each channel
         self.results = []
 
         # clears the statistics
         self.reset_measurement_statistics()
 
-        # Waiting for all channels to have a non-zero standard deviation which means that enough repetitions are reached
+        # Waiting for all channels to reach enough measured points for statistic analysis
         for slot in range(1, 9):
-            if self.slot_channels[slot] != "None" and self.slot_measure_types[slot] != "None":
-                while not self.is_run_stopped():
-                    std_dev = self.get_measure_standard_deviation(slot)
-                    print(std_dev)
-                    if std_dev != 0.0:
-                        break
+            if (
+                self.slot_channels[slot] == "None"
+                or self.slot_measure_types[slot] == "None"
+                or self.slot_statistics[slot] in ("None", "Current")  # No need to wait for measurement of current value
+            ):
+                continue
+
+            while not self.is_run_stopped():
+                measured_points = self.get_measurement_count(slot)
+                if measured_points >= self.statistics_count:
+                    break
 
     def request_result(self) -> None:
         """Retrieve measured data."""
         for slot in range(1, 9):
-            if self.slot_channels[slot] != "None" and self.slot_measure_types[slot] != "None":
-                if self.statistics_count == 1:
-                    value = self.get_measure_value(slot)
-                    self.results.append(value)
-                else:
-                    value = self.get_measure_mean(slot)
-                    self.results.append(value)
+            if self.slot_channels[slot] == "None" or self.slot_measure_types[slot] == "None":
+                continue
+
+            if self.statistics_count == 1 or self.slot_statistics[slot] == "Current":
+                value = self.get_measure_value(slot)
+            elif self.slot_statistics[slot] == "Minimum":
+                value = self.get_measure_minimum(slot)
+            elif self.slot_statistics[slot] == "Maximum":
+                value = self.get_measure_maximum(slot)
+            else:  # "Average" or any other type
+                value = self.get_measure_mean(slot)
+
+            self.results.append(value)
 
     def call(self) -> [float, float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return self.results
-
-    """
-        FORWARDS;
-        RISE;
-        RISE;
-        PERIOD;
-        "s";
-        CH1;
-        CH2;
-
-        FORWARDS;
-        FORWARDS;
-        FORWARDS;
-        FORWARDS;
-        FORWARDS;
-        FORWARDS;
-        FORWARDS;
-        FORWARDS;
-
-        RISE;
-        RISE;
-        RISE;
-        RISE;
-        RISE;
-        RISE;
-        RISE;
-        RISE;
-
-        RISE;
-        RISE;
-        RISE;
-        RISE;
-        RISE;
-        RISE;
-        RISE;
-        RISE;
-
-        FREQUENCY;
-        PK2PK;
-        PERIOD;
-        PERIOD;
-        PERIOD;
-        PERIOD;
-        PERIOD;
-        PERIOD;
-
-        "Hz";
-        "V";
-        "s";
-        "s";
-        "s";
-        "s";
-        "s";
-        "s";
-
-        CH1;
-        CH2;
-        CH1;
-        CH2;
-        CH1;
-        CH2;
-        CH1;
-        CH2;
-
-        CH1;
-        CH2;
-        CH1;
-        CH2;
-        CH1;
-        CH2;
-        CH1;
-        CH2;
-
-        1;
-        1;
-        0;
-        0;
-        0;
-        0;
-        0;
-        0;
-
-        AUTO;
-        PERCENT;
-
-        0.0E+0;
-        0.0E+0;
-        0.0E+0;
-        0.0E+0;
-        90.0000;
-        10.0000;
-        50.0000;
-        50.0000;
-
-        OFF;
-        0;
-        0;
-
-        99.0000E+36;
-        99.0000E+36;
-        99.0000E+36;
-        99.0000E+36;
-        99.0000E+36;
-        99.0000E+36;
-        99.0000E+36;
-        99.0000E+36;
-
-        ALL;
-
-        32;
-
-        SCREEN
-    """
 
     """ wrapped communication commands """
 
@@ -436,10 +358,19 @@ class Device(EmptyDevice):
 
         return state
 
+    def set_statistics_weighting(self, weighting: int) -> None:
+        """Set the number of waveforms that are averaged for one point. Standard is 10."""
+        self.port.write(f"MEASUrement:STATIstics:WEIghting {weighting}")
+
     def get_measurement_statistics(self) -> str:
         """Get the measurement statistics."""
         self.port.write("MEASUrement:STATIstics?")
         return self.port.read()
+
+    def get_measurement_count(self, slot: int) -> int:
+        """Get the number of measurements since the last reset of statistics for given slot."""
+        self.port.write(f"MEASU:MEAS{slot}:COUN?")
+        return int(self.port.read())
 
     def reset_measurement_statistics(self) -> None:
         """Reset the measurement statistics."""
