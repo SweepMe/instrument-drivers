@@ -2,6 +2,7 @@
 # Required Third Party Libraries, which are included in the Device Class
 # package for convenience purposes, may have a different license. You can
 # find those in the corresponding folders or contact the maintainer.
+import time
 
 # MIT License
 
@@ -222,8 +223,9 @@ class Device(EmptyDevice):
             if self.slot_channels[slot] != "None" and self.slot_measure_types[slot] != "None":
                 while not self.is_run_stopped():
                     std_dev = self.get_measure_standard_deviation(slot)
-                    print(std_dev)
+                    # time.sleep(0.02)
                     if std_dev != 0.0:
+                        print(f"std_dev slot {slot}: {std_dev}")
                         break
 
     def request_result(self) -> None:
