@@ -245,6 +245,9 @@ class Device(EmptyDevice):
         if "Error" in ret:
             msg = f"Error during measurement: {ret}"
             raise Exception(msg)
+        elif "old" in ret:
+            print("old")
+            ret = self.port.read()
 
         split_answer = ret.split(" ")
 

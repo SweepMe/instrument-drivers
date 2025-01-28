@@ -30,6 +30,7 @@
 # * Instrument: Rohde & Schwarz NRT
 
 import time
+
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -63,20 +64,10 @@ class Device(EmptyDevice):
         self.port_properties = {
             "baudrate": 38400,  # default
             "EOL": "\n",
+            "timeout": 50,
         }
 
         # Device parameters
-        # TODO: Check if this is needed
-        self.measurement_type = {
-            "Absolute forward": 1,
-            "Absolute reverse": 2,
-            "Relative forward": 3,
-            "Relative reverse": 4,
-        }
-        """
-        The device has 4 measurement types, and each type has some measurement modes (e.g. calculation/processing of data)
-        """
-
         self.forward_mode_commands = {
             "Average power": "POWer:FORWard:AVERage",  # default
             "Peak power of an amplitude-modulated signal": "POW:FORW:PEP",
@@ -99,11 +90,17 @@ class Device(EmptyDevice):
         }
         self.reverse_mode = "Reflected power"
 
+        self.sensors = [0, 1, 2, 3]  # Device supports up to 4 sensors
         self.sensor: int = 1
-        self.sensors = [0, 1]  # Device supports up to 3 sensors
 
-        self.carrier_frequency: float = 0.0
         self.zeroing: bool = True
+
+        # Measurement parameters
+        self.forward_result: float = 0.
+        self.reverse_result: float = 0.
+
+        # Currently no implemented
+        self.carrier_frequency: float = 0.0
 
         self.video_bandwidths = {
             "Full bandwidth": 0.0,
@@ -114,20 +111,14 @@ class Device(EmptyDevice):
         }
         self.video_bandwidth: float = 0.0
 
-        # Measurement parameters
-        self.forward_result: float = 0.
-        self.reverse_result: float = 0.
-
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
-            # "Measurement type": list(self.measurement_type.keys()),
             "Forward mode": list(self.forward_mode_commands.keys()),
             "Reverse mode": list(self.reverse_mode_commands.keys()),
             "Channel": self.sensors,
             "Zero offset correction": True,
-            "Carrier frequency in Hz": 0.0,
-            "Video bandwidth": list(self.video_bandwidths.keys()),
+            "Power unit": ["dBm", "W"],
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -139,14 +130,8 @@ class Device(EmptyDevice):
         self.reverse_mode = parameter["Reverse mode"]
 
         self.zeroing = parameter["Zero offset correction"]
-        self.video_bandwidth = self.video_bandwidths[parameter["Video bandwidth"]]
-        self.carrier_frequency = float(parameter["Carrier frequency in Hz"])
 
-    def connect(self) -> None:
-        """Connect to the device. This function is called only once at the start of the measurement."""
-
-    def disconnect(self) -> None:
-        """Disconnect from the device. This function is called only once at the end of the measurement."""
+        self.units = [parameter["Power unit"], parameter["Power unit"]]
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -159,46 +144,12 @@ class Device(EmptyDevice):
         if self.zeroing:
             self.perform_zeroing()
 
-        # if self.carrier_frequency != 0.0:
-        #     self.port.write(f"SENS{self.sensor}:FREQ {self.carrier_frequency}")
-
-        # self.set_video_bandwidth(self.video_bandwidth)
-
-        # Use single trigger mode
-        # TODO: Check if this is the correct mode or if NORM should be used
-        # self.port.write("TRIG:MODE:SING")
-
-        # self.set_measurement_mode()
-
-        self.port.write(f":SENS{self.sensor}:FUNC:OFF:ALL")
-        func = "POW:FORW:AVER"
-
-        self.port.write(f':SENS{self.sensor}:FUNC "{func}"')
-        self.port.write(f':SENS{self.sensor}:FUNC:STAT? "{func}"')
-        print(self.port.read())
-        self.port.write(f":SENS{self.sensor}:FUNC?")
-        print(self.port.read())
-
-        # self.port.write(f":SENS{self.sensor}:FUNC 'POW:REFL'")
-
-        sensor = 0
-        self.port.write(f":SENS{sensor}:FUNC:OFF:ALL")
-        func = "POW:REV"
-
-        self.port.write(f':SENS{sensor}:FUNC "{func}"')
-        self.port.write(f':SENS{sensor}:FUNC:STAT? "{func}"')
-        print(self.port.read())
-
-        self.port.write(f":SENS{self.sensor}:FUNC?")
-        print(self.port.read())
+        self.set_measurement_mode()
 
         # self.port.write("SYST:SPE FAST")  # set speed to fast, measured vaues are no longer displayed
 
-        # Define measurement frequency - 1GHz
-        # self.port.write("SENS1:FREQ 1 GHz")
-
-        # Set power unit to dBm
-        self.port.write("UNIT1:POWER DBM")
+        # Set power unit
+        self.port.write(f"UNIT{self.sensor}:POWER {self.units[0].upper()}")
 
     def call(self) -> [float, float]:
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables."""
@@ -212,7 +163,6 @@ class Device(EmptyDevice):
         """Performs zeroing for the sensor that is connected to the selected port."""
         # See manual page 161
         self.port.write(f":CAL{self.sensor}:ZERO")
-        # time.sleep(8)
         self.port.write("*WAI")  # wait for the zeroing to finish
 
         status = False
@@ -225,24 +175,10 @@ class Device(EmptyDevice):
             else:
                 status = ret.startswith("0")
 
-    def set_video_bandwidth(self, bandwidth: float) -> None:
-        """Set the video bandwidth of the device."""
-        if bandwidth == 4E3:
-            fnum = 0
-        elif bandwidth == 200E3:
-            fnum = 1
-        else:
-            # Full bandwidth, depending on sensor
-            fnum = 2
-
-        self.port.write(f"SENS{self.sensor}:BWID:VID:FNUM {fnum}")
-        # self.port.read()
-
     def get_measurement(self) -> [float, float]:
         """Get the measurement values from the device."""
         self.port.write(f"SENS{self.sensor}:DATA?")
         result = self.port.read()
-        print(f"Result: {result}")
         forward_result = result.split(",")[0]
         forward_result = float("nan") if "NAN" in forward_result else float(forward_result)
 
@@ -251,14 +187,18 @@ class Device(EmptyDevice):
         return forward_result, reverse_result
 
     def set_measurement_mode(self) -> None:
-        """Set the measurement mode for forward and reverse."""
-        forward_command = self.forward_mode_commands[self.forward_mode]
-        self.port.write(f"CALC1:FEED1 {forward_command}")
+        """Set the measurement mode for forward and reverse channels."""
+        # Set off modes for forward (1) and reverse (2) channels
+        # Must set off reverse before turning on POW:REV mode as they are exclusive with the standard SWR mode.
+        # Manual turn off via SENS:OFF "POW:S11" does not work. Maybe because the mode cannot be empty?
+        self.port.write(f":SENS{self.sensor}:FUNC:OFF:ALL1")
+        self.port.write(f":SENS{self.sensor}:FUNC:OFF:ALL2")
 
-        # TODO: Check if calc and feed are correct
-        # might need to use CALC1:CHAN{self.channel}:FEED2
+        forward_command = self.forward_mode_commands[self.forward_mode]
+        self.port.write(f':SENS{self.sensor}:FUNC "{forward_command}"')
+
         reverse_command = self.reverse_mode_commands[self.reverse_mode]
-        self.port.write(f"CALC1:FEED2 {reverse_command}")
+        self.port.write(f':SENS{self.sensor}:FUNC "{reverse_command}"')
 
     """ Currently unused functions """
 
@@ -275,6 +215,11 @@ class Device(EmptyDevice):
         self.port.write("*IDN?")
         return self.port.read()
 
+    def get_active_modes(self) -> str:
+        """Returns a string with the active modes of the device."""
+        self.port.write(f":SENS{self.sensor}:FUNC?")
+        return self.port.read()
+
     def set_resolution(self, resolution: float) -> None:
         """Set the resolution for the device."""
         resolution_dbm = {
@@ -284,6 +229,19 @@ class Device(EmptyDevice):
             "0.001": "OOOI",
         }
         self.port.write(f"CALC1:RES {resolution_dbm[resolution]}")
+
+    def set_video_bandwidth(self, bandwidth: float) -> None:
+        """Set the video bandwidth of the device."""
+        if bandwidth == 4E3:
+            fnum = 0
+        elif bandwidth == 200E3:
+            fnum = 1
+        else:
+            # Full bandwidth, depending on sensor
+            fnum = 2
+
+        self.port.write(f"SENS{self.sensor}:BWID:VID:FNUM {fnum}")
+        # self.port.read()
 
     def set_result_format(self) -> None:
         """Set the result format for the device."""
