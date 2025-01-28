@@ -218,12 +218,23 @@ class Device(EmptyDevice):
         # clears the statistics
         self.reset_measurement_statistics()
 
+        self.port.write("MEASUrement:STATIstics:WEIghting 10")
+
+        self.port.write("MEASUrement:STATIstics:WEIghting?")
+        print(self.port.read())
+
         # Waiting for all channels to have a non-zero standard deviation which means that enough repetitions are reached
         for slot in range(1, 9):
             if self.slot_channels[slot] != "None" and self.slot_measure_types[slot] != "None":
                 while not self.is_run_stopped():
                     std_dev = self.get_measure_standard_deviation(slot)
+
+                    # like wavecount
+                    self.port.write(f"MEASU:MEAS{slot}:COUN?")
+                    print(self.port.read())
+
                     # time.sleep(0.02)
+                    # TODO: Wait for count instead of std_dev
                     if std_dev != 0.0:
                         print(f"std_dev slot {slot}: {std_dev}")
                         break
