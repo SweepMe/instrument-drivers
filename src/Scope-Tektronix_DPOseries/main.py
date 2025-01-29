@@ -118,6 +118,7 @@ class Device(EmptyDevice):
                 "50",
             ]
             gui_parameter["Channel%i_Offset" % i] = 0.0
+            gui_parameter[f"Channel{i}_Impedance"] = ["50", "1e6"]
 
         return gui_parameter
 
@@ -143,6 +144,7 @@ class Device(EmptyDevice):
         self.channel_ranges = {}
         self.channel_divs = {}
         self.channel_offsets = {}
+        self.channel_impedances = {}
 
         for i in range(1, 5):
             if parameter["Channel%i" % i]:
@@ -157,6 +159,7 @@ class Device(EmptyDevice):
                 self.channel_ranges[i] = float(parameter["Channel%i_Range" % i])
                 self.channel_divs[i] = self.channel_ranges[i] / 10
                 self.channel_offsets[i] = parameter["Channel%i_Offset" % i]
+                self.channel_impedances[i] = float(parameter[f"Channel{i}_Impedance"])
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -166,9 +169,6 @@ class Device(EmptyDevice):
         if len(self.channels) == 0:
             msg = "Please select at least one channel to be read out."
             raise ValueError(msg)
-
-        identifier = self.get_identification()
-        print("Identifier:", identifier)
 
         self.port.write("DAT:STOP 999999999999")  # ensure that the entire waveform is recorded
         self.port.write("DAT:ENCdg ASCii")  # sets encoding
@@ -210,7 +210,7 @@ class Device(EmptyDevice):
         self.acquisition_mode = self.get_acquisition_mode()
 
         # Trigger
-        if self.triggersource == "As is" or self.triggersource == "None":
+        if self.triggersource in ("As is", "None"):
             pass
         else:
             self.port.write("TRIGger:A:EDGE:SOUrce %s" % self.triggersource)
@@ -256,6 +256,7 @@ class Device(EmptyDevice):
 
         # Channel properties
         for i in self.channels:
+            self.set_impedance(i, self.channel_impedances[i])
             self.port.write("SEL:CH%s ON" % i)  # turn on selected channels
             self.port.write("CH%s:SCAle %s; :CH%s:OFFSet %s" % (i, self.channel_divs[i], i, self.channel_offsets[i]))
 
@@ -268,7 +269,7 @@ class Device(EmptyDevice):
         if self.acquisition_mode != "SAMPLE" and self.acquisition_type == "SEQUENCE":
             while True:  # evaluation only after correct number of averages performed
                 if self.is_run_stopped():
-                    return False
+                    return
 
                 average_step = self.get_acquisition_number()
                 acquisition_state = self.get_acquisition_state()
@@ -374,3 +375,17 @@ class Device(EmptyDevice):
         """Return the trigger source."""
         self.port.write("TRIGger:A:EDGE:SOUrce?")
         return self.port.read()
+
+    def set_impedance(self, channel: int, impedance: float) -> None:
+        """Set the impedance to either 50 Ohm or 1 MOhm.
+
+        Sets the connected-disconnected status of a 50 Ohm resistor, which may be connected between the specified
+        channels coupled input and oscilloscope ground.
+        """
+        commands = {
+            50: "FIFty",
+            1e6: "MEG",
+        }
+
+        command = commands[impedance] if impedance in commands else str(impedance)
+        self.port.write(f"CH{channel}:TERmination {command}")
