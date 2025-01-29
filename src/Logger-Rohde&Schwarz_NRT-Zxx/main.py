@@ -86,7 +86,7 @@ class Device(EmptyDevice):
             "Measured burst average": "MBAV",  # in W, instead of duty cycle needs video bandwidth
             # "Peak envelope power": "PEP",  # needs PEP:HOLD and PEP:TIME
         }
-        self.forward_mode: str = "Average power"
+        self.forward_mode: str = "Average power in W"
 
         self.reverse_modes = {
             "Reverse power in W": "POW",  # in W
@@ -242,12 +242,17 @@ class Device(EmptyDevice):
         """Start new measurement and read out result. If averaging is enabled it is used."""
         self.port.write("RTRG")
         ret = self.port.read()
-        if "Error" in ret:
-            msg = f"Error during measurement: {ret}"
-            raise Exception(msg)
-        elif "old" in ret:
-            print("old")
-            ret = self.port.read()
+
+        # Read buffer until measurement result appears - might contain response to previous commands
+        buffer_cleared = False
+        while not buffer_cleared:
+            if "old" in ret:
+                ret = self.port.read()
+            elif "Error" in ret:
+                msg = f"Error during measurement: {ret}"
+                raise Exception(msg)
+            else:
+                buffer_cleared = True
 
         split_answer = ret.split(" ")
 
@@ -273,6 +278,8 @@ class Device(EmptyDevice):
     @staticmethod
     def convert_w_to_dbm(power: float) -> float:
         """Convert power from W to dBm."""
+        if power <= 0:
+            return float("nan")
         return 10 * math.log10(power) + 30
 
     """ Currently not used functions """
