@@ -29,7 +29,7 @@
 # * Module: Signal
 # * Instrument: Rohde&Schwarz RTA
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -37,7 +37,7 @@ class Device(EmptyDevice):
 
     def __init__(self) -> None:
         """Initialize the Device Class."""
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         self.shortname = "RTA"
 
@@ -67,6 +67,13 @@ class Device(EmptyDevice):
             "Exponential": "EXP",
         }
         self.waveform = "Sinus"
+        self.impedances = {
+            "50 Ohm": "R50",
+            "High-Z": "HIGH",
+        }
+        self.impedance = "50 Ohm"
+
+        self.sweep_mode: str = "None"
 
         self.frequency_mode: str = "Frequency in Hz"
         self.frequency: float = 1000
@@ -102,6 +109,7 @@ class Device(EmptyDevice):
             "DutyCyclePulseWidth": ["Duty cycle in %"],
             "DutyCyclePulseWidthValue": 50,
             "Waveform": list(self.waveforms.keys()),
+            "Impedance": list(self.impedances.keys()),
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -115,13 +123,12 @@ class Device(EmptyDevice):
         self.duty_cycle_pulse_width_mode = parameter["DutyCyclePulseWidth"]
         self.duty_cycle_pulse_width = parameter["DutyCyclePulseWidthValue"]
         self.waveform = parameter["Waveform"]
+        self.impedance = parameter["Impedance"]
 
     def initialize(self) -> None:
         """Initialize the device."""
         self.port.write("*CLS")
-
         # do not use "SYST:PRES" as it will destroy all settings which is in conflict with using 'As is'
-        print("Signal R&S RTA ID:", self.get_idn())
 
     def deinitialize(self) -> None:
         """Deinitialize the device."""
@@ -130,6 +137,7 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the measurement."""
+        self.set_impedance(self.impedance)
         self.set_waveform(self.waveform)
 
         self.set_amplitude(self.amplitude)
@@ -175,12 +183,21 @@ class Device(EmptyDevice):
             self.port.write("SYST:ERR:CODE:ALL?")
             answer = self.port.read()
             for err in answer.split(","):
-                print("Scope R&S RTA error:", err)
+                print("Signal R&S RTA error:", err)
 
-    def get_idn(self) -> str:
+    def get_identification(self) -> str:
         """Return the identification of the device."""
         self.port.write("*IDN?")
         return self.port.read()
+
+    def set_impedance(self, impedance: str) -> None:
+        """Set Impedance to either '50 Ohm' or 'High-Z'."""
+        command = self.impedances[impedance]
+        if command not in ("R50", "HIGH"):
+            msg = f"Impedance {impedance} not supported."
+            raise ValueError(msg)
+
+        self.port.write(f"WGEN:OUTP:LOAD {command}")
 
     def set_waveform(self, waveform: str) -> None:
         """Set the function of the signal generator."""
