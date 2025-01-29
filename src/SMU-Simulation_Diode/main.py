@@ -69,10 +69,6 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.sweepvalue = parameter["SweepValue"]
-
-        # self.four_wire = parameter['4wire']
-        # self.route_out = parameter['RouteOut']
         self.source = parameter["SweepMode"]
         self.protection = float(parameter["Compliance"])
         self.speed = parameter["Speed"]

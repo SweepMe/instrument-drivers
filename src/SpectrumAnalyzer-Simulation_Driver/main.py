@@ -94,7 +94,7 @@ class Device(EmptyDevice):
         """Handle GUI inputs."""
         self.handle_frequency_input(parameter)
 
-        self.reference_level = float(parameter["Reference level in dBm:"])
+        self.reference_level = float(parameter["Reference level in dBm"])
         self.resolution_bandwidth = self.bandwidth_resolution_values[parameter["Resolution bandwidth"]]
         self.video_bandwidth = self.bandwidth_resolution_values[parameter["Video bandwidth"]]
         self.return_max_hold = parameter["Max hold"]

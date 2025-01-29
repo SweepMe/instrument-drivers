@@ -48,6 +48,13 @@ class Device(EmptyDevice):
 
         self.use_list_sweep = False
 
+        # Measurement parameters
+        self.sweepmode = "Frequency in Hz"
+        self.stepmode = "None"
+        self.frequency = 1000
+        self.bias_mode = "Voltage bias"
+        self.bias = 1
+
         # Device under test parameters
         self.inductance = 4e-9  # H
         self.capacitance = 4e-9  # F
@@ -58,9 +65,12 @@ class Device(EmptyDevice):
         """Return a dictionary with GUI parameters."""
         return {
             "SweepMode": ["Frequency in Hz"],
+            "SweepValue": ["List"],
             "StepMode": ["None"],
             "Frequency": 1000,
             "OperatingMode": ["R-X"],
+            "ValueTypeBias": ["Voltage bias", "Current bias"],
+            "ValueBias": 1,
 
             # List Sweep Parameters
             "ListSweepCheck": True,
@@ -117,8 +127,6 @@ class Device(EmptyDevice):
 
     def call(self) -> list:
         """Simulate data and return as a list."""
-        self.bias = 1337
-
         if self.use_list_sweep:
             self.F = np.arange(100, 1000, 100)
             self.R = self.F / np.amax(self.F) * 35 + 30
