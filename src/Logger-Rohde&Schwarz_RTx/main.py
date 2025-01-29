@@ -109,12 +109,19 @@ class Device(EmptyDevice):
             "Positive overshoot in %": "POV",
             "Negative overshoot in %": "NOV",
         }
+        self.statistic_modes = [
+            "None",
+            "Current",
+            "Minimum",
+            "Maximum",
+            "Average",
+        ]
 
         # Measurement places - The devices can have up to 6 measurement 'places' with predefined modes and sources to
         # read out.
         self.maximum_measurement_places: int = 6  # For RTB2004, might differ for other devices
         self.measurement_places: dict[int, tuple[int, str]] = {}
-        """A dictionary with the place number as key and a tuple of channel and mode code as value."""
+        """A dictionary with the place number as key and a tuple of channel, mode code, and statistics as value."""
 
         self.use_preset: bool = False
         self.waveform_count: int = 1
@@ -128,8 +135,10 @@ class Device(EmptyDevice):
         }
         # Each measurement place can be configured with a channel and a mode
         for i in range(1, self.maximum_measurement_places + 1):
-            parameters[f"{i}. Place"] = ["None", "CH1", "CH2", "CH3", "CH4"]
-            parameters[f"{i}. Mode"] = list(self.modes.keys())
+            parameters[" " * i] = None  # empty line
+            parameters[f"Place {i} channel"] = ["None", "CH1", "CH2", "CH3", "CH4"]
+            parameters[f"Place {i} mode"] = list(self.modes.keys())
+            parameters[f"Place {i} statistics"] = self.statistic_modes
 
         return parameters
 
@@ -149,11 +158,12 @@ class Device(EmptyDevice):
 
         else:
             for place in range(1, self.maximum_measurement_places + 1):
-                channel = parameter[f"{place}. Place"]
-                mode = parameter[f"{place}. Mode"]
+                channel = parameter[f"Place {place} channel"]
+                mode = parameter[f"Place {place} mode"]
+                statistics = parameter[f"Place {place} statistics"]
                 if channel != "None" and mode != "None":
                     channel_num = int(channel[-1])
-                    self.measurement_places[place] = (channel_num, self.modes[mode])
+                    self.measurement_places[place] = (channel_num, self.modes[mode], statistics)
 
                     mode_short = mode.split(" in ")[0]
                     self.variables.append(f"{channel} {mode_short}")
@@ -208,11 +218,20 @@ class Device(EmptyDevice):
         This function can only be omitted if no variables are defined in self.variables.
         """
         measured_results = []
-        for place, (_, mode) in self.measurement_places.items():
-            if self.waveform_count > 1:
-                measured_results.append(self.get_averaged_measurement(place))
+        for place, (_, mode, statistics) in self.measurement_places.items():
+            if statistics == "Minimum":
+                result = self.get_measurement_minimum(place)
+            elif statistics == "Maximum":
+                result = self.get_measurement_maximum(place)
+            elif statistics == "Average":
+                result = self.get_averaged_measurement(place)
+            elif statistics == "Current":
+                result = self.get_measurement(place, mode)
             else:
-                measured_results.append(self.get_measurement(place, mode))
+                # If no statistics are defined, return the current measurement
+                result = self.get_measurement(place, mode)
+
+            measured_results.append(result)
 
         # If the preset uses less than the maximum number of places, fill the measured results with None as placeholder
         if self.use_preset and len(measured_results) < self.maximum_measurement_places:
@@ -259,12 +278,25 @@ class Device(EmptyDevice):
     def get_measurement(self, place: int, mode: str) -> float:
         """Read out the measurement value of the given place."""
         self.port.write(f"MEAS{place}:RES:ACT? {mode}")
-        ret = self.port.read()
-        # 9.91E+37 is the error code
-        return float(ret) if ret != "9.91E+37" else float("nan")
+        return self.read_result_and_handle_error()
 
     def get_averaged_measurement(self, place: int) -> float:
         """Read out the averaged measurement value of the given place."""
         self.port.write(f"MEAS{place}:RES:AVG?")
+        return self.read_result_and_handle_error()
+
+    def get_measurement_minimum(self, place: int) -> float:
+        """Read out the minimum measurement result of the current measurement series."""
+        self.port.write(f"MEAS{place}:RES:NPE?")  # Negative Peak
+        return self.read_result_and_handle_error()
+
+    def get_measurement_maximum(self, place: int) -> float:
+        """Read out the maximum measurement result of the current measurement series."""
+        self.port.write(f"MEAS{place}:RES:PPE?")
+        return self.read_result_and_handle_error()
+
+    def read_result_and_handle_error(self) -> float:
+        """Read out the buffer and handle the error code."""
         ret = self.port.read()
+        # 9.91E+37 is the error code
         return float(ret) if ret != "9.91E+37" else float("nan")
