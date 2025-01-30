@@ -47,7 +47,7 @@ class Device(EmptyDevice):
         self.port_manager = True
         self.port_types = ["USB", "GPIB", "TCPIP"]
         self.port_properties = {
-            "timeout": 20,
+            "timeout": 200,  # longer timeout when using older devices
         }
 
         # Parameters to restore the users device setting
@@ -457,7 +457,9 @@ class Device(EmptyDevice):
                 self.bias = [float(bias) for bias in answer[1].split(",")]
 
                 self.port.write("FREQ?")
-                self.measured_frequency = float(self.port.read())
+                # Frequency must be returned as list to enable post-processing
+                single_frequency = float(self.port.read())
+                self.measured_frequency = [single_frequency] * len(self.value_1)
 
             # Time Stamps
             self.port.write("LIST:SEQ:TST:DATA?")
