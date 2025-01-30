@@ -179,6 +179,12 @@ class Device(EmptyDevice):
             self.use_list_sweep = True
             self.handle_list_sweep_parameter(parameter)
 
+            # Add time staps to return values
+            self.variables.append("Time stamp")
+            self.units.append("s")
+            self.plottype.append(True)
+            self.savetype.append(True)
+
     def handle_bias_mode(self) -> None:
         """Choose the bias mode from sweepmode, stepmode, or ValueTypeBias."""
         if self.sweepmode.startswith("Voltage"):
@@ -273,12 +279,6 @@ class Device(EmptyDevice):
             msg = f"Invalid delay time of {self.list_sweep_delay_time}. The delay time must be greater than 100us."
             raise ValueError(msg)
 
-        # Add time staps to return values
-        self.variables.append("Time stamp")
-        self.units.append("s")
-        self.plottype.append(True)
-        self.savetype.append(True)
-
     def initialize(self) -> None:
         """Initialize the device."""
         # store the users device setting
@@ -301,6 +301,7 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device with the user settings."""
+        print("Configuring LCRmeter")
         self.set_integration(self.integration, self.average)
 
         # No Cable correction
@@ -353,6 +354,15 @@ class Device(EmptyDevice):
         # other option would be: self.port.write("INIT:CONT OFF")
         # in this case one has to use self.port.write("INIT:IMM") before every trigger
         # to set the device into 'wait-for-trigger' state
+
+    def reconfigure(self, parameters={}, keys=[]) -> None:
+        """This function is called if a parameter of GUI changes during the run by using the parameter syntax.
+
+        Currently, supports only list mode changes.
+        """
+        if "ListSweepCustomValues" in keys or "ListSweepDelaytime" in keys:
+            self.handle_list_sweep_parameter(parameters)
+            self.set_step_delay(self.list_sweep_delay_time)
 
     def unconfigure(self) -> None:
         """Turn off bias, amplitude control, and trigger."""
@@ -442,7 +452,6 @@ class Device(EmptyDevice):
             self.port.write(request_command)
         else:
             # Request measured values, frequency, and bias
-            # TODO: Question Axel: Why always bias volt?
             self.port.write(f"FETC?;FREQ?;BIAS:{self.bias_mode}?")
 
     def read_result(self) -> None:
@@ -587,12 +596,12 @@ class Device(EmptyDevice):
         return self.port.read().split(",")
 
     def set_step_delay(self, time_in_s: float) -> None:
-        """Set the delay time that the device waits after switching before starting the measurement. -> this is hold
+        """Set the delay time that the device waits after switching before starting the measurement. -> this is hold.
 
         Note: The device also enables setting a trigger delay time, which is the time between the trigger and setting of
         the next value. -> this is delay
         """
-        if time_in_s < 100e-6:
-            return
-
+        if 0 < time_in_s < 100e-6:
+            time_in_s = 100e-6
+        print(f"Setting delay time to {time_in_s} s")
         self.port.write(f"TRIG:DEL {time_in_s}")
