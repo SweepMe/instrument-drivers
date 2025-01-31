@@ -37,10 +37,11 @@ import numpy as np
 import time
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
-from pysweepme.ErrorMessage import debug, error
+from pysweepme.ErrorMessage import debug
 
 
 class Device(EmptyDevice):
+
     description = """
 <h3>LUMILOOP LSPM power meter</h3>
 <p>This SweepMe! driver communicates with a LSPM power meter from LUMILOOP. If you need support for a LSProbe please let us know and we can create a new instrument driver.<br /><br />The driver was created with&nbsp;TCP server version 20240718.<br /></p>
@@ -82,6 +83,8 @@ class Device(EmptyDevice):
             "TCPIP_EOLread": "\n",
             "timeout": 2,
         }
+
+        self._verbose_mode = False
 
     def set_GUIparameter(self):
 
@@ -156,7 +159,8 @@ class Device(EmptyDevice):
             # print("  Channels:", self.get_meter_channels(pm_index))  # cannot be used if meter is not ready
             print()
 
-        print_model_infos(self.pm_index)
+        if self._verbose_mode:
+            print_model_infos(self.pm_index)
 
         # Waiting until system ready (e.g. temperature has reached)
         ready = self.is_system_ready(self.pm_index)
@@ -193,14 +197,9 @@ class Device(EmptyDevice):
                 msg = f"LSPM has only {number_channels} channels. Please uncheck channel {i}."
                 raise Exception(msg)
 
-        # if not ready:
-        #     msg = "System not ready. Please wait until temperature has reached."
-        #     raise Exception(msg)
-
         self.check_for_error()
 
     def deinitialize(self):
-
         self.check_for_error()
 
     def configure(self):
@@ -209,8 +208,8 @@ class Device(EmptyDevice):
         self.set_system_mode(self.pm_index, self.mode)
         mode = self.get_system_mode(self.pm_index)
         if mode != self.mode:
-            print("Mode:", mode)
-            msg = "Unable to set mode."
+            msg = "Unable to set mode.\n"
+            msg += f"Set mode: {self.mode}, Get mode: {mode}"
             raise Exception(msg)
 
         self.max_frequency = self.get_maximum_frequency(self.pm_index)
@@ -228,9 +227,9 @@ class Device(EmptyDevice):
         self.set_frequency(self.pm_index, self.frequency)
         frequency = self.get_frequency(self.pm_index)
         if abs(frequency - self.frequency)/self.frequency > 1e-6:
-            print("Set Compensation frequency in Hz:", self.frequency)
-            print("Get Compensation frequency in Hz:", frequency)
-            msg = "Unable to set compensation frequency."
+
+            msg = "Unable to set compensation frequency.\n"
+            msg += f"Set Compensation frequency in Hz: {self.frequency}, Get Compensation frequency in Hz: {frequency}"
             raise Exception(msg)
 
         self.check_for_error()
@@ -241,9 +240,8 @@ class Device(EmptyDevice):
             self.set_LHfrequency(self.pm_index, self.lhfrequency)
             frequency = self.get_LHfrequency(self.pm_index)
             if abs(frequency - self.lhfrequency) / self.lhfrequency > 1e-6:
-                print("Set LH Frequency in Hz:", self.lhfrequency)
-                print("Get LH Frequency in Hz:", frequency)
-                msg = "Unable to set crossover frequency."
+                msg = "Unable to set crossover frequency.\n"
+                msg += f"Set Crossover frequency in Hz: {self.lhfrequency}, Get Crossover frequency in Hz: {frequency}"
                 raise Exception(msg)
 
             # if the meter is not ready after changing the crossover frequency, an exception is raised
@@ -258,8 +256,10 @@ class Device(EmptyDevice):
         self.set_automatic_video_bandwidth(self.pm_index, True)
 
         # Triggering
+        # can be implemented here
 
         # Sweep times
+        # can be implemented here
 
         self.check_for_error()
 
@@ -271,9 +271,8 @@ class Device(EmptyDevice):
             self.set_frequency(self.pm_index, new_frequency)
             frequency = self.get_frequency(self.pm_index)
             if abs(frequency - new_frequency) / new_frequency > 1e-6:
-                print("Set Compensation frequency in Hz:", new_frequency)
-                print("Get Compensation frequency in Hz:", frequency)
-                msg = "Unable to set compensation frequency."
+                msg = "Unable to set compensation frequency.\n"
+                msg += f"Set Compensation frequency in Hz: {new_frequency}, Get Compensation frequency in Hz: {frequency}"
                 raise Exception(msg)
 
             self.check_for_error()
@@ -285,17 +284,20 @@ class Device(EmptyDevice):
 
         return list(np.array(self.results)[self.all_channel_indices])
 
+    """ LUMILOOP LSPM specific functions """
 
     def check_for_error(self):
+        """Check for errors and raise an exception if any are found."""
 
         errors = self.get_all_errors()
         for msg in errors:
-            print(msg)
+            debug(msg)
         if len(errors) > 0:
             msg = errors[0]
             raise Exception(msg)
 
     def get_all_errors(self):
+        """Get all errors from the error queue."""
         errors = []
         while True:
             msg = self.get_error()
@@ -305,6 +307,7 @@ class Device(EmptyDevice):
         return errors
 
     def get_identification(self):
+        """Get the identification string of the device."""
         self.port.write("*IDN?")
         answer = self.port.read()
         return answer
@@ -314,139 +317,169 @@ class Device(EmptyDevice):
         self.port.write("*RST")
 
     def clear(self):
+        """Clear the error queue."""
         self.port.write("*CLS")
 
     def get_status_byte(self):
+        """Get the status byte of the device."""
         self.port.write("*STB?")
         answer = self.port.read()
         return int(answer)
 
     def is_operation_complete(self):
+        """Check if the operation is complete."""
         self.port.write("*OPC?")
         answer = self.port.read()
         return int(answer)
 
     def is_system_ready(self, index: int):
+        """Check if the system is ready."""
         self.port.write(f":SYST:RDY? {index}")
         answer = self.port.read()
         return bool(int(answer))
 
     def get_error(self):
+        """Get the last error message."""
         self.port.write(":SYST:ERR?")
         answer = self.port.read()
         return answer
 
     def get_error_count(self):
+        """Get the number of errors in the error queue."""
         self.port.write(":SYST:ERR:COUN?")
         answer = self.port.read()
         return int(answer)
 
     def get_meter_count(self):
+        """Get the number of power meters."""
         self.port.write(":SYST:COU?")
         answer = self.port.read()
         return int(answer)
 
     def get_meter_serial_number(self, index: int):
+        """Get the serial number of the power meter."""
         self.port.write(f":MEAS:SER? {index}")
         answer = self.port.read()
         return int(answer)
 
     def get_meter_maker(self, index: int):
+        """Get the maker of the power meter."""
         self.port.write(f":SYST:MAK? {index}")
         answer = self.port.read()
         return answer
 
     def get_meter_model(self, index: int):
+        """Get the model of the power meter."""
         self.port.write(f":SYST:DEV? {index}")
         answer = self.port.read()
         return answer
 
     def get_meter_version(self, index: int):
+        """Get the version of the power meter."""
         self.port.write(f":SYST:VERS? {index}")
         answer = self.port.read()
         return answer
 
     def get_meter_firmware(self, index: int):
+        """Get the firmware of the power meter."""
         self.port.write(f":SYST:FVERS? {index}")
         answer = self.port.read()
         return answer
 
     def get_meter_mode(self, index: int):
+        """Get the mode of the power meter."""
         self.port.write(f":MEAS:MOD? {index}")
         answer = self.port.read()
         return int(answer)
 
     def get_meter_ready(self, index: int):
+        """Check if the power meter is ready."""
         self.port.write(f":MEAS:RDY? {index}")
         answer = self.port.read()
         return bool(int(answer))
 
     def get_meter_power(self, index: int):
+        """Get the power values of all channels."""
         self.port.write(f":MEAS:ALL? {index}")
         answer = self.port.read()
         return list(map(float, answer.split(",")))
 
     def get_meter_channels(self, index: int):
+        """Get the number of channels of the power meter."""
         self.port.write(f"SYST:CHAN? {index}")
         answer = self.port.read()
         return int(answer)
 
     def set_system_mode(self, index: int, mode: int):
+        """Set the system mode of the power meter."""
         self.port.write(f":SYST:MOD {mode}, {index}")
 
     def get_system_mode(self, index: int):
+        """Get the system mode of the power meter."""
         self.port.write(f":SYST:MOD? {index}")
         answer = self.port.read()
         return int(answer)
 
     def set_frequency(self, index: int, frequency: float):
+        """Set the compensation frequency of the power meter."""
         self.port.write(f":SYST:FREQ {frequency}, {index}")
 
     def get_frequency(self, index: int):
+        """Get the compensation frequency of the power meter."""
         self.port.write(f":SYST:FREQ? {index}")
         answer = self.port.read()
         return float(answer)
 
     def get_minimum_frequency(self, index: int):
+        """Get the minimum frequency of the power meter."""
         self.port.write(f":SYST:FREQ:MIN? {index}")
         answer = self.port.read()
         return float(answer)
 
     def get_maximum_frequency(self, index: int):
+        """Get the maximum frequency of the power meter."""
         self.port.write(f":SYST:FREQ:MAX? {index}")
         answer = self.port.read()
         return float(answer)
 
     def set_LHfrequency(self, index: int, frequency: float):
+        """Set the low-high crossover frequency of the power meter."""
         self.port.write(f":SYST:LHF {frequency}, {index}")
 
     def get_LHfrequency(self, index: int):
+        """Get the low-high crossover frequency of the power meter."""
         self.port.write(f":SYST:LHF? {index}")
         answer = self.port.read()
         return float(answer)
 
     def get_cold_temperature(self, index: int):
+        """Get the cold temperature of the power meter."""
         self.port.write(f":MEAS:TC? {index}")
         answer = self.port.read()
         return float(answer)
 
     def get_hot_temperature(self, index: int):
+        """Get the hot temperature of the power meter."""
         self.port.write(f":MEAS:TH? {index}")
         answer = self.port.read()
         return float(answer)
 
     def set_automatic_video_bandwidth(self, index: int, state: bool):
+        """Set the automatic video bandwidth of the power meter."""
         self.port.write(f":MEAS:AUTOVBW {int(state)}, {index}")
 
     def is_automatic_video_bandwidth(self, index: int):
+        """Check if the automatic video bandwidth is enabled."""
         self.port.write(f":MEAS:AUTOVBW? {index}")
         answer = self.port.read()
         return int(answer)
 
     def set_video_bandwidth(self, index: int, frequency: float):
+        """Set the video bandwidth of the power meter."""
         self.port.write(f":MEAS:VBW {frequency}, {index}")
 
     def get_video_bandwidth(self, index: int):
+        """Get the video bandwidth of the power meter."""
         self.port.write(f":MEAS:VBW? {index}")
         answer = self.port.read()
         return float(answer)
