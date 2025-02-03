@@ -28,7 +28,7 @@
 # Contribution: We like to thank Peter Hegarty (TU Dresden) for providing the initial version of this driver.
 
 # SweepMe! driver
-# * Module: Scope
+# * Module: Logger
 # * Instrument: Tektronix DPOseries
 
 
