@@ -391,7 +391,7 @@ class Device(EmptyDevice):
         self.port.read()
 
     def request_result(self):
-    """Not used at the moment, but would be nice to split requesting and reading the results."""
+        """Not used at the moment, but would be nice to split requesting and reading the results."""
 
     def read_result(self) -> None:
         """Read the measurement result."""
