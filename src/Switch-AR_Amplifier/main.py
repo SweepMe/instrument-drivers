@@ -57,7 +57,7 @@ class Device(EmptyDevice):
         """Initialize the device class and the instrument parameters."""
         super().__init__()
 
-        self.shortname = "AR 12S1G3"
+        self.shortname = "AR Amplifier"
 
         self.variables = ["Gain"]
         self.units = [""]
@@ -85,6 +85,8 @@ class Device(EmptyDevice):
         self.port_string = parameter["Port"]
         self.mode = parameter["SweepMode"]
 
+        self.units = [""] if self.mode == "Amplification (12 Bit)" else ["%"]
+
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
 
@@ -107,12 +109,15 @@ class Device(EmptyDevice):
 
     def call(self) -> int:
         """Measure the value of the device."""
-        self.port.write("G?")
-        ret = self.port.read()
-        return int(ret[1:])
+        gain = self.get_gain()
+
+        if self.mode == "Amplification in Percent":
+            gain = int(gain / 4095 * 100)
+
+        return gain
 
     def set_gain(self, gain: int) -> None:
-        """Set the gain of the device."""
+        """Set the gain of the device as 12 Bit value."""
         if gain < 0 or gain > 4095:
             msg = "Gain must be between 0 and 4095."
             raise ValueError(msg)
@@ -120,3 +125,9 @@ class Device(EmptyDevice):
         # Command string must be of format 0000 - 4095
         gain = f"{int(gain):04}"
         self.port.write(f"G{gain}")
+
+    def get_gain(self) -> int:
+        """Get the gain of the device as 12 Bit value."""
+        self.port.write("G?")
+        ret = self.port.read()
+        return int(ret[1:])
