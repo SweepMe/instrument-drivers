@@ -27,13 +27,13 @@
 
 # SweepMe! device class
 # * Type: Temperature
-# * Instrument: Lake Shore Model 33x
+# * Instrument: Lake Shore Model 32x
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    """Device class to implement functionalities of a Lake Shore Model 33x temperature controller."""
+    """Device class to implement functionalities of a Lake Shore Model 32x temperature controller."""
     description = """
                        make sure port options are set correctly according to instrument settings: Tools/Port manager:
                        baudrate: 1200/300
