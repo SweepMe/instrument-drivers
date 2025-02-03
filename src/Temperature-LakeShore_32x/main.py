@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2022 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,30 +25,29 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
 # SweepMe! device class
-# Type: Temperature
-# Device: Lake Shore Model 33x
+# * Type: Temperature
+# * Instrument: Lake Shore Model 33x
 
-# Update 30 Jan, 2025: The device class was adapted to run a Lakeshore 321 (older version) by Anton Kirch (anton.kirch@umu.se).
-# It worked for temperature controlling. Some properties like the heater output mode and remote PID parameter setting are not implemented.
-
-
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
+    """Device class to implement functionalities of a Lake Shore Model 33x temperature controller."""
     description = """
                        make sure port options are set correctly according to instrument settings: Tools/Port manager:
                        baudrate: 1200/300
                        terminator: \r\n
                        parity: odd (O)
+
+                       Some properties like the heater output mode and remote PID parameter setting are not implemented.
                    """
 
-    def __init__(self):
-        EmptyDevice.__init__(self)
+    def __init__(self) -> None:
+        """Initialize the device class and the instrument parameters."""
+        super().__init__()
 
-        self.shortname = "Lake Shore 321"
+        self.shortname = "Lake Shore 32x"
 
         self.port_manager = True
         self.port_types = ["COM"]
@@ -63,6 +62,7 @@ class Device(EmptyDevice):
             "delay": 0.5,  # needed to avoid problems with reading temperature
         }
 
+        # Instrument Parameters
         self.heater_ranges = {
             "Off": 0,
             "Low": 2,
@@ -70,8 +70,22 @@ class Device(EmptyDevice):
             # "Zones": None,  # no heater range but user can specify to use Zones instead of heater range, not implemented yet
         }
 
-    def set_GUIparameter(self):
-        GUIparameter = {
+        # Measurement Parameters
+        self.sweep_mode: str = "None"
+        self.measureT: bool = True
+        self.reachT: bool = True
+        self.temperature_unit: str = "K"
+        self.ramprate: str = ""
+        self.heater_range: str = "Off"
+        self.zero_power_afterwards: bool = True
+        self.idle_temperature: str = ""
+
+        self.temperature_measured: float = 0
+        self.output_power: float = 0
+
+    def set_GUIparameter(self) -> dict:  # noqa: N802
+        """Set initial GUI parameter in SweepMe!."""
+        return {
             "SweepMode": ["None", "Temperature"],  # "Output in %", not implemented yet
             "TemperatureUnit": ["K", "°C"],  # "Output would use Volts additionally
             "HeaterRange": list(self.heater_ranges.keys()),
@@ -79,18 +93,17 @@ class Device(EmptyDevice):
             "IdleTemperature": "",
             "MeasureT": True,
             "ReachT": True,
-            # "SetT": True,
             "Rate": "",
         }
 
-        return GUIparameter
-
-    def get_GUIparameter(self, parameter={}):
+    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
+        """Update parameter from SweepMe! GUI."""
         if "HeaterRange" not in parameter:
-            raise Exception(
+            msg = (
                 "Please update to the latest Temperature module to use this driver as"
-                " new user interface options are needed",
+                " new user interface options are needed"
             )
+            raise Exception(msg)
 
         self.measureT = parameter["MeasureT"]
         self.reachT = parameter["ReachT"]
@@ -111,89 +124,85 @@ class Device(EmptyDevice):
 
     """ semantic standard functions start here """
 
-    def connect(self):
-        pass
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
+        self.get_identification()
 
-    def initialize(self):
-        self.port.write("*IDN?")
-        identification = self.port.read()
-
-    def deinitialize(self):
+    def deinitialize(self) -> None:
+        """Deinitialize the device. This function is called only once at the end of the measurement."""
         if self.zero_power_afterwards:
-            outputmode = 0  # Off
-            powerup_enable = 0
             self.set_heater_range(0)  # Off
 
         if self.idle_temperature != "":
             self.set_temperature(float(self.idle_temperature))
 
-    def configure(self):
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
         # Output mode
         if self.sweep_mode.startswith("Temperature"):
             # Optional ramp of set temperature, default = 0 (directly set temperature)
             if self.ramprate == "":
                 self.set_setpoint_ramp_parameter(0, 0.0)
             else:
-                self.set_setpoint_ramp_parameter(1, self.ramprate)
-
-        else:
-            pass
+                self.set_setpoint_ramp_parameter(1, float(self.ramprate))
 
         # Set temperature unit according to GUI
         if self.temperature_unit == "°C":
             self.port.write("CUNI C")
-
         else:
             self.port.write("CUNI K")
 
-    def unconfigure(self):
+    def unconfigure(self) -> None:
+        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
         if self.zero_power_afterwards:
-            outputmode = 0  # Off
-            powerup_enable = 0
             self.set_heater_range(0)  # Off
 
         if self.idle_temperature != "":
             self.set_temperature(float(self.idle_temperature))
 
-    def apply(self):
+    def apply(self) -> None:
+        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         # Set heater range if selected (0 = Off, 2 = Low, 3 = High)
         if self.heater_ranges[self.heater_range] is not None:
             self.set_heater_range(self.heater_ranges[self.heater_range])
-
-        self.value = float(self.value)
-        heater_range = self.heater_range
 
         if self.sweep_mode == "Temperature":
             self.value = float(self.value)
             self.set_temperature(self.value)
 
-    def read_result(self):
+    def read_result(self) -> None:
+        """Read the measured data from a buffer."""
         self.temperature_measured = self.get_temperature()
         self.output_power = self.get_heater_output()
 
-    def call(self):
+    def call(self) -> [float, float]:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
         return [self.temperature_measured, self.output_power]
 
     """ button related functions start here """
 
-    def measure_temperature(self):
-        """Used by reach functionality"""
+    def measure_temperature(self) -> float:
+        """Used by reach functionality."""
         temperature = self.get_temperature()
         return float(temperature)
 
     """ setter/getter functions start here """
 
-    def get_identification(self):
+    def get_identification(self) -> str:
+        """Get the identification of the device."""
         self.port.write("*IDN?")
         return self.port.read()
 
-    def reset(self):
+    def reset(self) -> None:
+        """Reset the device."""
         self.port.write("*RST")
 
-    def clear(self):
+    def clear(self) -> None:
+        """Clear the device."""
         self.port.write("*CLS")
 
-    def get_temperature(self):
+    def get_temperature(self) -> float:
+        """Get the temperature of the device."""
         self.port.write("CDAT?")
         temperature = self.port.read()
 
@@ -205,47 +214,57 @@ class Device(EmptyDevice):
 
         return float(temperature)
 
-    def set_temperature(self, temperature):
+    def set_temperature(self, temperature: float) -> None:
+        """Set the temperature of the device."""
         self.port.write("SETP %1.3f" % (float(temperature)))
 
-    def get_temperature_setpoint(self, temperature):
+    def get_temperature_setpoint(self) -> float:
+        """Get the setpoint temperature of the device."""
         self.port.write("SETP?")
         answer = self.port.read()
         return float(answer)
 
-    def set_manual_output(self, power):
+    def set_manual_output(self, power: float) -> None:
+        """Set the manual output of the device."""
         self.port.write("MOUT %1.2f" % (float(power)))
 
-    def get_manual_output(self, output):
+    def get_manual_output(self) -> float:
+        """Get the manual output of the device."""
         self.port.write("MOUT?")
         answer = self.port.read()
         return float(answer)
 
-    def get_heater_output(self):
+    def get_heater_output(self) -> float:
+        """Get the heater output of the device."""
         self.port.write("HEAT?")
         answer = self.port.read()
         return float(answer)
 
-    def set_heater_range(self, heater_range):
-        """Args:
+    def set_heater_range(self, heater_range: int) -> None:
+        """Set the heater range.
+
+        Args:
         heater_range: range number (int)
             0 = Off, 2 = Low, 3 = High
         """
         self.port.write("RANG %i" % (int(heater_range)))
 
-    def get_heater_range(self):
+    def get_heater_range(self) -> int:
+        """Get the heater range of the device as int: 0 = Off, 2 = Low, 3 = High."""
         self.port.write("RANG?")
         answer = self.port.read()
         return int(answer)
 
-    def set_setpoint_ramp_parameter(self, ramp_enable, ramprate):
+    def set_setpoint_ramp_parameter(self, ramp_enable: int, ramprate: float) -> None:
+        """Set the ramprate and enable ramping."""
         self.port.write("RAMPR %1.2f" % float(ramprate))
         self.port.write("RAMP %i" % int(ramp_enable))
 
-    def get_setpoint_ramp_parameter(self):
+    def get_setpoint_ramp_parameter(self) -> [int, float]:
+        """Get the ramprate and ramp status."""
         self.port.write("RAMPR?")
         ramp_rate = self.port.read()
 
         self.port.write("RAMPS?")
         ramp_status = self.port.read()
-        return float(ramp_status, ramp_rate)
+        return int(ramp_status), float(ramp_rate)
