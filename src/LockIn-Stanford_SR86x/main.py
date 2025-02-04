@@ -27,8 +27,8 @@
 
 
 # SweepMe! device class
-# Type: LockIn
-# Device: SR86x
+# * Module: LockIn
+# * Instrument: SR86x
 
 import math
 import time
@@ -38,7 +38,9 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    def __init__(self):
+    """Device class for Stanford Research Instruments SR86x Lock-In Amplifier."""
+    def __init__(self) -> None:
+        """Initialize device parameters."""
         EmptyDevice.__init__(self)
 
         self.shortname = "SR86x"
@@ -174,8 +176,9 @@ class Device(EmptyDevice):
             ],
         )
 
-    def set_GUIparameter(self):
-        gui_parameter = {
+    def set_GUIparameter(self) -> dict:  # noqa: N802
+        """Set the standard GUI parameters."""
+        return {
             "SweepMode": ["None", "Frequency in Hz", "Time constant in s"],
             "Source": [
                 "Internal",
@@ -216,9 +219,8 @@ class Device(EmptyDevice):
             "WaitTimeConstants": 4.0,
         }
 
-        return gui_parameter
-
-    def get_GUIparameter(self, parameter={}):
+    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
+        """Handle the SweepMe! GUI parameter inputs."""
         self.sweepmode = parameter["SweepMode"]
         self.source = parameter["Source"]
         self.input = parameter["Input"]
@@ -248,15 +250,11 @@ class Device(EmptyDevice):
     """ here, semantic standard functions start that are called by SweepMe! during a measurement """
 
     def initialize(self):
-        # print("Initializing...")
         self.identification = self.get_identification().split(",")
         print("Identification of the device:", self.identification)
 
-        # print("Initializing finished.")
-
-    def configure(self):
-        # print("Configuring...")
-
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
         if "X" in self.channel1:
             self.set_output_channel(0, 0)
         elif "R" in self.channel1:
@@ -343,9 +341,9 @@ class Device(EmptyDevice):
                 raise Exception("The input mode and sensitivity should match.")
         if self.timeconstant not in ["Auto time", "As is"] and self.timeconstant in self.timeconstant_id_dict:
             self.set_time_constant(self.timeconstant_id_dict[self.timeconstant])
-        # print("Configuring finished.")
 
-    def apply(self):
+    def apply(self) -> None:
+        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         if self.sweepmode.startswith("Frequency"):
             self.set_frequency(self.value, self.identification[1])
 
@@ -374,23 +372,27 @@ class Device(EmptyDevice):
                     break
 
             self.timeconstant = str(number) + " " + conversion[exp_step]
-            # print("Time constant:", self.timeconstant)
             self.set_time_constant(self.timeconstant_id_dict[self.timeconstant])
 
-    def adapt(self):
+    def adapt(self) -> None:
+        """'adapt' can be used to adapt an instrument to a new situation after other instruments got a new setvalue."""
         if self.sensitivity == "Auto":
             self.set_auto_scale()
         self.port.write("*OPC?")
 
-    def adapt_ready(self):
+    def adapt_ready(self) -> None:
+        """'adapt_ready' can be used to make sure that a procedure started in 'adapt' is finished.
+
+        Thus, multiple instrument can start an adapt-procedure simultaneously.
+        """
         # waiting for operation complete from 'adapt'
         answer = self.port.read()
 
         # This time reference to wait several time constants.
         self.time_ref = time.perf_counter()
 
-    def trigger_ready(self):
-        # make sure that at least several time constants have passed since 'Auto sensitivity' was called
+    def trigger_ready(self) -> None:
+        """Make sure that at least several time constants have passed since 'Auto sensitivity' was called."""
         delta_time = (self.waittimeconstants * self.unit_to_float(self.timeconstant)) - (
             time.perf_counter() - self.time_ref
         )
@@ -398,7 +400,8 @@ class Device(EmptyDevice):
             # wait several time constants to allow for a renewal of the result
             time.sleep(delta_time)
 
-    def measure(self):
+    def measure(self) -> None:
+        """Trigger the acquisition of new data."""
         sens_id = str(self.get_sensitivity())
         if self.input.startswith("A"):  # Voltage related sensitivities
             self.sensitivity_value = self.unit_to_float(self.sensitivities_dict_voltages_inverted[sens_id])
@@ -410,26 +413,27 @@ class Device(EmptyDevice):
         elif self.source != "Internal":
             self.port.write("SNAP? 2,3,16")  # R, θ, External Reference Frequency
 
-    def read_result(self):
+    def read_result(self) -> None:
+        """Read the measured data from a buffer."""
         self.R, self.Phase, self.F = map(float, self.port.read().split(","))
         self.X, self.Y = self.R * math.cos(self.Phase), self.R * math.sin(self.Phase)
         # self.Phase, self.F = map(float, self.port.read().split(","))
 
-    def call(self):
+    def call(self) -> list:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
         results = [self.R, self.Phase, self.F, self.X, self.Y]
 
         # adding sensitivity
         results += [self.sensitivity_value]
 
-        # print("%s = %s" % (self.unit_to_float(self.timeconstant), self.timeconstant))
         time_constant = self.unit_to_float(self.timeconstant)
         results += [time_constant]
 
         return results
 
     @staticmethod
-    def unit_to_float(unit):
-        """Takes a string representing a sensitivity or time constant and gives back a corresponding float"""
+    def unit_to_float(unit) -> float:
+        """Takes a string representing a sensitivity or time constant and gives back a corresponding float."""
         chars = OrderedDict(
             [
                 ("V", ""),
@@ -448,7 +452,7 @@ class Device(EmptyDevice):
             unit = unit.replace(char, chars[char])
         return float(unit)
 
-    def add_Units_Channels(self, AorV="V"):
+    def add_Units_Channels(self, AorV="V") -> None:
         self.units.append(AorV)
         self.units += ["°", "Hz"]
         self.units += [AorV, AorV, AorV]
@@ -457,23 +461,23 @@ class Device(EmptyDevice):
 
     """ here, convenience functions start """
 
-    def get_identification(self):
-        """This function return the identification number of the instrument, with the following format:
+    def get_identification(self) -> str:
+        """This function return the identification number of the instrument.
+
+        The format is:
         Stanford_Research_Systems,<device type>,<serial number>,<firmware version>; e.g.
         Stanford_Research_Systems,SR860,000111,v1.23
         Returns:
             str: identification string
         """
         self.port.write("*IDN?")
-        answer = self.port.read()
-        return answer
+        return self.port.read()
 
-    def operation_complete(self):
+    def operation_complete(self) -> str:
         self.port.write("*OPC?")
-        answer = self.port.read()
-        return answer
+        return self.port.read()
 
-    def set_output_channel(self, channel, parameter):
+    def set_output_channel(self, channel, parameter) -> None:
         """This function sets a certain parameter to the selected output channel.
 
         Args:
@@ -485,9 +489,10 @@ class Device(EmptyDevice):
         if str(parameter).upper() in ["XY", "RTHETA", "0", "1"] and str(channel).upper() in ["OCH1", "OCH2", "0", "1"]:
             self.port.write("COUT %s, %s" % (channel, parameter))
         else:
-            raise Exception("Wrong channel and/or parameter.")
+            msg = "Wrong channel and/or parameter."
+            raise Exception(msg)
 
-    def set_output_expansion(self, parameter, multiplicator):
+    def set_output_expansion(self, parameter, multiplicator) -> None:
         """This function sets an expansion multiplicator to the selected output parameter.
 
         Args:
@@ -505,10 +510,13 @@ class Device(EmptyDevice):
         ]:
             self.port.write("CEXP %s, %s" % (parameter, multiplicator))
         else:
-            raise Exception("Wrong parameter and/or multiplicator.")
+            msg = "Wrong parameter and/or multiplicator."
+            raise Exception(msg)
 
-    def set_frequency(self, frequency, model):
-        """This function sets the internal osc. frequency in Hz. The value of frequency is limited to 1 mHz ≤ f ≤ 500 kHz
+    def set_frequency(self, frequency, model) -> None:
+        """This function sets the internal osc. frequency in Hz.
+
+        The value of frequency is limited to 1 mHz ≤ f ≤ 500 kHz
         for SR860 and 1 mHz ≤ f ≤ 4 MHz for SR865.
 
         Args:
@@ -520,9 +528,10 @@ class Device(EmptyDevice):
         if (model == "SR860" and 0.001 <= frequency <= 500000) or (model == "SR865" and 0.001 <= frequency <= 4000000):
             self.port.write("FREQ %f" % frequency)
         else:
-            raise Exception("Wrong model name and/or out-of-range frequency.")
+            msg = "Wrong model name and/or out-of-range frequency."
+            raise Exception(msg)
 
-    def get_frequency(self):
+    def get_frequency(self) -> str:
         """This function gets the internal oscillator or external frequency in Hz.
 
         Args:
@@ -531,10 +540,9 @@ class Device(EmptyDevice):
             str: frequency
         """
         self.port.write("FREQ?")
-        answer = self.port.read()
-        return answer
+        return self.port.read()
 
-    def set_ref_source(self, mode):
+    def set_ref_source(self, mode) -> None:
         """This function sets reference source.
 
         Args:
@@ -545,9 +553,10 @@ class Device(EmptyDevice):
         if str(mode).upper() in ["INT", "EXT", "DUAL", "CHOP", "0", "1", "2", "3"]:
             self.port.write("RSRC %s" % mode)
         else:
-            raise Exception("Reference source string is not correct.")
+            msg = "Reference source string is not correct."
+            raise Exception(msg)
 
-    def set_external_ref_input_imp(self, imp):
+    def set_external_ref_input_imp(self, imp) -> None:
         """This function sets "external" reference trigger input impedence.
 
         Args:
@@ -558,9 +567,10 @@ class Device(EmptyDevice):
         if str(imp).upper() in ["50", "50OHMS", "0", "1M", "1MEG", "1"]:
             self.port.write("REFZ %s" % imp)
         else:
-            raise Exception("External Reference trigger input impedence is not correct.")
+            msg = "External Reference trigger input impedence is not correct."
+            raise Exception(msg)
 
-    def set_external_ref_trigger(self, mode):
+    def set_external_ref_trigger(self, mode) -> None:
         """This function sets "external" reference trigger mode.
 
         Args:
@@ -571,9 +581,10 @@ class Device(EmptyDevice):
         if str(mode).upper() in ["SIN", "POSTTL", "POS", "NEGTTL", "NEG", "0", "1", "2"]:
             self.port.write("RTRG %s" % mode)
         else:
-            raise Exception("Reference trigger mode is not correct.")
+            msg = "Reference trigger mode is not correct."
+            raise Exception(msg)
 
-    def set_input(self, input):
+    def set_input(self, input) -> None:
         """This function sets the input to voltage or current.
 
         Args:
@@ -584,9 +595,10 @@ class Device(EmptyDevice):
         if str(input).upper() in ["VOLTAGE", "VOL", "CURRENT", "CUR", "0", "1"]:
             self.port.write("IVMD %s" % input)
         else:
-            raise Exception("Voltage input mode is not correct.")
+            msg = "Voltage input mode is not correct."
+            raise Exception(msg)
 
-    def set_current_input_range(self, range):
+    def set_current_input_range(self, range) -> None:
         """This function sets the input current range.
 
         Args:
@@ -597,9 +609,10 @@ class Device(EmptyDevice):
         if str(range).upper() in ["1MEG", "100MEG", "0", "1"]:
             self.port.write("ICUR %s" % range)
         else:
-            raise Exception("Current input range is not correct.")
+            msg = "Current input range is not correct."
+            raise Exception(msg)
 
-    def set_voltage_input_range(self, range):
+    def set_voltage_input_range(self, range) -> None:
         """This function sets the input voltage range.
 
         Args:
@@ -610,9 +623,10 @@ class Device(EmptyDevice):
         if str(range).upper() in ["1VOLT", "300MVOLT", "100MVOLT", "30MVOLT", "10MVOLT", "0", "1", "2", "3", "4"]:
             self.port.write("IRNG %s" % range)
         else:
-            raise Exception("Voltage input range is not correct.")
+            msg = "Voltage input range is not correct."
+            raise Exception(msg)
 
-    def set_voltage_input_mode(self, voltage_input):
+    def set_voltage_input_mode(self, voltage_input) -> None:
         """This function sets the voltage input mode. Available input strings are "A" or 0, "A-B or 1.
 
         Args:
@@ -623,9 +637,10 @@ class Device(EmptyDevice):
         if str(voltage_input).upper() in ["A", "A-B", "0", "1"]:
             self.port.write("ISRC %s" % voltage_input)
         else:
-            raise Exception("Voltage input mode is not correct.")
+            msg = "Voltage input mode is not correct."
+            raise Exception(msg)
 
-    def set_coupling(self, coupling):
+    def set_coupling(self, coupling) -> None:
         """This function sets the input coupling mode. Available options are "AC", "DC".
 
         Args:
@@ -636,10 +651,13 @@ class Device(EmptyDevice):
         if str(coupling).upper() in ["AC", "DC", "0", "1"]:
             self.port.write("ICPL %s" % coupling)
         else:
-            raise Exception("Coupling mode is not correct.")
+            msg = "Coupling mode is not correct."
+            raise Exception(msg)
 
-    def set_slope_filter(self, slope_id):
-        """This function sets the filter slope to 6 dB/oct (slope_id=0), 12 dB/oct (slope_id=1), 18 dB/oct
+    def set_slope_filter(self, slope_id) -> None:
+        """This function sets the filter slope.
+
+        Allowed values: 6 dB/oct (slope_id=0), 12 dB/oct (slope_id=1), 18 dB/oct
         (slope_id=2) or 24 dB/oct (slope_id=3).
 
         Args:
@@ -650,9 +668,10 @@ class Device(EmptyDevice):
         if str(slope_id) in ["0", "1", "2", "3"]:
             self.port.write("OFSL %s" % slope_id)
         else:
-            raise Exception("Slope id is not correct.")
+            msg = "Slope id is not correct."
+            raise Exception(msg)
 
-    def set_input_shield(self, shield):
+    def set_input_shield(self, shield) -> None:
         """This function command sets the voltage input shields to float (FLO) or ground (GRO)..
 
         Args:
@@ -663,9 +682,10 @@ class Device(EmptyDevice):
         if str(shield).upper() in ["FLO", "FLOAT", "GRO", "GROUND", "0", "1"]:
             self.port.write("IGND %s" % shield)
         else:
-            raise Exception("The input shield argument is not correct.")
+            msg = "The input shield argument is not correct."
+            raise Exception(msg)
 
-    def set_advanced_filter(self, status):
+    def set_advanced_filter(self, status) -> None:
         """This function turns the advanced filter off  or on.
 
         Args:
@@ -678,9 +698,10 @@ class Device(EmptyDevice):
         if str(status).upper() in ["ON", "OFF", "0", "1"]:
             self.port.write("ADVFILT %s" % status)
         else:
-            raise Exception("The input status for advanced filter is not correct.")
+            msg = "The input status for advanced filter is not correct."
+            raise Exception(msg)
 
-    def set_sync_filter(self, status):
+    def set_sync_filter(self, status) -> None:
         """This function turns the synchronous filter off  or on.
 
         Args:
@@ -693,9 +714,10 @@ class Device(EmptyDevice):
         if str(status).upper() in ["ON", "OFF", "0", "1"]:
             self.port.write("SYNC %s" % status)
         else:
-            raise Exception("The input status for sync filter is not correct.")
+            msg = "The input status for sync filter is not correct."
+            raise Exception(msg)
 
-    def set_sensitivity(self, sensitivity_id):
+    def set_sensitivity(self, sensitivity_id) -> None:
         """This function sets the sensitivity according to the table list on the page 112.
 
         Args:
@@ -706,9 +728,10 @@ class Device(EmptyDevice):
         if int(sensitivity_id) in range(28):
             self.port.write("SCAL %s" % sensitivity_id)
         else:
-            raise Exception("The input sensitivity id is not correct.")
+            msg = "The input sensitivity id is not correct."
+            raise Exception(msg)
 
-    def get_sensitivity(self):
+    def get_sensitivity(self) -> int:
         """This function returns the sensitivity according to the table list on the page 112.
 
         Args:
@@ -717,10 +740,9 @@ class Device(EmptyDevice):
             int: answer
         """
         self.port.write("SCAL?")
-        answer = int(self.port.read())
-        return answer
+        return int(self.port.read())
 
-    def set_auto_scale(self):
+    def set_auto_scale(self) -> None:
         """This function enables the auto scale function, which also sets the sensitivity automatically.
 
         Returns:
@@ -728,7 +750,7 @@ class Device(EmptyDevice):
         """
         self.port.write("ASCL")
 
-    def set_time_constant(self, tau_id):
+    def set_time_constant(self, tau_id) -> None:
         """The function sets the time constant according to the table list on the page 113.
 
         Args:
@@ -739,8 +761,5 @@ class Device(EmptyDevice):
         if int(tau_id) in range(22):
             self.port.write("OFLT %s" % tau_id)
         else:
-            raise Exception("The input time constant id is not correct.")
-
-
-if __name__ == "__main__":
-    pass
+            msg = "The input time constant id is not correct."
+            raise Exception(msg)
