@@ -27,20 +27,20 @@
 
 # SweepMe! driver
 # * Module: Scope
-# * Instrument: Rohde&Schwarz RTA
+# * Instrument: Rohde&Schwarz RTx
 
 import numpy as np
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    """Device class for the Rohde&Schwarz RTA Oscilloscope."""
+    """Device class for the Rohde&Schwarz RTx Oscilloscopes."""
 
     def __init__(self) -> None:
         """Initialize the Device Class."""
         EmptyDevice.__init__(self)
 
-        self.shortname = "RTA"
+        self.shortname = "RTx"
 
         # Communication Parameters
         self.port_manager = True

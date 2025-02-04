@@ -27,19 +27,19 @@
 
 # SweepMe! driver
 # * Module: Signal
-# * Instrument: Rohde&Schwarz RTA
+# * Instrument: Rohde&Schwarz RTx
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    """Device class for the signal generator functions of Rohde&Schwarz RTA Oscilloscope."""
+    """Device class for the signal generator functions of Rohde&Schwarz RTx Oscilloscopes."""
 
     def __init__(self) -> None:
         """Initialize the Device Class."""
         super().__init__()
 
-        self.shortname = "RTA"
+        self.shortname = "RTx"
 
         # Communication Parameters
         self.port_manager = True
@@ -183,7 +183,7 @@ class Device(EmptyDevice):
             self.port.write("SYST:ERR:CODE:ALL?")
             answer = self.port.read()
             for err in answer.split(","):
-                print("Signal R&S RTA error:", err)
+                print("Signal R&S RTx error:", err)
 
     def get_identification(self) -> str:
         """Return the identification of the device."""
