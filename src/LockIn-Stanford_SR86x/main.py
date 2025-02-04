@@ -432,7 +432,7 @@ class Device(EmptyDevice):
         return results
 
     @staticmethod
-    def unit_to_float(unit) -> float:
+    def unit_to_float(unit: str) -> float:
         """Takes a string representing a sensitivity or time constant and gives back a corresponding float."""
         chars = OrderedDict(
             [
@@ -440,6 +440,8 @@ class Device(EmptyDevice):
                 ("A", ""),
                 ("s", ""),
                 (" ", ""),
+                ("f", "e-15"),
+                ("p", "e-12"),
                 ("n", "e-9"),
                 ("µ", "e-6"),
                 ("u", "e-6"),
