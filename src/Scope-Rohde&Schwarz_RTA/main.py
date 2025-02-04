@@ -30,7 +30,7 @@
 # * Instrument: Rohde&Schwarz RTA
 
 import numpy as np
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -245,59 +245,21 @@ class Device(EmptyDevice):
         if self.acquisition_mode == "Continuous":
             self.port.write("RUN")
         elif self.acquisition_mode == "Single":
-            self.port.write("STOP")  # we stop any acquistion to perform a single run during measure
+            self.port.write("STOP")  # we stop any acquisition to perform a single run during measure
 
         if self.average != "As is":
             self.port.write("ACQ:COUN %s" % self.average)
 
-        self.port.write("ACQ:COUN?")
-        self.port.read()
-
         self.set_sample_rate()
 
         # here all channels that are not selected are switched off as they may be activated from the last run
-        for i in np.arange(4) + 1:
-            if i not in self.channels:
-                self.port.write("CHAN%i:STAT OFF" % i)
+        for channel in np.arange(4) + 1:
+            if channel not in self.channels:
+                self.set_channel_state(channel, False)
 
-        # now we switch on the channels that have to be used
-        for i in self.channels:
-            self.port.write("CHAN%i:TYPE SAMP" % i)
-            self.port.write("CHAN%i:STAT ON" % i)
-
-            # Range
-            if self.channel_ranges[i] != "As is":
-                range_value = float(self.channel_ranges[i])
-                self.port.write("CHAN%i:RANG %s" % (i, range_value))
-
-            # Position
-            if self.channel_offsets[i] != "As is":
-                offset_value = float(self.channel_offsets[i])
-                self.port.write("CHAN%i:POS %s" % (i, offset_value))
-
-            # Coupling
-            if self.channel_couplings[i] != "As is":
-                coupling_value = self.couplings[self.channel_couplings[i]]
-                self.port.write("CHAN%i:COUP %s" % (i, coupling_value))
-
-            # Impedance can only be set if an active probe is connected. Otherwise, 1 MOhm is automatically set.
-            if self.channel_impedances[i] == "50 Ohm":
-                # Use the DC coupling for 50 Ohm impedance. Other modes (DCLimit, ACLimit, GND) are untested.
-                self.port.write(f"CHANnel{i}:COUPling DC")
-
-            # All channel related properties
-            # CHANnel<m>:STATe
-            # CHANnel<m>:COUPling
-            # CHANnel<m>:GND
-            # CHANnel<m>:SCALe
-            # CHANnel<m>:RANGe
-            # CHANnel<m>:POSition
-            # CHANnel<m>:OFFSet
-            # CHANnel<m>:INVert
-            # CHANnel<m>:BANDwidth
-            # CHANnel<m>:CPLing
-            # CHANnel<m>:IMPedance
-            # CHANnel<m>:OVERload
+        # now we switch on and configure the channels that have to be used
+        for channel in self.channels:
+            self.configure_channel(channel)
 
         # let's make sure all previous commands are processed
         self.port.write("*OPC?")
@@ -340,6 +302,65 @@ class Device(EmptyDevice):
 
             if self.trigger_slope != "As is":
                 self.port.write("TRIG1:EDGE:SLOP %s" % self.commands[self.trigger_slope])
+
+    def configure_channel(self, channel: int) -> None:
+        """Set the channel properties.
+
+        All channel related properties:
+            CHANnel<m>:STATe
+            CHANnel<m>:COUPling
+            CHANnel<m>:GND
+            CHANnel<m>:SCALe
+            CHANnel<m>:RANGe
+            CHANnel<m>:POSition
+            CHANnel<m>:OFFSet
+            CHANnel<m>:INVert
+            CHANnel<m>:BANDwidth
+            CHANnel<m>:CPLing
+            CHANnel<m>:IMPedance
+            CHANnel<m>:OVERload
+        """
+        self.port.write("CHAN%i:TYPE SAMP" % channel)
+        self.port.write("CHAN%i:STAT ON" % channel)
+
+        # Range
+        channel_range = self.channel_ranges[channel]
+        if channel_range != "As is":
+            self.set_channel_range(channel, float(channel_range))
+
+        # Position
+        channel_offset = self.channel_offsets[channel]
+        if channel_offset != "As is":
+            self.set_channel_offset(channel, float(channel_offset))
+
+        # Coupling
+        channel_coupling = self.channel_couplings[channel]
+        if channel_coupling != "As is":
+            self.set_channel_coupling(channel, channel_coupling)
+
+        # Impedance can only be set if an active probe is connected. Otherwise, 1 MOhm is automatically set.
+        if self.channel_impedances[channel] == "50 Ohm":
+            # Use the DC coupling for 50 Ohm impedance. Other modes (DCLimit, ACLimit, GND) are untested.
+            self.port.write(f"CHANnel{channel}:COUPling DC")
+
+    def set_channel_state(self, channel: int, state: bool = False) -> None:
+        """Switch on or off the channel."""
+        if state:
+            self.port.write(f"CHAN{channel}:STAT ON")
+        else:
+            self.port.write(f"CHAN{channel}:STAT OFF")
+
+    def set_channel_range(self, channel: int, range_value: float) -> None:
+        """Set the range of the channel."""
+        self.port.write("CHAN%i:RANG %s" % (channel, range_value))
+
+    def set_channel_offset(self, channel: int, offset_value: float) -> None:
+        """Set the offset of the channel."""
+        self.port.write("CHAN%i:POS %s" % (channel, offset_value))
+
+    def set_channel_coupling(self, channel: int, coupling: str) -> None:
+        """Set the coupling of the channel."""
+        self.port.write("CHAN%i:COUP %s" % (channel, self.couplings[coupling]))
 
     def set_sample_rate(self) -> None:
         """Set the sample rate."""
@@ -422,7 +443,7 @@ class Device(EmptyDevice):
             self.port.write("SYST:ERR:CODE:ALL?")
             answer = self.port.read()
             for err in answer.split(","):
-                print("Scope R&S RTA error:", err)
+                print("Scope R&S RTx error:", err)
 
     def get_identification(self) -> str:
         """Get the identification of the device."""
