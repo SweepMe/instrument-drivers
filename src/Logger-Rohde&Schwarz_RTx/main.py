@@ -123,7 +123,12 @@ class Device(EmptyDevice):
         self.measurement_places: dict[int, tuple[int, str]] = {}
         """A dictionary with the place number as key and a tuple of channel, mode code, and statistics as value."""
 
+        # If True, the measurement places are defined on the device and used as is. If False, the places are defined in
+        # the GUI. This mode is currently disabled as SweepMe cannot update the number of variables during runtime, so
+        # the variables and units are always empty strings.
         self.use_preset: bool = False
+        """Currently not used. If True, the measurement places are defined on the device and used as is."""
+
         self.waveform_count: int = 1
         """Number of waveform to average. If set to 1, no averaging is performed."""
 
@@ -133,7 +138,7 @@ class Device(EmptyDevice):
         number_of_places = int(parameters["Number of places"]) if parameters else self.maximum_measurement_places
 
         parameters = {
-            "Use preset": False,
+            # "Use preset": False,  # Do not offer this option for now
             "Number of places": [n + 1 for n in range(self.maximum_measurement_places)],
             "Waveform count": 1,
         }
@@ -148,7 +153,7 @@ class Device(EmptyDevice):
 
     def apply_gui_parameters(self, parameters: dict) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.use_preset = bool(parameters["Use preset"])
+        # self.use_preset = bool(parameters["Use preset"])
         self.waveform_count = int(parameters["Waveform count"])
 
         self.measurement_places = {}  # Reset measurement places
@@ -211,7 +216,7 @@ class Device(EmptyDevice):
 
     def measure(self) -> None:
         """Reset the averaged values at the start of the measurement."""
-        if self.waveform_count or self.use_preset:
+        if self.waveform_count > 1 or self.use_preset:
             for place in self.measurement_places:
                 self.reset_statistical_measurement(place)
 
