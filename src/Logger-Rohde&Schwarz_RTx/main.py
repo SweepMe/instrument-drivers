@@ -33,8 +33,12 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+T = TypeVar("T")
 
 
 class Device(EmptyDevice):
@@ -120,34 +124,59 @@ class Device(EmptyDevice):
         # Measurement places - The devices can have up to 6 measurement 'places' with predefined modes and sources to
         # read out.
         self.maximum_measurement_places: int = 6  # For RTB2004, might differ for other devices
-        self.measurement_places: dict[int, tuple[int, str]] = {}
+        self.measurement_places: dict[int, tuple[int, str, str]] = {}
         """A dictionary with the place number as key and a tuple of channel, mode code, and statistics as value."""
 
+        # If True, the measurement places are defined on the device and used as is. If False, the places are defined in
+        # the GUI. This mode is currently disabled as SweepMe cannot update the number of variables during runtime, so
+        # the variables and units are always empty strings.
         self.use_preset: bool = False
+        """Currently not used. If True, the measurement places are defined on the device and used as is."""
+
         self.waveform_count: int = 1
         """Number of waveform to average. If set to 1, no averaging is performed."""
 
-    def set_GUIparameter(self) -> dict:  # noqa: N802
+    @staticmethod
+    def parse_parameter(func: Callable[[Any], T], parameters: dict[str, Any], key: str, fallback: T) -> T:
+        """Parse and convert a parameter from the given dictionary and return the value or a fallback value."""
+        try:
+            return func(parameters[key])
+        except Exception:
+            return fallback
+
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
-        parameters = {
-            "Use preset": False,
+        # The number of places can be set by the user
+        number_of_places = self.parse_parameter(int, parameters, "Number of places", self.maximum_measurement_places)
+
+        new_parameters = {
+            # "Use preset": False,  # Do not offer this option for now
+            "Number of places": list(range(1, self.maximum_measurement_places + 1)),
             "Waveform count": 1,
         }
         # Each measurement place can be configured with a channel and a mode
-        for i in range(1, self.maximum_measurement_places + 1):
-            parameters[" " * i] = None  # empty line
-            parameters[f"Place {i} channel"] = ["None", "CH1", "CH2", "CH3", "CH4"]
-            parameters[f"Place {i} mode"] = list(self.modes.keys())
-            parameters[f"Place {i} statistics"] = self.statistic_modes
+        for place in range(1, number_of_places + 1):
+            new_parameters[" " * place] = None  # empty line
+            new_parameters[f"Place {place} channel"] = ["None", "CH1", "CH2", "CH3", "CH4"]
+            current_channel = parameters.get(f"Place {place} channel", "None")
+            if current_channel != "None":
+                new_parameters[f"Place {place} mode"] = list(self.modes.keys())
+                new_parameters[f"Place {place} statistics"] = self.statistic_modes
 
-        return parameters
+        return new_parameters
 
-    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.use_preset = bool(parameter["Use preset"])
-        self.waveform_count = int(parameter["Waveform count"])
+        # self.use_preset = bool(parameters["Use preset"])
+        self.waveform_count = self.parse_parameter(int, parameters, "Waveform count", 1)
 
         self.measurement_places = {}  # Reset measurement places
+
+        # Must reset
+        self.variables = []
+        self.units = []
+        self.plottype = []
+        self.savetype = []
 
         if self.use_preset:
             # Define placeholder variables, because SweepMe! currently does not allow updating variables during runtime
@@ -157,10 +186,13 @@ class Device(EmptyDevice):
             self.savetype = [True] * self.maximum_measurement_places
 
         else:
-            for place in range(1, self.maximum_measurement_places + 1):
-                channel = parameter[f"Place {place} channel"]
-                mode = parameter[f"Place {place} mode"]
-                statistics = parameter[f"Place {place} statistics"]
+            number_of_places = self.parse_parameter(
+                int, parameters, "Number of places", self.maximum_measurement_places,
+            )
+            for place in range(1, number_of_places + 1):
+                channel = parameters.get(f"Place {place} channel", "None")
+                mode = parameters.get(f"Place {place} mode", "None")
+                statistics = parameters.get(f"Place {place} statistics", "None")
                 if channel != "None" and mode != "None":
                     channel_num = int(channel[-1])
                     self.measurement_places[place] = (channel_num, self.modes[mode], statistics)
@@ -179,8 +211,8 @@ class Device(EmptyDevice):
                 mode = self.get_measurement_mode(place)
 
                 if mode != "NONE":
-                    source = self.get_source(place)
-                    self.measurement_places[place] = (source, mode)
+                    source = int(self.get_source(place))
+                    self.measurement_places[place] = (source, mode, "Average")
                     # If SweepMe! allows updating variables during runtime, this could be done here
 
     def initialize(self) -> None:
@@ -191,7 +223,7 @@ class Device(EmptyDevice):
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         if not self.use_preset:
-            for place, (channel, mode) in self.measurement_places.items():
+            for place, (channel, mode, _) in self.measurement_places.items():
                 self.set_source(place, channel)
                 self.set_measurement_mode(place, mode)
 
@@ -201,7 +233,7 @@ class Device(EmptyDevice):
 
     def measure(self) -> None:
         """Reset the averaged values at the start of the measurement."""
-        if self.waveform_count or self.use_preset:
+        if self.waveform_count > 1 or self.use_preset:
             for place in self.measurement_places:
                 self.reset_statistical_measurement(place)
 
