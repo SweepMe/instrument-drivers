@@ -31,6 +31,7 @@
 
 import numpy as np
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import debug
 
 
 class Device(EmptyDevice):
@@ -411,7 +412,7 @@ class Device(EmptyDevice):
         self.port.write("*OPC?")
         self.port.read()
 
-    def request_result(self):
+    def request_result(self) -> None:
         """Not used at the moment, but would be nice to split requesting and reading the results."""
 
     def read_result(self) -> None:
@@ -443,7 +444,7 @@ class Device(EmptyDevice):
             self.port.write("SYST:ERR:CODE:ALL?")
             answer = self.port.read()
             for err in answer.split(","):
-                print("Scope R&S RTx error:", err)
+                debug("Scope R&S RTx error:", err)
 
     def get_identification(self) -> str:
         """Get the identification of the device."""

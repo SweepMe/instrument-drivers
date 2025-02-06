@@ -30,6 +30,7 @@
 # * Instrument: Rohde&Schwarz RTx
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import debug
 
 
 class Device(EmptyDevice):
@@ -183,7 +184,7 @@ class Device(EmptyDevice):
             self.port.write("SYST:ERR:CODE:ALL?")
             answer = self.port.read()
             for err in answer.split(","):
-                print("Signal R&S RTx error:", err)
+                debug("Signal R&S RTx error:", err)
 
     def get_identification(self) -> str:
         """Return the identification of the device."""
