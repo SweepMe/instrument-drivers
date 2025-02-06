@@ -39,6 +39,9 @@ from pysweepme.ErrorMessage import debug
 
 FoMa.addFolderToPATH()
 
+# TODO: When changing SweepMe! driver versions, the aspectdeviceengine is not imported again
+# and the driver will not work with the correct aspectdeviceengine version.
+# So far, only restarting SweepMe! after selecting the correct driver version helps.
 from aspectdeviceengine.enginecore import (
     IdSmuServiceRunner,
     ListSweep,
@@ -74,19 +77,11 @@ class Device(EmptyDevice):
         self.smu: aspectdeviceengine.enginecore.IdSmu2DeviceModel = None
         self.channel: aspectdeviceengine.enginecore.AD5522ChannelModel = None
 
-        # Enum is defined here as definition in import section makes trouble when changing a driver version
-        # during a measurement run.
-        class SourceMode(enum.Enum):
-            """Enum class to define the type of action."""
-
-            VOLTAGE = enum.auto()
-            CURRENT = enum.auto()
-
         # Measurement Parameters
         self.channels: list = [1, 2, 3, 4]
         self.channel_number: int = 1
         self.source_identifier: str = "Voltage in V"
-        self.source: SourceMode = SourceMode.VOLTAGE
+        self.source_mode: str = "Voltage"
         self.protection: float = 0.1
         self.average: int = 1
         self.list_mode: bool = False
@@ -103,7 +98,7 @@ class Device(EmptyDevice):
             "5 µA - DPS": CurrentRange.Range_5uA,
             "25 µA - DPS":  CurrentRange.Range_25uA_DPS,
             "250 µA - DPS": CurrentRange.Range_250uA_DPS,
-            "2,5 mA - DPS": CurrentRange.Range_2500uA_DPS,
+            "2.5 mA - DPS": CurrentRange.Range_2500uA_DPS,
             "25 mA - DPS": CurrentRange.Range_25mA_DPS,
             "500 mA - DPS": CurrentRange.Range_500mA_DPS,
             "1200 mA - DPS": CurrentRange.Range_1200mA_DPS,
@@ -287,7 +282,7 @@ class Device(EmptyDevice):
             - "List results": dict[str, list[float], Dictionary with channel name as key and list of measured values as
             value.
         """
-        self.source = SourceMode.VOLTAGE if self.source_identifier.startswith("Voltage") else SourceMode.CURRENT
+        self.source_mode = "Voltage" if self.source_identifier.startswith("Voltage") else "Current"
 
         if self.identifier in self.device_communication:
             self.board_model = self.device_communication[self.identifier]["Board"]
@@ -357,7 +352,7 @@ class Device(EmptyDevice):
         if "List master" in self.device_communication[self.identifier]:
             # Set the measurement mode - also for the list master itself
             # Maybe this can be done simpler, but it works
-            measurement_mode = MeasurementMode.isense if self.source == SourceMode.VOLTAGE else MeasurementMode.vsense
+            measurement_mode = MeasurementMode.isense if self.source_mode == "Voltage" else MeasurementMode.vsense
             self.board_model.set_measurement_modes(measurement_mode, [self.channel_name])
 
             if self.list_role == "List creator":
@@ -401,13 +396,13 @@ class Device(EmptyDevice):
     def apply(self) -> None:
 
         """Set the voltage or current on the SMU."""
-        if self.source == SourceMode.VOLTAGE:
+        if self.source_mode == "Voltage":
             if self.value > self.v_max or self.value < self.v_min:
                 msg = f"Voltage {self.value} V out of range {self.v_min} V to {self.v_max} V"
                 raise ValueError(msg)
             self.channel.voltage = float(self.value)
 
-        elif self.source == SourceMode.CURRENT:
+        elif self.source_mode == "Current":
             if self.value > self.i_max or self.value < self.i_min:
                 msg = f"Current {self.value} A out of range {self.i_min} A to {self.i_max} A"
                 raise ValueError(msg)
@@ -505,7 +500,7 @@ class Device(EmptyDevice):
                 raise ValueError(msg) from e
             raise e
 
-        if self.source == SourceMode.VOLTAGE:
+        if self.source_mode == "Voltage":
             self.v = config.force_values
             self.i = measurement_result
         else:
@@ -536,7 +531,7 @@ class Device(EmptyDevice):
             else:
                 set_values = [float(self.value)] * len(results)
 
-            if self.source == SourceMode.VOLTAGE:
+            if self.source_mode == "Voltage":
                 self.i = results
                 self.v = set_values
             else:
