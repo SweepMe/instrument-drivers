@@ -29,8 +29,11 @@
 # * Module: SpectrumAnalyzer
 # * Instrument: Simulated Driver
 
-import numpy as np
+from __future__ import annotations
 
+from typing import Any
+
+import numpy as np
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -63,10 +66,20 @@ class Device(EmptyDevice):
         self.frequency_max: float = 5000
 
         self.reference_level: float = -75
-        self.resolution_bandwidth: float = 0.
-        self.video_bandwidth: float = 0.
+        self.resolution_bandwidth: float = 0.0
+        self.video_bandwidth: float = 0.0
         self.return_max_hold: bool = False
         self.video_averaging: bool = False
+
+        # Trace Modes
+        self.trace_modes = [
+            "Current",
+            "Max hold",
+            "Min hold",
+            "Average",
+        ]
+        self.trace_mode: str = "Average"
+        self.trace_integration: float = 1
 
         # Measured values
         self.measured_frequency: np.ndarray = np.array([])
@@ -86,7 +99,9 @@ class Device(EmptyDevice):
             "Reference level in dBm": -75,
             "Resolution bandwidth": list(self.bandwidth_resolution_values),
             "Video bandwidth": list(self.bandwidth_resolution_values),
-            "Max hold": False,
+            "Trace mode": self.trace_modes,
+            "Trace mode integration type": ["Hold time in s:", "Repetitions:"],
+            "Trace mode integration": 1,
             "Video averaging": False,
         }
 
@@ -97,7 +112,8 @@ class Device(EmptyDevice):
         self.reference_level = float(parameter["Reference level in dBm"])
         self.resolution_bandwidth = self.bandwidth_resolution_values[parameter["Resolution bandwidth"]]
         self.video_bandwidth = self.bandwidth_resolution_values[parameter["Video bandwidth"]]
-        self.return_max_hold = parameter["Max hold"]
+        self.trace_mode = parameter["Trace mode"]
+        self.trace_integration = float(parameter["Trace mode integration"])
         self.video_averaging = parameter["Video averaging"]
 
     def handle_frequency_input(self, parameter: dict) -> None:
@@ -136,21 +152,41 @@ class Device(EmptyDevice):
 
     def call(self) -> tuple[list, list]:
         """Return the measured frequency and amplitude."""
-        # TODO: Log scale
+        spectrum = self.simulate_spectrum(self.measured_frequency)
+
+        if self.trace_mode == "Min hold":
+            for _ in range(int(self.trace_integration)):
+                new_spectrum = self.simulate_spectrum(self.measured_frequency)
+                spectrum = np.min([spectrum, new_spectrum], axis=0)
+
+        elif self.trace_mode == "Max hold":
+            for _ in range(int(self.trace_integration)):
+                new_spectrum = self.simulate_spectrum(self.measured_frequency)
+                spectrum = np.max([spectrum, new_spectrum], axis=0)
+
+        elif self.trace_mode == "Average":
+            for _ in range(int(self.trace_integration)):
+                spectrum += self.simulate_spectrum(self.measured_frequency)
+            spectrum /= self.trace_integration
+
+        return self.measured_frequency.tolist(), spectrum.tolist()
+
+    def simulate_spectrum(self, frequency: np.ndarray) -> np.ndarray:
+        """Simulate a spectrum."""
         number_of_peaks = 3
         position_of_peaks = [0.1, 0.3, 0.55]
         amplitude_of_peaks = [1, 2, 3]
 
-        amplitude = np.zeros(len(self.measured_frequency))
+        amplitude = np.zeros(len(frequency))
         for i in range(number_of_peaks):
             peak_position = position_of_peaks[i] * self.frequency_span + self.frequency_center - self.frequency_span / 2
             peak_width = self.frequency_span * 0.15
             peak_amplitude = amplitude_of_peaks[i] * 25
-            amplitude += peak_amplitude * np.exp(-(self.measured_frequency - peak_position) ** 2 / peak_width)
+            amplitude += peak_amplitude * np.exp(-((frequency - peak_position) ** 2) / peak_width)
 
         rng = np.random.default_rng()
         noise_level = 0
-        noise = rng.normal(noise_level, 3, len(self.measured_frequency))
+        noise = rng.normal(noise_level, 3, len(frequency))
         amplitude += noise
 
-        return self.measured_frequency.tolist(), amplitude.tolist()
+        return amplitude
