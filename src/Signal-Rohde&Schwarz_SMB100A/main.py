@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -77,7 +77,7 @@ class Device(EmptyDevice):
             ],
             "Waveform": ["Sinus"],
             "PeriodFrequency": ["Frequency in Hz", "Period in s"],
-            "PeriodFrequencyValue": 2e-6,
+            "PeriodFrequencyValue": 2e6,
             "AmplitudeHiLevel": self.amplitude_modes,
             "AmplitudeHiLevelValue": 1.0,
             "DelayPhase": ["Delay in s", "Phase in deg"],
@@ -100,12 +100,13 @@ class Device(EmptyDevice):
         self.variables = [self.period_frequency_mode.split(" ")[0], "RF Power level"]
         self.units = [self.period_frequency_mode.split(" ")[-1], self.amplitude_unit]
 
-    def configure(self) -> None:
-        """Configure the device."""
+    def initialize(self) -> None:
+        """Initialize the device."""
         self.port.write("*RST")
-        # self.port.write("*CLS")
         self.lock_user_interface(True)
 
+    def configure(self) -> None:
+        """Configure the device."""
         # Set power mode to CW
         self.port.write(":SOUR:POW:MODE CW")
 
@@ -114,6 +115,7 @@ class Device(EmptyDevice):
 
         # Set frequency
         self.set_frequency_mode("CW")
+
         if self.period_frequency_mode == "Period in s":  # else it is "Frequency in Hz"
             self.period_frequency_value = 1 / self.period_frequency_value
         self.set_frequency(self.period_frequency_value)
@@ -125,6 +127,28 @@ class Device(EmptyDevice):
             self.set_delay(self.delay_phase_value)
 
         self.set_output_state(True)
+
+    def reconfigure(self, parameters: dict, keys: list) -> None:
+        """If the GUI parameters are changed during a measurement this function is called.
+
+        This can happen when using the ParameterSystem in the SweepMe! GUI. Use reconfigure to only update the changed
+        parameters instead of calling configure which sets all parameters to their default values.
+        """
+        if "PeriodFrequencyValue" in keys:
+            new_frequency = float(parameters["PeriodFrequencyValue"])
+            if parameters["PeriodFrequency"] == "Period in s":
+                new_frequency = 1 / new_frequency
+
+            self.set_frequency(new_frequency)
+
+        if "AmplitudeHiLevelValue" in keys:
+            self.set_amplitude(float(parameters["AmplitudeHiLevelValue"]))
+
+        if "DelayPhaseValue" in keys:
+            if parameters["DelayPhase"] == "Phase in deg":
+                self.set_phase(float(parameters["DelayPhaseValue"]))
+            elif parameters["DelayPhase"] == "Delay in s":
+                self.set_delay(float(parameters["DelayPhaseValue"]))
 
     def unconfigure(self) -> None:
         """Unconfigure the device."""
@@ -171,8 +195,8 @@ class Device(EmptyDevice):
     def set_frequency(self, frequency: float) -> None:
         """Set the frequency of the RF output."""
         min_frequency = 100e3
-        max_frequency = 12.75e6
-        if self.value < min_frequency or self.value > max_frequency:
+        max_frequency = 12.75e9
+        if frequency < min_frequency or frequency > max_frequency:
             msg = f"Frequency {frequency} out of range. Choose between {min_frequency} and {max_frequency}."
             raise ValueError(msg)
 
@@ -206,7 +230,7 @@ class Device(EmptyDevice):
         """Set the amplitude of the RF output. The power level will be [min level + offset ... max level + offset]."""
         if self.amplitude_unit == "V":
             max_power = 7.071
-            if self.value < 0 or self.value > max_power:
+            if high_level < 0 or high_level > max_power:
                 msg = f"Power {high_level} out of range. Choose between 0 and {max_power} V."
                 raise ValueError(msg)
 
@@ -219,6 +243,7 @@ class Device(EmptyDevice):
 
     def set_power_unit(self, unit: str) -> None:
         """Set the power unit of the RF output."""
+        unit = unit.upper()
         if unit not in ["V", "DBUV", "DBM"]:
             msg = "Invalid power unit. Choose from 'V', 'DBUV', 'DBM'."
             raise ValueError(msg)
@@ -242,6 +267,25 @@ class Device(EmptyDevice):
         self.port.write(f"SYST:ULOC {state}")
 
     """ Currently not implemented functions """
+
+    def set_amplitude_modulation_state(self, turn_on: bool = False) -> None:
+        """Set the amplitude modulation on or off."""
+        state = "ON" if turn_on else "OFF"
+        self.port.write(f":SOUR:AM:STAT {state}")
+
+    def set_amplitude_modulation(self, depth_percent: float = 0.0, use_exponential_modulation: bool = False) -> None:
+        """Set the amplitude modulation to linear or exponential."""
+        if depth_percent < 0 or depth_percent > 100:
+            msg = f"Depth {depth_percent} out of range. Choose between 0 and 100%."
+            raise ValueError(msg)
+
+        if not use_exponential_modulation:
+            self.port.write(":SOUR:AM:TYPE LIN")
+            self.port.write(f":SOUR:AM:DEPT {depth_percent}")
+        else:
+            self.port.write(":SOUR:AM:TYPE EXP")
+            # Test if EXP or LIN in command, manual is ambiguous
+            self.port.write(f":SOUR:AM:DEPT:EXP {depth_percent}")
 
     def get_impedance(self) -> float:
         """Get the impedance of the RF output."""
