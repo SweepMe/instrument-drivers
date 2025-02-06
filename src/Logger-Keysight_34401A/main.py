@@ -84,8 +84,8 @@ class Device(EmptyDevice):
             "4W-Resistance": "Ohm",
             "Frequency": "Hz",
             "Period": "s",
-            "Continuity": "",
             "Diode": "",
+            "Continuity": "",
         }
 
         # a list of available resolutions as they can be sent to the instrument
@@ -111,6 +111,7 @@ class Device(EmptyDevice):
         }
 
         self.nplc_types = {
+            "Very Fast (0.01)": 0.01,
             "Fast (0.1)": 0.1,
             "Medium (1.0)": 1.0,
             "Slow (10.0)": 10.0,
@@ -121,9 +122,6 @@ class Device(EmptyDevice):
 
         GUIparameter = {
             "Mode": list(self.modes.keys()),
-            # "Resolution": self.resolutions,
-            # "Trigger": list(self.trigger_types.keys()),
-            # "Average": "1",
             "NPLC": list(self.nplc_types.keys()),
             "Range": ["Auto"],
             "Display": ["On", "Off"],
@@ -134,41 +132,38 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter={}):
 
         self.mode = parameter['Mode']
-        # self.resolution = parameter['Resolution']
-        # self.trigger_type = parameter['Trigger']
-        # average = int(parameter['Average'])
-
         self.range = parameter['Range']
-        self.nplc = parameter['NPLC'].replace("(", "").replace(")", "").split()[-1]
+        self.nplc = parameter['NPLC']
         self.display = parameter['Display']
 
         self.port_string = parameter["Port"]
 
         # here, the variables and units are defined, based on the selection of the user
         # we have as many variables as channels are selected
-        self.variables = [self.mode]  # we add the channel name to each variable, e.g "Voltage DC"
-
+        # we add the channel name to each variable, e.g "Voltage DC"
+        self.variables = [self.mode]
         self.units = [self.mode_units[self.mode]]
 
-        self.plottype = [True]  # True to plot data
-        self.savetype = [True]  # True to save data
+        # True to plot data
+        self.plottype = [True]
+        
+        # True to save data
+        self.savetype = [True]
 
     def initialize(self):
+        # once at the beginning of the initialization; disabled so manual settings on instrument can be used
+        # self.port.write("*RST")
 
-        self.port.write("*IDN?")
-        identifier = self.port.read()
-        # print("Identification:", identifier)
+        # reset all registers
+        self.port.write("*CLS")
 
-        # once at the beginning of the measurement
-        self.port.write("*RST")
-
-        self.port.write("*CLS")  # reset all values
-
-        self.port.write("SYST:BEEP:STAT OFF")  # control-Beep off
+        # control-Beep off
+        self.port.write("SYST:BEEP:STAT OFF")
 
     def deinitialize(self):
 
-        self.port.write("SYST:BEEP:STAT ON")  # control-Beep on
+        # control-Beep on
+        self.port.write("SYST:BEEP:STAT ON")
 
     def configure(self):
 
@@ -178,9 +173,10 @@ class Device(EmptyDevice):
         # Speed
         if self.mode not in ["Voltage AC", "Current AC", "Frequency", "Period", "Diode", "Continuity"]:
             # NPLC only supported in DC Volts, DC Current, 2W- and 4W-Resistance
-            self.port.write(":SENS:%s:NPLC %s" % (self.modes[self.mode], str(self.nplc)))
+            self.port.write(":SENS:%s:NPLC %s" % (self.modes[self.mode], self.nplc_types[self.nplc]))
 
         # Range
+        # setting RANGE to AUTO if in a mode of operation that supports it
         if self.mode not in ["Frequency", "Period", "Continuity", "Diode"]:
             self.port.write(":SENS:%s:RANG:AUTO ON" % (self.modes[self.mode]))
 
@@ -190,11 +186,14 @@ class Device(EmptyDevice):
 
     def unconfigure(self):
         if self.display == "Off":
-            self.port.write(":DISP 1")  # We switch Display on again if it was switched off
-
+            # We switch Display on again if it was switched off
+            self.port.write(":DISP 1")
+            
     def measure(self):
-        self.port.write("READ?")  # triggers a new measurement
+        # triggers a new measurement
+        self.port.write("READ?")
 
     def call(self):
-        answer = self.port.read()  # here we read the response from the "READ?" request in 'measure'
+        # here we read the response from the "READ?" request in 'measure'
+        answer = self.port.read()
         return [float(answer)]
