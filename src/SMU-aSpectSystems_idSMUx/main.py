@@ -324,10 +324,8 @@ class Device(EmptyDevice):
                 )
 
     def configure(self) -> None:
-        """Enable the channel and set the current range on the SMU."""
-        if not self.channel.enabled:
-            self.channel.enabled = True
 
+        # Protection
         self.set_compliance(self.protection)
 
         # Current Range
@@ -392,6 +390,18 @@ class Device(EmptyDevice):
 
         # removing channel name if the SMU is no longer active
         self.device_communication[self.identifier][self.identifier_channel_names].remove(self.channel.name)
+
+    def poweron(self):
+
+        """Enable the channel"""
+        if not self.channel.enabled:
+            self.channel.enabled = True
+
+    def poweroff(self):
+
+        """Disable the channel"""
+        if self.channel.enabled:
+            self.channel.enabled = False
 
     def apply(self) -> None:
 
