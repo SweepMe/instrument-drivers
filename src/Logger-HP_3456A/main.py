@@ -47,50 +47,33 @@ class Device(EmptyDevice):
         self.port_types = ["GPIB"]
 
         self.port_properties = {
-            "timeout": 10,  # needed for 100 NPLC
+            # needed for 100 NPLC
+            "timeout": 10,
         }
 
-        # this dictionary connects modes to commands. The modes will be displayed to the user in the field 'Mode'
-        # 'S0' Makes sure than the SHIFT button is not pressed before requesting the function of choice whereas 'S1' virtually pressed the Shift button
+        # This dictionary connects modes to commands. The modes will be displayed to the user in the field 'Mode'.
+        # 'S0' Makes sure than the SHIFT button is not pressed before requesting the function of choice whereas 'S1' virtually presses the SHIFT button
         self.modes = {
             "Voltage DC": "S0 F1 Z0",
-            # "Voltage DC with Auto-Zero": "F1 Z1", #Auto-Zero shorts the inputs to ground between measurements; doubles measurement time but removes zero point drift
             "Voltage AC": "S0 F2 Z0",
-            # "Voltage AC with Auto-Zero": "F2 Z1",
             "Voltage AC+DC": "S0 F3 Z0",
-            # "Voltage AC+DC with Auto-Zero": "F3 Z1",
-            # "Current DC": "CURR:DC", #current not available on 3456A
-            # "Current AC": "CURR:AC",
             "2W-Resistance": "S0 F4 Z0",
-            # "2W-Resistance with Auto-Zero": "F4 Z1",
             "4W-Resistance": "S0 F5 Z0",
-            # "4W-Resistance with Auto-Zero": "F5 Z1",
             "O.C. 2W-Res.": "S1 F4 Z0",
-            # Offset-Compensated 2-Wire Resistance Measurement; measurement function is selected just like on the frontpanel by pressing the SHIFT key (S1 command) first
-            # "O.C. 2W-Res. with Auto-Zero": "S1 F4 Z1",
             "O.C. 4W-Res.": "S1 F5 Z0",
-            # Offset-Compensated 4-Wire Resistance Measurement; measurement function is selected just like on the frontpanel by pressing the SHIFT key (S1 command) first
-            # "O.C. 4W-Res. with Auto-Zero": "S1 F5 Z1",
         }
 
         # this dictionary sets the unit of each mode
         self.mode_units = {
             "Voltage DC": "V",
-            # "Voltage DC with Auto-Zero": "V",
             "Voltage AC": "V",
-            # "Voltage AC with Auto-Zero": "V",
             "Voltage AC+DC": "V",
-            # "Voltage AC+DC with Auto-Zero": "V",
             "2W-Resistance": "Ohm",
-            # "2W-Resistance with Auto-Zero": "Ohm",
             "4W-Resistance": "Ohm",
-            # "4W-Resistance with Auto-Zero": "Ohm",
             "O.C. 2W-Res.": "Ohm",
-            # "O.C. 2W-Res. with Auto-Zero": "Ohm",
             "O.C. 4W-Res.": "Ohm",
-            # "O.C. 4W-Res. with Auto-Zero": "Ohm",
         }
-        # number of displayed digits as dictionary
+        # measuring range as dictionary
         self.ranges = {
             "Auto": "R1",
             "100 mV or 0.1 kOhm": "R2",
@@ -102,16 +85,17 @@ class Device(EmptyDevice):
             "100 MOhm": "R8",
             "1 GOhm": "R9",
         }
-
-        # measuring range as dictionary
+        # number of displayed digits as dictionary
         self.resolutions = {
             "6 Digits (Standard)": "6STG",
             "5 Digits": "5STG",
             "4 Digits": "4STG",
             "3 Digits": "3STG",
         }
-
+        # number of power line cycles for measurement (integration time)
         self.nplc_types = {
+            "Very Fast (0.01)": ".01STI",
+            "Fast (0.1)": ".1STI",
             "Medium (1)": "1STI",
             "Slow (10)": "10STI",
             "Very Slow (100)": "100STI",
@@ -125,6 +109,7 @@ class Device(EmptyDevice):
             "NPLC": list(self.nplc_types.keys()),
             "Auto-Zero": ["On", "Off"],
             "Filter": ["Off", "On"],
+            "Trigger Source": ["INT", "EXT"],
             "Display": ["On", "Off"],
         }
 
@@ -135,6 +120,7 @@ class Device(EmptyDevice):
         self.nplc = parameter["NPLC"]
         self.autozero = parameter["Auto-Zero"]
         self.filter = parameter["Filter"]
+        self.trigsource = parameter["Trigger Source"]
         self.display = parameter["Display"]
 
         self.port_string = parameter["Port"]
@@ -144,44 +130,54 @@ class Device(EmptyDevice):
         self.variables = [self.mode]  # we add the channel name to each variable, e.g "Voltage DC"
 
         self.units = [self.mode_units[self.mode]]
-
-        self.plottype = [True]  # True to plot data
-        self.savetype = [True]  # True to save data
+        # True to plot data
+        self.plottype = [True]
+        # True to save data
+        self.savetype = [True]
 
     def initialize(self):
-        self.port.write("CL1")  # reset all values
+        # reset instruments via home command; works faster than clearing via CL1 with same functionality
+        self.port.write("H")
 
     def configure(self):
         # Data Output Format
-        self.port.write("P0")  # makes sure the device is set to the standard, unpacked ASCII format for data output
+        # makes sure the device is set to the standard, unpacked ASCII format for data output
+        self.port.write("P0")
 
         # End-or-Identify Code
-        self.port.write("O1")  # use the EOI mode for SCPI compatibility
+        # use the EOI mode for SCPI compatibility
+        self.port.write("O1")
 
-        # Mode
+        # Operation Mode
         self.port.write("%s" % self.modes[self.mode])
 
-        # Resolution
-        if self.resolution in ["10 MOhm", "100 MOhm", "1 GOhm"] and self.mode in [
+        # Range
+        # check if an resistance-only range was selected in a non-resistance mode of operation
+        if self.range in ["10 MOhm", "100 MOhm", "1 GOhm"] and self.mode in [
             "Voltage DC",
             "Voltage AC",
             "Voltage AC+DC",
         ]:
-            msg = "Currently selected resolution is restricted to resistance measurement only"
+            msg = "Currently selected range is restricted to Resistance measurement only"
             raise Exception(msg)
         else:
-            self.port.write("%s" % self.resolutions[self.resolution])
+            # set measurement range
+            self.port.write("%s" % self.ranges[self.range])
 
-        # Range
-        self.port.write("%s" % self.ranges[self.range])
+        # Resolution
+        # set the amount of digits of measurement result value
+        self.port.write("%s" % self.resolutions[self.resolution])
 
         # NPLC Integration
+        # set number of power line cycles to define integration time
         self.port.write("%s" % self.nplc_types[self.nplc])
 
         # Auto-Zero
         if self.autozero == "On":
+            # enable Auto-Zero feature in between measureming cycles; will double measurement time
             self.port.write("Z1")
         else:
+            # disable Auto-Zero feature
             self.port.write("Z0")
 
         # Filter
@@ -190,25 +186,42 @@ class Device(EmptyDevice):
                 msg = "Filter function cannot be used in Resistance mode"
                 raise Exception(msg)
             else:
+                # enable AC ripple filter for voltage measurements
                 self.port.write("FL1")
         else:
+            # disable AC filter
             self.port.write("FL0")
 
         # Display
+        # stops displaying the measurement results on the display but just slashes instead
         if self.display == "Off":
             self.port.write("D0")
 
         # Trigger on HOLD
-        self.port.write("T4")  # sets the trigger on hold to wait for a manual trigger during the 'measure' routine
+        # sets the internal trigger on hold to wait for a manual trigger during the 'measure' routine; 
+        # it is done ONLY if INTERNAL trigger is chosen as source; if it is done with external trigger,
+        # putting the trigger on hold and setting it to external during measure would result in an invalid value in the output buffer
+        # that gets read out by the first self.port.read command instead of it waiting for the result caused by the external trigger
+        if self.trigsource == "INT":
+            self.port.write("T4")
+        else:
+            # arm external trigger
+            self.port.write("T2")
 
     def unconfigure(self):
         if self.display == "Off":
-            self.port.write("D1")  # We switch Display on again if it was switched off
-        self.port.write("T1") # sets the trigger back to INTERNAL to enable the self-triggered measurements on the display again
+            # we switch Display on again if it was switched off
+            self.port.write("D1")
+        # sets the trigger back to INTERNAL to enable the self-triggered measurements on the display again
+        self.port.write("T1")
 
     def measure(self):
-        self.port.write("T3")  # perform single trigger for a measurement
-        self.data = self.port.read()  # retrieves current measurement data from the instrument; no seperate SCPI data prepare command necessary
+        if self.trigsource == "INT":
+            # perform single trigger for a measurement using internal trigger
+            self.port.write("T3")
+            
+        # retrieves current measurement data from the instrument
+        self.data = self.port.read()
 
     def call(self):
         return [float(self.data)]
