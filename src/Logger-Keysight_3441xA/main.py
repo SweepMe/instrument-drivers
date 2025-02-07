@@ -38,22 +38,26 @@ class Device(EmptyDevice):
     description = """<p><strong>Keysight 34410A/34411A</strong></p>
                      <p>DMM: Digital Multimeter</p>
                      <p>&nbsp;</p>
-                     <p>The 34410A/34411A are 6.5 digit DMM that support measurement of voltage, current, resistance, 
-                     capacitance, temperature and 
+                     <p>The 34410A/34411A are 6.5 digit DMM that support measurement of voltage, current, resistance,
+                     capacitance, temperature, and
                      frequency.</p>
                      <p>Two-wire as well as four-wire measurements are possible.</p>
                      <p>The instruments can be driven either via GPIB, USB or Ethernet LAN.</p>
                     """
 
     def __init__(self):
-
         EmptyDevice.__init__(self)
 
         self.shortname = "Keysight3441xA"
 
         self.port_manager = True
         self.port_types = ["GPIB", "USB", "TCPIP"]
-        self.port_identifications = ['Agilent Technologies,34410A', 'Agilent Technologies,34411A','Keysight Technologies,34410A', 'Keysight Technologies,34411A'] 
+        self.port_identifications = [
+            "Agilent Technologies,34410A",
+            "Agilent Technologies,34411A",
+            "Keysight Technologies,34410A",
+            "Keysight Technologies,34411A",
+        ]
 
         self.port_properties = {
             "timeout": 10,  # needed for 100 NPLC setting as it needs ~5s to computer
@@ -73,8 +77,6 @@ class Device(EmptyDevice):
             "Continuity": "CONT",
             "Capacitance": "CAP",
             "Temperature": "TEMP",
-            
-            
         }
 
         # this dictionary sets the unit of each mode
@@ -102,8 +104,7 @@ class Device(EmptyDevice):
         }
 
     def set_GUIparameter(self):
-
-        GUIparameter = {
+        return {
             "Mode": list(self.modes.keys()),
             "NPLC": list(self.nplc_types.keys()),
             "Range": ["Auto", "As is"],
@@ -116,18 +117,16 @@ class Device(EmptyDevice):
             "Display": ["On", "Off"],
         }
 
-        return GUIparameter
 
-    def get_GUIparameter(self, parameter={}):
-
-        self.mode = parameter['Mode']
-        self.range = parameter['Range']
-        self.nplc = parameter ['NPLC']
-        self.trigslope = parameter ['Trigger Slope']
-        self.trigsource = parameter ['Trigger Source']
-        self.autozero = parameter ['Auto-Zero']
-        self.tempunit = parameter ['Temperature Unit']
-        self.display = parameter['Display']
+    def get_GUIparameter(self, parameter: dict):
+        self.mode = parameter["Mode"]
+        self.range = parameter["Range"]
+        self.nplc = parameter["NPLC"]
+        self.trigslope = parameter["Trigger Slope"]
+        self.trigsource = parameter["Trigger Source"]
+        self.autozero = parameter["Auto-Zero"]
+        self.tempunit = parameter["Temperature Unit"]
+        self.display = parameter["Display"]
 
         self.port_string = parameter["Port"]
 
@@ -135,23 +134,22 @@ class Device(EmptyDevice):
         # we have as many variables as channels are selected
         # we add the channel name to each variable, e.g "Voltage DC"
         self.variables = [self.mode]
-        
+
         # In case temperature is measured, do not use the general unit "deg" from the dictionary with initialization but the one chosen in GUI
-        if self.mode == 'Temperature':
-            self.units = self.tempunit
+        if self.mode == "Temperature":
         else:
             self.units = [self.mode_units[self.mode]]
 
         # True to plot data
         self.plottype = [True]
-        
+
         # True to save data
         self.savetype = [True]
 
     def initialize(self):
         # once at the beginning of the initialization; STATUS:PRESET to reset registers
         self.port.write("STAT:PRES")
-        
+
         # can be used for text on lower instrument display
         # self.port.write(":DISP:WIND2:TEXT \"DRIVEN BY SWEEPME\"")
 
@@ -160,21 +158,19 @@ class Device(EmptyDevice):
 
         # control-Beep off
         self.port.write("SYST:BEEP:STAT OFF")
-        
+
         # setting the chosen unit for temperature measurement
-        if self.mode == 'Temperature':
+        if self.mode == "Temperature":
             self.port.write("UNIT:TEMP %s" % self.tempunit)
 
     def deinitialize(self):
-
         # control-Beep on
         self.port.write("SYST:BEEP:STAT ON")
 
     def configure(self):
-
         # Set Mode and AUTO Range
         if self.mode in ["Temperature", "Frequency", "Period", "Diode", "Continuity"] or self.range == "As is":
-             # setting range left out for modes without any range; also if range = "As is" was chosen
+            # setting range left out for modes without any range; also if range = "As is" was chosen
             self.port.write("CONF:%s" % self.modes[self.mode])
         else:
             self.port.write("CONF:%s %s" % (self.modes[self.mode], self.range))
@@ -183,15 +179,24 @@ class Device(EmptyDevice):
         if self.mode not in ["Voltage AC", "Current AC", "Frequency", "Period", "Diode", "Continuity", "Capacitance"]:
             # NPLC only supported in DC Volts, DC Current, 2W- and 4W-Resistance, Temperature
             self.port.write(":SENS:%s:NPLC %s" % (self.modes[self.mode], self.nplc_types[self.nplc]))
-            
+
         # Trigger
         # setting slope of trigger
         self.port.write("TRIG:SLOP %s" % self.trigslope)
         # setting source for triggering
         self.port.write("TRIG:SOUR %s" % self.trigsource)
-        
+
         # Auto-Zero
-        if self.mode not in ["Voltage AC", "Current AC", "Frequency", "Period", "Diode", "Continuity", "Capacitance", "4W-Resistance"]:
+        if self.mode not in [
+            "Voltage AC",
+            "Current AC",
+            "Frequency",
+            "Period",
+            "Diode",
+            "Continuity",
+            "Capacitance",
+            "4W-Resistance",
+        ]:
             # NPLC only supported in DC Volts, DC Current, 2W-Resistance, Temperature
             self.port.write(":SENS:%s:ZERO:AUTO %s" % (self.modes[self.mode], self.autozero))
 
@@ -205,7 +210,7 @@ class Device(EmptyDevice):
             # We switch Displays on again if it was switched off
             self.port.write(":DISP:WIND1:STAT 1")
             self.port.write(":DISP:WIND2:STAT 1")
-            
+
     def measure(self):
         # triggers a new measurement
         self.port.write("READ?")
