@@ -25,7 +25,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
 # SweepMe! driver
 # * Module: Logger
 # * Instrument: Datron 10x1/10x2
@@ -106,11 +105,11 @@ class Device(EmptyDevice):
 
         # here, the variables and units are defined, based on the selection of the user
         # we have as many variables as channels are selected
-        
+
         # we add the channel name to each variable, e.g "Voltage DC"
         self.variables = [self.mode]
         self.units = [self.mode_units[self.mode]]
-        
+
         # True to plot data
         self.plottype = [True]
         # True to save data
@@ -118,20 +117,19 @@ class Device(EmptyDevice):
 
     def initialize(self):
         # device clear command not active to retain manually made settings; uncomment if needed
-        #self.port.write("DCL") 
+        # self.port.write("DCL")
         pass
 
     def configure(self):
-
         # Data output format
         # set output as ASCII in scientic notation; some additional information has to be stripped before result is handed over, see later comment
         self.port.write("O0")
-        
+
         # Select input front/rear
         if self.inputselect == "Rear":
             self.port.write("I1")
         else:
-            self.port.write("I0") 
+            self.port.write("I0")
 
         # Mode
         self.port.write("%s" % self.modes[self.mode])
@@ -145,18 +143,18 @@ class Device(EmptyDevice):
             "Voltage AC+DC",
             "Current DC",
             "Current AC",
-            "Current DC+AC"
+            "Current DC+AC",
         ]:
             msg = "Currently selected range is restricted to resistance measurement only"
             raise Exception(msg)
         else:
             self.port.write("%s" % self.ranges[self.range])
-            
+
         # High-Resolution; on the 1065A, pressing FILTER on the front panel activates this AND the filter function at the same time; via GPIB, this can be seperated
         if self.highres == "On":
             self.port.write("A2")
         else:
-            self.port.write("A0") 
+            self.port.write("A0")
 
         # AC Filter; in case a 1065A (not 1065), this behaves differently to front panel operation; see previous command
         if self.filter == "On":
@@ -166,7 +164,7 @@ class Device(EmptyDevice):
 
         # Trigger on HOLD
         # sets the trigger on hold to wait for a manual trigger during the 'measure' routine
-        self.port.write("T2")  
+        self.port.write("T2")
 
     def unconfigure(self):
         # sets the trigger back to INTERNAL to enable the self-triggered measurements on the display again
@@ -175,17 +173,17 @@ class Device(EmptyDevice):
     def measure(self):
         # perform single trigger for a measurement; alternatively, an "@" is accepted as well
         self.port.write("J")
-        
+
         # retrieves current measurement data from the instrument; no seperate SCPI data prepare command necessary
-        self.data = self.port.read()  
-        
+        self.data = self.port.read()
+
         # removes trailing character that indicates the unit of the result
         self.data = self.data[:-1]
-    
-        # in AC and DC-coupled-AC mode, the first character is not used for a + or - sign but 
+
+        # in AC and DC-coupled-AC mode, the first character is not used for a + or - sign but
         # for indicating the mode of operation via special characters and these need to be removed
         if self.data[0] == "~" or self.data[0] == "#":
             self.data = self.data[1:]
-            
+
     def call(self):
         return [float(self.data)]
