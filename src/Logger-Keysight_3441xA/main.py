@@ -137,6 +137,7 @@ class Device(EmptyDevice):
 
         # In case temperature is measured, do not use the general unit "deg" from the dictionary with initialization but the one chosen in GUI
         if self.mode == "Temperature":
+            self.units = [self.tempunit]
         else:
             self.units = [self.mode_units[self.mode]]
 
