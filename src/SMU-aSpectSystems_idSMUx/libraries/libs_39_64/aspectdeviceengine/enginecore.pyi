@@ -1828,6 +1828,21 @@ class IdSmuBoardModel:
         """
                  Prints information about the registers that are set in the model but not committed to the hardware, yet.
         """
+    def read_eeprom(self, eeprom_address: int, device_id: str) -> int:
+        """
+                 Reads from a EEPROM address
+        
+                 Parameters
+                 ----------
+                 eeprom_address : int
+        
+                 device_id : str
+        
+                 Returns
+                 -------
+                 int
+                      The rgister value written, -1 if an error occured
+        """
     def read_fpga(self, register_address: int, device_id: str) -> int:
         """
                  Writes to a FPGA register
@@ -1842,6 +1857,36 @@ class IdSmuBoardModel:
                  -------
                  int
                       The rgister value written, -1 if an error occured
+        """
+    def read_status(self, register_address: int, device_id: str) -> int:
+        """
+                 Reads a status register
+        
+                 Parameters
+                 ----------
+                 register_address : int
+        
+                 device_id : str
+        
+                 Returns
+                 -------
+                 int
+                      The register value
+        """
+    def read_status_registers(self, register_addresses: list[int], device_id: str) -> list[int]:
+        """
+                 Reads status registers
+        
+                 Parameters
+                 ----------
+                 register_addresses : List[int]
+        
+                 device_id : str
+        
+                 Returns
+                 -------
+                 List[int]
+                      The register values
         """
     def set_analog_device_parameters_from_strings(self, resource_id: str, parameter_names: list[str], parameter_values: list[str]) -> None:
         """
@@ -2037,6 +2082,23 @@ class IdSmuBoardModel:
                  str
                       The parameter value as string
         """
+    def write_eeprom(self, eeprom_address: int, eeprom_value: int, device_id: str) -> CommandReply:
+        """
+                 Writes to a EEPROM address
+        
+                 Parameters
+                 ----------
+                 eeprom_address : int
+        
+                 eeprom_value : int
+        
+                 device_id : str
+        
+                 Returns
+                 -------
+                 int
+                      The rgister value written, -1 if an error occured
+        """
     def write_fpga(self, register_address: int, register_value: int, device_id: str) -> int:
         """
                  Writes to a FPGA register
@@ -2046,6 +2108,25 @@ class IdSmuBoardModel:
                  register_address : int
         
                  register_value : int
+        
+                 device_id : str
+        
+                 Returns
+                 -------
+                 int
+                      The rgister value written, -1 if an error occured
+        """
+    def write_fpga_with_mask(self, register_address: int, register_value: int, mask: int, device_id: str) -> int:
+        """
+                 Writes to a FPGA register
+        
+                 Parameters
+                 ----------
+                 register_address : int
+        
+                 register_value : int
+        
+                 mask : int
         
                  device_id : str
         
@@ -4143,4 +4224,4 @@ def get_git_version() -> int:
              -------
              int
     """
-__version__: str = '0.9.576'
+__version__: str = '0.9.580'
