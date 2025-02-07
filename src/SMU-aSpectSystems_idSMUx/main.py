@@ -29,7 +29,6 @@
 # * Module: SMU
 # * Instrument: aSpectSystems idSMU modules
 
-import enum
 
 import time
 import numpy as np
@@ -53,10 +52,10 @@ from aspectdeviceengine.enginecore import (
 
 
 class Device(EmptyDevice):
-    """Device Class for the aSpectSystems idSMU modules."""
+    """Driver for the aSpectSystems idSMU modules."""
 
     def __init__(self) -> None:
-        """Initialize the Device Class."""
+        """Initialize the Driver."""
         EmptyDevice.__init__(self)
 
         self.shortname = "idSMUx"
@@ -140,6 +139,10 @@ class Device(EmptyDevice):
         self.v: float = 0
         self.i: float = 0
         self.t: float = 0
+
+        # Switch on async readout during measure phase
+        # This will read out multiple channels in parallel without blocking
+        self.use_async_readout: bool = True
 
     @staticmethod
     def find_ports() -> list:
@@ -432,50 +435,59 @@ class Device(EmptyDevice):
             # as list receiver or creator, the measurement is started by the list master
             return
 
-        if self._is_retrieving_data:
-            active_channel_names = self.device_communication[self.identifier][self.identifier_channel_names]
+        if self.use_async_readout:
+            if self._is_retrieving_data:
+                active_channel_names = self.device_communication[self.identifier][self.identifier_channel_names]
 
-            self.board_model.set_measurement_modes(MeasurementMode.vsense, active_channel_names)
-            self.future_v = self.smu.measure_channels_async(sample_count=self.speed_options[self.speed],
-                                            repetitions=1,
-                                            channel_numbers=active_channel_names,
-                                            wait_for_trigger=False,
-                                            )
+                self.board_model.set_measurement_modes(MeasurementMode.vsense, active_channel_names)
+                self.future_v = self.smu.measure_channels_async(sample_count=self.speed_options[self.speed],
+                                                repetitions=1,
+                                                channel_numbers=active_channel_names,
+                                                wait_for_trigger=False,
+                                                )
 
-            self.board_model.set_measurement_modes(MeasurementMode.isense, active_channel_names)
-            self.future_i = self.smu.measure_channels_async(sample_count=self.speed_options[self.speed],
-                                            repetitions=1,
-                                            channel_numbers=active_channel_names,
-                                            wait_for_trigger=False,
-                                            )
+                self.board_model.set_measurement_modes(MeasurementMode.isense, active_channel_names)
+                self.future_i = self.smu.measure_channels_async(sample_count=self.speed_options[self.speed],
+                                                repetitions=1,
+                                                channel_numbers=active_channel_names,
+                                                wait_for_trigger=False,
+                                                )
+        else:
+            # sleeping is needed as otherwise the GUI thread hardly gets any time to update the GUI
+            # this method is not the preferred one but can be used as a workaround or to test things
+            time.sleep(0.001)
+            self.v = self.channel.voltage
+            self.i = self.channel.current
+
     def read_result(self):
 
         if self.list_role in ("List master", "List receiver", "List creator"):
             return
 
-        if self._is_retrieving_data:
-            result_v = self.future_v.get()
-            result_i = self.future_i.get()
+        if self.use_async_readout:
+            if self._is_retrieving_data:
+                result_v = self.future_v.get()
+                result_i = self.future_i.get()
 
-            if result_v.is_result() and result_i.is_result():
-                self.v = result_v.get_float_values(self.channel_name)[0]
-                self.i = result_i.get_float_values(self.channel_name)[0]
-            elif result_v.is_error():
-                msg = "idSMUx: Error during voltage measurement"
-                debug(result_v.to_json())
-                raise Exception(msg)
-            elif result_i.is_error():
-                msg = "idSMUx: Error during current measurement"
-                debug(result_i.to_json())
-                raise Exception(msg)
+                if result_v.is_result() and result_i.is_result():
+                    self.v = result_v.get_float_values(self.channel_name)[0]
+                    self.i = result_i.get_float_values(self.channel_name)[0]
+                elif result_v.is_error():
+                    msg = "idSMUx: Error during voltage measurement"
+                    debug(result_v.to_json())
+                    raise Exception(msg)
+                elif result_i.is_error():
+                    msg = "idSMUx: Error during current measurement"
+                    debug(result_i.to_json())
+                    raise Exception(msg)
+                else:
+                    msg = "idSMUx: Unknown error during measurement"
+                    raise Exception(msg)
+
+                self.device_communication[self.identifier]["data"] = [result_v, result_i]
             else:
-                msg = "idSMUx: Unknown error during measurement"
-                raise Exception(msg)
-
-            self.device_communication[self.identifier]["data"] = [result_v, result_i]
-        else:
-            self.v = self.device_communication[self.identifier]["data"][0].get_float_values(self.channel_name)[0]
-            self.i = self.device_communication[self.identifier]["data"][1].get_float_values(self.channel_name)[0]
+                self.v = self.device_communication[self.identifier]["data"][0].get_float_values(self.channel_name)[0]
+                self.i = self.device_communication[self.identifier]["data"][1].get_float_values(self.channel_name)[0]
 
     def run_list_sweep(self) -> None:
         """Run the list sweep."""
