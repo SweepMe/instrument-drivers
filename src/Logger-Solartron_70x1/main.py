@@ -31,14 +31,17 @@
 # * Instrument: Solartron 70x1
 
 
-from pysweepme.EmptyDeviceClass import EmptyDevice
 import time
+
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
     description = """<p><strong>Driver for Solartron 70x1 series digital multimeters.</strong></p>
-                     <p>Channel scanner function currently not implemented. Also "Output Fast" is not implemented as it's restrictions make a use in today's applications rather unlikely.</p>
-                     <p>Selected combination of "Mode" and "Range" not checked for validity as this is model dependend.</p>
+                     <p>Channel scanner function currently not implemented. Also "Output Fast" is not implemented as
+                     its restrictions make a use in today's applications rather unlikely.</p>
+                     <p>Selected combination of "Mode" and "Range" not checked for validity as this is model dependent.
+                     </p>
                     """
 
     def __init__(self):
@@ -63,8 +66,8 @@ class Device(EmptyDevice):
             "Current AC": "MODE IAc",
             "Resistance": "MODE Kohm",
             "True Ohm Resistance": "MODE Trueohm",
-            #"0 V DC-Reference": "0vdc",
-            #"10 V DC-Reference": "10vdc",
+            # "0 V DC-Reference": "0vdc",
+            # "10 V DC-Reference": "10vdc",
         }
 
         # this dictionary sets the unit of each mode
@@ -75,8 +78,8 @@ class Device(EmptyDevice):
             "Current AC": "A",
             "Resistance": "Ohm",
             "True Ohm Resistance": "Ohm",
-            #"0 V DC-Reference": "V",
-            #"10 V DC-Reference": "V",
+            # "0 V DC-Reference": "V",
+            # "10 V DC-Reference": "V",
         }
         # measuring range as dictionary
         # range "fixed" will fix the currently selected range when the initialisation is run
@@ -92,7 +95,7 @@ class Device(EmptyDevice):
         }
 
         # number of displayed digits as dictionary
-        # 8 digits are only available on the Solartron 7081, 7 digits only on the 7071 and 7061 
+        # 8 digits are only available on the Solartron 7081, 7 digits only on the 7071 and 7061
         self.resolutions = {
             "8 Digits (7081)": "DIGits 8",
             "7 Digits (7071/7061)": "DIGits 7",
@@ -110,7 +113,7 @@ class Device(EmptyDevice):
             "Fast (0.1s)": "ITime User=0000.1",
             "Normal (0.2s)": "ITime User=0000.2",
             "Slow (2.0s)": "ITime User=0002.0",
-            "Very Slow (20.0s)": "ITime User=0020.0"
+            "Very Slow (20.0s)": "ITime User=0020.0",
         }
 
     def set_GUIparameter(self):
@@ -126,7 +129,7 @@ class Device(EmptyDevice):
             "External Trigger": ["OFF", "ON"],
             "Ext. Trig. Edge": ["Pos", "Neg"],
             # debouncing mechanical trigger relays
-            "Ext. Trig. Debounce": ["OFF", "ON"]
+            "Ext. Trig. Debounce": ["OFF", "ON"],
         }
 
     def get_GUIparameter(self, parameter: dict):
@@ -141,7 +144,7 @@ class Device(EmptyDevice):
         self.exttrig = parameter["External Trigger"]
         self.exttrigedge = parameter["Ext. Trig. Edge"]
         self.exttrigdebo = parameter["Ext. Trig. Debounce"]
-        
+
         self.port_string = parameter["Port"]
 
         # here, the variables and units are defined, based on the selection of the user
@@ -152,7 +155,7 @@ class Device(EmptyDevice):
 
         # True to plot data
         self.plottype = [True]
-        
+
         # True to save data
         self.savetype = [True]
 
@@ -162,20 +165,19 @@ class Device(EmptyDevice):
             self.port.write("INItialise")
             # Initialization takes some time
             time.sleep(3)
-            
+
         ## Device Clear Command; similar to the initialize command but with some values being kept; refer to manual for details (Appendix A) and use if needed instead of INIT
-        #self.port.write("DCl")
-        
+        # self.port.write("DCl")
+
         ## Clears only the measurement results buffer; can also be used if needed instead of initializing the device.
-        #self.port.write("History Clear")
+        # self.port.write("History Clear")
 
         # make sure GPIB communication is activated
         self.port.write("GPib Output ON")
-        
-        #set EOI as command delimiter for SCPI compatibility
+
+        # set EOI as command delimiter for SCPI compatibility
         self.port.write("GPib Delimit Eoi")
 
-        
     def configure(self):
         # Data Output Format; using both commands will allow SweepMe to process the result as a float variable directly
         # sets output to scientific notation
@@ -197,13 +199,13 @@ class Device(EmptyDevice):
 
         # Filter
         self.port.write("FIlter %s" % self.filter)
-            
+
         # Drift Correction (every 15min, first time instantly here when command is sent)
         self.port.write("DRift %s" % self.drift)
-            
+
         # NULL offset compensation; value must have been stored in the instrument manually before use
         self.port.write("NUll %s" % self.nullcomp)
-            
+
         # deactivate scanning channels as this is currently not supported
         self.port.write("SCan OFF")
 
@@ -215,7 +217,7 @@ class Device(EmptyDevice):
             # perform a single measurement uppon trigger
             self.port.write("ONTRigger Sample=1")
 
-    def unconfigure(self):        
+    def unconfigure(self):
         # enable the auto-triggering again for updated values on the display of the instrument
         self.port.write("TRAck ON")
 
@@ -225,8 +227,8 @@ class Device(EmptyDevice):
             self.port.write("TRIgger")
         else:
             # arm external trigger with chosen slope and debounce setting
-            self.port.write("EXTtrig Edge %s Debounce %s" % (self.exttrigedge,self.exttrigdebo))
-        
+            self.port.write("EXTtrig Edge %s Debounce %s" % (self.exttrigedge, self.exttrigdebo))
+
         # retrieves current measurement data from the instrument; in case EXT TRIG is used, it will wait for the result until timeout
         self.data = self.port.read()
 
