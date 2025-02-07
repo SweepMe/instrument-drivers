@@ -1,9 +1,0 @@
-aspectdeviceengine/__init__.py,sha256=TPCEAdNVH2DHfEo05_HbCCNjIyU_kNyX7rR81bMlsWc,202
-aspectdeviceengine/__init__.pyi,sha256=T9sSBog_LO_gy9p7_A5Rvmy4YTmucbQKaN3E06LwzJE,152
-aspectdeviceengine/enginecore.cp39-win_amd64.pyd,sha256=FsAKxNrVyY1L3IvIulPAsej50jcAW_nPvX-uZZ6R3Pc,3071488
-aspectdeviceengine/enginecore.pyi,sha256=RN73nKmMiGE-fawV7t3t2xZowrd-DqPI5lezZusHcko,145095
-aspectdeviceengine/FTD3XX.dll,sha256=byjsTxaR7XNoHUIL6LwvmiHvaQxtb0bsrrsvm5wUIe4,388608
-aspectdeviceengine-0.9.581.dist-info/METADATA,sha256=tVz9Wkysiy90dVngk2aYSI5wsaG1rsc-uGThhIhG7L0,791
-aspectdeviceengine-0.9.581.dist-info/WHEEL,sha256=s-IzttuPuPJp8zDv-jm-zGvTOCxdFCvjX9dIQ9zqnM8,104
-aspectdeviceengine-0.9.581.dist-info/licenses/LICENSE,sha256=Gi0sK5hWJPHDkVqkfFz9rdWHd8zheQVrSAeXamcLokI,15643
-aspectdeviceengine-0.9.581.dist-info/RECORD,,
