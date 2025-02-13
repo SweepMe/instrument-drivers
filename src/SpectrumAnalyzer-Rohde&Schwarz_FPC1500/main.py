@@ -30,12 +30,10 @@
 # * Instrument: Rohde&Schwarz FPC1500
 
 
-import numpy as np
-import struct
 import math
 
+import numpy as np
 import pyvisa.errors
-
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -120,39 +118,64 @@ class Device(EmptyDevice):
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
-            # "Start frequency in Hz": 1e3,
-            # "Stop frequency in Hz": 1e6,
-            "Mode": list(self.remote_modes),
-            "Center frequency in Hz": 850e6,
-            "Span in Hz": 20e6,
+            "Frequency label 1": ["Center frequency in Hz:", "Min frequency in Hz:"],
+            "Frequency value 1": 5000,
+            "Frequency label 2": ["Frequency span in Hz:", "Max frequency in Hz:"],
+            "Frequency value 2": 1000,
             "Resolution bandwidth": list(self.bandwidth_resolution_values),
             "Video bandwidth": [bandwidth for bandwidth in self.bandwidth_resolution_values if bandwidth != "200 kHz"],
+            "Trace mode integration type": ["Sweep count:"],
+            "Trace mode integration": 1,
+            # "Mode": list(self.remote_modes),  # Currently not implemented
             "Attenuation": list(self.attenuation_values),
             "Preamplifier": ["On", "Off"],
-            "Sweep count": 1,
         }
 
-    def get_GUIparameter(self, parameters: dict) -> None:  # noqa: N802
+    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        # self.frequency_start = float(parameters["Start frequency in Hz"])
-        # self.frequency_stop = float(parameters["Stop frequency in Hz"])
-        self.mode = self.remote_modes[parameters["Mode"]]
+        self.handle_frequency_input(parameter)
 
-        self.center_frequency = float(parameters["Center frequency in Hz"])
-        self.span = float(parameters["Span in Hz"])
+        self.bandwidth_resolution = self.bandwidth_resolution_values[parameter["Resolution bandwidth"]]
+        self.bandwidth_video = self.bandwidth_resolution_values[parameter["Video bandwidth"]]
 
-        self.bandwidth_resolution = self.bandwidth_resolution_values[parameters["Resolution bandwidth"]]
-        self.bandwidth_video = self.bandwidth_resolution_values[parameters["Video bandwidth"]]
+        self.attenuation = self.attenuation_values[parameter["Attenuation"]]
+        self.preamp = parameter["Preamplifier"].upper()  # ON or OFF
 
-        self.attenuation = self.attenuation_values[parameters["Attenuation"]]
-        self.preamp = parameters["Preamplifier"].upper()  # ON or OFF
-
-        self.sweep_count = int(parameters["Sweep count"])
+        self.sweep_count = int(parameter["Trace mode integration"])
         if self.sweep_count < 0 or self.sweep_count > 999:
             msg = "Sweep count must be between 1 and 999."
             raise ValueError(msg)
 
         self.trace_number = 1
+
+    def handle_frequency_input(self, parameter: dict) -> None:
+        """Calculate the frequency center, span, min, and max from the input values."""
+        input_1_type = parameter["Frequency label 1"]
+        input_1_value = float(parameter["Frequency value 1"])
+        input_2_type = parameter["Frequency label 2"]
+        input_2_value = float(parameter["Frequency value 2"])
+
+        if input_1_type == "Center frequency in Hz:":
+            self.frequency_center = input_1_value
+            if input_2_type == "Frequency span in Hz:":
+                self.frequency_span = input_2_value
+                self.frequency_min = self.frequency_center - self.frequency_span / 2
+                self.frequency_max = self.frequency_center + self.frequency_span / 2
+            elif input_2_type == "Max frequency in Hz:":
+                self.frequency_max = input_2_value
+                self.frequency_span = (self.frequency_max - self.frequency_center) * 2
+                self.frequency_min = self.frequency_center - self.frequency_span / 2
+
+        elif input_1_type == "Min frequency in Hz:":
+            self.frequency_min = input_1_value
+            if input_2_type == "Frequency span in Hz:":
+                self.frequency_span = input_2_value
+                self.frequency_max = self.frequency_min + self.frequency_span
+                self.frequency_center = (self.frequency_min + self.frequency_max) / 2
+            elif input_2_type == "Max frequency in Hz:":
+                self.frequency_max = input_2_value
+                self.frequency_center = (self.frequency_min + self.frequency_max) / 2
+                self.frequency_span = self.frequency_max - self.frequency_min
 
     def initialize(self) -> None:
         """Initialize the device."""
