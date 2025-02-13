@@ -689,11 +689,6 @@ class Device(EmptyDevice):
             self.lpt.pulse_exec(mode=self.param.PULSE_MODE_SIMPLE)  # Alternatively self.param.PULSE_MODE_ADVANCED
 
         if self.list_master:
-            # Check if all elements of list_sweep_values are float
-            if not all(isinstance(value, float) for value in self.list_sweep_values):
-                msg = "Unsupported type detected in list values. Make sure all values are float"
-                raise ValueError(msg)
-
             # Set the array of individual delay time
             if self.list_delay_list:
                 if len(self.list_delay_list) != len(self.list_sweep_values):
