@@ -23,6 +23,7 @@
 # SweepMe! driver
 # * Module: LCRmeter
 # * Instrument: Simulated LCRmeter
+from __future__ import annotations
 
 from random import random
 
@@ -46,14 +47,14 @@ class Device(EmptyDevice):
         self.plottype = [True, True, True, True]
         self.savetype = [True, True, True, True]
 
-        self.use_list_sweep = False
-
         # Measurement parameters
         self.sweepmode = "Frequency in Hz"
         self.stepmode = "None"
         self.frequency = 1000
         self.bias_mode = "Voltage bias"
         self.bias = 1
+        self.use_list_sweep = False
+        self.list_sweep_values: np.array = np.empty((0,))
 
         # Device under test parameters
         self.inductance = 4e-9  # H
@@ -102,7 +103,7 @@ class Device(EmptyDevice):
                 float(parameter["ListSweepStepPointsValue"]),
             )
             # include end value
-            self.list_sweep_values = np.append(list_sweep_values, parameter["ListSweepEnd"])
+            self.list_sweep_values = np.append(list_sweep_values, float(parameter["ListSweepEnd"]))
 
     def apply(self) -> None:
         """Set the device to the sweep and/or step value."""
@@ -127,26 +128,20 @@ class Device(EmptyDevice):
 
     def call(self) -> list:
         """Simulate data and return as a list."""
-        if self.use_list_sweep:
-            self.F = np.arange(100, 1000, 100)
-            self.R = self.F / np.amax(self.F) * 35 + 30
-            self.X = -1 / 2 / 3.14 / self.F / 4e-9
+        measured_frequency = self.list_sweep_values if self.use_list_sweep else self.frequency
+        measured_resistance = self.simulate_resistance(measured_frequency)
+        measured_reactance = self.simulate_reactance(measured_frequency)
 
-        else:
-            self.R = self.simulate_resistance(self.frequency)
-            self.F = self.frequency
-            self.X = self.simulate_reactance(self.frequency)
-
-        return [self.R, self.X, self.F, self.bias]
+        return [measured_resistance, measured_reactance, measured_frequency, self.bias]
 
     """Simulated LCRmeter"""
 
-    def simulate_resistance(self, frequency: float) -> float:
+    def simulate_resistance(self, frequency: float | np.array) -> float:
         """Simulate resistance with weak frequency dependency of the device under test."""
         resistance = self.resistance + frequency / 1000
         return self.simulate_noise(resistance)
 
-    def simulate_reactance(self, frequency: float) -> float:
+    def simulate_reactance(self, frequency: float | np.array) -> float:
         """Simulate reactance of the device under test."""
         angular_frequency = 2 * np.pi * frequency
 
@@ -158,6 +153,6 @@ class Device(EmptyDevice):
 
         return self.simulate_noise(x_l + x_c)
 
-    def simulate_noise(self, value: float) -> float:
+    def simulate_noise(self, value: float | np.array) -> float:
         """Simulate noise."""
         return value + value * self.noise_level * random()
