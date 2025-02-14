@@ -203,6 +203,11 @@ class Device(EmptyDevice):
                     self.plottype.append(True)
                     self.savetype.append(True)
 
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
+        # do not use "SYST:PRES" as it will destroy all settings which is in conflict with using 'As is'
+        self.port.write("*CLS")
+
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
         if self.use_preset:
@@ -214,11 +219,6 @@ class Device(EmptyDevice):
                     source = int(self.get_source(place))
                     self.measurement_places[place] = (source, mode, "Average")
                     # If SweepMe! allows updating variables during runtime, this could be done here
-
-    def initialize(self) -> None:
-        """Initialize the device. This function is called only once at the start of the measurement."""
-        # do not use "SYST:PRES" as it will destroy all settings which is in conflict with using 'As is'
-        self.port.write("*CLS")
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""

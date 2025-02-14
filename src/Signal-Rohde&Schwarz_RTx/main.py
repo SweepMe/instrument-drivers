@@ -131,11 +131,6 @@ class Device(EmptyDevice):
         self.port.write("*CLS")
         # do not use "SYST:PRES" as it will destroy all settings which is in conflict with using 'As is'
 
-    def deinitialize(self) -> None:
-        """Deinitialize the device."""
-        self.port.write("SYST:KLOC OFF")  # unlocks the local control during measurement
-        self.read_errors()  # read out the error queue
-
     def configure(self) -> None:
         """Configure the measurement."""
         self.set_impedance(self.impedance)

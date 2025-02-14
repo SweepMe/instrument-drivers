@@ -203,16 +203,7 @@ class Device(EmptyDevice):
         self.port.write("*CLS")
         # do not use "SYST:PRES" as it will destroy all settings which is in conflict with using 'As is'
 
-        self.port.write(":FORM:DATA %s" % self.data_format)  # set the data format
-
-        if self.data_format == "INT,16":
-            self.port.write(
-                ":FORM:BORD LSBF",
-            )  # set if data sequence, only import for high-definition mode, LSBFirst | MSBFirst, default = LSBF
-
-        self.port.write("SYST:DISP:UPD ON")  # display can be switched on or off
-        self.port.write("SYST:KLOC ON")  # locks the local control during measurement
-
+        # Verify input values
         if self.time_range != "As is":
             if self.time_range_value == "":
                 msg = "Empty time range. Please enter a number."
@@ -226,13 +217,17 @@ class Device(EmptyDevice):
                 msg = "Empty time offset. Please enter a number."
                 raise ValueError(msg)
 
-    def deinitialize(self) -> None:
-        """Deinitialize the device."""
-        self.port.write("SYST:KLOC OFF")  # unlocks the local control during measurement
-        self.read_errors()  # read out the error queue
-
     def configure(self) -> None:
         """Configure the measurement."""
+        self.port.write(":FORM:DATA %s" % self.data_format)  # set the data format
+
+        if self.data_format == "INT,16":
+            self.port.write(
+                ":FORM:BORD LSBF",
+            )  # set if data sequence, only import for high-definition mode, LSBFirst | MSBFirst, default = LSBF
+
+        self.port.write("SYST:DISP:UPD ON")  # display can be switched on or off
+
         self.set_time_range()
         self.set_trigger()
 
@@ -437,7 +432,10 @@ class Device(EmptyDevice):
         return [self.time_values, *self.channel_data]
 
     def read_errors(self) -> None:
-        """Reads out all errors from the error queue and prints them to the debug."""
+        """Reads out all errors from the error queue and prints them to the debug.
+
+        This is missing from the manual of RTA devices.
+        """
         self.port.write("SYST:ERR:COUN?")
         err_count = self.port.read()
         if int(err_count) > 0:
