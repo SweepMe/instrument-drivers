@@ -177,7 +177,7 @@ class Device(EmptyDevice):
         self.pulse_meas_duration: float = 20
         self.pulse_width: float = 0.5e-6
         self.pulse_period: float = 2e-6
-        self.pulse_delay: float = 1e-9
+        self.pulse_delay: float = 20e-9
         self.pulse_base_level: float = 0.0
         self.pulse_rise_time: float = 100e-9
         self.pulse_fall_time: float = 100e-9
@@ -198,7 +198,11 @@ class Device(EmptyDevice):
         }
         """The keys are used to register and receive the list sweep values."""
 
-        self.list_delay_time: float = 0.0
+        self.list_delay_single: float = 0.0
+        """The constant delay in seconds between each step and the measurement of a list sweep."""
+
+        self.list_delay_list: list[float] = []
+        """A list of delays in seconds between each step and the measurement of a list sweep."""
 
     @staticmethod
     def find_ports() -> list[str]:
@@ -223,7 +227,7 @@ class Device(EmptyDevice):
             "PulseOnTime": 0.5e-6,
             "PulseWidth": 1e-6,
             "PulsePeriod": 2e-6,
-            "PulseDelay": 1e-9,
+            "PulseDelay": 20e-9,
             "PulseOffLevel": 0.0,
             "PulseRiseTime": 100e-9,
             "PulseFallTime": 100e-9,
@@ -232,12 +236,13 @@ class Device(EmptyDevice):
             # List Mode Parameters
             "ListSweepCheck": False,
             "ListSweepType": ["Sweep", "Custom"],
+            "ListSweepCustomValues": "",
             "ListSweepStart": 0.0,
             "ListSweepEnd": 1.0,
             "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
             "ListSweepStepPointsValue": 0.1,
             "ListSweepDual": False,
-            "ListSweepDelaytime": 0.0,
+            "ListSweepDelaytime": "0.0",
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -343,7 +348,13 @@ class Device(EmptyDevice):
 
         elif list_sweep_type == "Custom":
             custom_values = parameter["ListSweepCustomValues"]
-            list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
+            if custom_values == "":
+                list_sweep_values = np.array([])
+            else:
+                # Remove leading and trailing commas
+                custom_values = custom_values.strip(",")
+
+                list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
 
         else:
             msg = f"Unknown list sweep type: {list_sweep_type}"
@@ -353,14 +364,26 @@ class Device(EmptyDevice):
         if parameter["ListSweepDual"]:
             list_sweep_values = np.append(list_sweep_values, list_sweep_values[::-1])
 
-        self.list_delay_time = float(parameter["ListSweepDelaytime"])
         self.list_sweep_values = list_sweep_values.tolist()
 
+        # If a single value is given, use the delay for all points. Otherwise, create a delay list
+        delay_values = parameter["ListSweepDelaytime"]
+        if len(delay_values.split(",")) > 1:
+            # TODO: use ListSweepHoldTime as input?
+            self.list_delay_single = 0.0
+
+            # Remove leading and trailing commas
+            delay_values = delay_values.strip(",")
+            self.list_delay_list = [float(value) for value in delay_values.split(",")]
+        else:
+            self.list_delay_single = float(delay_values)
+            self.list_delay_list = []
+
         # Add time staps to return values
-        self.variables.append("Time stamp")
-        self.units.append("s")
-        self.plottype.append(True)
-        self.savetype.append(True)
+        self.variables.extend(["Time stamp", "Time stamp zeroed"])
+        self.units.extend(["s", "s"])
+        self.plottype.extend([True, True])
+        self.savetype.extend([True, True])
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -393,12 +416,13 @@ class Device(EmptyDevice):
 
             try:
                 self.lpt.initialize()
-            except ConnectionRefusedError:
-                debug(
-                    "Unable to connect to a lptlib server application running on the 4200-SCS. Please check your "
-                    "network settings and make sure the server application is running.",
-                )
-                raise
+            except ConnectionRefusedError as e:
+                msg = ("Unable to connect to a lptlib server application running on the 4200-SCS. Please check your"
+                       "network settings and make sure the server application is running.")
+                raise ConnectionRefusedError(msg) from e
+            except Exception as e:
+                msg = "Error during lpt.initialize"
+                raise Exception(msg) from e
 
             self.card_id = self.lpt.getinstid(self.card_name)
 
@@ -438,7 +462,7 @@ class Device(EmptyDevice):
             self.device_communication[self.identifier]["List master"] = self.channel
             self.device_communication[self.identifier]["List length"] = len(self.list_sweep_values)
             # Reset the dictionary of list results here before all channels register their arrays in 'configure'
-            self.lpt.reset_measurement_dict()
+            self.lpt.reset_measurement_cache()
 
     def check_test_parameter(self) -> None:
         """Check if the selected parameters can be run with the selected mode."""
@@ -528,15 +552,6 @@ class Device(EmptyDevice):
             # compliance = 1e1
             # self.set_current_range(self.card_name[-1], range, compliance)
 
-        if self.list_master:
-            self.configure_list_sweep(len(self.list_sweep_values))
-
-        # Check if another channel is running a list sweep
-        elif "List master" in self.device_communication[self.identifier]:
-            # Need to know how long the measurement will be
-            self.list_receiver = True
-            self.configure_list_sweep(self.device_communication[self.identifier]["List length"])
-
     def configure_lptlib(self) -> None:
         """Configure the device using lptlib commands."""
         # can be used to change the limit indicator value
@@ -571,20 +586,19 @@ class Device(EmptyDevice):
         # Range delay off
         self.lpt.setmode(self.card_id, self.param.KI_RANGE_DELAY, 0.0)  # disable range delay
 
-    def configure_list_sweep(self, array_size: int) -> None:
-        """When using list mode, the results arrays must be registered to be read out in parallel."""
-        # Do not reset the measurement dictionary as maybe another channel has already registered arrays
-        current_key = self.list_measurement_keys["current"]
-        self.lpt.prepare_measurement("smeasi", current_key, self.card_id, array_size=array_size)
-
-        voltage_key = self.list_measurement_keys["voltage"]
-        self.lpt.prepare_measurement("smeasv", voltage_key, self.card_id, array_size=array_size)
-
-        # For now only the list master returns the time stamps as the list receivers are too late to change the number
-        # of their return values
+    def start(self) -> None:
+        """Preparation before applying a new value."""
         if self.list_master:
-            time_key = self.list_measurement_keys["time"]
-            self.lpt.prepare_measurement("smeast", time_key, self.card_id, array_size=array_size)
+            # Clear the result arrays
+            self.lpt.clrscn()
+
+            # Update list length in case variable lists are used (e.g. by using ParameterSyntax of SweepMe)
+            list_length = len(self.list_sweep_values)
+            if list_length == 0:
+                msg = "List for List Sweep is empty."
+                raise ValueError(msg)
+
+            self.device_communication[self.identifier]["List length"] = list_length
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
@@ -592,7 +606,7 @@ class Device(EmptyDevice):
             del self.device_communication[self.identifier]["Pulse master"]
 
         if self.list_master:
-            self.lpt.reset_measurement_dict()
+            self.lpt.reset_measurement_cache()
 
     def poweroff(self) -> None:
         """Turn off the device."""
@@ -645,6 +659,29 @@ class Device(EmptyDevice):
             # needed otherwise no voltage is applied
             self.lpt.pulse_output(self.card_id, self.pulse_channel, out_state=1)
 
+        # Register result arrays for list mode
+        if self.list_master:
+            self.configure_list_sweep(len(self.list_sweep_values))
+        elif "List master" in self.device_communication[self.identifier]:
+            # Check if another channel is running a list sweep
+            self.list_receiver = True
+            self.configure_list_sweep(self.device_communication[self.identifier]["List length"])
+
+    def configure_list_sweep(self, array_size: int) -> None:
+        """When using list mode, the results arrays must be registered to be read out in parallel."""
+        # Do not reset the measurement dictionary as maybe another channel has already registered arrays
+        current_key = self.list_measurement_keys["current"]
+        self.lpt.prepare_measurement("smeasi", current_key, self.card_id, array_size=array_size)
+
+        voltage_key = self.list_measurement_keys["voltage"]
+        self.lpt.prepare_measurement("smeasv", voltage_key, self.card_id, array_size=array_size)
+
+        # For now only the list master returns the time stamps as the list receivers are too late to change the number
+        # of their return values
+        if self.list_master:
+            time_key = self.list_measurement_keys["time"]
+            self.lpt.prepare_measurement("smeast", time_key, self.card_id, array_size=array_size)
+
     def measure(self) -> None:
         """Start the pulse or list measurements. This cannot be done in 'apply' as the sweep value does not change."""
         if self.pulse_mode and self.pulse_master:
@@ -652,10 +689,18 @@ class Device(EmptyDevice):
             self.lpt.pulse_exec(mode=self.param.PULSE_MODE_SIMPLE)  # Alternatively self.param.PULSE_MODE_ADVANCED
 
         if self.list_master:
+            # Set the array of individual delay time
+            if self.list_delay_list:
+                if len(self.list_delay_list) != len(self.list_sweep_values):
+                    msg = (f"The number of delay times ({len(self.list_delay_list)}) must match the number of list "
+                           f"values {len(self.list_sweep_values)})")
+                    raise ValueError(msg)
+                self.lpt.adelay(self.list_delay_list)
+
             if self.source == "Voltage in V":
-                self.lpt.asweepv(self.card_id, self.list_sweep_values, self.list_delay_time)
+                self.lpt.asweepv(self.card_id, self.list_sweep_values, self.list_delay_single)
             elif self.source == "Current in A":
-                self.lpt.asweepi(self.card_id, self.list_sweep_values, self.list_delay_time)
+                self.lpt.asweepi(self.card_id, self.list_sweep_values, self.list_delay_single)
 
     def request_result(self) -> None:
         """Wait for pulse measurements to finish."""
@@ -669,6 +714,7 @@ class Device(EmptyDevice):
                     break
                 if elapsed_time > timeout:
                     self.lpt.dev_abort()
+                    break
 
     def read_result(self) -> None:
         """Read out results of pulse measurement."""
@@ -697,8 +743,8 @@ class Device(EmptyDevice):
             current = self.lpt.read_measurement(self.list_measurement_keys["current"])
             if self.list_master:
                 time_stamps = self.lpt.read_measurement(self.list_measurement_keys["time"])
-                time_stamps = [stamp - time_stamps[0] for stamp in time_stamps]  # start at 0
-                return [voltage, current, time_stamps]
+                time_stamps_zeroed = [stamp - time_stamps[0] for stamp in time_stamps]  # start at 0
+                return [voltage, current, time_stamps, time_stamps_zeroed]
             else:
                 return [voltage, current]
 
