@@ -27,24 +27,29 @@
 
 # SweepMe! driver
 # * Module: SpectrumAnalyzer
-# * Instrument: Rohde&Schwarz FPC1500
+# * Instrument: Rohde&Schwarz FPC1000
 
+from __future__ import annotations
 
 import math
 
 import numpy as np
 import pyvisa.errors
+from pysweepme import debug
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
+    """Device class for the spectrum analyzer functions of Rohde&Schwarz FPC1000 and FPC1500."""
+
     description = """
     """
 
     def __init__(self) -> None:
+        """Initialize the Device Class and measurement parameters."""
         super().__init__()
 
-        self.shortname = "FPC1500"  # Works for 1000 as well TODO: find general name
+        self.shortname = "FPC Series"  # Works for 1500 and 1000 as well
 
         self.port_manager = True
         self.port_types = ["GPIB", "TCPIP", "USBTMC"]
@@ -142,8 +147,9 @@ class Device(EmptyDevice):
         self.preamp = parameter["Preamplifier"].upper()  # ON or OFF
 
         self.sweep_count = int(parameter["Trace mode integration"])
-        if self.sweep_count < 0 or self.sweep_count > 999:
-            msg = "Sweep count must be between 1 and 999."
+        max_sweep_count = 999
+        if self.sweep_count < 0 or self.sweep_count > max_sweep_count:
+            msg = f"Sweep count must be between 1 and {max_sweep_count}."
             raise ValueError(msg)
 
         self.trace_number = 1
@@ -201,7 +207,7 @@ class Device(EmptyDevice):
         self.port.write(f"FREQ:CENT {self.center_frequency}HZ")
 
         if self.span == 0:
-            print("Span is 0, device will measure in time domain!")
+            debug("Span is 0, device will measure in time domain!")
         self.port.write(f"FREQ:SPAN {self.span}HZ")
 
         self.port.write("SENS:FREQ:START?")
@@ -232,9 +238,10 @@ class Device(EmptyDevice):
         self.sweep_time = float(self.port.read())
 
         if self.sweep_time > self.port_timeout:
-            print(f"Long Sweep time detected: {self.sweep_time}s")
-            if self.sweep_time > 15:
-                msg = "Sweep time is too long, please adjust settings."
+            debug(f"Long Sweep time detected: {self.sweep_time}s")
+            max_sweep_time = 15
+            if self.sweep_time > max_sweep_time:
+                msg = f"Sweep time {self.sweep_time} is longer than max sweep time of {max_sweep_time}, please adjust settings."
                 raise Exception(msg)
 
         self.port.write("INIT:IMM")
