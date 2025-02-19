@@ -316,31 +316,28 @@ class Device(EmptyDevice):
         used for loading the first wafer loading the last wafer, or loading a wafer inbetween. This is why there are
         several if-else to handle these situations.
         """
+        wafer_str = self.sweepvalues["Wafer"]
+        die_str = self.sweepvalues["Die"]
+        subsite_str = self.sweepvalues["Subsite"]
+        die = die_str.split(",")  # create a list of x and y coordinates, e.g "1,3" -> [1,3]
+        preload_wafer_str = self.sweepvalues["NextWafer"]
+
+        if wafer_str is None:
+            msg = "You need to specify at least one wafer or use 'Current wafer' as sweep value!"
+            raise Exception(msg)
+
+        if die_str is None:
+            msg = "You need to specify at least one die or use 'Current die' as sweep value!"
+            raise Exception(msg)
+
+        # We do not check whether subsites are None because in that case no subsite was defined and the prober
+        # stays at the start position of the die
+
         # Wafer
         try:
-            # Code to check the new sweep values
-            # print()
-            # print("New setvalue to apply:", self.value)
-            # print(self.sweepvalues)
-
             # self.skip_wafer handed over from WaferProber module when user clicks "Go to next wafer"
             if self.skip_wafer:
                 return
-
-            wafer_str = self.sweepvalues["Wafer"]
-            die_str = self.sweepvalues["Die"]
-            subsite_str = self.sweepvalues["Subsite"]
-            die = die_str.split(",")  # create a list of x and y coordinates, e.g "1,3" -> [1,3]
-            preload_wafer_str = self.sweepvalues["NextWafer"]
-
-            if wafer_str is None:
-                raise Exception("You need to specify at least one wafer or use 'Current wafer' as sweep value!")
-
-            if die_str is None:
-                raise Exception("You need to specify at least one die or use 'Current die' as sweep value!")
-
-            # We do not check whether subsites are None because in that case no subsite was defined and the prober
-            # stays at the start position of the die
 
             # only if we vary the wafer, we need to load it. Otherwise, we just need to go the die
             if self.sweep_value_wafer != "Current wafer":
@@ -406,95 +403,28 @@ class Device(EmptyDevice):
             raise
 
         # Die
-        try:
-            # self.skip_die is handed over from the WaferProber module when the user clicks "Go to next die"
-            if self.skip_die:
-                return
-
-            if self.sweep_value_die != "Current die":
-                if die != self.last_die:
-                    # We always separate if not already the case
-                    if self.prober.is_chuck_contacted():
-                        self.prober.z_down()
-
-                    # In any case, the die must have changed, and we need to move to it
-                    self.prober.move_specified_die(*die)  # die at index x,y
-
-                    # once we approach a die, we save the current absolute position at the start position of the die
-                    # This position is then used to navigate to the correct position
-                    self.current_die_position = self.prober.request_position()
-
-                    self.last_die = die
-                    self.last_die_str = die_str
-
-                    # we reset the last subsite position as the position always starts at (0,0) after
-                    # going to the die
-                    self.last_sub = (0, 0)
-                    self.last_position = (None, None)
-
-        except Exception:
-            self.exception_step_during_apply = "Die"
-            raise
+        # self.skip_die is handed over from the WaferProber module when the user clicks "Go to next die"
+        if self.skip_die:
+            return
+        if self.sweep_value_die != "Current die" and die != self.last_die:
+            try:
+                self.step_to_die(die_str)
+            except Exception as e:
+                self.exception_step_during_apply = "Die"
+                raise e
 
         # Subsite
-        try:
-            if subsite_str is not None:
-                # We always separate if not already the case
-                if self.prober.is_chuck_contacted():
-                    self.prober.z_down()
-
-                if subsite_str.startswith("A"):
-                    # xy_subsite_pos is defined with respect to the initial start position of the die
-                    # xy_move is the relative move from the current position to the next subsite position
-                    # current_die_position is the absolute reference to start position of a die
-                    # position_die_ref is the last position with respect to start position of the die
-
-                    # Extracting the coordinates relative to the die start position
-                    new_sub = tuple(map(int, subsite_str.replace("A", "").split(",")))
-
-                    """
-                    # Alternative Code to calculate relative move based on measured absolute position based on R command
-                    # Calculating the last position with respect to the current die position
-                    position_die_ref = np.array(self.last_position) - np.array(self.current_die_position)
-
-                    # Calculating the relative from the current position to the new position
-                    xy_move = np.array(new_sub) - position_die_ref
-                    """
-
-                    xy_move = np.array(new_sub) - np.array(self.last_sub)
-
-                    self.prober.move_position(*xy_move)
-
-                    self.last_sub_str = subsite_str
-                    self.last_sub = new_sub
-
-                    position = self.prober.request_position()
-
-                    # we subtract the position from the origin to invert the sign of the rel_sub
-                    # this way the difference can directly be compared with new_sub
-                    # Please note that A command (new_sub) has opposite coordinate system than
-                    # R command (rel_sub)
-                    # A command is a relative move towards while R command returns a global
-                    rel_sub = tuple(np.array(self.current_die_position) - np.array(position))
-
-                    # Check whether new position is not more than 5um away in each coordinate direction
-                    # from the requested move
-
-                    if abs(new_sub[0] - rel_sub[0]) > 5 or abs(new_sub[1] - rel_sub[1]) > 5:
-                        msg = (
-                            f"Relative subsite position after move {rel_sub} is not in "
-                            f"agreement with requested subsite position {new_sub}."
-                        )
-                        raise Exception(msg)
-
-        except Exception:
-            self.exception_step_during_apply = "Subsite"
-            raise
+        if subsite_str is not None:
+            try:
+                self.step_to_subsite(subsite_str)
+            except Exception as e:
+                self.exception_step_during_apply = "Subsite"
+                raise e
 
         # Retrieving position and check whether position has indeed changed
         position = self.prober.request_position()
         if position != self.last_position:
-            msg = "Subsite position did not change for unknown reason"
+            debug("Subsite position did not change for unknown reason")
         self.last_position = position
 
         self.die_x, self.die_y = self.prober.request_die_coordinate()
@@ -505,6 +435,79 @@ class Device(EmptyDevice):
 
         # Check whether dies are correct
         self.print_die_info()
+
+    def step_to_die(self, die_string: str) -> None:
+        """Move to a specified die position given as comma separated string '1,3'."""
+        die = die_string.split(",")  # create a list of x and y coordinates, e.g "1,3" -> [1,3]
+
+        # We always separate if not already the case
+        if self.prober.is_chuck_contacted():
+            self.prober.z_down()
+
+        # In any case, the die must have changed, and we need to move to it
+        self.prober.move_specified_die(*die)  # die at index x,y
+
+        # once we approach a die, we save the current absolute position at the start position of the die
+        # This position is then used to navigate to the correct position
+        self.current_die_position = self.prober.request_position()
+
+        self.last_die = die
+        self.last_die_str = die_string
+
+        # we reset the last subsite position as the position always starts at (0,0) after
+        # going to the die
+        self.last_sub = (0, 0)
+        self.last_position = (None, None)
+
+    def step_to_subsite(self, subsite_str: str) -> None:
+        """Move to a specified subsite position given as comma separated string starting with A: 'A1,3'."""
+        # We always separate if not already the case
+        if self.prober.is_chuck_contacted():
+            self.prober.z_down()
+
+        if subsite_str.startswith("A"):
+            # xy_subsite_pos is defined with respect to the initial start position of the die
+            # xy_move is the relative move from the current position to the next subsite position
+            # current_die_position is the absolute reference to start position of a die
+            # position_die_ref is the last position with respect to start position of the die
+
+            # Extracting the coordinates relative to the die start position
+            new_sub = tuple(map(int, subsite_str.replace("A", "").split(",")))
+
+            """
+            # Alternative Code to calculate relative move based on measured absolute position based on R command
+            # Calculating the last position with respect to the current die position
+            position_die_ref = np.array(self.last_position) - np.array(self.current_die_position)
+
+            # Calculating the relative from the current position to the new position
+            xy_move = np.array(new_sub) - position_die_ref
+            """
+
+            xy_move = np.array(new_sub) - np.array(self.last_sub)
+
+            self.prober.move_position(*xy_move)
+
+            self.last_sub_str = subsite_str
+            self.last_sub = new_sub
+
+            position = self.prober.request_position()
+
+            # we subtract the position from the origin to invert the sign of the rel_sub
+            # this way the difference can directly be compared with new_sub
+            # Please note that A command (new_sub) has opposite coordinate system than
+            # R command (rel_sub)
+            # A command is a relative move towards while R command returns a global
+            rel_sub = tuple(np.array(self.current_die_position) - np.array(position))
+
+            # Check whether new position is not more than 5um away in each coordinate direction
+            # from the requested move
+
+            if abs(new_sub[0] - rel_sub[0]) > 5 or abs(new_sub[1] - rel_sub[1]) > 5:
+                msg = (
+                    f"Relative subsite position after move {rel_sub} is not in "
+                    f"agreement with requested subsite position {new_sub}."
+                )
+                raise Exception(msg)
 
     def call(self):
         return [
