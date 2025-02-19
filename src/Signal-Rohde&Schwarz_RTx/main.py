@@ -151,6 +151,7 @@ class Device(EmptyDevice):
         if self.duty_cycle_pulse_width_mode == "Duty cycle in %":
             self.set_duty_cycle(self.duty_cycle_pulse_width)
 
+    def poweron(self) -> None:
         self.enable_output(True)
 
     def unconfigure(self) -> None:
