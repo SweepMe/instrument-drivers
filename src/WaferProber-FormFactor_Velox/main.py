@@ -82,6 +82,7 @@ class Device(EmptyDevice):
         """Define standard GUI parameter values."""
         return {
             "Load angle": 0.,
+            "SweepValueWafer": ["Wafer table"],  # filled by module
         }
 
     def get_GUIparameter(self, parameter: dict[str, str]) -> None:  # noqa: N802
