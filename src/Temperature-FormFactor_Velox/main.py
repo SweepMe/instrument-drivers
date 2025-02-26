@@ -113,6 +113,7 @@ class Device(EmptyDevice):
             "SweepMode": [mode.value for mode in TemperatureMode], #[TemperatureMode.SET_TEMPERATURE.value],
             "TemperatureUnit": list(self.temperature_units.keys()),
             "MeasureT": True,
+            "ReachT": True,
             "Sensor": ["Main", "PT100A", "PT100B"],
         }
 
