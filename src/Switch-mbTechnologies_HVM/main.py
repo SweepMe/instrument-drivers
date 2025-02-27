@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2023 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2023, 2025 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,9 +26,9 @@
 # SOFTWARE.
 
 
-# SweepMe! device class
-# Module: Switch
-# Device: mb-Technologies HVM
+# SweepMe! driver
+# * Module: Switch
+# * Instrument: mb-Technologies HVM
 
 
 import time
@@ -132,6 +132,36 @@ class Device(EmptyDevice):
 
         self.reset()
         self.get_operation_complete()
+        
+        cover_state = self.get_cover_state()
+        
+        if cover_state == 0:
+            msg = "Cover is open. Please close the cover"
+            raise Exception(msg)
+            
+        if cover_state == 1:
+            self.lock_cover()
+            
+            starttime = time.time()
+            
+            while True:
+            
+                if time.time() - starttime > 10:
+                    msg = "Unable to lock the cover before timeout. Please check the cover."
+                    raise Exception(msg)
+                    
+                cover_state = self.get_cover_state()
+                
+                if cover_state == 2:
+                    break
+
+                time.sleep(0.5)
+            
+    def deinitialize(self):
+    
+        cover_state = self.get_cover_state()
+        if cover_state == 2:
+            self.unlock_cover()
 
     def configure(self):
 
@@ -206,7 +236,7 @@ class Device(EmptyDevice):
             raise ValueError(msg)
 
     def get_identification(self):
-        """Queries identification string
+        """Queries identification string.
 
         Returns:
             answer (manufacturer, model number, serial number, hardware version, software version)
@@ -216,7 +246,7 @@ class Device(EmptyDevice):
         return answer
     
     def get_operation_complete(self):
-        """Waits until all pending operations are complete then returns 1
+        """Waits until all pending operations are complete then returns 1.
 
         Returns:
             bool: True if operation complete finished. Otherwise it will timeout.
@@ -225,14 +255,15 @@ class Device(EmptyDevice):
         return self.port.read() == "1"
 
     def reset(self) -> None:
-        """Resets the instrument and opens all relays.
-        """
+        """Resets the instrument and opens all relays."""
         self.port.write("*RST")
         if not self.port_string.startswith("GPIB"):
             self.port.read()
 
     def start_self_test(self) -> None:
-        """Starts execution of the relay matrix self-test. Depending on the matrix size the test may take up to
+        """Starts execution of the relay matrix self-test.
+
+        Depending on the matrix size the test may take up to
         1 minute to finish. Disconnect all measurement cables before starting the self-test! The test may fail if cables
          are connected.
         This function onls starts the test, but does not wait for its end and does not return any success message.
@@ -298,9 +329,6 @@ class Device(EmptyDevice):
         """
 
         channels = self.check_connections(channels)
-        if len(channels) > 25:
-            msg = "Unable to close more than 25 channels at the same time."
-            raise ValueError(msg)
         self.port.write('CLOS %s' % ",".join(channels))
         if not self.port_string.startswith("GPIB"):
             self.port.read()
@@ -473,6 +501,20 @@ class Device(EmptyDevice):
         self.port.write("SYSTEM:BOARD:SERIAL? %s" % str(board))
         answer = self.port.read().split(",")
         return answer
+        
+    def get_cover_state(self):
+    
+        self.port.write("COVER?")
+        return int(self.port.read())
+        
+    def lock_cover(self):
+        
+        self.port.write("COV:LOCK")
+        
+    def unlock_cover(self):
+        
+        self.port.write("COV:UNLOCK")
+    
 
     def get_error(self):
         """Errors are saved in a temporary storage. This command queries the first error in the list.
