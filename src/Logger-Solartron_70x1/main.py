@@ -54,6 +54,7 @@ class Device(EmptyDevice):
 
         self.port_properties = {
             "timeout": 22,  # needed for 1000 NPLC; adjust if 1000 NPLC are not needed
+            "delay": 0.05,
         }
 
         # this dictionary connects modes to commands. The modes will be displayed to the user in the field 'Mode'
