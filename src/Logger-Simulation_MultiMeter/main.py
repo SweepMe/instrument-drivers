@@ -69,6 +69,8 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
+        self.variables = []
+        self.units = []
         self.voltage_channels = list(map(int, parameter["Voltage Channels"].split(",")))
         for channel in self.voltage_channels:
             self.variables.append(f"Voltage CH{channel}")
@@ -80,6 +82,8 @@ class Device(EmptyDevice):
             self.units.append("A")
 
         # Update plottype and savetype
+        self.plottype = []
+        self.savetype = []
         for _ in self.variables:
             self.plottype.append(True)
             self.savetype.append(True)
