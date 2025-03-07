@@ -98,7 +98,7 @@ class Device(EmptyDevice):
         self.average = int(float(parameter["Average"]))
 
         # List Mode
-        self.use_list_sweep = parameter["SweepValue"] == "List sweep"
+        self.use_list_sweep = parameter.get("SweepValue", "None") == "List sweep"
         if self.use_list_sweep:
             self.use_list_sweep = True
             list_sweep_values = np.arange(
