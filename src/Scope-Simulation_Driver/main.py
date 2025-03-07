@@ -64,6 +64,9 @@ class Device(EmptyDevice):
         self.channel2_range: float = 5.0
         self.channel2_offset: float = 0.0
 
+        self.use_simulated_signal: bool = False
+        """If True, the driver uses the simulated signal from a Signal-Simulation driver in the same branch."""
+
     @staticmethod
     def find_ports() -> list[str]:
         """Return dummy port."""
@@ -75,9 +78,9 @@ class Device(EmptyDevice):
         return {
             # Timing:
             "TimeRange": ["Time range in s"],
-            "TimeRangeValue": 1e-3,
+            "TimeRangeValue": ["1e-3"],
             "SamplingRateType": ["Sampling rate in Hz"],
-            "SamplingRate": "1e3",
+            "SamplingRate": ["1e6"],
             # Channels:
             "Channel1": True,
             "Channel2": False,
@@ -96,6 +99,12 @@ class Device(EmptyDevice):
         self.time_range = float(parameter["TimeRangeValue"])
         self.sampling_rate_type = parameter["SamplingRate"]
         self.sampling_rate = float(parameter["SamplingRate"])
+
+        # Return Variables
+        self.variables = ["Time"]
+        self.units = ["s"]
+        self.plottype = [True]  # True to plot data
+        self.savetype = [True]  # True to save data
 
         self.channel1 = parameter["Channel1"]
         if self.channel1:
