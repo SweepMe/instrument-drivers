@@ -27,16 +27,16 @@
 
 # SweepMe! driver
 # * Module: Switch
-# * Instrument: Simulation Power Supply
+# * Instrument: Simulation Driver
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    """Device class to simulate a power supply."""
+    """Device class to simulate a voltage switch."""
     description = """
-                    <h3>Simulation Power Supply</h3>
-                    <p>This device class simulates a power supply. The same voltage that is set is also returned.</p>
+                    <h3>Simulation Switch</h3>
+                    <p>This device class simulates a Voltage switch. The same voltage that is set is also returned.</p>
                     """
 
     def __init__(self) -> None:
