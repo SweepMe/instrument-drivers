@@ -97,7 +97,7 @@ class Device(EmptyDevice):
         self.port = parameter["Port"]
 
         self.time_range = float(parameter["TimeRangeValue"])
-        self.sampling_rate_type = parameter["SamplingRate"]
+        self.sampling_rate_type = parameter["SamplingRateType"]
         self.sampling_rate = float(parameter["SamplingRate"])
 
         # Return Variables
