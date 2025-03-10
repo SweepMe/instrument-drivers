@@ -140,8 +140,6 @@ class Device(EmptyDevice):
             spectrum = np.loadtxt(spectrum_file, skiprows=3)
             intensities = spectrum[:, 1] - 500  # with offset subtraction
 
-            intensities = intensities * self.integration_time
-
         # Scale intensity with integration time
         intensities = intensities * self.integration_time
 
