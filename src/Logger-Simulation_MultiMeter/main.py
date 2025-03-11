@@ -29,6 +29,8 @@
 # * Module: Logger
 # * Instrument: Simulation MultiMeter
 
+from __future__ import annotations
+
 import random
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -95,7 +97,7 @@ class Device(EmptyDevice):
         """
         return ["Port1", "Port2"]
 
-    def call(self) -> [float, float]:
+    def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         simulated_values = []
         for channel in self.voltage_channels:

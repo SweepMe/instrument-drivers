@@ -30,8 +30,9 @@
 # * Module: Scope
 # * Instrument: Simulation Oscilloscope
 
-import numpy as np
+from __future__ import annotations
 
+import numpy as np
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -67,13 +68,11 @@ class Device(EmptyDevice):
         self.use_simulated_signal: bool = False
         """If True, the driver uses the simulated signal from a Signal-Simulation driver in the same branch."""
 
-    @staticmethod
-    def find_ports() -> list[str]:
+    def find_ports(self) -> list[str]:
         """Return dummy port."""
         return ["Simulation Scope"]
 
-    @staticmethod
-    def set_GUIparameter() -> dict:  # noqa: N802
+    def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set the GUI parameter for the device."""
         return {
             # Timing:
@@ -131,7 +130,7 @@ class Device(EmptyDevice):
         # If the Signal-Simulation driver is used in the sequencer, use its signal
         self.use_simulated_signal = "Simulated signal" in self.device_communication
 
-    def call(self) -> tuple:
+    def call(self) -> list[list[float]]:
         """Generate simulated data."""
         time = np.arange(0, self.time_range, 1 / self.sampling_rate)
         data = [time]
@@ -148,4 +147,4 @@ class Device(EmptyDevice):
             channel_2 = np.cos(time * 2 * np.pi * 1e3) * self.channel2_range + self.channel2_offset
             data.append(channel_2)
 
-        return tuple(data)
+        return data

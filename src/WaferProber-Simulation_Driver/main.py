@@ -31,9 +31,7 @@
 
 from __future__ import annotations
 
-import numpy as np
-
-from pysweepme.EmptyDeviceClass import EmptyDevice  # Class comes with SweepMe!
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -162,6 +160,6 @@ class Device(EmptyDevice):
     def reach(self) -> None:
         """'reach' can be added to make sure the latest setvalue applied during 'apply' is reached."""
 
-    def call(self) -> [float, float]:
+    def call(self) -> tuple[str, str, str, bool]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return self.current_wafer, self.current_die, self.current_subsite, self.skip

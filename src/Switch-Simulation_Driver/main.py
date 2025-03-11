@@ -33,10 +33,11 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    """Device class to simulate a voltage switch."""
+    """Device class to simulate a switch to turn on a Voltage source."""
     description = """
                     <h3>Simulation Switch</h3>
-                    <p>This device class simulates a Voltage switch. The same voltage that is set is also returned.</p>
+                    <p>This device class simulates a switch for a Voltage source. The same voltage that is set is also 
+                    returned.</p>
                     """
 
     def __init__(self) -> None:
@@ -70,6 +71,6 @@ class Device(EmptyDevice):
         if self.sweepmode == "Voltage in V":
             self.voltage = self.value
 
-    def call(self) -> [float, float]:
+    def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return self.voltage

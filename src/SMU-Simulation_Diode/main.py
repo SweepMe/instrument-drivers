@@ -29,11 +29,11 @@
 # * Module: SMU
 # * Instrument: Simulation Diode
 
+from __future__ import annotations
 
 import random
 
 import numpy as np
-
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
