@@ -30,8 +30,9 @@
 # * Module: Scope
 # * Instrument: Simulation Oscilloscope
 
-import numpy as np
+from __future__ import annotations
 
+import numpy as np
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -64,20 +65,21 @@ class Device(EmptyDevice):
         self.channel2_range: float = 5.0
         self.channel2_offset: float = 0.0
 
-    @staticmethod
-    def find_ports() -> list[str]:
+        self.use_simulated_signal: bool = False
+        """If True, the driver uses the simulated signal from a Signal-Simulation driver in the same branch."""
+
+    def find_ports(self) -> list[str]:
         """Return dummy port."""
         return ["Simulation Scope"]
 
-    @staticmethod
-    def set_GUIparameter() -> dict:  # noqa: N802
+    def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set the GUI parameter for the device."""
         return {
             # Timing:
             "TimeRange": ["Time range in s"],
-            "TimeRangeValue": 1e-3,
+            "TimeRangeValue": ["1e-3"],
             "SamplingRateType": ["Sampling rate in Hz"],
-            "SamplingRate": "1e3",
+            "SamplingRate": ["1e6"],
             # Channels:
             "Channel1": True,
             "Channel2": False,
@@ -94,8 +96,14 @@ class Device(EmptyDevice):
         self.port = parameter["Port"]
 
         self.time_range = float(parameter["TimeRangeValue"])
-        self.sampling_rate_type = parameter["SamplingRate"]
+        self.sampling_rate_type = parameter["SamplingRateType"]
         self.sampling_rate = float(parameter["SamplingRate"])
+
+        # Return Variables
+        self.variables = ["Time"]
+        self.units = ["s"]
+        self.plottype = [True]  # True to plot data
+        self.savetype = [True]  # True to save data
 
         self.channel1 = parameter["Channel1"]
         if self.channel1:
@@ -122,7 +130,7 @@ class Device(EmptyDevice):
         # If the Signal-Simulation driver is used in the sequencer, use its signal
         self.use_simulated_signal = "Simulated signal" in self.device_communication
 
-    def call(self) -> tuple:
+    def call(self) -> list[list[float]]:
         """Generate simulated data."""
         time = np.arange(0, self.time_range, 1 / self.sampling_rate)
         data = [time]
@@ -139,4 +147,4 @@ class Device(EmptyDevice):
             channel_2 = np.cos(time * 2 * np.pi * 1e3) * self.channel2_range + self.channel2_offset
             data.append(channel_2)
 
-        return tuple(data)
+        return data

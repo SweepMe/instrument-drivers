@@ -31,6 +31,7 @@
 
 import math
 import time
+from random import random
 from typing import Any
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -126,11 +127,12 @@ class Device(EmptyDevice):
             self.temperature = fraction * self.temperature + (1 - fraction) * self.set_temperature
             self.last_time = new_time
 
-    def call(self) -> [float, float]:
+    def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        return [self.temperature]
+        # add some noise to the temperature
+        return self.temperature + 0.005 * (2 * random() - 1)
 
     def measure_temperature(self) -> float:
         """Returns the calculated temperature."""
         self.measure()
-        return self.call()[0]
+        return self.call()

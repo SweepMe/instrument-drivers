@@ -29,11 +29,11 @@
 # * Module: SMU
 # * Instrument: Simulation Diode
 
+from __future__ import annotations
 
 import random
 
 import numpy as np
-
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -81,8 +81,9 @@ class Device(EmptyDevice):
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
-        if float(self.protection) > 1.0:
-            self.stop_Measurement("Aborted because %s" % self.protection)
+        max_compliance = 1.0
+        if float(self.protection) > max_compliance:
+            self.stop_Measurement(f"Compliance {self.protection} is higher than the maximum compliance of {max_compliance}.")
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""

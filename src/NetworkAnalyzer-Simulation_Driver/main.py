@@ -29,11 +29,11 @@
 # * Module: NetworkAnalyzer
 # * Instrument: Simulated Network Analyzer
 
+from __future__ import annotations
 
 import time
 
 import numpy as np
-
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -110,7 +110,7 @@ class Device(EmptyDevice):
         self.plottype += [False] * (len(self.variables) - 1)
         self.savetype += [True] * (len(self.variables) - 1)
 
-    def call(self) -> [float, float]:
+    def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         # simulate frequencies
         if self.frequency_type == "Frequency step in Hz":

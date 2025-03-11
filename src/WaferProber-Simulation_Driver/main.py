@@ -31,9 +31,7 @@
 
 from __future__ import annotations
 
-import numpy as np
-
-from pysweepme.EmptyDeviceClass import EmptyDevice  # Class comes with SweepMe!
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -74,14 +72,15 @@ class Device(EmptyDevice):
 
     # here functions start that only exists for the WaferProber module and are called by this module
 
-    def get_probeplan(self, probeplanpath: str = "") -> tuple[list[str], list[str], list[str]]:
+    def get_probeplan(self) -> tuple[list[str], list[str], list[str]]:
         """This function is called when the 'Update' button is pressed in the GUI.
 
-        It reads the probeplan from a given file and returns the lists of wafers, dies, and subsites.
+        If this function is implemented with a 'probeplan: str = ""' parameter, it will open a file dialog to select a
+        probeplan file. It reads the probeplan from a given file and returns the lists of wafers, dies, and subsites.
         """
-        wafers = [f"C{i}W{j}" for i in range(1, 3) for j in range(1, 7)]
-        dies = ["%i,%i" % (i, i + 1) for i in np.arange(5) + 1]
-        subsites = [f"Pos {i * 100},{j * 50}" for i in range(1, 3) for j in range(4, 6)]
+        wafers = ["C1W1", "C1W2", "C2W1"]
+        dies = ["1,1", "1, 13", "7,5", "12,8"]
+        subsites = ["Pos 100, 50", "Pos 75, 150"]
 
         return wafers, dies, subsites
 
@@ -161,6 +160,6 @@ class Device(EmptyDevice):
     def reach(self) -> None:
         """'reach' can be added to make sure the latest setvalue applied during 'apply' is reached."""
 
-    def call(self) -> [float, float]:
+    def call(self) -> tuple[str, str, str, bool]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return self.current_wafer, self.current_die, self.current_subsite, self.skip

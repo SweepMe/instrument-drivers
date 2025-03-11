@@ -32,7 +32,6 @@
 from __future__ import annotations
 
 import numpy as np
-
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -90,13 +89,13 @@ class Device(EmptyDevice):
             ],
             "Waveform": ["Sine", "Square", "Triangle", "Sawtooth"],
             "PeriodFrequency": ["Frequency in Hz", "Period in s"],
-            "PeriodFrequencyValue": 2e-6,
+            "PeriodFrequencyValue": "2e3",
             "AmplitudeHiLevel": ["Amplitude in V"],
-            "AmplitudeHiLevelValue": 1.0,
+            "AmplitudeHiLevelValue": "1.0",
             "OffsetLoLevel": ["Offset in V"],
-            "OffsetLoLevelValue": 0.0,
+            "OffsetLoLevelValue": "0.0",
             "DelayPhase": ["Delay in s", "Phase in deg"],
-            "DelayPhaseValue": 0.0,
+            "DelayPhaseValue": "0.0",
             # "Impedance": ["50"],
         }
 
@@ -162,7 +161,7 @@ class Device(EmptyDevice):
         # update the signal generator function
         self.device_communication["Simulated signal"] = self.generate_waveform
 
-    def call(self) -> [float, float]:
+    def call(self) -> tuple[float, float, np.array, np.array]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         timestamps = np.linspace(0, 3 / self.frequency, 100)
         signal = self.generate_waveform(timestamps)

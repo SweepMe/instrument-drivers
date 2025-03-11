@@ -53,6 +53,7 @@ class Device(EmptyDevice):
         self.frequency = 1000
         self.bias_mode = "Voltage bias"
         self.bias = 1
+        self.average = 1
         self.use_list_sweep = False
         self.list_sweep_values: np.array = np.empty((0,))
 
@@ -61,17 +62,19 @@ class Device(EmptyDevice):
         self.capacitance = 4e-9  # F
         self.resistance = 50  # Ohm
         self.noise_level = 0.05  # percent
+        self.bias_coefficient = 0.05
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Return a dictionary with GUI parameters."""
         return {
-            "SweepMode": ["Frequency in Hz"],
-            "SweepValue": ["List"],
+            "SweepMode": ["Frequency in Hz", "Voltage bias in V"],
+            # "SweepValue": ["List"],
             "StepMode": ["None"],
             "Frequency": 1000,
             "OperatingMode": ["R-X"],
             "ValueTypeBias": ["Voltage bias", "Current bias"],
             "ValueBias": 1,
+            "Average": "1",
 
             # List Sweep Parameters
             "ListSweepCheck": True,
@@ -92,9 +95,10 @@ class Device(EmptyDevice):
 
         self.bias_mode = parameter["ValueTypeBias"]
         self.bias = float(parameter["ValueBias"])
+        self.average = int(float(parameter["Average"]))
 
         # List Mode
-        self.use_list_sweep = parameter["SweepValue"] == "List sweep"
+        self.use_list_sweep = parameter.get("SweepValue", "None") == "List sweep"
         if self.use_list_sweep:
             self.use_list_sweep = True
             list_sweep_values = np.arange(
@@ -128,9 +132,15 @@ class Device(EmptyDevice):
 
     def call(self) -> list:
         """Simulate data and return as a list."""
-        measured_frequency = self.list_sweep_values if self.use_list_sweep else self.frequency
-        measured_resistance = self.simulate_resistance(measured_frequency)
-        measured_reactance = self.simulate_reactance(measured_frequency)
+        if self.use_list_sweep:
+            measured_frequency = self.list_sweep_values
+            measured_resistance = self.simulate_resistance(measured_frequency)
+            measured_reactance = self.simulate_reactance(measured_frequency)
+
+        else:
+            measured_frequency = self.frequency
+            measured_resistance = np.mean([self.simulate_resistance(measured_frequency) for _ in range(self.average)])
+            measured_reactance = np.mean([self.simulate_reactance(measured_frequency) for _ in range(self.average)])
 
         return [measured_resistance, measured_reactance, measured_frequency, self.bias]
 
@@ -138,20 +148,25 @@ class Device(EmptyDevice):
 
     def simulate_resistance(self, frequency: float | np.array) -> float:
         """Simulate resistance with weak frequency dependency of the device under test."""
-        resistance = self.resistance + frequency / 1000
-        return self.simulate_noise(resistance)
+        # Calculate the base resistance with a weak frequency dependency
+        base_resistance = self.resistance + frequency / 1000.0
+        # Adjust resistance based on the bias (using an arbitrary coefficient of 0.01)
+        adjusted_resistance = base_resistance * (1 + self.bias_coefficient * self.bias)
+        return self.simulate_noise(adjusted_resistance)
 
     def simulate_reactance(self, frequency: float | np.array) -> float:
         """Simulate reactance of the device under test."""
         angular_frequency = 2 * np.pi * frequency
 
-        # inductive reactance (Inductance)
+        # Calculate inductive reactance (Inductance) and capacitive reactance
         x_l = angular_frequency * self.inductance
-
-        # capacitive reactance
         x_c = -1 / (angular_frequency * self.capacitance)
+        base_reactance = x_l + x_c
 
-        return self.simulate_noise(x_l + x_c)
+        # Adjust reactance based on the bias (using an arbitrary coefficient of 0.01)
+        adjusted_reactance = base_reactance * (1 + self.bias_coefficient * self.bias)
+
+        return self.simulate_noise(adjusted_reactance)
 
     def simulate_noise(self, value: float | np.array) -> float:
         """Simulate noise."""
