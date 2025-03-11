@@ -275,7 +275,7 @@ class Device(EmptyDevice):
             # will execute either :RUN oder :SINGle SCPI command depending on choice of aquisition type (continuous or single)
             self.port.write("%s" % self.aquisitiontypes[self.aquisitiontype])
 
-        time.sleep(1)
+        time.sleep(0.4)
         # The RIGOL does not allow to determine the amount of successful acquired averaging samples.
         # It also returns TD for trigger status during continuous triggering when a trigger was successful, but already waiting for a new one.
         # Therefore, the only solution is to STOP the scope after a manual set trigger timeout period which has to be adjusted accordingly.
