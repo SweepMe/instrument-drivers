@@ -14,6 +14,11 @@ Simple modifications can be done without using this repository.
 Just right-click a version in SweepMe!'s version manager and use "Create custom version".
 This will copy the driver to a public folder on your driver. Activate this custom version and start working on it.
 
+## AI Driver Writer
+
+Easily create or modify drivers for SweepMe! using our [SweepMe! Driver Writer](https://sweep-me.net/driver-writer-ai).
+This AI-powered tool (currently in beta) can transform your instrument manual into a basic SweepMe! driver and ensures the correct driver format.
+
 ## Loading repository drivers with SweepMe!
 
 * Update SweepMe! to version 1.5.6.12 or higher
