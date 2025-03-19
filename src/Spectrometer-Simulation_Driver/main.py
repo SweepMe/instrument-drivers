@@ -118,6 +118,10 @@ class Device(EmptyDevice):
         spectrum = np.loadtxt(spectrum_file, skiprows=3)
         return spectrum[:, 0]
 
+    def read_Wavelengths(self) -> np.array:
+        """For compatibility with the old version of the module."""
+        return self.get_wavelengths()
+
     def get_intensities(self) -> np.array:
         """Return the measured intensities."""
         intensities = np.array([])
