@@ -4,19 +4,19 @@
 # find those in the corresponding folders or contact the maintainer.
 #
 # MIT License
-# 
+#
 # Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -25,10 +25,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
-# SweepMe! device class
-# Type: SMU
-# Device: Keithley 2450
+# SweepMe! driver
+# * Module: SMU
+# * Instrument: Keithley 2450
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug
@@ -54,9 +53,9 @@ class Device(EmptyDevice):
 
         self.is_power_on = False
 
-    def set_GUIparameter(self):
-
-        gui_parameter = {
+    def set_GUIparameter(self) -> dict:
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+        return {
             "SweepMode": ["Voltage in V", "Current in A"],
             "RouteOut": ["Front", "Rear"],
             "Speed": ["Fast", "Medium", "Slow"],
@@ -83,10 +82,8 @@ class Device(EmptyDevice):
             "4wire": False,
         }
 
-        return gui_parameter
-
-    def get_GUIparameter(self, parameter={}):
-
+    def get_GUIparameter(self, parameter: dict) -> None:
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.four_wire = parameter["4wire"]
         self.route_out = parameter["RouteOut"]
         self.source = parameter["SweepMode"]
@@ -95,8 +92,8 @@ class Device(EmptyDevice):
         self.range = parameter["Range"]
         self.average = int(parameter["Average"])
 
-    def connect(self):
-
+    def connect(self) -> None:
+        """Connect to the device. This function is called only once at the start of the measurement."""
         self.port.write("*LANG?")
         self.language = self.port.read()  # TSP, SCPI, SCPI2400
         # set language with *LANG SCPI, *LANG TSP, *LANG SCPI2400 and reboot, ask for language *LANG?
@@ -104,8 +101,8 @@ class Device(EmptyDevice):
         if self.language == "SCPI":
             self.language = "SCPI2400"
 
-    def initialize(self):
-
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
         if self.language == "SCPI2400":
             self.port.write("*IDN?")
             self.vendor, self.model, self.serialno, self.version = self.port.read().split(",")
@@ -136,8 +133,8 @@ class Device(EmptyDevice):
 
             # self.port.write("localnode.linefreq = 50")  # unused because not everyone has 50 Hz
 
-    def configure(self):
-
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
         if self.language == "SCPI2400":
 
             if self.average > 1:
@@ -180,12 +177,13 @@ class Device(EmptyDevice):
         if self.route_out == "Rear":
             self.route_rear()
 
-    def deinitialize(self):
+    def deinitialize(self) -> None:
+        """Deinitialize the device. This function is called only once at the end of the measurement."""
         self.rsen_off()
         self.route_front()
 
-    def poweron(self):
-
+    def poweron(self) -> None:
+        """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
         if self.language == "SCPI2400":
             self.port.write("OUTP ON")
 
@@ -194,8 +192,8 @@ class Device(EmptyDevice):
 
         self.is_power_on = True
 
-    def poweroff(self):
-
+    def poweroff(self) -> None:
+        """Turn off the device when leaving a sequencer branch."""
         if hasattr(self, "language"):
             if self.language == "SCPI2400":
                 self.port.write("OUTP OFF")
@@ -205,8 +203,8 @@ class Device(EmptyDevice):
 
         self.is_power_on = False
 
-    def apply(self):
-
+    def apply(self) -> None:
+        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         self.value = str(self.value)
 
         source = self.source[0:4].upper()  # VOLT or CURR
@@ -221,8 +219,8 @@ class Device(EmptyDevice):
         self.measure()
         self.call()
 
-    def measure(self):
-
+    def measure(self) -> None:
+        """Trigger the acquisition of new data."""
         if self.language == "SCPI2400":
             self.port.write("READ?")
 
@@ -234,8 +232,8 @@ class Device(EmptyDevice):
             # self.port.write("print(smu.measure.read(data))")
             # print("Reading", self.port.read())
 
-    def call(self):
-
+    def call(self) -> list[float]:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
         if self.language == "SCPI2400":
             answer = self.port.read().split(",")
             self.v, self.i = answer[0:2]
@@ -264,11 +262,8 @@ class Device(EmptyDevice):
     # Convenience functions start here
 
     @staticmethod
-    def convert_unit_prefix(number_text: str):
-        """
-        This function converts a unit prefix such as n, µ or m to the scientific e notation
-        """
-
+    def convert_unit_prefix(number_text: str) -> str:
+        """This function converts a unit prefix such as n, µ or m to the scientific e notation."""
         number_text = (number_text.replace("f", "e-15")
                        .replace("p", "e-12")
                        .replace("n", "e-9")
@@ -341,7 +336,7 @@ class Device(EmptyDevice):
             # sourcemode = Voltage
             self.port.write(":SOUR:VOLT:MODE FIX")
             # sourcemode fix
-            self.port.write(":SENS:FUNC \"CURR\"")
+            self.port.write(':SENS:FUNC "CURR"')
             # measurement mode
             self.port.write(":SENS:CURR:PROT " + self.protection)
             # Protection with Imax
@@ -390,7 +385,7 @@ class Device(EmptyDevice):
             # sourcemode = Voltage
             self.port.write(":SOUR:CURR:MODE FIX")
             # sourcemode fix
-            self.port.write(":SENS:FUNC \"VOLT\"")
+            self.port.write(':SENS:FUNC "VOLT"')
             # measurement mode
             self.port.write(":SENS:VOLT:PROT " + self.protection)
             # Protection with Imax
