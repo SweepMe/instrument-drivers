@@ -155,6 +155,9 @@ class Device(EmptyDevice):
                 self.port.write("smu.measure.filter.count = 1")
                 self.port.write("smu.measure.filter.enable = smu.OFF")
 
+            # Create a buffer to store the measured data
+            self.port.write("data = buffer.make(10)")
+
         if self.source.startswith("Voltage"):
             self.source_volt()
 
@@ -225,7 +228,8 @@ class Device(EmptyDevice):
             self.port.write("READ?")
 
         elif self.language == "TSP":
-            self.port.write("data = buffer.make(10)")
+            # Clear the buffer before the measurement
+            self.port.write("data.clear()")
             self.port.write("smu.measure.read(data)")
 
             # way to directly trigger sending the reading:
