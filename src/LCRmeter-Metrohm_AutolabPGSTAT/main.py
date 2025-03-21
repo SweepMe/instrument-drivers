@@ -354,10 +354,10 @@ class Device(EmptyDevice):
         Ztotal = Fra.Modulus[0]
         Phase = Fra.Phase[0]
         Resistance R: Zreal = Fra.Real[0]
-        Reactance X: Zimag = Fra.Imaginary[0]
+        Reactance X: Zimag = - Fra.Imaginary[0]  # Nova handles the reactance as negative
         """
         resistance = self.Fra.Real[0]
-        reactance = self.Fra.Imaginary[0]
+        reactance = -self.Fra.Imaginary[0]
         return resistance, reactance
 
     def measure_dc_bias(self) -> float:
