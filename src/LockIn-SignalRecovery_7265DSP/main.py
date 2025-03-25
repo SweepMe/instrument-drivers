@@ -36,6 +36,11 @@ from EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
+    """
+    Driver for Ametek Signal Recovery DSP 7265 Lock-in Amplifier
+    
+    Provides control and communication with the 7265 Lock-in amplifier over COM or GPIB interfaces.
+    """
 
     description = """
     <p><strong>Ametek Signal Recovery DSP 7265</strong><br /> <br /> Notes:</p>
@@ -48,105 +53,106 @@ class Device(EmptyDevice):
     """
 
     def __init__(self):
-        EmptyDevice.__init__(self)
+        super().__init__()
         
         self.shortname = "7265DSP"
 
-        # here the port handling is done
-        # the MeasClass automatically creates the PortObject during in the connect function of the MeasClass
+        # Port configuration
         self.port_manager = True
         self.port_types = ["COM", "GPIB"]
         
+        # port_identifications isn't working but kept for future implementation
         # self.port_identifications = ['Ametek,7280']
-        # port_identifications does not work at the moment
 
         self.port_properties = { 
-                                 "EOL": "\r\n",
-                                 "timeout": 2,
-                                 "baudrate": 9600,
-                            }
+            "EOL": "\r\n",
+            "timeout": 2,
+            "baudrate": 9600,
+        }
 
-        # I started to define dictionaries to translate GUI-commands into remote commands
-        # Attention: No Gui-selection should occur twice
-        self.commands = OrderedDict([ 
-                               # ("Frequency [Hz]", "FREQ"),
-                               # ("Internal", ""),
-                               ("Float", "FLOAT 1"),
-                               ("Ground", "FLOAT 0"),
-                            ])
+        # Command dictionaries for translating GUI selections to device commands
+        self.commands = OrderedDict([
+            ("Float", "FLOAT 1"),
+            ("Ground", "FLOAT 0"),
+        ])
 
         self.source_commands = OrderedDict([
-                                            ("Internal", "IE 0"),
-                                            ("External TTL Rear", "IE 1"),
-                                            ("External Analog Front", "IE 2"),
-                                            ])
+            ("Internal", "IE 0"),
+            ("External TTL Rear", "IE 1"),
+            ("External Analog Front", "IE 2"),
+        ])
                             
         self.input_commands = OrderedDict([
-                                           ("Current B High bandwidth, Front", "IMODE1; REF FRONT"),
-                                           ("Current B Low noise, Front", "IMODE2; REF FRONT"),
-                                           ("Voltage A, Front", "IMODE0; VMODE 1; REF FRONT"),
-                                           ("Voltage -B, Front", "IMODE0; VMODE 2; REF FRONT"),
-                                           ("Voltage A-B, Front", "IMODE0; VMODE 3; REF FRONT"),
-                                           ("Current B High bandwidth, Rear", "IMODE1; REF REAR"),
-                                           ("Current B Low noise, Rear", "IMODE2; REF REAR"),
-                                           ("Voltage A, Rear", "IMODE0; VMODE 1; REF REAR"),
-                                           ("Voltage -B, Rear", "IMODE0; VMODE 2; REF REAR"),
-                                           ("Voltage A-B, Rear", "IMODE0; VMODE 3; REF REAR"),
-                                          ])
+            ("Current B High bandwidth, Front", "IMODE1; REF FRONT"),
+            ("Current B Low noise, Front", "IMODE2; REF FRONT"),
+            ("Voltage A, Front", "IMODE0; VMODE 1; REF FRONT"),
+            ("Voltage -B, Front", "IMODE0; VMODE 2; REF FRONT"),
+            ("Voltage A-B, Front", "IMODE0; VMODE 3; REF FRONT"),
+            ("Current B High bandwidth, Rear", "IMODE1; REF REAR"),
+            ("Current B Low noise, Rear", "IMODE2; REF REAR"),
+            ("Voltage A, Rear", "IMODE0; VMODE 1; REF REAR"),
+            ("Voltage -B, Rear", "IMODE0; VMODE 2; REF REAR"),
+            ("Voltage A-B, Rear", "IMODE0; VMODE 3; REF REAR"),
+        ])
                         
         self.gains = OrderedDict([
-                               ("Auto gain", "AUTOMATIC 1"),
-                               ("0 dB", "AUTOMATIC 0; ACGAIN 0"),
-                               ("10 dB", "AUTOMATIC 0; ACGAIN 1"),
-                               ("20 dB", "AUTOMATIC 0; ACGAIN 2"),
-                               ("30 dB", "AUTOMATIC 0; ACGAIN 3"),
-                               ("40 dB", "AUTOMATIC 0; ACGAIN 4"),
-                               ("50 dB", "AUTOMATIC 0; ACGAIN 5"),
-                               ("60 dB", "AUTOMATIC 0; ACGAIN 6"),
-                               ("70 dB", "AUTOMATIC 0; ACGAIN 7"),
-                               ("80 dB", "AUTOMATIC 0; ACGAIN 8"),
-                               ("90 dB", "AUTOMATIC 0; ACGAIN 9"),
-                                ])
-                                
-        self.inv_gains = \
-            {int(v[20:]): int(k[:-3]) for k, v in self.gains.items() if v.startswith("AUTOMATIC 0; ACGAIN")}
-        # print(self.inv_gains)
+            ("Auto gain", "AUTOMATIC 1"),
+            ("0 dB", "AUTOMATIC 0; ACGAIN 0"),
+            ("10 dB", "AUTOMATIC 0; ACGAIN 1"),
+            ("20 dB", "AUTOMATIC 0; ACGAIN 2"),
+            ("30 dB", "AUTOMATIC 0; ACGAIN 3"),
+            ("40 dB", "AUTOMATIC 0; ACGAIN 4"),
+            ("50 dB", "AUTOMATIC 0; ACGAIN 5"),
+            ("60 dB", "AUTOMATIC 0; ACGAIN 6"),
+            ("70 dB", "AUTOMATIC 0; ACGAIN 7"),
+            ("80 dB", "AUTOMATIC 0; ACGAIN 8"),
+            ("90 dB", "AUTOMATIC 0; ACGAIN 9"),
+        ])
+        
+        # Create reverse mapping for gains (command value -> dB value)                       
+        self.inv_gains = {
+            int(v.split()[-1]): int(k[:-3]) 
+            for k, v in self.gains.items() 
+            if v.startswith("AUTOMATIC 0; ACGAIN")
+        }
                                
         self.timeconstants = OrderedDict([
-                                ("10µ", "TC 0"),
-                                ("20µ", "TC 1"),
-                                ("40µ", "TC 2"),
-                                ("80µ", "TC 3"),
-                                ("160µ", "TC 4"),
-                                ("320µ", "TC 5"),
-                                ("640µ", "TC 6"),
-                                ("5m", "TC 7"),
-                                ("10m", "TC 8"),
-                                ("20m", "TC 9"),
-                                ("50m", "TC 10"),
-                                ("100m", "TC 11"),
-                                ("200m", "TC 12"),
-                                ("500m", "TC 13"),
-                                ("1", "TC 14"),
-                                ("2", "TC 15"),
-                                ("5", "TC 16"),
-                                ("10", "TC 17"),
-                                ("20", "TC 18"),
-                                ("50", "TC 19"),
-                                ("100", "TC 20"),
-                                ("200", "TC 21"),
-                                ("500", "TC 22"),
-                                ("1k", "TC 23"),
-                                ("2k", "TC 24"),
-                                ("5k", "TC 25"),
-                                ("10k", "TC 26"),
-                                ("20k", "TC 27"),
-                                ("50k", "TC 28"),
-                                ("100k", "TC 29"),
-                            ])
+            ("10µ", "TC 0"),
+            ("20µ", "TC 1"),
+            ("40µ", "TC 2"),
+            ("80µ", "TC 3"),
+            ("160µ", "TC 4"),
+            ("320µ", "TC 5"),
+            ("640µ", "TC 6"),
+            ("5m", "TC 7"),
+            ("10m", "TC 8"),
+            ("20m", "TC 9"),
+            ("50m", "TC 10"),
+            ("100m", "TC 11"),
+            ("200m", "TC 12"),
+            ("500m", "TC 13"),
+            ("1", "TC 14"),
+            ("2", "TC 15"),
+            ("5", "TC 16"),
+            ("10", "TC 17"),
+            ("20", "TC 18"),
+            ("50", "TC 19"),
+            ("100", "TC 20"),
+            ("200", "TC 21"),
+            ("500", "TC 22"),
+            ("1k", "TC 23"),
+            ("2k", "TC 24"),
+            ("5k", "TC 25"),
+            ("10k", "TC 26"),
+            ("20k", "TC 27"),
+            ("50k", "TC 28"),
+            ("100k", "TC 29"),
+        ])
 
-        self.timeconstants_numbers = [self.value_to_float(x) for x in self.timeconstants]
+        # Pre-calculate floating point values for time constants
+        self.timeconstants_numbers = [self._value_to_float(x) for x in self.timeconstants]
 
+        # Sensitivity settings for different input modes
         self.sensitivities_voltages = OrderedDict([
             ("2 nV", "SEN 1"),
             ("5 nV", "SEN 2"),
@@ -232,58 +238,99 @@ class Device(EmptyDevice):
         ])
 
         self.slopes = OrderedDict([
-                        ("6 dB/octave",  "SLOPE 0"),
-                        ("12 dB/octave", "SLOPE 1"),
-                        ("18 dB/octave", "SLOPE 2"),
-                        ("24 dB/octave", "SLOPE 3"),
-                        ])
+            ("6 dB/octave",  "SLOPE 0"),
+            ("12 dB/octave", "SLOPE 1"),
+            ("18 dB/octave", "SLOPE 2"),
+            ("24 dB/octave", "SLOPE 3"),
+        ])
                         
         self.filter1_commands = OrderedDict([
-                        ("Off",  "LF 0 0"),
-                        ("50 Hz notch filter", "LF 1 1"),
-                        ("60 Hz notch filter", "LF 1 0"),
-                        ("100 Hz notch filter", "LF 2 1"),
-                        ("120 Hz notch filter", "LF 2 0"),
-                        ("50 Hz and 100 Hz notch filter", "LF 3 1"),
-                        ("60 Hz and 120 Hz notch filter", "LF 3 0"),
-                        ])
+            ("Off",  "LF 0 0"),
+            ("50 Hz notch filter", "LF 1 1"),
+            ("60 Hz notch filter", "LF 1 0"),
+            ("100 Hz notch filter", "LF 2 1"),
+            ("120 Hz notch filter", "LF 2 0"),
+            ("50 Hz and 100 Hz notch filter", "LF 3 1"),
+            ("60 Hz and 120 Hz notch filter", "LF 3 0"),
+        ])
 
         self.filter2_commands = OrderedDict([
-                               ("Sync filter off", "SYNC 0"),
-                               ("Sync filter on", "SYNC 1"),
-                            ])
+            ("Sync filter off", "SYNC 0"),
+            ("Sync filter on", "SYNC 1"),
+        ])
         
         self.coupling_commands = OrderedDict([
-                                    ("Fast", "CP 0"),
-                                    ("Slow", "CP 1"),
-                                    ])
+            ("Fast", "CP 0"),
+            ("Slow", "CP 1"),
+        ])
+        
+        # Initialize instance variables with defaults
+        self.sweepmode = "None"
+        self.source = "Internal"
+        self.oscillator_frequency = 1000
+        self.oscillator_amplitude = 0.1
+        self.input = "Voltage A, Front"
+        self.coupling = "Fast"
+        self.slope = "12 dB/octave"
+        self.ground = "Ground"
+        self.sensitivity = "Auto sensitivity"
+        self.filter1 = "Off"
+        self.filter2 = "Sync filter off"
+        self.gain = "Auto gain"
+        self.time_constant = "100m"
+        self.wait_time_constants = 4.0
+        self.factor_auto_time_constant = 10.0
+        
+        # Results storage
+        self.frq = 0.0
+        self.r = 0.0 
+        self.phi = 0.0
+        self.sen = 0.0
+        self.nhz = 0.0
+        self.acg = 0
+        self.acg_dB = 0
+        self.tc = 0.0
+        self.time_ref = 0.0
 
-    def set_GUIparameter(self):
-    
+    def set_GUIparameter(self) -> Dict[str, Any]:
+        """
+        Define the GUI parameters for this device.
+        
+        Returns:
+            Dictionary with all GUI parameters and their possible values.
+        """
+        
         gui_parameter = {
-                         "SweepMode": ["None", "Oscillator frequency in Hz"],
-                         "Source": list(self.source_commands.keys()),
-                         "OscillatorFrequency": 1000,
-                         "OscillatorAmplitude": 0.1,
-                         "Input": list(self.input_commands.keys()),
-                         "Sensitivity": ["Auto sensitivity"] +
-                                        list(self.sensitivities_voltages.keys()) +
-                                        list(self.sensitivities_currents_high_bandwidth.keys()),
-                         "Filter1": list(self.filter1_commands.keys()),
-                         "Filter2": list(self.filter2_commands.keys()),
-                         # "Channel1": [],
-                         # "Channel2": [],
-                         "TimeConstant": list(self.timeconstants.keys()) + ["Auto time - 10 periods"],
-                         "Gain": list(self.gains.keys()),
-                         "Slope": list(self.slopes.keys()),
-                         "Coupling": list(self.coupling_commands.keys()),
-                         "Ground": ["Ground", "Float"],
-                         "WaitTimeConstants": 4.0,
-                        }
+            "SweepMode": ["None", "Oscillator frequency in Hz"],
+            "Source": list(self.source_commands.keys()),
+            "OscillatorFrequency": 1000,
+            "OscillatorAmplitude": 0.1,
+            "Input": list(self.input_commands.keys()),
+            "Sensitivity": ["Auto sensitivity"] +
+                           list(self.sensitivities_voltages.keys()) +
+                           list(self.sensitivities_currents_high_bandwidth.keys()),
+            "Filter1": list(self.filter1_commands.keys()),
+            "Filter2": list(self.filter2_commands.keys()),
+            "TimeConstant": list(self.timeconstants.keys()) + ["Auto time - 10 periods"],
+            "Gain": list(self.gains.keys()),
+            "Slope": list(self.slopes.keys()),
+            "Coupling": list(self.coupling_commands.keys()),
+            "Ground": ["Ground", "Float"],
+            "WaitTimeConstants": 4.0,
+        }
                         
         return gui_parameter
         
-    def get_GUIparameter(self, parameter={}):
+    def get_GUIparameter(self, parameter: Dict[str, Any]) -> None:
+        """
+        Apply the GUI parameters and configure device variables.
+        
+        Args:
+            parameter: Dictionary containing the GUI parameters.
+        
+        Raises:
+            Exception: If required parameters are missing (old module version).
+        """
 
         if "OscillatorAmplitude" not in parameter:
             raise Exception("Please update to the latest LockIn module to use the Signal Recovery 7265 driver.")
@@ -303,6 +350,7 @@ class Device(EmptyDevice):
         self.time_constant = parameter["TimeConstant"]
         self.wait_time_constants = float(parameter["WaitTimeConstants"])
 
+        # Set up result variables based on input type
         self.variables = ["Magnitude", "Phase", "Frequency", "Sensitivity", "Noise density", "AC Gain", "Time constant"]
 
         if self.input.startswith("Voltage"):
@@ -310,30 +358,34 @@ class Device(EmptyDevice):
         elif self.input.startswith("Current"):
             self.units = ["A", "deg", "Hz", "A", "A/sqrt(Hz)", "dB", "s"]
 
-        self.plottype = [True, True, True, True, True, True, True]
-        self.savetype = [True, True, True, True, True, True, True]
+        # All variables are plottable and saveable
+        self.plottype = [True] * len(self.variables)
+        self.savetype = [True] * len(self.variables)
 
-    def initialize(self):
-
-        # identifier = self.get_identification()
-        # print("Identifier:", identifier)
-
-        # version = self.get_version()
-        # print("Version:", version)
-
+    def initialize(self) -> None:
+        """
+        Initialize the device with default settings.
+        
+        Raises:
+            Exception: If sweep mode is incompatible with source setting.
+        """
+        # Check for valid configuration
         if self.source != "Internal" and self.sweepmode == "Oscillator frequency in Hz":
             raise Exception("To sweep the oscillator frequency, the reference must be 'Internal'. "
                             "Please change and try again.")
 
+        # Put device in remote mode, turn on display, and restore default settings
         self.set_remote(True)
         self.set_display_light(True)
         self.port.write("ADF 1")  # restore default settings
+        self.wait_for_complete()
 
-    def deinitialize(self):
+    def deinitialize(self) -> None:
+        """Return control to the front panel."""
         self.set_remote(False)
 
-    def configure(self):    
-
+    def configure(self) -> None:
+        """Configure all device settings based on GUI parameters."""
         # Source adjustment
         self.port.write(self.source_commands[self.source])
         self.wait_for_complete()
@@ -354,14 +406,11 @@ class Device(EmptyDevice):
         self.port.write(self.coupling_commands[self.coupling])
         self.wait_for_complete()
 
-        # self.port.write(self.commands[self.reserve])
-        self.wait_for_complete()
-
-        # set notch filter
+        # Set notch filter
         self.port.write(self.filter1_commands[self.filter1])
         self.wait_for_complete()
 
-        # set notch filter
+        # Set sync filter
         self.port.write(self.filter2_commands[self.filter2])
         self.wait_for_complete()
 
@@ -371,30 +420,15 @@ class Device(EmptyDevice):
 
         # Sensitivity adjustment
         if self.sensitivity != "Auto sensitivity":
-            if "Voltage" in self.input:
-                self.port.write(self.sensitivities_voltages[self.sensitivity])
-                # self.inv_sensitivities = {v: k for k, v in self.sensitivities_voltages.items()}
-            elif "Current B High bandwidth" in self.input:
-                self.port.write(self.sensitivities_currents_high_bandwidth[self.sensitivity])
-                # self.inv_sensitivities = {v: k for k, v in self.sensitivities_currents_high_bandwidth.items()}
-            elif "Current B Low noise" in self.input:
-                self.port.write(self.sensitivities_currents_low_noise[self.sensitivity])
-                # self.inv_sensitivities = {v: k for k, v in self.sensitivities_currents_low_noise.items()}
-            self.wait_for_complete()
+            self._set_sensitivity_by_input_type()
 
         # Time constant adjustment
         if not self.time_constant.startswith("Auto time"):
-            if self.time_constant in self.timeconstants:
-                new_tc_key = self.time_constant
-            else:
-                new_tc_key = self.find_best_time_constant_key(self.time_constant)
-            self.port.write(self.timeconstants[new_tc_key])
-            self.wait_for_complete()
+            self._set_time_constant()
         else:
-            factor_periods_str = self.time_constant.split("-")[1]
-            factor_auto_time_constant = factor_periods_str.replace("period", "").replace("s", "").replace(" ", "")
-            self.factor_auto_time_constant = float(factor_auto_time_constant)
+            self._parse_auto_time_constant()
        
+        # Configure oscillator if using internal source
         if self.source == "Internal":
             if self.sweepmode != "Oscillator frequency in Hz":
                 self.set_oscillator_frequency(self.oscillator_frequency)
@@ -403,63 +437,97 @@ class Device(EmptyDevice):
         # Phase re-adjustment
         self.adjust_phase()
 
-    def reconfigure(self, parameters, keys):
+    def _set_sensitivity_by_input_type(self) -> None:
+        """Set sensitivity based on the current input type."""
+        if "Voltage" in self.input:
+            self.port.write(self.sensitivities_voltages[self.sensitivity])
+        elif "Current B High bandwidth" in self.input:
+            self.port.write(self.sensitivities_currents_high_bandwidth[self.sensitivity])
+        elif "Current B Low noise" in self.input:
+            self.port.write(self.sensitivities_currents_low_noise[self.sensitivity])
+        self.wait_for_complete()
 
+    def _set_time_constant(self) -> None:
+        """Set the time constant from the current setting."""
+        if self.time_constant in self.timeconstants:
+            new_tc_key = self.time_constant
+        else:
+            new_tc_key = self._find_best_time_constant_key(self.time_constant)
+        self.port.write(self.timeconstants[new_tc_key])
+        self.wait_for_complete()
+        
+    def _parse_auto_time_constant(self) -> None:
+        """Parse the auto time constant setting."""
+        factor_periods_str = self.time_constant.split("-")[1].strip()
+        # Extract numeric value from string like "10 periods"
+        factor_value = ''.join(c for c in factor_periods_str if c.isdigit() or c == '.')
+        self.factor_auto_time_constant = float(factor_value)
+
+    def reconfigure(self, parameters: Dict[str, Any], keys: List[str]) -> None:
+        """
+        Reconfigure the device with updated parameters.
+        
+        Args:
+            parameters: Dictionary with updated parameters.
+            keys: List of keys for parameters that have changed.
+        """
         if "TimeConstant" in keys:
             self.time_constant = parameters["TimeConstant"]
             if not self.time_constant.startswith("Auto time"):
-                if self.time_constant in self.timeconstants:
-                    new_tc_key = self.time_constant
-                else:
-                    new_tc_key = self.find_best_time_constant_key(self.time_constant)
-                self.port.write(self.timeconstants[new_tc_key])
-                self.wait_for_complete()
+                self._set_time_constant()
             else:
-                factor_periods_str = self.time_constant.split("-")[1]
-                factor_auto_time_constant = factor_periods_str.replace("period", "").replace("s", "").replace(" ", "")
-                self.factor_auto_time_constant = float(factor_auto_time_constant)
+                self._parse_auto_time_constant()
 
-    def apply(self):
-        
+    def apply(self) -> None:
+        """Apply the current sweep value."""
         if self.sweepmode == "Oscillator frequency in Hz":
             self.set_oscillator_frequency(self.value)
 
-    def reach(self):
+    def reach(self) -> None:
+        """Called when a new sweep value is reached."""
         pass
    
-    def adapt(self):
-
-        # here we need to auto-adjust the time constant based on the frequency
-        if "Auto time" in self.time_constant:
+    def adapt(self) -> None:
+        """Adapt device settings based on current conditions."""
+        # Auto-adjust time constant based on frequency if needed
+        if self.time_constant.startswith("Auto time"):
             self.auto_time_constant(self.factor_auto_time_constant)
 
+        # Start auto-sensitivity if enabled
         if self.sensitivity == "Auto sensitivity":
             self.start_autosensitivity()
 
-    def adapt_ready(self):
-
+    def adapt_ready(self) -> None:
+        """Called when adaptation is complete."""
         if self.sensitivity == "Auto sensitivity":
             self.wait_for_complete()
 
         self.time_ref = time.time()
             
-    def trigger_ready(self):
-
+    def trigger_ready(self) -> None:
+        """
+        Wait for device to stabilize before measurement.
+        
+        Ensures that at least wait_time_constants * time_constant has passed
+        since the last setting change.
+        """
         self.tc = self.get_time_constant()
 
-        # makes sure that at least several time constants have passed after a new state/situation is achieved.
-        delta_time = (self.wait_time_constants * self.tc) - (time.time()-self.time_ref)
+        # Wait for device to stabilize
+        delta_time = (self.wait_time_constants * self.tc) - (time.time() - self.time_ref)
         if delta_time > 0.0:
             time.sleep(delta_time)
 
-    def measure(self):
+    def measure(self) -> None:
+        """Prepare for measurement."""
         pass
 
-    def request_result(self):
+    def request_result(self) -> None:
+        """Request measurement results from the device."""
         pass
 
-    def read_result(self):
-
+    def read_result(self) -> None:
+        """Read and store measurement results from the device."""
         self.frq = self.get_frequency()
         self.r = self.get_magnitude()
         self.phi = self.get_phase()
@@ -472,192 +540,279 @@ class Device(EmptyDevice):
             self.nhz = float('nan')
 
         self.acg = self.get_acgain()
-        self.acg_dB = self.inv_gains[self.acg]
+        self.acg_dB = self.inv_gains.get(self.acg, 0)  # Safe access with default
 
-    def call(self):
-
+    def call(self) -> List[float]:
+        """
+        Return current measurement results.
+        
+        Returns:
+            List of measurement values in order of self.variables.
+        """
         return [self.r, self.phi, self.frq, self.sen, self.nhz, self.acg_dB, self.tc]
 
-    # convenience functions start here
+    # Helper methods
         
-    def value_to_float(self, value):
-
-        # convert unit and prefix to number
-        chars = OrderedDict([ 
-                                ("V", ""),
-                                ("s", ""),
-                                (" ", ""),
-                                ("n", "e-9"),
-                                ("µ", "e-6"),
-                                ("m", "e-3"),
-                                ("k", "e3"),
-                                ("M", "e6"),
-                                ("G", "e9"),
-                            ])
+    def _value_to_float(self, value: Union[str, float]) -> float:
+        """
+        Convert a value with units and prefixes to a float.
+        
+        Args:
+            value: Value as string with unit prefixes or as float.
+            
+        Returns:
+            Floating point representation of the value.
+        """
+        # Define unit prefix conversions
+        chars = OrderedDict([
+            ("V", ""),
+            ("s", ""),
+            (" ", ""),
+            ("n", "e-9"),
+            ("µ", "e-6"),
+            ("m", "e-3"),
+            ("k", "e3"),
+            ("M", "e6"),
+            ("G", "e9"),
+        ])
 
         if isinstance(value, str):
-            for char in chars:
-                value = value.replace(char, chars[char])
-
+            # Replace units and prefixes with their numerical representation
+            result = value
+            for char, replacement in chars.items():
+                result = result.replace(char, replacement)
+            
+            # Convert to float
+            try:
+                return float(result)
+            except ValueError:
+                # In case of conversion error, return 0.0 or raise exception
+                return 0.0
+        
         return float(value)
 
-    def find_best_time_constant_key(self, time_constant):
-
-        time_constant = self.value_to_float(time_constant)
-
-        # sum over boolean entries leads to index of new time_constant
-        # this also works if the order of the time constants list is lost as the number of True and False
-        # remains the same
-        tc_index = sum(np.array(self.timeconstants_numbers) < time_constant)  # sum over boolean entries
-
-        if tc_index < len(self.timeconstants):
-            new_tc_key = list(self.timeconstants.keys())[tc_index]
-        else:
-            # if tc_index equals the length of time constants, the request time constant is longer than any possible
-            # time constant, so we just return the key of the highest possible one.
-            new_tc_key = "100k"
-
-        return new_tc_key
-
-    def auto_time_constant(self, factor=10.0):
+    def _find_best_time_constant_key(self, time_constant: Union[str, float]) -> str:
         """
-        checks the current frequency and adapts the time constant
-
+        Find the closest available time constant.
+        
         Args:
-            factor: float, factor by which the time constant is at least higher than the period of the signal
-
+            time_constant: Desired time constant value.
+            
+        Returns:
+            Key of the closest available time constant.
         """
+        time_constant_float = self._value_to_float(time_constant)
 
-        frq = self.get_frequency()
-        period = 1.0/frq
-        new_tc = factor*period
-        new_tc_key = self.find_best_time_constant_key(new_tc)
+        # Count how many time constants are smaller than requested value
+        tc_index = sum(np.array(self.timeconstants_numbers) < time_constant_float)
 
-        # sending the new time constant command
-        self.port.write(self.timeconstants[new_tc_key])
-        self.wait_for_complete()
+        # Get the corresponding key or use maximum value if out of range
+        if tc_index < len(self.timeconstants):
+            return list(self.timeconstants.keys())[tc_index]
+        else:
+            return "100k"  # Maximum available time constant
 
-    def wait_for_complete(self):
+    def auto_time_constant(self, factor: float = 10.0) -> None:
+        """
+        Set time constant based on signal frequency.
+        
+        Args:
+            factor: Multiplier for time constant relative to signal period.
+        """
+        try:
+            frq = self.get_frequency()
+            if frq > 0:  # Avoid division by zero
+                period = 1.0 / frq
+                new_tc = factor * period
+                new_tc_key = self._find_best_time_constant_key(new_tc)
+                
+                # Send command to set time constant
+                self.port.write(self.timeconstants[new_tc_key])
+                self.wait_for_complete()
+        except Exception as e:
+            print(f"Error in auto_time_constant: {e}")
 
+    def wait_for_complete(self, timeout: float = 20.0) -> None:
+        """
+        Wait for command completion by monitoring the status byte.
+        
+        Args:
+            timeout: Maximum time to wait in seconds.
+            
+        Raises:
+            Exception: If operation times out.
+        """
         starttime = time.time()
         while True:
-            # only the direct GPIB status byte call works as it can be acquired even when the lock-in is
-            # busy with auto sensitivity operation
-            stb = self.port.port.read_stb()
-            if stb & 1 == 1:  # first byte indicates whether command is processed or not
-                break
-            time.sleep(0.01)
-            if time.time() - starttime > 20:
+            try:
+                # Direct GPIB status byte read
+                stb = self.port.port.read_stb()
+                if stb & 1 == 1:  # First byte indicates command processed
+                    break
+            except AttributeError:
+                # Fall back if read_stb not available
+                self.port.write("ST")
+                try:
+                    stb = int(self.port.read())
+                    if stb & 1 == 1:
+                        break
+                except (ValueError, TypeError):
+                    pass
+                
+            # Check for timeout
+            if time.time() - starttime > timeout:
                 raise Exception("Timeout during wait for completion.")
+                
+            # Sleep to avoid CPU overuse
+            time.sleep(0.01)
 
-    # get/set functions start here
+    # Device-specific command methods
 
-    def get_identification(self):
+    def get_identification(self) -> str:
+        """Get device identification string."""
         self.port.write("ID")
         return self.port.read()
 
-    def get_version(self):
+    def get_version(self) -> str:
+        """Get device firmware version."""
         self.port.write("VER")
         return self.port.read()
 
-    def get_status_byte(self):
+    def get_status_byte(self) -> int:
+        """
+        Get device status byte.
+        
+        Returns:
+            Integer status byte.
+        """
         self.port.write("ST")
-        return int(self.port.read())
+        try:
+            return int(self.port.read())
+        except (ValueError, TypeError):
+            return 0
 
-    def get_overload_byte(self):
+    def get_overload_byte(self) -> int:
+        """
+        Get device overload status.
+        
+        Returns:
+            Integer overload byte.
+        """
         self.port.write("N")
-        return int(self.port.read())
+        try:
+            return int(self.port.read())
+        except (ValueError, TypeError):
+            return 0
 
-    def set_delimiter(self, value):
-        self.port.write("DD %i" % int(value))
+    def set_delimiter(self, value: int) -> None:
+        """
+        Set the command delimiter.
+        
+        Args:
+            value: Delimiter value.
+        """
+        self.port.write(f"DD {int(value)}")
         self.wait_for_complete()
 
-    def set_remote(self, state=True):
+    def set_remote(self, state: bool = True) -> None:
         """
-        changes front panel control
-
+        Enable or disable remote control.
+        
         Args:
-            state: bool or integer (0 or 1) to disable or enable front panel control
+            state: True to enable remote control, False to disable.
         """
-        self.port.write("REMOTE %i" % int(state))
+        self.port.write(f"REMOTE {1 if state else 0}")
         self.wait_for_complete()
 
-    def set_display_light(self, state=True):
+    def set_display_light(self, state: bool = True) -> None:
         """
-
+        Set display backlight state.
+        
         Args:
-            state:
+            state: True to enable backlight, False to disable.
+        """
+        self.port.write(f"LTS {1 if state else 0}")
+        self.wait_for_complete()
 
+    def get_acgain(self) -> int:
+        """
+        Get current AC gain setting.
+        
         Returns:
-
+            AC gain value.
         """
-        self.port.write("LTS %i" % int(state))
-        self.wait_for_complete()
-
-    def get_acgain(self):
         self.port.write("ACGAIN")
-        return int(self.port.read())
+        try:
+            return int(self.port.read())
+        except (ValueError, TypeError):
+            return 0
 
-    def set_line_frequency_filter(self, n1, n2):
-
+    def set_line_frequency_filter(self, n1: int, n2: int) -> None:
         """
-        # LF [n1 n2] Signal channel line frequency rejection filter control
-        # The LF command sets the mode and frequency of the line frequency rejection (notch)
-        # filter according to the following tables:
-        # n1 Selection #
-        # 0 Off
-        # 1 Enable 50 or 60 Hz notch filter
-        # 2 Enable 100 or 120 Hz notch filter
-        # 3 Enable both filters
-        # n2 Notch Filter Center Frequencies #
-        # 0 60 Hz (and/or 120 Hz)
-        # 1 50 Hz (and/or 100 Hz)
-
+        Set line frequency filter settings.
+        
         Args:
-            n1: (int) Selection
-                0 Off
-                1 Enable 50 or 60 Hz notch filter
-                2 Enable 100 or 120 Hz notch filter
-                3 Enable both filters
-            n2: (int) Notch Filter Center Frequencies
-                0 60 Hz (and/or 120 Hz)
-                1 50 Hz (and/or 100 Hz)
+            n1: Filter mode (0=Off, 1=50/60Hz, 2=100/120Hz, 3=Both)
+            n2: Filter frequency (0=60Hz/120Hz, 1=50Hz/100Hz)
         """
-        self.port.write("LF %i %i" % (int(n1), int(n2)))
+        self.port.write(f"LF {int(n1)} {int(n2)}")
         self.wait_for_complete()
 
-    def set_oscillator_amplitude(self, value):
+    def set_oscillator_amplitude(self, value: float) -> None:
         """
-        sets the amplitude in V
-
+        Set oscillator amplitude.
+        
         Args:
-            value:
-
-        Returns:
-
+            value: Amplitude in volts.
         """
-        self.port.write("OA. %i" % int(float(value)*1000))  # value is sent in mV
+        # Convert to mV (value sent in mV)
+        amplitude_mV = int(float(value) * 1000)
+        self.port.write(f"OA. {amplitude_mV}")
         self.wait_for_complete()
 
-    def set_oscillator_frequency(self, frequency):
-        self.port.write("OF. %1.6E" % float(frequency))
+    def set_oscillator_frequency(self, frequency: float) -> None:
+        """
+        Set oscillator frequency.
+        
+        Args:
+            frequency: Frequency in Hz.
+        """
+        self.port.write(f"OF. {frequency:.6E}")
         self.wait_for_complete()
 
-    def start_autosensitivity(self):
+    def start_autosensitivity(self) -> None:
+        """Start auto-sensitivity adjustment."""
         self.port.write("AS")
 
-    def adjust_phase(self):
+    def adjust_phase(self) -> None:
+        """Auto-adjust phase to get X maximum, Y minimum."""
         self.port.write("AQN")
         self.wait_for_complete()
 
-    def get_timeconstant(self):
+    def get_time_constant(self) -> float:
+        """
+        Get current time constant.
+        
+        Returns:
+            Time constant in seconds.
+        """
         self.port.write("TC.")
-        return self.port.read()
+        try:
+            return float(self.port.read())
+        except (ValueError, TypeError):
+            return 0.0
 
-    def set_timeconstant(self, value):
-        self.port.write("TC %i" % int(value))
+    def set_time_constant(self, value: int) -> None:
+        """
+        Set time constant by index.
+        
+        Args:
+            value: Time constant index (0-29).
+        """
+        self.port.write(f"TC {int(value)}")
+        self.wait_for_complete()
 
-    def get_magnitude(self):
+    def get_magnitude(self) -> float:
         self.port.write("MAG.")
         return float(self.port.read())
 
