@@ -25,15 +25,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# SweepMe! driver
+# * Module: Scope
+# * Instrument: Keysight EXR/MXR/UXR Series (tested on EXR only)
 
-# SweepMe! device class
-# Type: Scope
-# Device: Keysight EXR/MXR/UXR Series (tested on EXR only)
 
+import time
 
-from pysweepme.EmptyDeviceClass import EmptyDevice
 import numpy as np
-import time as time
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -42,8 +42,8 @@ class Device(EmptyDevice):
                      Main functions only.
                   """
 
-    def __init__(self):
-
+    def __init__(self) -> None:
+        """Initialize the device class and the instrument parameters."""
         EmptyDevice.__init__(self)
 
         self.shortname = "EXRxxxA"
@@ -55,7 +55,7 @@ class Device(EmptyDevice):
 
         self.port_manager = True
         self.port_types = ["USB"]
-        self.port_identifications = ['Keysight,EXR*'] 
+        self.port_identifications = ["Keysight,EXR*"]
 
         self.port_properties = {
             "timeout": 10.0,
@@ -86,8 +86,8 @@ class Device(EmptyDevice):
             "16 Bits (50 MSa)": "BITS16_2",
         }
 
-    def set_GUIparameter(self):
-
+    def set_GUIparameter(self) -> dict:
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         gui_parameter = {
             "SweepMode": ["None"],
 
@@ -116,8 +116,8 @@ class Device(EmptyDevice):
 
         return gui_parameter
 
-    def get_GUIparameter(self, parameter={}):
-
+    def get_GUIparameter(self, parameter: dict) -> None:
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.triggersource = parameter["TriggerSource"]
         # self.triggercoupling = parameter["TriggerCoupling"]  # not yet implemented
         self.triggerslope = parameter["TriggerSlope"]
@@ -165,7 +165,8 @@ class Device(EmptyDevice):
                 self.channel_ranges[i] = float(parameter["Channel%i_Range" % i])
                 self.channel_offsets[i] = parameter["Channel%i_Offset" % i]
 
-    def initialize(self):
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
         # This driver does not use Reset yet so that user can do measurements with changing options manually
         # self.port.write("*RST")
 
@@ -191,8 +192,8 @@ class Device(EmptyDevice):
         # sets data type to RAW, transmitting only true sampling points, no interpolation
         self.port.write(":WAV:TYPE RAW")
 
-    def configure(self):
-
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
         # Acquisition #
         self.port.write(":ACQ:MODE RTIM")  # use real time acquisition
 
@@ -268,11 +269,8 @@ class Device(EmptyDevice):
             else:
                 self.port.write(":CHAN%s:DISP OFF" % i)  # turn off unselected channels
 
-    def apply(self):
-        pass
-
-    def measure(self):
-
+    def measure(self) -> None:
+        """Trigger the acquisition of new data."""
         if self.average != "none" and self.acquisition.startswith("Cont"):
             self.port.write(":CDIS")  # clear display to reset the averaging counter when using continuous trigger
             time.sleep(0.3)
@@ -372,5 +370,6 @@ class Device(EmptyDevice):
             self.voltages[:, slot] = data  # inputs voltage data for channel i into correct column of data array
             slot += 1  # set correct column for next channel
 
-    def call(self):
+    def call(self) -> list:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
         return [self.timecode] + [self.voltages[:,i] for i in range(self.voltages.shape[1])]
