@@ -143,25 +143,27 @@ class Device(EmptyDevice):
         # retrieve the selection of the voltage range / voltage scale drop down box
         self.voltagerange = parameter["VoltageRange"]
 
-            self.channels = []
-            self.channel_names = {}
-            self.channel_ranges = {}
-        self.channel_divs = {}
-            self.channel_offsets = {}
+        # reset measurement parameters
+        self.variables = ["Time"]
+        self.units = ["s"]
+        self.plottype = [True]  # True to plot data
+        self.savetype = [True]  # True to save data
 
-            for i in range(1, 5):
-            
-                if parameter["Channel%i" % i]:
-                    self.channels.append(i)
-                
-                    self.variables.append(self.commands["Channel %i" % i] + " " + parameter["Channel%i_Name" % i])
-                    self.units.append("V")
-                    self.plottype.append(True)
-                    self.savetype.append(True)
-                    self.channel_names[i] = parameter["Channel%i_Name" % i]
-                    self.channel_ranges[i] = float(parameter["Channel%i_Range" % i])
-                self.channel_divs[i] = self.channel_ranges[i] / 8
-                    self.channel_offsets[i] = parameter["Channel%i_Offset" % i]
+        self.channels = []
+        self.channel_names = {}
+        self.channel_ranges = {}
+        self.channel_offsets = {}
+
+        for i in range(1, 5):
+            if parameter["Channel%i" % i]:
+                self.channels.append(i)
+                self.variables.append(self.commands["Channel %i" % i] + " " + parameter["Channel%i_Name" % i])
+                self.units.append("V")
+                self.plottype.append(True)
+                self.savetype.append(True)
+                self.channel_names[i] = parameter["Channel%i_Name" % i]
+                self.channel_ranges[i] = float(parameter["Channel%i_Range" % i])
+                self.channel_offsets[i] = parameter["Channel%i_Offset" % i]
 
     def initialize(self):
         # This driver does not use Reset yet so that user can do measurements with changing options manually
