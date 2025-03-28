@@ -25,15 +25,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# SweepMe! driver
+# * Module: Scope
+# * Instrument: Keysight EXR/MXR/UXR Series (tested on EXR only)
 
-# SweepMe! device class
-# Type: Scope
-# Device: Keysight EXR/MXR/UXR Series (tested on EXR only)
 
+import time
 
-from pysweepme.EmptyDeviceClass import EmptyDevice
 import numpy as np
-import time as time
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -41,27 +41,27 @@ class Device(EmptyDevice):
     description = """
                      Main functions only.
                   """
-                  
-    def __init__(self):
-    
+
+    def __init__(self) -> None:
+        """Initialize the device class and the instrument parameters."""
         EmptyDevice.__init__(self)
-        
+
         self.shortname = "EXRxxxA"
-        
+
         self.variables = ["Time"]
         self.units = ["s"]
         self.plottype = [True]  # True to plot data
         self.savetype = [True]  # True to save data
-        
+
         self.port_manager = True
         self.port_types = ["USB"]
-        self.port_identifications = ['Keysight,EXR*'] 
-       
+        self.port_identifications = ["Keysight,EXR*"]
+
         self.port_properties = {
-                                "timeout": 10.0,
-                                "delay": 1.0,
-                                }
-        
+            "timeout": 10.0,
+            "delay": 1.0,
+        }
+
         self.commands = {
             "Channel 1": "CH1",
             "Channel 2": "CH2",
@@ -85,46 +85,46 @@ class Device(EmptyDevice):
             "16 Bits (100 MSa)": "BITS16_4",
             "16 Bits (50 MSa)": "BITS16_2",
         }
-           
-    def set_GUIparameter(self):
 
-        GUIparameter = { 
-             "SweepMode": ["None"],
+    def set_GUIparameter(self) -> dict:
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+        gui_parameter = {
+            "SweepMode": ["None"],
 
-             "TriggerSlope": ["As is", "Rising", "Falling"],
-             "TriggerSource": ["As is", "CHAN1", "CHAN2", "CHAN3", "CHAN4", "AUX", "LINE"],
-             # "TriggerCoupling": ["As is", "AC", "DC", "HF", "Auto level"],  # not yet implemented
-             "TriggerLevel": 0,
-             "TriggerDelay": 0,
-             "TriggerTimeout": 2,
-             "TimeRange": ["Time range in s", "Time scale in s/div"],
-             "TimeRangeValue": 5e-4,
-             "TimeOffsetValue": 0.0,
-             "SamplingRate": ["10e+3", "100e+3", "1e+6", "10e+6", "100e+6", "1e+9","5e+9","10e+9","16e+9"],
-             "SamplingRateType": ["Samples per s"],
-             "ADCResolution": list(self.adc_resolution_options.keys()),
-             "Acquisition": ["Continuous", "Single"],
-             "Average": ["None", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"],
-             "VoltageRange": ["Voltage range in V"],
+            "TriggerSlope": ["As is", "Rising", "Falling"],
+            "TriggerSource": ["As is", "CHAN1", "CHAN2", "CHAN3", "CHAN4", "AUX", "LINE"],
+            # "TriggerCoupling": ["As is", "AC", "DC", "HF", "Auto level"],  # not yet implemented
+            "TriggerLevel": 0,
+            "TriggerDelay": 0,
+            "TriggerTimeout": 2,
+            "TimeRange": ["Time range in s", "Time scale in s/div"],
+            "TimeRangeValue": 5e-4,
+            "TimeOffsetValue": 0.0,
+            "SamplingRate": ["10e+3", "100e+3", "1e+6", "10e+6", "100e+6", "1e+9","5e+9","10e+9","16e+9"],
+            "SamplingRateType": ["Samples per s"],
+            "ADCResolution": list(self.adc_resolution_options.keys()),
+            "Acquisition": ["Continuous", "Single"],
+            "Average": ["None", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"],
+            "VoltageRange": ["Voltage range in V", "Voltage scale in V/div"],
         }
-                       
+
         for i in range(1, 5):
-            GUIparameter["Channel%i" % i] = True if i == 1 else False
-            GUIparameter["Channel%i_Name" % i] = "CH%i" % i
-            GUIparameter["Channel%i_Range" % i] = ["4e-2", "8e-2", "2e-1", "4e-1", "8e-1", "2", "4", "8", "20", "40", "80", "200"]
-            GUIparameter["Channel%i_Offset" % i] = 0.0
-                     
-        return GUIparameter
+            gui_parameter["Channel%i" % i] = True if i == 1 else False
+            gui_parameter["Channel%i_Name" % i] = "CH%i" % i
+            gui_parameter["Channel%i_Range" % i] = ["4e-2", "8e-2", "2e-1", "4e-1", "8e-1", "2", "4", "8", "20", "40", "80", "200"]
+            gui_parameter["Channel%i_Offset" % i] = 0.0
 
-    def get_GUIparameter(self, parameter={}):
+        return gui_parameter
 
+    def get_GUIparameter(self, parameter: dict) -> None:
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.triggersource = parameter["TriggerSource"]
         # self.triggercoupling = parameter["TriggerCoupling"]  # not yet implemented
         self.triggerslope = parameter["TriggerSlope"]
         self.triggerlevel = parameter["TriggerLevel"]
         self.triggerdelay = parameter["TriggerDelay"]
         self.triggertimeout = parameter["TriggerTimeout"]
-        
+
         self.timerange = parameter["TimeRange"]
         self.timerangevalue = float(parameter["TimeRangeValue"])
         self.timeoffsetvalue = parameter["TimeOffsetValue"]
@@ -139,34 +139,40 @@ class Device(EmptyDevice):
 
         self.acquisition = parameter["Acquisition"]
         self.average = parameter["Average"]
-        
+
+        # retrieve the selection of the voltage range / voltage scale drop down box
+        self.voltagerange = parameter["VoltageRange"]
+
+        # reset measurement parameters
+        self.variables = ["Time"]
+        self.units = ["s"]
+        self.plottype = [True]  # True to plot data
+        self.savetype = [True]  # True to save data
+
         self.channels = []
         self.channel_names = {}
         self.channel_ranges = {}
-        self.channel_divs = {}
         self.channel_offsets = {}
-        
+
         for i in range(1, 5):
-            
             if parameter["Channel%i" % i]:
                 self.channels.append(i)
-                
                 self.variables.append(self.commands["Channel %i" % i] + " " + parameter["Channel%i_Name" % i])
                 self.units.append("V")
                 self.plottype.append(True)
-                self.savetype.append(True)                
+                self.savetype.append(True)
                 self.channel_names[i] = parameter["Channel%i_Name" % i]
                 self.channel_ranges[i] = float(parameter["Channel%i_Range" % i])
-                self.channel_divs[i] = self.channel_ranges[i] / 8
                 self.channel_offsets[i] = parameter["Channel%i_Offset" % i]
 
-    def initialize(self):    
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
         # This driver does not use Reset yet so that user can do measurements with changing options manually
         # self.port.write("*RST")
-        
+
         if len(self.channels) == 0:
             raise Exception("Please select at least one channel to be read out")
-        
+
         if int(10*float(self.triggertimeout)) % 2 != 0:
             # values are multiplied by 10 to allow comparison operation in integer realm
             msg = "Trigger timeout can only be set in steps of 0.2s"
@@ -186,11 +192,11 @@ class Device(EmptyDevice):
         # sets data type to RAW, transmitting only true sampling points, no interpolation
         self.port.write(":WAV:TYPE RAW")
 
-    def configure(self):
-
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
         # Acquisition #
         self.port.write(":ACQ:MODE RTIM")  # use real time acquisition
-        
+
         if self.average == "None":
             self.port.write(":ACQ:AVER OFF")  # disable averaging of triggered shots
         else:
@@ -223,10 +229,10 @@ class Device(EmptyDevice):
         else:
             self.port.write(":TRIG:EDGE:SOUR %s" % self.triggersource)  # set trigger source
             self.port.write(":TRIG:LEV %s,%s" % (self.triggersource, self.triggerlevel))  # set trigger level
-        
+
         if self.triggerlevel == 0:  # if no specific trigger level desired,
             self.port.write(":TRIG:LEV:FIFT")  # sets the trigger level at 50%
-     
+
         if self.triggerslope == "As is":  # set trigger slope
             pass
         elif self.triggerslope == "Rising":
@@ -245,7 +251,7 @@ class Device(EmptyDevice):
             self.port.write(":TIM:RANG %s" % self.timerangevalue)  # set timebase range
         elif self.timerange == "Time scale in s/div":
             self.port.write(":TIM:SCAL %s" % self.timerangevalue)  # set timebase scale
-        
+
         if self.timeoffsetvalue == "As is":
             pass
         else:
@@ -255,25 +261,25 @@ class Device(EmptyDevice):
         for i in range(1, 5):
             if i in self.channels:
                 self.port.write(":CHAN%s:DISP ON" % i)  # turn on selected channels
-                self.port.write(":CHAN%s:SCAL %s" % (i, self.channel_divs[i]))  # scale of channel
+                if self.voltagerange == "Voltage range in V":
+                    self.port.write(":CHAN%s:RANG %s" % (i, self.channel_ranges[i]))  # scale of channel interpreted as full vertical range in V
+                elif self.voltagerange == "Voltage scale in V/div":
+                    self.port.write(":CHAN%s:SCAL %s" % (i, self.channel_ranges[i]))  # scale of channel interpreted as V/div
                 self.port.write(":CHAN%s:OFFS %s" % (i, self.channel_offsets[i]))  # define offset of channel
             else:
                 self.port.write(":CHAN%s:DISP OFF" % i)  # turn off unselected channels
-            
-    def apply(self):
-        pass
-        
-    def measure(self):
-        
+
+    def measure(self) -> None:
+        """Trigger the acquisition of new data."""
         if self.average != "none" and self.acquisition.startswith("Cont"):
             self.port.write(":CDIS")  # clear display to reset the averaging counter when using continuous trigger
             time.sleep(0.3)
-        
-        if self.acquisition.startswith("Single"): 
+
+        if self.acquisition.startswith("Single"):
             self.port.write(":SING")  # performs single acquisition
         elif self.acquisition.startswith("Cont"):
             self.port.write(":RUN")  # run continuous acquisition; not required when using single trigger
-            
+
         time.sleep(float(self.triggerdelay))
         trigcounter = 0
         while True:
@@ -299,16 +305,16 @@ class Device(EmptyDevice):
                     raise Exception(msg)
             else:
                 break
-        
+
         if self.acquisition.startswith("Cont"):
             self.port.write(":STOP")  # stop continuous acquisition; not required when using single trigger
-        
+
         slot = 0  # run variable for data sorting
 
         time.sleep(0.2)
         self.port.write(":WAV:PRE?")  # retrieving the waveform preamble
         time.sleep(0.2)
-        
+
         # This section retrieves the preamble which describes all properties of the stroes waveform.
         # While not all attributes are used, they remain included for debugging purposes.
         preamble = self.port.read().split(",")
@@ -328,7 +334,7 @@ class Device(EmptyDevice):
         # "y_org:", y_orig, "y_ref:", y_ref)
 
         for i in self.channels:
-            
+
             self.port.write(":WAV:SOUR CHAN%s" % i)  # select channel to be read
 
             if slot == 0:  # only for first measurement
@@ -342,9 +348,9 @@ class Device(EmptyDevice):
             self.port.write(":WAV:DATA?;*OPC")  # retrieve waveform values from scope
             time.sleep(0.2)  # give scope time to prepare waveform data for download
             datapoints = self.port.read().split(",")  # read values from scope
-            
+
             opccounter = 0  # set counter for OPC loop back to zero
-            
+
             while True:
                 # query scope in loop whether [OP]eration of waveform data tranmission is [C]ompleted
                 self.port.write("*OPC?")
@@ -354,15 +360,16 @@ class Device(EmptyDevice):
                     time.sleep(0.2)
                 else:
                     break
-                
+
             data = []
             for i in np.arange(numberpoints):
                 data.append(datapoints[i])  # put waveform values of current channel into data output list
-            
+
             data = np.array(data)  # convert list to data array
-            
+
             self.voltages[:, slot] = data  # inputs voltage data for channel i into correct column of data array
             slot += 1  # set correct column for next channel
 
-    def call(self):
+    def call(self) -> list:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
         return [self.timecode] + [self.voltages[:,i] for i in range(self.voltages.shape[1])]
