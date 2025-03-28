@@ -27,7 +27,7 @@
 
 # SweepMe! driver
 # * Module: SpectrumAnalyzer
-# * Instrument: Rohde&Schwarz FPC1000
+# * Instrument: Rohde&Schwarz FPC Series
 
 from __future__ import annotations
 
