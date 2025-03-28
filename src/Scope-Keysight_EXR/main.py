@@ -263,7 +263,7 @@ class Device(EmptyDevice):
                 self.port.write(":CHAN%s:DISP ON" % i)  # turn on selected channels
                 if self.voltagerange == "Voltage range in V":
                     self.port.write(":CHAN%s:RANG %s" % (i, self.channel_ranges[i]))  # scale of channel interpreted as full vertical range in V
-                elif self.timerange == "Voltage scale in V/div":
+                elif self.voltagerange == "Voltage scale in V/div":
                     self.port.write(":CHAN%s:SCAL %s" % (i, self.channel_ranges[i]))  # scale of channel interpreted as V/div
                 self.port.write(":CHAN%s:OFFS %s" % (i, self.channel_offsets[i]))  # define offset of channel
             else:
