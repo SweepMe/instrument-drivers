@@ -101,10 +101,10 @@ class Device(EmptyDevice):
         self.use_list_sweep = parameter.get("SweepValue", "None") == "List sweep"
         if self.use_list_sweep:
             self.use_list_sweep = True
-            list_sweep_values = np.arange(
+            list_sweep_values = np.linspace(
                 float(parameter["ListSweepStart"]),
                 float(parameter["ListSweepEnd"]),
-                float(parameter["ListSweepStepPointsValue"]),
+                int(float(parameter["ListSweepStepPointsValue"])),
             )
             # include end value
             self.list_sweep_values = np.append(list_sweep_values, float(parameter["ListSweepEnd"]))
