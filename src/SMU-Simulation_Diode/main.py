@@ -88,29 +88,27 @@ class Device(EmptyDevice):
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         if self.source.startswith("Voltage"):
-            applied_voltage = self.value
+            v_exp = self.value
             measured_currents = []
 
+            delta_v = -1
             for _ in range(self.average):
-                self.deltaV = -1
-
                 i = 0
-                v_exp = self.value
 
                 # Measure the current until the current is stable or 1500 iterations are reached
-                while abs(abs(self.value - v_exp) - self.deltaV) > 1e-3 and i < 1500:
+                while abs(abs(self.value - v_exp) - delta_v) > 1e-3 and i < 1500:
                     i += 1
 
-                    measured_current = self.simulate_current(applied_voltage)
-                    self.deltaV = 1e2 * (abs(measured_current)) ** 0.5  # some SCLC
+                    measured_current = self.simulate_current(v_exp)
+                    delta_v = 1e2 * (abs(measured_current)) ** 0.5  # some SCLC
 
                     # Measured voltage cannot be higher than the applied voltage
-                    if abs(v_exp) + self.deltaV > self.value:
+                    if abs(v_exp) + delta_v > self.value:
                         v_exp -= 0.001 * np.sign(self.value)
 
-                self.v = self.simulate_voltage(self.value)
                 measured_currents.append(measured_current)
 
+            self.v = self.simulate_voltage(self.value)
             self.i = np.mean(measured_currents)
 
         elif self.source.startswith("Current"):
