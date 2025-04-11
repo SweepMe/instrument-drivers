@@ -190,6 +190,10 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Handle the GUI parameters."""
+        self.variables = ["Voltage", "Current"]
+        self.units = ["V", "A"]
+        self.plottype = [True, True]
+        self.savetype = [True, True]
         self.source_identifier = parameter["SweepMode"]
 
         self.protection = float(parameter["Compliance"])
