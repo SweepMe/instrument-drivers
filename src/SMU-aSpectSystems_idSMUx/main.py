@@ -31,6 +31,7 @@
 
 
 import time
+
 import numpy as np
 from pysweepme import FolderManager as FoMa
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -68,7 +69,7 @@ class Device(EmptyDevice):
         # Communication Parameters
         self.identifier: str = ""
         self.board_id: str = ""
-        self.channel_name: str = f""
+        self.channel_name: str = ""
         """The channel can be given a custom name, which is used to set the mode and readout data in list mode."""
 
         self.srunner: IdSmuServiceRunner = None
@@ -395,19 +396,16 @@ class Device(EmptyDevice):
         self.device_communication[self.identifier][self.identifier_channel_names].remove(self.channel.name)
 
     def poweron(self):
-
         """Enable the channel"""
         if not self.channel.enabled:
             self.channel.enabled = True
 
     def poweroff(self):
-
         """Disable the channel"""
         if self.channel.enabled:
             self.channel.enabled = False
 
     def apply(self) -> None:
-
         """Set the voltage or current on the SMU."""
         if self.source_mode == "Voltage":
             if self.value > self.v_max or self.value < self.v_min:
@@ -422,7 +420,7 @@ class Device(EmptyDevice):
             self.channel.current = float(self.value)
 
         else:
-            msg = f"Unknown source mode"
+            msg = "Unknown source mode"
             raise Exception(msg)
 
     def measure(self) -> None:
