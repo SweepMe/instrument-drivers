@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import time
 
+from pysweepme import debug
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -144,10 +145,22 @@ class Device(EmptyDevice):
                 change_polarity = "n"
 
             if change_polarity:
-                print(f"Changing polarity to {change_polarity}")
                 self.set_output_polarity(change_polarity)
 
+            voltage_changes = abs(self.get_voltage_set() - self.value) > 0.1
+
             self.set_voltage(self.value)
+
+            # wait for the device to start a ramp. Use 5s timeout in case the level is already reached
+            if voltage_changes:
+                timeout_s = 5
+                while timeout_s > 0:
+                    if "Is Voltage Ramp" in self.get_channel_status():
+                        break
+                    time.sleep(0.1)
+                    timeout_s -= 0.1
+                else:
+                    debug("Device did not start ramping in 5s. Check if the level is reached.")
 
         elif self.sweepmode.startswith("Current"):
             self.set_current(self.value)
@@ -158,7 +171,9 @@ class Device(EmptyDevice):
         level_reached = False
 
         while not level_reached and timeout_in_s > 0:
+            # TODO: Some values are skipped because the device status still says 'constant' even though a new value was set
             status = self.get_channel_status()
+            # print(status)
             if self.sweepmode.startswith("Voltage"):
                 level_reached = "Is Constant Voltage" in status and "Is Voltage Ramp" not in status
             elif self.sweepmode.startswith("Current"):
@@ -168,6 +183,9 @@ class Device(EmptyDevice):
             # TODO: Ensure that the value is reached
             if self.value == 0:
                 level_reached = "Is Voltage Ramp" not in status and "Is Current Ramp" not in status
+
+            if not status:
+                level_reached = False
 
             time.sleep(0.1)
             timeout_in_s -= 0.1
@@ -274,7 +292,6 @@ class Device(EmptyDevice):
         # Can only set polarity when the output is off
         turn_on_again = False
         if self.get_output_state():
-            print("Output is on, turning it off to set polarity.")
             self.set_output_state(False)
             turn_on_again = True
 
@@ -282,8 +299,9 @@ class Device(EmptyDevice):
         self.output_polarity = polarity
         self.wait_for_operation_complete()
 
-        if self.output_polarity != self.get_output_polarity():
-            print(f"Output polarity {self.output_polarity} not set correctly.")
+        if not self.value_applied_correctly(self.output_polarity, self.get_output_polarity):
+            msg = f"Output polarity {self.output_polarity} could not be set correctly."
+            raise Exception(msg)
 
         if turn_on_again:
             self.set_output_state(True)
@@ -318,17 +336,17 @@ class Device(EmptyDevice):
 
     def wait_for_operation_complete(self) -> None:
         """Query the *OPC? command until it returns 1."""
+        # TODO: Check if this is needed
         ret = self.query("*OPC?")
         while ret != "1":
-            print(ret)
             time.sleep(0.1)
             ret = self.port.read()
 
     def set_output_mode(self, mode: int) -> None:
         """Set the output mode."""
-        print("Setting mode")
         supported_modes = self.get_supported_output_modes()
-        mode_number = str(self.modes[mode])
+        mode_number = self.modes[mode]
+        print(f"Mode number: {mode_number}")
         if mode_number not in supported_modes:
             msg = f"Mode {mode} is not supported. Supported modes are {supported_modes}."
             raise ValueError(msg)
@@ -336,28 +354,37 @@ class Device(EmptyDevice):
         # Can only set mode when the output is off
         turn_on_again = False
         if self.get_output_state():
-            print("Turning of to set mode")
             self.set_output_state(False)
             turn_on_again = True
 
-        self.write(f"CONF:OUTPUT:MODE {mode_number},(@{self.channel})")
-        self.wait_for_operation_complete()
+        # TODO: Setting mode does not work consistently yet
+        self.query(f"CONF:OUTPUT:MODE {mode_number},(@{self.channel})")
 
-        new_mode = str(self.get_output_mode())
-        if new_mode != mode_number:
-            print(f"Setting mode not done correctly: {new_mode} != {mode_number}")
+        if not self.value_applied_correctly(mode_number, self.get_output_mode):
+            msg = f"Output mode {mode_number} not set correctly."
+            raise Exception(msg)
 
         if turn_on_again:
-            print("Turn on again after set mode")
             self.set_output_state(True)
+
+    def value_applied_correctly(self, value: int | str, getter: callable, timeout_s: int = 5) -> bool:
+        """Wait until the getter function returns the set value."""
+        while timeout_s > 0 and not self.is_run_stopped():
+            if getter() == value:
+                return True
+            time.sleep(0.1)
+            timeout_s -= 0.1
+
+        return False
 
     def get_output_mode(self) -> int:
         """Get the output mode."""
         return int(self.query(f"CONF:OUTPUT:MODE? (@{self.channel})"))
 
-    def get_supported_output_modes(self) -> list:
+    def get_supported_output_modes(self) -> list[int]:
         """Get the available channel output modes."""
-        return self.query(f"CONF:OUTPUT:MODE:LIST? (@{self.channel})").split(",")
+        supported_modes = self.query(f"CONF:OUTPUT:MODE:LIST? (@{self.channel})")
+        return list(map(int, supported_modes.split(",")))
 
     def get_channel_status(self) -> list:
         """Get the channel status."""
