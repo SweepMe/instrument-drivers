@@ -63,7 +63,16 @@ class Device(EmptyDevice):
         # Measurement parameters
         self.channel: int = 0
         self.sweepmode: str = "Voltage in V"
-        self.output_polarity: str = "p"
+
+        # Polarity
+        self.polarity_modes = [
+            "Auto",
+            "Positive",
+            "Negative",
+        ]
+        self.polarity_mode = "Auto"
+        self.output_polarity: str = ""
+
         self.averages: list = [1, 16, 64, 256, 512, 1024]
         self.average: int = 64
         self.ramp_rate: float = 100  # Ramp rate in V/s or %/s, use %/s for now
@@ -85,6 +94,7 @@ class Device(EmptyDevice):
             "Average": 1,
             "Speed": [100],  # use speed as placeholder for ramp rate
             "Range": list(self.modes.keys()),  # use range as placeholder for mode
+            "RangeVoltage": self.polarity_modes,  # use voltage range as placeholder for polarity
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:
@@ -97,6 +107,7 @@ class Device(EmptyDevice):
 
         self.average = parameter["Average"]
         self.ramp_rate = float(parameter["Speed"])
+        self.polarity_mode = parameter["RangeVoltage"]
         self.mode = parameter["Range"]
 
     def connect(self) -> None:
@@ -108,6 +119,8 @@ class Device(EmptyDevice):
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
         self.clear_event_status()
+
+        # TODO: Device if the device should be reset, as it resets the ramp rates as well
         self.reset_device()
 
     def deinitialize(self) -> None:
@@ -116,7 +129,11 @@ class Device(EmptyDevice):
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         self.set_local_lockout(True)
-        # self.set_output_polarity("p")
+
+        if self.polarity_mode == "Positive":
+            self.set_output_polarity("p")
+        elif self.polarity_mode == "Negative":
+            self.set_output_polarity("n")
 
         self.set_average(self.average)
         self.set_output_mode(self.mode)
@@ -137,18 +154,11 @@ class Device(EmptyDevice):
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        self.handle_polarity(self.value)
+
         if self.sweepmode.startswith("Voltage"):
-            change_polarity = ""
-            if self.value > 0 and self.output_polarity != "p":
-                change_polarity = "p"
-            elif self.value < 0 and self.output_polarity != "n":
-                change_polarity = "n"
-
-            if change_polarity:
-                self.set_output_polarity(change_polarity)
-
+            # TODO: Decide whether 0.1V is the minimum step size
             voltage_changes = abs(self.get_voltage_set() - self.value) > 0.1
-
             self.set_voltage(self.value)
 
             # wait for the device to start a ramp. Use 5s timeout in case the level is already reached
@@ -163,7 +173,28 @@ class Device(EmptyDevice):
                     debug("Device did not start ramping in 5s. Check if the level is reached.")
 
         elif self.sweepmode.startswith("Current"):
+            # TODO: Currently untested
             self.set_current(self.value)
+
+    def handle_polarity(self, value: float) -> None:
+        """Verify the polarity of the set value. Optionally, set the polarity automatically based on the set value."""
+        if value > 0 and self.polarity_mode == "Negative":
+            msg = f"Polarity mode is set to negative, the value of {value} can not be reached."
+            raise ValueError(msg)
+
+        if value < 0 and self.polarity_mode == "Positive":
+            msg = f"Polarity mode is set to positive, the value of {value} can not be reached."
+            raise ValueError(msg)
+
+        if self.polarity_mode == "Auto":
+            change_polarity = ""
+            if value > 0 and self.output_polarity != "p":
+                change_polarity = "p"
+            elif value < 0 and self.output_polarity != "n":
+                change_polarity = "n"
+
+            if change_polarity:
+                self.set_output_polarity(change_polarity)
 
     def reach(self) -> None:
         """Wait until the device has reached the set value. This function is called after 'apply'."""
@@ -346,7 +377,7 @@ class Device(EmptyDevice):
         """Set the output mode."""
         supported_modes = self.get_supported_output_modes()
         mode_number = self.modes[mode]
-        print(f"Mode number: {mode_number}")
+        # print(f"Mode number: {mode_number}")
         if mode_number not in supported_modes:
             msg = f"Mode {mode} is not supported. Supported modes are {supported_modes}."
             raise ValueError(msg)
@@ -357,7 +388,7 @@ class Device(EmptyDevice):
             self.set_output_state(False)
             turn_on_again = True
 
-        # TODO: Setting mode does not work consistently yet
+        # TODO: Setting the mode does not work consistently yet
         self.query(f"CONF:OUTPUT:MODE {mode_number},(@{self.channel})")
 
         if not self.value_applied_correctly(mode_number, self.get_output_mode):
