@@ -35,7 +35,10 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    """Driver for the G2V sunbrick."""
+    """Driver for the G2V sunbrick.
+
+    Use comma separated list for specific nodes: 1,2,3 or 'All'.
+    """
 
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
@@ -44,38 +47,54 @@ class Device(EmptyDevice):
         self.shortname = "sunbrick"  # short name will be shown in the sequencer
 
         # SweepMe! parameters
-        self.variables = ["Voltage", "Current"]
-        self.units = ["V", "A"]
-        self.plottype = [True, True]
-        self.savetype = [True, True]
+        self.variables = ["Temperature", "Channel Value"]
+        self.units = ["C", "%"]
+        self.plottype = [True, True]  # True to plot data
+        self.savetype = [True, True]  # True to save data
 
         # Communication Parameters
         self.port_string: str = ""
         self.port_manager = True
-        self.port_types = ["GPIB", "COM", "TCPIP"]
+        self.port_types = ["COM"]
+
+        self.sunbrick: G2VSunbrick | None = None
 
         # Measurement parameters
-        self.on_value: int = 100
-        self.use_specific_channels: bool = False
-        self.channel_list: str = "1,3,5"
-        self.target_node: int = 0
+        self.sweepmode: str = "Intensity"
+        self.channel: int = 1
+        self.set_all_channels: bool = False
 
-    def set_GUIparameter(self) -> dict:
+        self.nodes: list[int] = [0]  # default to all nodes
+
+    def update_gui_parameters(self, parameter: dict[str, Any]) -> dict[str, Any]:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
-        return {
-            "ON Value": [100, 0, 255, 'int'],
-            "Use Specific Channels": False,
-            "Channel List": "1,3,5",
-            "Target Node": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        new_parameters = {
+            "SweepMode": ["Intensity", "Spectrum"],
+            "Nodes": "All",
         }
 
-    def get_GUIparameter(self, parameter: dict) -> None:
+        sweepmode = parameter.get("SweepMode", "Intensity")
+        if sweepmode == "Intensity":
+            new_parameters["Channel"] = "1"
+            new_parameters["Set all Channels"] = False
+
+        return new_parameters
+
+    def apply_gui_parameters(self, parameter: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.port_string = parameter["Port"]
-        self.on_value = parameter["ON Value"]
-        self.use_specific_channels = parameter["Use Specific Channels"]
-        self.channel_list = parameter["Channel List"]
-        self.target_node = parameter["Target Node"]
+        self.sweepmode = parameter["SweepMode"]
+
+        self.node_string = parameter["Nodes"]
+
+
+        if self.sweepmode == "Intensity":
+            self.set_all_channels = parameter["Set all Channels"]
+
+            if not self.set_all_channels:
+                self.channel = int(parameter["Channel"])
+                self.variables = ["Temperature", "Channel Value"]
+            else:
+                self.variables = ["Temperature", "Intensity Factor"]
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
