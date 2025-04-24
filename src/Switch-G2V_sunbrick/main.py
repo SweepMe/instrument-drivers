@@ -31,6 +31,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+
+from g2vsunbrick import G2VSunbrick
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -98,6 +102,28 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
+        self.sunbrick = G2VSunbrick(self.port)
+
+        # Handle node selection
+        self.handle_nodes()
+
+    def handle_nodes(self) -> None:
+        """Verify the chosen nodes."""
+        nodes = self.node_string
+        if nodes.strip().lower() == "all":
+            self.nodes = [0]
+        else:
+            try:
+                self.nodes = [int(node.strip()) for node in nodes.split(",")]
+            except:
+                msg = f"Invalid node format: {nodes}. Use comma separated list or 'All'."
+                raise ValueError(msg)
+
+        available_nodes = self.sunbrick.node_list
+        # TODO: Check the if
+        if any (node not in available_nodes for node in self.nodes):
+            msg = f"Unsupported nodes: {self.nodes}. Device supports only {available_nodes}"
+            raise ValueError(msg)
 
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
@@ -110,14 +136,79 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
+        # check if the provided channel is supported
+        if not self.set_all_channels:
+            channel_list = self.sunbrick.channel_list
+            if self.channel not in channel_list:
+                msg = f"The channel {self.channel} is not supported. Supported channels are: {channel_list}."
+                raise ValueError(msg)
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
 
+    def poweroff(self) -> None:
+        """Set the channel value to 0."""
+        self.sunbrick.turn_off()
+
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        if self.sweepmode == "Intensity":
+            if self.set_all_channels:
+                self.sunbrick.set_intensity_factor(value=float(self.value))
+            else:
+                self.set_intensity(channel=self.channel, value=float(self.value))
+
+        elif self.sweepmode == "Spectrum":
+            self.set_spectrum(self.value)
 
     def call(self) -> list:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        return [self.voltage, self.current]
+        average_temperature = self.sunbrick.get_avg_temperature()
 
+        if self.set_all_channels:
+            intensity = self.sunbrick.get_intensity_factor()
+        else:
+            intensity = self.sunbrick.get_channel_value(self.channel)
+
+        return [average_temperature, intensity]
+
+    # Wrapped Commands
+
+    def set_intensity(self, channel: int, value: float) -> None:
+        """Set the intensity of the specified channel for all nodes of self.node.
+
+        Args:
+            channel: The channel number (1-n).
+            value: The intensity value in percent (0-100).
+        """
+        if value < 0.0 or value > 100.0:
+            msg = f"The intensity value {value} is not valid. It must be between 0 and 100."
+            raise ValueError(msg)
+
+        if self.sunbrick is None:
+            msg = "The sunbrick is not connected."
+            raise RuntimeError(msg)
+
+        for node in self.nodes:
+            ret = self.sunbrick.set_channel_value(channel, value, node)
+
+            if ret is None or ret is False:
+                msg = f"Failed to set the intensity of node {node} and channel {channel} to {value}."
+                raise RuntimeError(msg)
+
+    def set_spectrum(self, spectrum_file: str) -> None:
+        """Set the spectrum of the sunbrick.
+
+        Args:
+            spectrum_file: The path to the json file containing the spectrum.
+        """
+        if not Path(spectrum_file).is_file():
+            msg = f"The spectrum file {spectrum_file} does not exist."
+            raise ValueError(msg)
+
+        if self.sunbrick:
+            self.sunbrick.set_spectrum(spectrum_file)
+
+    def get_identification(self) -> str:
+        """Get the sunbrick ID."""
+        return self.sunbrick.brick_id
