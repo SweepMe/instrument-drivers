@@ -1,4 +1,4 @@
-﻿﻿# This Device Class is published under the terms of the MIT License.
+﻿# This Device Class is published under the terms of the MIT License.
 # Required Third Party Libraries, which are included in the Device Class
 # package for convenience purposes, may have a different license. You can
 # find those in the corresponding folders or contact the maintainer.
@@ -130,7 +130,7 @@ class Device(EmptyDevice):
         self.units=["Unit1"]
         self.plottype=[True]
         self.savetype=[True]
-        self.had_trigger = [False]
+        self.had_trigger = False
 
 
     def set_GUIparameter(self):
@@ -268,7 +268,7 @@ class Device(EmptyDevice):
         self.port.write("SYST:BEEP:STAT ON")  # control-Beep on
 
     def trigger_ready(self):
-        self.had_trigger = [False]
+        self.had_trigger = False
         self.port.write("INIT") #initialize trigger
 
     #def measure(self):
@@ -284,7 +284,8 @@ class Device(EmptyDevice):
         bytes_in_buffer = self.port.read().split(",")
         bytes_in_use = bytes_in_buffer[1]
 
-        while int(bytes_in_use) < len(self.channel_list)*16: #normaly 16 bytes reserved for each entry in buffer: 8 bytes per measure value, 8 bytes per timestamp
+        # normally 16 bytes reserved for each entry in buffer: 8 bytes per measure value, 8 bytes per timestamp
+        while int(bytes_in_use) < len(self.channel_list)*16:
             stop_measurement = self.is_run_stopped()
             if stop_measurement:
                 break
@@ -295,8 +296,8 @@ class Device(EmptyDevice):
 
             time.sleep(0.5)
 
-        if (int(bytes_in_use) > len(self.channel_list)*16):
-            self.had_trigger = [True]
+        if int(bytes_in_use) > len(self.channel_list)*16:
+            self.had_trigger = True
 
     def call(self):
         if self.had_trigger:
