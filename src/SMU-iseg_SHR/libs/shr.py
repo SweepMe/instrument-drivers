@@ -1,3 +1,6 @@
+# TODO: Add license
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 
@@ -15,7 +18,7 @@ class IsegDevice(ABC):
     def query(self, command: str) -> str:
         """Queries the device and returns the response."""
 
-    # Page 33
+    # Channel Voltage Commands - Page 33
 
     def set_voltage(self, voltage: float) -> None:
         """Set the voltage setpoint (Vset) in Volts."""
@@ -29,17 +32,20 @@ class IsegDevice(ABC):
         """Switch off high voltage with configured ramp speed."""
         self.write(f":VOLT OFF,(@{self.channel})")
 
-    def emergency_off(self) -> None:
+    def voltage_emergency_off(self) -> None:
         """Immediately shut down high voltage output without ramp."""
         self.write(f":VOLT EMCY OFF,(@{self.channel})")
 
-    def emergency_clear(self) -> None:
+    def voltage_emergency_clear(self) -> None:
         """Clear emergency off state, return channel to off state."""
         self.write(f":VOLT EMCY CLR,(@{self.channel})")
 
     def set_voltage_bounds(self, bounds: float) -> None:
         """Set the voltage bounds (Vbounds) tolerance in Volts."""
         self.write(f":VOLT:BOUNDS {bounds},(@{self.channel})")
+
+
+    # Channel current commands - page 33
 
     def set_current(self, current: float) -> None:
         """Set the current setpoint (Iset) in Amperes."""
@@ -48,6 +54,9 @@ class IsegDevice(ABC):
     def set_current_bounds(self, bounds: float) -> None:
         """Set the current bounds (Ibounds) tolerance in Amperes."""
         self.write(f":CURR:BOUNDS {bounds},(@{self.channel})")
+
+
+    # Channel event commands - page 33
 
     def clear_event(self) -> None:
         """Clear the Channel Event Status register."""
@@ -61,15 +70,24 @@ class IsegDevice(ABC):
         """Set the Channel Event Mask register."""
         self.write(f":EVENT:MASK {mask},(@{self.channel})")
 
-    # Page 34
+
+
+
+
+    # Channel configuration commands - Page 34
 
     def set_trip_timeout(self, time_ms: int) -> None:
         """Set the delayed trip timeout in milliseconds (1..4095ms)."""
+        if time_ms < 1 or time_ms > 4095:
+            msg = "Timeout must be between 1 and 4095 ms."
+            raise ValueError(msg)
         self.write(f":CONF:TRIP:TIME {time_ms},(@{self.channel})")
 
     def get_trip_timeout(self) -> int:
         """Query the programmed trip timeout in milliseconds."""
         response = self.query(f":CONF:TRIP:TIME? (@{self.channel})")
+        if response.endswith("ms"):
+            response = response[:-3]
         return int(response)
 
     def set_trip_action(self, action: int) -> None:
@@ -99,11 +117,11 @@ class IsegDevice(ABC):
             3: Shut down the module without ramp
             4: Disable the External Inhibit function
         """
-        self.write(f":CONF:INHP:ACTION {action},(@{self.channel})")
+        self.write(f":CONF:INH:ACTION {action},(@{self.channel})")
 
     def get_inhibit_action(self) -> int:
         """Query the configured external inhibit action."""
-        response = self.query(f":CONF:INHP:ACTION? (@{self.channel})")
+        response = self.query(f":CONF:INH:ACTION? (@{self.channel})")
         return int(response)
 
     def set_output_mode(self, mode: int) -> None:
@@ -114,16 +132,16 @@ class IsegDevice(ABC):
             2: Alternate mode 1
             3: Alternate mode 2
         """
-        self.write(f":OUTP:MODE {mode},(@{self.channel})")
+        self.write(f":CONF:OUTP:MODE {mode},(@{self.channel})")
 
     def get_output_mode(self) -> int:
         """Query the channel output mode."""
-        response = self.query(f":OUTP:MODE? (@{self.channel})")
+        response = self.query(f":CONF:OUTP:MODE? (@{self.channel})")
         return int(response)
 
-    def get_available_output_modes(self) -> list[int]:
+    def get_supported_output_modes(self) -> list[int]:
         """Query the available output modes."""
-        response = self.query(f":OUTP:MODE:LIST? (@{self.channel})")
+        response = self.query(f":CONF:OUTP:MODE:LIST? (@{self.channel})")
         return list(map(int, response.split(",")))
 
     def set_output_polarity(self, polarity: str) -> None:
@@ -133,96 +151,179 @@ class IsegDevice(ABC):
             'POS' - Positive polarity
             'NEG' - Negative polarity
         """
-        self.write(f":OUTP:POL {polarity},(@{self.channel})")
+        self.write(f":CONF:OUTP:POL {polarity},(@{self.channel})")
 
     def get_output_polarity(self) -> str:
         """Query the channel output polarity."""
-        response = self.query(f":OUTP:POL? (@{self.channel})")
+        response = self.query(f":CONF:OUTP:POL? (@{self.channel})")
         return response.strip()
 
-    def get_available_output_polarities(self) -> list[str]:
+    def get_supported_output_polarities(self) -> list[str]:
         """Query the available output polarities."""
-        response = self.query(f":OUTP:POL:LIST? (@{self.channel})")
+        response = self.query(f":CONF:OUTP:POL:LIST? (@{self.channel})")
         return response.split(",")
 
-    # Page 35
 
-    def read_voltage(self) -> float:
-        """Read the actual measured output voltage (Vmeas) in Volts."""
+
+
+
+    # Read channel commands - Page 35
+    # Voltage read commands
+
+    def get_voltage_set(self) -> float:
+        """Get the voltage set V_set in Volt."""
         response = self.query(f":READ:VOLT? (@{self.channel})")
-        return float(response)
+        return float(response[:-1])
 
-    def read_current(self) -> float:
-        """Read the actual measured output current (Imeas) in Amperes."""
+    def get_voltage_limit(self) -> float:
+        """Get the voltage limit V_lim in Volt."""
+        response = self.query(f":READ:VOLT:LIM? (@{self.channel})")
+        return float(response[:-1])
+
+    def get_voltage_nominal(self) -> float:
+        """Get the channel voltage nominal Vnom in Volt."""
+        response = self.query(f":READ:VOLT:NOM? (@{self.channel})")
+        return float(response[:-1])
+
+    def get_voltage_mode(self) -> str:
+        """Get the configured channel voltage mode with polarity sign in Volt."""
+        response = self.query(f":READ:VOLT:MODE? (@{self.channel})")
+        return response.strip()
+
+    def get_supported_voltage_modes(self) -> list[float]:
+        """Get the available voltage modes."""
+        response = self.query(f":READ:VOLT:MODE:LIST? (@{self.channel})")
+        supported_modes = response.split(",")
+        return [float(mode[:-1]) for mode in supported_modes]
+
+    def get_voltage_bounds(self) -> float:
+        """Get the voltage bounds V_bounds in Volt."""
+        response = self.query(f":READ:VOLT:BOUNDS? (@{self.channel})")
+        return float(response[:-1])
+
+    def get_voltage_on(self) -> bool:
+        """Get the channel voltage on state."""
+        response = self.query(f":READ:VOLT:ON? (@{self.channel})")
+        return response.strip() == "1"
+
+    def get_voltage_emergency(self) -> bool:
+        """Get the channel emergency off state."""
+        response = self.query(f":READ:VOLT:EMCY? (@{self.channel})")
+        return response.strip() == "1"
+
+    # Current read commands
+
+    def get_current_set(self) -> float:
+        """Get the current set I_set in Ampere."""
         response = self.query(f":READ:CURR? (@{self.channel})")
-        return float(response)
+        return float(response[:-1])
 
-    def read_voltage_set(self) -> float:
-        """Read the set voltage (Vset) value in Volts."""
-        response = self.query(f":READ:VSET? (@{self.channel})")
-        return float(response)
+    def get_current_limit(self) -> float:
+        """Get the current limit I_lim in Ampere."""
+        response = self.query(f":READ:CURR:LIM? (@{self.channel})")
+        return float(response[:-1])
 
-    def read_current_set(self) -> float:
-        """Read the set current (Iset) value in Amperes."""
-        response = self.query(f":READ:ISET? (@{self.channel})")
-        return float(response)
+    def get_current_nominal(self) -> float:
+        """Get the channel current nominal I_nom in Ampere."""
+        response = self.query(f":READ:CURR:NOM? (@{self.channel})")
+        return float(response[:-1])
 
-    def read_voltage_nominal(self) -> float:
-        """Read the nominal maximum voltage (Vnom) for the channel."""
-        response = self.query(f":READ:VNOM? (@{self.channel})")
-        return float(response)
+    def get_current_mode(self) -> str:
+        """Get the configured channel current mode with polarity sign in Ampere."""
+        response = self.query(f":READ:CURR:MODE? (@{self.channel})")
+        return response.strip()
 
-    def read_current_nominal(self) -> float:
-        """Read the nominal maximum current (Inom) for the channel."""
-        response = self.query(f":READ:INOM? (@{self.channel})")
-        return float(response)
+    def get_supported_current_modes(self) -> list[float]:
+        """Get the available current modes."""
+        response = self.query(f":READ:CURR:MODE:LIST? (@{self.channel})")
+        supported_modes = response.split(",")
+        return [float(mode[:-1]) for mode in supported_modes]
 
-    def read_voltage_limit(self) -> float:
-        """Read the configured voltage limit (Vlim) in Volts."""
-        response = self.query(f":READ:VLIM? (@{self.channel})")
-        return float(response)
+    def get_current_bounds(self) -> float:
+        """Get the current bounds I_bounds in Ampere."""
+        response = self.query(f":READ:CURR:BOUNDS? (@{self.channel})")
+        return float(response[:-1])
 
-    def read_current_limit(self) -> float:
-        """Read the configured current limit (Ilim) in Amperes."""
-        response = self.query(f":READ:ILIM? (@{self.channel})")
-        return float(response)
+    # Ramp read commands
 
-    def read_voltage_bounds(self) -> float:
-        """Read the voltage bounds (Vbounds) tolerance value."""
-        response = self.query(f":READ:VBOUNDS? (@{self.channel})")
-        return float(response)
+    def get_voltage_ramp_speed(self) -> float:
+        """Get the ramp speed in V/s."""
+        response = self.query(f":READ:RAMP:VOLT? (@{self.channel})")
+        return float(response[:-3])
 
-    def read_current_bounds(self) -> float:
-        """Read the current bounds (Ibounds) tolerance value."""
-        response = self.query(f":READ:IBOUNDS? (@{self.channel})")
-        return float(response)
+    def get_voltage_ramp_speed_minimum(self) -> float:
+        """Get the minimum ramp speed in V/s."""
+        response = self.query(f":READ:RAMP:VOLT:MIN? (@{self.channel})")
+        return float(response[:-3])
+
+    def get_voltage_ramp_speed_maximum(self) -> float:
+        """Get the maximum ramp speed in V/s."""
+        response = self.query(f":READ:RAMP:VOLT:MAX? (@{self.channel})")
+        return float(response[:-3])
+
+    def get_current_ramp_speed(self) -> float:
+        """Get the ramp speed in A/s."""
+        response = self.query(f":READ:RAMP:CURR? (@{self.channel})")
+        return float(response[:-3])
+
+    def get_current_ramp_speed_minimum(self) -> float:
+        """Get the minimum ramp speed in A/s."""
+        response = self.query(f":READ:RAMP:CURR:MIN? (@{self.channel})")
+        return float(response[:-3])
+
+    def get_current_ramp_speed_maximum(self) -> float:
+        """Get the maximum ramp speed in A/s."""
+        response = self.query(f":READ:RAMP:CURR:MAX? (@{self.channel})")
+        return float(response[:-3])
+
+    # Channel status
+
+    def get_channel_control_register(self) -> str:
+        """Get the channel control register."""
+        return self.query(f":READ:CHAN:CONTROL? (@{self.channel})")
+
+    def get_channel_status_register(self) -> str:
+        """Get the channel status register."""
+        return self.query(f":READ:CHAN:STATUS? (@{self.channel})")
+
+    def get_channel_event_status_register(self) -> str:
+        """Get the channel event status register."""
+        return self.query(f":READ:CHAN:EVENT:STATUS? (@{self.channel})")
+
+    def get_channel_event_mask_register(self) -> str:
+        """Get the channel event mask register."""
+        return self.query(f":READ:CHAN:EVENT:MASK? (@{self.channel})")
+
+
+
+    # Measure commands - Page 35
+
+    def get_voltage(self) -> float:
+        """Get the measured voltage in Volts."""
+        response = self.query(f":MEAS:VOLT? (@{self.channel})")
+        return float(response[:-1])
+
+    def get_current(self) -> float:
+        """Get the measured current in Amperes."""
+        response = self.query(f":MEAS:CURR? (@{self.channel})")
+        return float(response[:-1])
+
+
+    # Configure Ramp commands - Page 35
+
+
 
     def set_ramp_speed_voltage(self, speed: float) -> None:
         """Set the ramp speed for voltage in V/s or %/s depending on the device."""
         self.write(f":CONF:RAMP:VOLT {speed},(@{self.channel})")
 
-    def get_ramp_speed_voltage(self) -> float:
-        """Query the ramp speed for voltage."""
-        response = self.query(f":CONF:RAMP:VOLT? (@{self.channel})")
-        return float(response)
-
     def set_ramp_speed_current(self, speed: float) -> None:
         """Set the ramp speed for current in A/s or %/s depending on the device."""
         self.write(f":CONF:RAMP:CURR {speed},(@{self.channel})")
 
-    def get_ramp_speed_current(self) -> float:
-        """Query the ramp speed for current."""
-        response = self.query(f":CONF:RAMP:CURR? (@{self.channel})")
-        return float(response)
-
     def set_ramp_speed_max(self, speed: float) -> None:
         """Set the maximum ramp speed limit."""
         self.write(f":CONF:RAMP:MAX {speed},(@{self.channel})")
-
-    def get_ramp_speed_max(self) -> float:
-        """Query the maximum ramp speed limit."""
-        response = self.query(f":CONF:RAMP:MAX? (@{self.channel})")
-        return float(response)
 
     # TODO Page 36
 
