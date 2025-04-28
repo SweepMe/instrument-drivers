@@ -267,27 +267,17 @@ class Device(EmptyDevice):
     def deinitialize(self):
         self.port.write("SYST:BEEP:STAT ON")  # control-Beep on
 
-    def trigger_ready(self):
+    def measure(self) -> None:
+        """Trigger the acquisition of new data."""
         self.had_trigger = False
         self.port.write("INIT") #initialize trigger
 
-    #def measure(self):
-
-        #if self.scanning:
-        #    self.port.write("form:elem READ,CHAN\n;READ?")
-        #else:
-        #    self.port.write("form:elem READ\n;READ?") # This returns just the reading
-
-    def request_result(self):
-        #wait for trigger
-        self.port.write("TRAC:FREE?")
-        bytes_in_buffer = self.port.read().split(",")
-        bytes_in_use = bytes_in_buffer[1]
-
+    def request_result(self) -> None:
+        """Write command to ask the instrument to send measured data."""
         # normally 16 bytes reserved for each entry in buffer: 8 bytes per measure value, 8 bytes per timestamp
+        bytes_in_use = 0
         while int(bytes_in_use) < len(self.channel_list)*16:
-            stop_measurement = self.is_run_stopped()
-            if stop_measurement:
+            if self.is_run_stopped():
                 break
 
             self.port.write("TRAC:FREE?")
@@ -295,11 +285,9 @@ class Device(EmptyDevice):
             bytes_in_use = bytes_in_buffer[1]
 
             time.sleep(0.5)
+        else:
+            self.had_trigger = int(bytes_in_use) > len(self.channel_list)*16
 
-        if int(bytes_in_use) > len(self.channel_list)*16:
-            self.had_trigger = True
-
-    def call(self):
         if self.had_trigger:
             self.port.write("form:elem READ\n;FETCh?")
             answer = self.port.read()  # here we read the response from the "READ?" request in 'measure'
