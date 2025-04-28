@@ -130,6 +130,8 @@ class Device(EmptyDevice):
         self.units=['Unit1']
         self.plottype=[True]
         self.savetype=[True]
+        self.had_trigger = [False]
+
 
     def set_GUIparameter(self):
         GUIparameter = {
@@ -236,6 +238,7 @@ class Device(EmptyDevice):
         self.port.write("INIT:CONT OFF")  # disable continuous initiation, needed to use "READ?" command
         self.port.write("TRIG:SOUR %s" % self.trigger_types[self.trigger_type])
         self.port.write("trigger:count 1")  # Only scan through a list once
+        self.port.write("TRIG:DEL 0.5")
         
         # Speed
         if self.integration_speed == "Fast":
@@ -264,27 +267,53 @@ class Device(EmptyDevice):
 
     def deinitialize(self):
         self.port.write("SYST:BEEP:STAT ON")  # control-Beep on
+        
+    def trigger_ready(self):
+        self.had_trigger = [False]
+        self.port.write("INIT") #initialize trigger
 
-    def measure(self):
-        self.port.write("form:elem READ\n;READ?")
+    #def measure(self):
+
         #if self.scanning:
         #    self.port.write("form:elem READ,CHAN\n;READ?")
         #else:
         #    self.port.write("form:elem READ\n;READ?") # This returns just the reading
+        
+    def request_result(self):
+        #wait for trigger
+        self.port.write("TRAC:FREE?")
+        bytes_in_buffer = self.port.read().split(',')
+        bytes_in_use = bytes_in_buffer[1]
+        
+        while int(bytes_in_use) < len(self.channel_list)*16: #normaly 16 bytes reserved for each entry in buffer: 8 bytes per measure value, 8 bytes per timestamp
+            stop_measurement = self.is_run_stopped()
+            if stop_measurement:
+                break
+                
+            self.port.write("TRAC:FREE?")
+            bytes_in_buffer = self.port.read().split(',')
+            bytes_in_use = bytes_in_buffer[1]
+            
+            time.sleep(0.5)
+        
+        if (int(bytes_in_use) > len(self.channel_list)*16):
+            self.had_trigger = [True]
 
     def call(self):
-        answer = self.port.read()  # here we read the response from the "READ?" request in 'measure'
-        readings_list = np.array([float(x) for x in answer.strip('\n').split(',')])
-        #print(len(readings_list))
-        #print(readings_list)
-        #print(len(self.channel_list))
-        #print("Response to READ? command:", answer)
+        if self.had_trigger:
+            self.port.write("form:elem READ\n;FETCh?")
+            answer = self.port.read()  # here we read the response from the "READ?" request in 'measure'
+            readings_list = np.array([float(x) for x in answer.strip('\n').split(',')])
+            #print(len(readings_list))
+            #print(readings_list)
+            #print(len(self.channel_list))
+            #print("Response to READ? command:", answer)
 
-        if self.scanning:
-            # Currently averaging is not implemented for scanning
-            return [x for x in readings_list]  #[np.mean(x) for x in np.split(readings_list,len(self.channel_list))]
-        else:
-            return [np.mean(readings_list)]
+            if self.scanning:
+                # Currently averaging is not implemented for scanning
+                return [x for x in readings_list] #[np.mean(x) for x in np.split(readings_list,len(self.channel_list))]
+            else:
+                return [np.mean(readings_list)]
 
     # here, command-wrapping functions are defined
 
