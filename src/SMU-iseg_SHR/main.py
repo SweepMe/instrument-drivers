@@ -36,8 +36,11 @@ import time
 from pysweepme import debug
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
+print("import shr")
+from shr import IsegDevice
 
-class Device(EmptyDevice):
+
+class Device(EmptyDevice, IsegDevice):
     """Driver for the iseg SHR."""
 
     def __init__(self) -> None:
@@ -131,14 +134,14 @@ class Device(EmptyDevice):
         self.set_local_lockout(True)
 
         if self.polarity_mode == "Positive":
-            self.set_output_polarity("p")
+            self._set_output_polarity("p")
         elif self.polarity_mode == "Negative":
-            self.set_output_polarity("n")
+            self._set_output_polarity("n")
 
-        self.set_average(self.average)
-        self.set_output_mode(self.mode)
+        self._set_average(self.average)
+        self._set_output_mode(self.mode)
 
-        self.set_voltage_ramp_rate(self.ramp_rate, "%/s")
+        self._set_voltage_ramp_rate(self.ramp_rate, "%/s")
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
@@ -146,11 +149,11 @@ class Device(EmptyDevice):
 
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
-        self.set_output_state(True)
+        self._set_output_state(True)
 
     def poweroff(self) -> None:
         """Turn off the device when leaving a sequencer branch."""
-        self.set_output_state(False)
+        self._set_output_state(False)
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
@@ -165,7 +168,7 @@ class Device(EmptyDevice):
             if voltage_changes:
                 timeout_s = 5
                 while timeout_s > 0:
-                    if "Is Voltage Ramp" in self.get_channel_status():
+                    if "Is Voltage Ramp" in self._get_channel_status():
                         break
                     time.sleep(0.1)
                     timeout_s -= 0.1
@@ -194,7 +197,7 @@ class Device(EmptyDevice):
                 change_polarity = "n"
 
             if change_polarity:
-                self.set_output_polarity(change_polarity)
+                self._set_output_polarity(change_polarity)
 
     def reach(self) -> None:
         """Wait until the device has reached the set value. This function is called after 'apply'."""
@@ -203,7 +206,7 @@ class Device(EmptyDevice):
 
         while not level_reached and timeout_in_s > 0:
             # TODO: Some values are skipped because the device status still says 'constant' even though a new value was set
-            status = self.get_channel_status()
+            status = self._get_channel_status()
             # print(status)
             if self.sweepmode.startswith("Voltage"):
                 level_reached = "Is Constant Voltage" in status and "Is Voltage Ramp" not in status
@@ -275,46 +278,46 @@ class Device(EmptyDevice):
 
     # Voltage and current
 
-    def set_voltage(self, voltage: float) -> None:
-        """Set the output voltage."""
-        self.write(f"VOLT {voltage},(@{self.channel})")
+    # def set_voltage(self, voltage: float) -> None:
+    #     """Set the output voltage."""
+    #     self.write(f"VOLT {voltage},(@{self.channel})")
 
-    def set_voltage_bounds(self, voltage_limit: float) -> None:
-        """Set the output voltage limit/bounds."""
-        self.write(f"VOLT:BOUNDS {voltage_limit},(@{self.channel})")
+    # def set_voltage_bounds(self, voltage_limit: float) -> None:
+    #     """Set the output voltage limit/bounds."""
+    #     self.write(f"VOLT:BOUNDS {voltage_limit},(@{self.channel})")
 
-    def get_voltage(self) -> float:
-        """Get the measured voltage."""
-        return self.get_value("MEAS:VOLT?")
-
-    def get_value(self, command: str) -> float:
-        """Get the value of a command for the channel."""
-        answer = self.query(f"{command} (@{self.channel})")
-        return float(answer[:-1])
-
-    def get_voltage_set(self) -> float:
-        """Get the set output voltage in V."""
-        return self.get_value("READ:VOLT?")
-
-    def set_current(self, current: float) -> None:
-        """Set the output current."""
-        self.write(f"CURR {current},(@{self.channel})")
-
-    def set_current_bounds(self, current_limit: float) -> None:
-        """Set the output current limit/bounds."""
-        self.write(f"CURR:BOUNDS {current_limit},(@{self.channel})")
-
-    def get_current_set(self) -> float:
-        """Get the set output current in A."""
-        return self.get_value("READ:CURR?")
-
-    def get_current(self) -> float:
-        """Get the measured current."""
-        return self.get_value("MEAS:CURR?")
+    # def get_voltage(self) -> float:
+    #     """Get the measured voltage."""
+    #     return self.get_value("MEAS:VOLT?")
+    #
+    # def get_value(self, command: str) -> float:
+    #     """Get the value of a command for the channel."""
+    #     answer = self.query(f"{command} (@{self.channel})")
+    #     return float(answer[:-1])
+    #
+    # def get_voltage_set(self) -> float:
+    #     """Get the set output voltage in V."""
+    #     return self.get_value("READ:VOLT?")
+    #
+    # def set_current(self, current: float) -> None:
+    #     """Set the output current."""
+    #     self.write(f"CURR {current},(@{self.channel})")
+    #
+    # def set_current_bounds(self, current_limit: float) -> None:
+    #     """Set the output current limit/bounds."""
+    #     self.write(f"CURR:BOUNDS {current_limit},(@{self.channel})")
+    #
+    # def get_current_set(self) -> float:
+    #     """Get the set output current in A."""
+    #     return self.get_value("READ:CURR?")
+    #
+    # def get_current(self) -> float:
+    #     """Get the measured current."""
+    #     return self.get_value("MEAS:CURR?")
 
     # Polarity
 
-    def set_output_polarity(self, polarity: str = "p") -> None:
+    def _set_output_polarity(self, polarity: str = "p") -> None:
         """Set the output polarity."""
         if polarity not in ["p", "n"]:
             msg = "Polarity must be 'p' or 'n'"
@@ -322,8 +325,8 @@ class Device(EmptyDevice):
 
         # Can only set polarity when the output is off
         turn_on_again = False
-        if self.get_output_state():
-            self.set_output_state(False)
+        if self._get_output_state():
+            self._set_output_state(False)
             turn_on_again = True
 
         self.write(f"CONF:OUTPUT:POL {polarity},(@{self.channel})")
@@ -335,7 +338,7 @@ class Device(EmptyDevice):
             raise Exception(msg)
 
         if turn_on_again:
-            self.set_output_state(True)
+            self._set_output_state(True)
 
     def get_output_polarity(self) -> str:
         """Get the output polarity."""
@@ -343,21 +346,21 @@ class Device(EmptyDevice):
 
     # Output
 
-    def set_output_state(self, state: bool) -> None:
+    def _set_output_state(self, state: bool) -> None:
         """Set the output state to on or off."""
         if state:
             self.write(f"VOLT ON,(@{self.channel})")
         else:
             self.write(f"VOLT OFF,(@{self.channel})")
 
-    def get_output_state(self) -> bool:
+    def _get_output_state(self) -> bool:
         """Get the output state."""
         state = self.query(f"READ:VOLT:ON? (@{self.channel})")
         return str(state) == "1"
 
     # Configure
 
-    def set_average(self, average: int) -> None:
+    def _set_average(self, average: int) -> None:
         """Set the number of digital filter averaging steps."""
         if average not in self.averages:
             msg = f"Average {average} is not allowed. Allowed values are {self.averages}."
@@ -373,9 +376,9 @@ class Device(EmptyDevice):
             time.sleep(0.1)
             ret = self.port.read()
 
-    def set_output_mode(self, mode: int) -> None:
+    def _set_output_mode(self, mode: int) -> None:
         """Set the output mode."""
-        supported_modes = self.get_supported_output_modes()
+        supported_modes = self._get_supported_output_modes()
         mode_number = self.modes[mode]
         # print(f"Mode number: {mode_number}")
         if mode_number not in supported_modes:
@@ -384,19 +387,19 @@ class Device(EmptyDevice):
 
         # Can only set mode when the output is off
         turn_on_again = False
-        if self.get_output_state():
-            self.set_output_state(False)
+        if self._get_output_state():
+            self._set_output_state(False)
             turn_on_again = True
 
         # TODO: Setting the mode does not work consistently yet
         self.query(f"CONF:OUTPUT:MODE {mode_number},(@{self.channel})")
 
-        if not self.value_applied_correctly(mode_number, self.get_output_mode):
+        if not self.value_applied_correctly(mode_number, self._get_output_mode):
             msg = f"Output mode {mode_number} not set correctly."
             raise Exception(msg)
 
         if turn_on_again:
-            self.set_output_state(True)
+            self._set_output_state(True)
 
     def value_applied_correctly(self, value: int | str, getter: callable, timeout_s: int = 5) -> bool:
         """Wait until the getter function returns the set value."""
@@ -408,16 +411,16 @@ class Device(EmptyDevice):
 
         return False
 
-    def get_output_mode(self) -> int:
+    def _get_output_mode(self) -> int:
         """Get the output mode."""
         return int(self.query(f"CONF:OUTPUT:MODE? (@{self.channel})"))
 
-    def get_supported_output_modes(self) -> list[int]:
+    def _get_supported_output_modes(self) -> list[int]:
         """Get the available channel output modes."""
         supported_modes = self.query(f"CONF:OUTPUT:MODE:LIST? (@{self.channel})")
         return list(map(int, supported_modes.split(",")))
 
-    def get_channel_status(self) -> list:
+    def _get_channel_status(self) -> list:
         """Get the channel status."""
         status = self.query(f"READ:CHAN:STATUS? (@{self.channel})")
         return self.decode_channel_status(int(status))
@@ -470,7 +473,7 @@ class Device(EmptyDevice):
 
     # Ramp
 
-    def set_voltage_ramp_rate(self, rate: float, mode: str = "V/s", direction: str = "up") -> None:
+    def _set_voltage_ramp_rate(self, rate: float, mode: str = "V/s", direction: str = "up") -> None:
         """Set the voltage ramp rate.
 
         rate: Ramp rate in V/s or %/s
