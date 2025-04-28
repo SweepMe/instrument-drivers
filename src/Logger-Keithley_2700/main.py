@@ -51,9 +51,9 @@ class Device(EmptyDevice):
 
                   """
 
-    def __init__(self):
-
-        EmptyDevice.__init__(self)
+    def __init__(self) -> None:
+        """Initialize the device class and the instrument parameters."""
+        super().__init__()
 
         self.shortname = "Keithley 2700"
         self.port_manager = True
@@ -133,7 +133,8 @@ class Device(EmptyDevice):
         self.had_trigger = False
 
 
-    def set_GUIparameter(self):
+    def set_GUIparameter(self) -> dict:
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
                         "Mode" : list(self.modes.keys()),
                         "Digits": ["4", "5", "6", "7"],  #self.resolutions,
@@ -145,8 +146,8 @@ class Device(EmptyDevice):
                         "Channel list": "101:120",
                         }
 
-    def get_GUIparameter(self, parameter = {}):
-        #print(parameter)
+    def get_GUIparameter(self, parameter: dict) -> None:
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.mode = parameter["Mode"]
         self.digits = parameter["Digits"]  # Digits of resolution
         self.channel_string = parameter["Channel list"]
@@ -194,26 +195,23 @@ class Device(EmptyDevice):
             self.plottype = [True]  # True to plot data
             self.savetype = [True]
 
-    def connect(self):
+    def connect(self) -> None:
+        """Connect to the device. This function is called only once at the start of the measurement."""
         if self.port_string.startswith("TCPIP"):
             self.port.port.set_visa_attribute(pyvisa.constants.VI_ATTR_IO_PROT,4)
             self.port.port.set_visa_attribute(pyvisa.constants.VI_ATTR_TERMCHAR_EN,1)
             self.port.port.set_visa_attribute(pyvisa.constants.VI_ATTR_SEND_END_EN,1)
-            # print("Configured %s port for TCPIP communication" % self.shortname)
 
-        # idn = self.get_identification()
-        # print("Identification:", idn)
-
-    def initialize(self):
-        # once at the beginning of the measurement
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
         self.port.write("*RST")
         self.port.write("STAT:QUE:CLE")  # clear error queue
         self.port.write("trac:cle")  # clear buffer
         self.port.write("*CLS")  # reset all values
         self.port.write("SYST:BEEP:STAT OFF")  # control-Beep off
 
-    def configure(self):
-
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
         # Sense functions
         self.port.write("sense:function '%s', (@%s)" % (self.modes[self.mode], self.channel_string))
         # self.range = self.range.replace(" ", "").replace("p", "e-12").replace("n", "e-9").replace("µ", "e-6").replace("m", "e-3")
@@ -264,7 +262,8 @@ class Device(EmptyDevice):
             self.port.write("ROUT:SCAN:TSO IMM")  # Start scan immediately when enabled and triggered
             self.port.write("ROUT:SCAN:LSEL INT")  # Enable Scan
 
-    def deinitialize(self):
+    def deinitialize(self) -> None:
+        """Deinitialize the device. This function is called only once at the end of the measurement."""
         self.port.write("SYST:BEEP:STAT ON")  # control-Beep on
 
     def measure(self) -> None:
@@ -288,24 +287,24 @@ class Device(EmptyDevice):
         else:
             self.had_trigger = int(bytes_in_use) > len(self.channel_list)*16
 
+    def call(self) -> list:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
         if self.had_trigger:
             self.port.write("form:elem READ\n;FETCh?")
             answer = self.port.read()  # here we read the response from the "READ?" request in 'measure'
             readings_list = np.array([float(x) for x in answer.strip("\n").split(",")])
-            #print(len(readings_list))
-            #print(readings_list)
-            #print(len(self.channel_list))
-            #print("Response to READ? command:", answer)
 
             if self.scanning:
                 # Currently averaging is not implemented for scanning
-                return [x for x in readings_list] #[np.mean(x) for x in np.split(readings_list,len(self.channel_list))]
+                return list(readings_list) # [np.mean(x) for x in np.split(readings_list,len(self.channel_list))]
             else:
                 return [np.mean(readings_list)]
 
+        return [] * len(self.variables)
+
     # here, command-wrapping functions are defined
 
-    def get_identification(self):
-
+    def get_identification(self) -> str:
+        """Return the identification string of the device."""
         self.port.write("*IDN?")
         return self.port.read()
