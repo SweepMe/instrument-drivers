@@ -220,3 +220,58 @@ def test_configure_module(driver: pysweepme.EmptyDevice) -> None:
     for command, parameter in command_parameters.items():
         _test_command(driver, command, parameter)
 
+
+def test_configure_module_read(driver: pysweepme.EmptyDevice) -> None:
+    """Test the configure module read commands on page 40-41."""
+    command_parameters = {
+        "get_module_voltage_limit": None,
+        "get_module_current_limit": None,
+        "get_module_voltage_ramp_speed_percent": None,
+        "get_module_current_ramp_speed_percent": None,
+
+        "get_module_control_register": None,
+        "get_module_status_register": None,
+        "get_module_event_status_register": None,
+        "get_module_event_mask_register_read": None,
+        "get_module_event_channel_status_register": None,
+        "get_module_event_channel_mask_register_read": None,
+
+        "get_temperature": None,
+        "get_channel_number": None,
+        "get_set_value_changes": None,
+    }
+
+    for command, parameter in command_parameters.items():
+        _test_command(driver, command, parameter)
+
+
+def test_module_supply_voltage(driver: pysweepme.EmptyDevice) -> None:
+    """Test the module supply voltage commands on page 41."""
+    _test_command(driver, "get_module_supply", 0)
+
+    supplies = [
+        "+24",
+        "-24",
+        "+12",
+        "-12",
+        "+5",
+        "+3.3",
+    ]
+    for supply in supplies:
+        _test_command(driver, "get_module_supply_voltage", supply)
+
+
+def test_system_commands(driver: pysweepme.EmptyDevice) -> None:
+    """Test the system commands on page 42."""
+    command_parameters = {
+        "get_firmware": None,
+        "get_release": None,
+
+        "set_config_mode": 0,
+        "set_normal_mode": None,
+        "get_config_mode": None,
+        "save_config": None,
+    }
+
+    for command, parameter in command_parameters.items():
+        _test_command(driver, command, parameter)
