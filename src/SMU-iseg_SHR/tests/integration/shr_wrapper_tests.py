@@ -152,11 +152,37 @@ def test_channel_measure(driver: pysweepme.EmptyDevice) -> None:
         _test_command(driver, command, parameter)
 
 
-def test_configure_ramp(driver: pysweepme.EmptyDevice) -> None:
-    """Test the configure ramp commands on page 36."""
+def test_configure_ramp_all_channels(driver: pysweepme.EmptyDevice) -> None:
+    """Test the configure ramp commands for all channels on page 36."""
     command_parameters = {
-        "set_voltage_ramp_speed": 2,
-        "get_voltage_ramp_speed": None,
+        "set_module_voltage_ramp_speed": 20,
+        "get_module_voltage_ramp_speed": None,
+        "set_module_voltage_ramp_speed_emergency": 200,
+        # "get_module_voltage_ramp_speed_emergency": None,
+        # "get_module_voltage_ramp_speed_emergency_minimum": None,
+        # "get_module_voltage_ramp_speed_emergency_maximum": None,
+        "set_module_current_ramp_speed": 20,
+        "get_module_current_ramp_speed": None,
+    }
+
+    for command, parameter in command_parameters.items():
+        _test_command(driver, command, parameter)
+
+
+def test_directional_ramp_speed(driver: pysweepme.EmptyDevice) -> None:
+    """Test the directional ramp speed commands on page 36-37."""
+    command_parameters = {
+        "set_voltage_ramp_up_speed": 20,
+        "get_voltage_ramp_up_speed": None,
+        "set_voltage_ramp_down_speed": 20,
+        "get_voltage_ramp_down_speed": None,
+        "set_voltage_ramp_up_down_speed": 20,
+
+        "set_current_ramp_up_speed": 2E-3,
+        "get_current_ramp_up_speed": None,
+        "set_current_ramp_down_speed": 2E-3,
+        "get_current_ramp_down_speed": None,
+        "set_current_ramp_up_down_speed": 2E-3,
     }
 
     for command, parameter in command_parameters.items():

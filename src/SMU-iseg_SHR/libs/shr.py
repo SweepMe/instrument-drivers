@@ -309,145 +309,92 @@ class IsegDevice(ABC):
         return float(response[:-1])
 
 
-    # Configure Ramp commands - Page 35
+    # Configure Module Ramps (for all channels) commands - Page 35
+
+    def set_module_voltage_ramp_speed(self, speed: float) -> None:
+        """Set the module voltage ramp speed in %/s."""
+        self.write(f":CONF:RAMP:VOLT {speed}")
+
+    def get_module_voltage_ramp_speed(self) -> float:
+        """Get the module voltage ramp speed in %/s."""
+        response = self.query(":CONF:RAMP:VOLT?")
+        return float(response[:-3])
+
+    def set_module_voltage_ramp_speed_emergency(self, speed: float) -> None:
+        """Set the module voltage ramp speed emergency in %/s."""
+        self.write(f":CONF:RAMP:VOLT:EMCY {speed}")
+
+    # TODO: This function does not return the correct value/the device does not support it
+    def get_module_voltage_ramp_speed_emergency(self) -> float:
+        """Get the module voltage ramp speed emergency in %/s."""
+        response = self.query(":CONF:RAMP:VOLT:EMCY?")
+        return float(response[:-3])
+
+    # TODO: This function does not return the correct value/the device does not support it
+    def get_module_voltage_ramp_speed_emergency_minimum(self) -> float:
+        """Get the module voltage ramp speed emergency minimum in %/s."""
+        response = self.query(":CONF:RAMP:VOLT:EMCY:MIN?")
+        return float(response[:-3])
+
+    # TODO: This function does not return the correct value/the device does not support it
+    def get_module_voltage_ramp_speed_emergency_maximum(self) -> float:
+        """Get the module voltage ramp speed emergency maximum in %/s."""
+        response = self.query(":CONF:RAMP:VOLT:EMCY:MAX?")
+        return float(response[:-3])
+
+    def set_module_current_ramp_speed(self, speed: float) -> None:
+        """Set the module current ramp speed in %/s."""
+        self.write(f":CONF:RAMP:CURR {speed}")
+
+    def get_module_current_ramp_speed(self) -> float:
+        """Get the module current ramp speed in %/s."""
+        response = self.query(":CONF:RAMP:CURR?")
+        return float(response[:-3])
 
 
+    # Set ramp speed for up and down commands - Page 36
 
-    def set_ramp_speed_voltage(self, speed: float) -> None:
-        """Set the ramp speed for voltage in V/s or %/s depending on the device."""
+    def set_voltage_ramp_up_down_speed(self, speed: float) -> None:
+        """Set the channel voltage ramp speed for up and down in Volt/second."""
         self.write(f":CONF:RAMP:VOLT {speed},(@{self.channel})")
 
-    def set_ramp_speed_current(self, speed: float) -> None:
-        """Set the ramp speed for current in A/s or %/s depending on the device."""
+    def set_voltage_ramp_up_speed(self, speed: float) -> None:
+        """Set the channel voltage ramp up speed in Volt/second."""
+        self.write(f":CONF:RAMP:VOLT:UP {speed},(@{self.channel})")
+
+    def get_voltage_ramp_up_speed(self) -> float:
+        """Get the channel voltage ramp up speed in Volt/second."""
+        response = self.query(f":CONF:RAMP:VOLT:UP? (@{self.channel})")
+        return float(response[:-3])
+
+    def set_voltage_ramp_down_speed(self, speed: float) -> None:
+        """Set the channel voltage ramp down speed in Volt/second."""
+        self.write(f":CONF:RAMP:VOLT:DOWN {speed},(@{self.channel})")
+
+    def get_voltage_ramp_down_speed(self) -> float:
+        """Get the channel voltage ramp down speed in Volt/second."""
+        response = self.query(f":CONF:RAMP:VOLT:DOWN? (@{self.channel})")
+        return float(response[:-3])
+
+    def set_current_ramp_up_down_speed(self, speed: float) -> None:
+        """Set the channel current ramp speed for up and down in Ampere/second."""
         self.write(f":CONF:RAMP:CURR {speed},(@{self.channel})")
 
-    def set_ramp_speed_max(self, speed: float) -> None:
-        """Set the maximum ramp speed limit."""
-        self.write(f":CONF:RAMP:MAX {speed},(@{self.channel})")
+    def set_current_ramp_up_speed(self, speed: float) -> None:
+        """Set the channel current ramp up speed in Ampere/second."""
+        self.write(f":CONF:RAMP:CURR:UP {speed},(@{self.channel})")
 
-    # TODO Page 36
+    def get_current_ramp_up_speed(self) -> float:
+        """Get the channel current ramp up speed in Ampere/second."""
+        response = self.query(f":CONF:RAMP:CURR:UP? (@{self.channel})")
+        return float(response[:-3])
 
-    # Page 37
+    def set_current_ramp_down_speed(self, speed: float) -> None:
+        """Set the channel current ramp down speed in Ampere/second."""
+        self.write(f":CONF:RAMP:CURR:DOWN {speed},(@{self.channel})")
 
-    def configure_ramp_current_up(self, current: float) -> None:
-        """Configures the channel current ramp-up speed."""
-        self.write(f":CONF:RAMP:CURR:UP {current},(@{self.channel})")
-
-    def query_ramp_current_up(self) -> str:
-        """Queries the channel current ramp-up speed."""
-        return self.query(f":CONF:RAMP:CURR:UP? (@{self.channel})")
-
-    def configure_ramp_current_down(self, current: float) -> None:
-        """Configures the channel current ramp-down speed."""
-        self.write(f":CONF:RAMP:CURR:DOWN {current},(@{self.channel})")
-
-    def query_ramp_current_down(self) -> str:
-        """Queries the channel current ramp-down speed."""
-        return self.query(f":CONF:RAMP:CURR:DOWN? (@{self.channel})")
-
-    def configure_adc_sample_rate(self, value: int) -> None:
-        """Sets the ADC sample rate."""
-        self.write(f":CONF:ADC:SAMP:RATE {value},(@{self.channel})")
-
-    def query_adc_sample_rate(self) -> str:
-        """Queries the ADC sample rate."""
-        return self.query(f":CONF:ADC:SAMP:RATE? (@{self.channel})")
-
-    def configure_digital_filter(self, value: int) -> None:
-        """Sets the digital filter value."""
-        self.write(f":CONF:DIG:FILT {value},(@{self.channel})")
-
-    def query_digital_filter(self) -> str:
-        """Queries the digital filter value."""
-        return self.query(f":CONF:DIG:FILT? (@{self.channel})")
-
-    def configure_fine_adjustment(self, state: str) -> None:
-        """Enables or disables the fine adjustment."""
-        self.write(f":CONF:FINE:ADJ {state},(@{self.channel})")
-
-    def query_fine_adjustment(self) -> str:
-        """Queries the state of fine adjustment."""
-        return self.query(f":CONF:FINE:ADJ? (@{self.channel})")
-
-    def configure_fine_adjustment_clear(self) -> None:
-        """Clears the fine adjustment value."""
-        self.write(f":CONF:FINE:ADJ:CLEAR,(@{self.channel})")
-
-    def configure_kill_enable(self, state: str) -> None:
-        """Enables or disables kill function."""
-        self.write(f":CONF:KILL:ENABLE {state}")
-
-    def query_kill_enable(self) -> str:
-        """Queries the kill enable state."""
-        return self.query(f":CONF:KILL:ENABLE?")
-
-    # Page 38
-
-    def configure_kill_bounds_voltage(self, voltage: float) -> None:
-        """Sets the voltage bounds for the kill function."""
-        self.write(f":CONF:KILL:BOUNDS:VOLT {voltage},(@{self.channel})")
-
-    def query_kill_bounds_voltage(self) -> str:
-        """Queries the voltage bounds for the kill function."""
-        return self.query(f":CONF:KILL:BOUNDS:VOLT? (@{self.channel})")
-
-    def configure_kill_bounds_current(self, current: float) -> None:
-        """Sets the current bounds for the kill function."""
-        self.write(f":CONF:KILL:BOUNDS:CURR {current},(@{self.channel})")
-
-    def query_kill_bounds_current(self) -> str:
-        """Queries the current bounds for the kill function."""
-        return self.query(f":CONF:KILL:BOUNDS:CURR? (@{self.channel})")
-
-    def configure_kill_timeout(self, timeout: int) -> None:
-        """Sets the kill timeout in milliseconds."""
-        self.write(f":CONF:KILL:TIME {timeout},(@{self.channel})")
-
-    def query_kill_timeout(self) -> str:
-        """Queries the kill timeout in milliseconds."""
-        return self.query(f":CONF:KILL:TIME? (@{self.channel})")
-
-    def configure_kill_action(self, action: int) -> None:
-        """Sets the action on kill condition."""
-        self.write(f":CONF:KILL:ACTION {action},(@{self.channel})")
-
-    def query_kill_action(self) -> str:
-        """Queries the action on kill condition."""
-        return self.query(f":CONF:KILL:ACTION? (@{self.channel})")
-
-    # Page 39
-
-    def configure_voltage_nominal(self, voltage: float) -> None:
-        """Sets the channel nominal voltage."""
-        self.write(f":CONF:VOLT:NOM {voltage},(@{self.channel})")
-
-    def query_voltage_nominal(self) -> str:
-        """Queries the channel nominal voltage."""
-        return self.query(f":CONF:VOLT:NOM? (@{self.channel})")
-
-    def configure_current_nominal(self, current: float) -> None:
-        """Sets the channel nominal current."""
-        self.write(f":CONF:CURR:NOM {current},(@{self.channel})")
-
-    def query_current_nominal(self) -> str:
-        """Queries the channel nominal current."""
-        return self.query(f":CONF:CURR:NOM? (@{self.channel})")
-
-    def configure_voltage_limit(self, voltage: float) -> None:
-        """Sets the channel voltage limit."""
-        self.write(f":CONF:VOLT:LIM {voltage},(@{self.channel})")
-
-    def query_voltage_limit(self) -> str:
-        """Queries the channel voltage limit."""
-        return self.query(f":CONF:VOLT:LIM? (@{self.channel})")
-
-    def configure_current_limit(self, current: float) -> None:
-        """Sets the channel current limit."""
-        self.write(f":CONF:CURR:LIM {current},(@{self.channel})")
-
-    def query_current_limit(self) -> str:
-        """Queries the channel current limit."""
-        return self.query(f":CONF:CURR:LIM? (@{self.channel})")
-
-    # Page 40
+    def get_current_ramp_down_speed(self) -> float:
+        """Get the channel current ramp down speed in Ampere/second."""
+        response = self.query(f":CONF:RAMP:CURR:DOWN? (@{self.channel})")
+        return float(response[:-3])
 
