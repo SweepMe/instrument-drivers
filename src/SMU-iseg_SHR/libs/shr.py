@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Tuple
 
 
 class IsegDevice(ABC):
@@ -507,21 +508,127 @@ class IsegDevice(ABC):
         self.write(f"CONF:SERIAL:ECHO {enable}")
 
 
+    # Configure module read commands - Page 40
 
+    def get_module_voltage_limit(self) -> float:
+        """Get the module voltage limit in Volts."""
+        response = self.query(":READ:VOLT:LIM?")
+        return float(response[:-1])
 
+    def get_module_current_limit(self) -> float:
+        """Get the module current limit in Amperes."""
+        response = self.query(":READ:CURR:LIM?")
+        return float(response[:-1])
 
+    def get_module_voltage_ramp_speed_percent(self) -> float:
+        """Get the module voltage ramp speed in %/s."""
+        response = self.query(":READ:RAMP:VOLT?")
+        return float(response[:-3])
 
+    def get_module_current_ramp_speed_percent(self) -> float:
+        """Get the module current ramp speed in %/s."""
+        response = self.query(":READ:RAMP:CURR?")
+        return float(response[:-3])
 
+    def get_module_control_register(self) -> str:
+        """Get the module control register."""
+        return self.query(":READ:MODULE:CONTROL?")
 
+    def get_module_status_register(self) -> str:
+        """Get the module status register."""
+        return self.query(":READ:MODULE:STATUS?")
 
+    def get_module_event_status_register(self) -> str:
+        """Get the module event status register."""
+        return self.query(":READ:MODULE:EVENT:STATUS?")
 
+    def get_module_event_mask_register_read(self) -> str:
+        """Get the module event mask register.
 
+        TODO: Check the difference to get_module_event_mask_register
+        """
+        return self.query(":READ:MODULE:EVENT:MASK?")
 
+    def get_module_event_channel_status_register(self) -> str:
+        """Get the module event channel status register."""
+        return self.query(":READ:MODULE:EVENT:CHANSTATUS?")
 
+    def get_module_event_channel_mask_register_read(self) -> str:
+        """Get the module event channel mask register.
 
+        TODO: Check the difference to get_module_event_channel_mask_register
+        """
+        return self.query(":READ:MODULE:EVENT:CHANMASK?")
 
+    def get_module_supply(self, index: int = 0) -> float:
+        """Get one of the module supplies specified by Index.
 
+        TODO: Could be extended to query multiple supplies at once.
+        """
+        response = self.query(f":READ:MODULE:SUPPLY? (@{index})")
+        return float(response[:-1])
 
+    def get_module_supply_voltage(self, supply: str = "+24") -> float:
+        """Get the module supply voltage in V.
 
+        Args:
+            supply: The supply to query. Can be '+24', '-24', '+5', '+3.3', '+12', or '-12'.
+        """
+        commands = {
+            "+24": "P24V",
+            "-24": "N24V",
+            "+5": "P5V",
+            "+3.3": "P3V",
+            "+12": "P12V",
+            "-12": "N12V",
+        }
+        if supply not in commands:
+            msg = f"Invalid supply '{supply}'. Valid options are: {', '.join(commands.keys())}."
+            raise ValueError(msg)
 
+        response = self.query(f":READ:MODULE:SUPPLY:{commands[supply]}?")
+        return float(response[:-1])
 
+    def get_temperature(self) -> float:
+        """Get the module temperature in Celsius."""
+        response = self.query(":READ:MODULE:TEMPERATURE?")
+        return float(response[:-1])
+
+    def get_channel_number(self) -> int:
+        """Get the channel number."""
+        response = self.query(":READ:MODULE:CHANNELNUMBER?")
+        return int(response)
+
+    def get_set_value_changes(self) -> int:
+        """Get the number of set value changes."""
+        response = self.query(":READ:MODULE:SETVALUE?")
+        return int(response)
+
+    def get_firmware(self) -> str:
+        """Get the firmware name."""
+        response = self.query(":READ:FIRMWARE:NAME?")
+        return response.strip()
+
+    def get_release(self) -> str:
+        """Get the firmware release version."""
+        response = self.query(":READ:FIRMWARE:RELEASE?")
+        return response.strip()
+
+    def set_config_mode(self, serial_number: int) -> None:
+        """Set the device to configuration mode to change the CAN bitrate or address.
+
+        Only possible if all channels are off. As parameter, the device serial number must be given.
+        """
+        self.write(f":SYSTEM:USER:CONFIG {serial_number}")
+
+    def set_normal_mode(self) -> None:
+        """Set the device to normal mode."""
+        self.write(":SYSTEM:USER:CONFIG 0")
+
+    def get_config_mode(self) -> str:
+        """Returns 1 in configuration mode, otherwise 0."""
+        return self.query(":SYSTEM:USER:CONFIG?")
+
+    def save_config(self) -> None:
+        """Saves the changed output mode or polarity to icsConfig.xml."""
+        self.write(":SYSTEM:USER:CONFIG SAVE")
