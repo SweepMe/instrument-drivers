@@ -188,3 +188,35 @@ def test_directional_ramp_speed(driver: pysweepme.EmptyDevice) -> None:
     for command, parameter in command_parameters.items():
         _test_command(driver, command, parameter)
 
+
+def test_configure_module(driver: pysweepme.EmptyDevice) -> None:
+    """Test the configure module commands on page 38-39."""
+    command_parameters = {
+        "set_averaging": 16,
+        "get_averaging": None,
+        "set_kill_enable_function": 0,
+        "get_kill_enable_function": None,
+        "set_fine_adjustment": 1,
+        "get_fine_adjustment": None,
+
+        "reset_module_event_status_register": None,
+        "clear_module_event_status_register": 8192,
+        "set_module_event_mask_register": 0,
+        "get_module_event_mask_register": None,
+        "set_module_event_channel_mask_register": 255,
+        "get_module_event_channel_mask_register": None,
+
+        "set_module_can_bus_address": 23,
+        # "get_module_can_bus_address": None,
+        "set_can_bus_bit_rate": 250000,
+        # "get_can_bus_bit_rate": None,
+
+        # "get_serial_baud_rate": None,
+        "set_serial_baud_rate": None,
+        "get_echo_enabled": None,
+        "set_echo_enabled": 1,
+    }
+
+    for command, parameter in command_parameters.items():
+        _test_command(driver, command, parameter)
+

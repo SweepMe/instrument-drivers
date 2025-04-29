@@ -398,3 +398,130 @@ class IsegDevice(ABC):
         response = self.query(f":CONF:RAMP:CURR:DOWN? (@{self.channel})")
         return float(response[:-3])
 
+
+    # Configure Module commands - Page 38
+
+    def set_averaging(self, average: int) -> None:
+        """Set the number of digital filter averaging steps. Factory default is 64."""
+        self.write(f":CONF:AVER {average}")
+
+    def get_averaging(self) -> int:
+        """Get the number of digital filter averaging steps."""
+        response = self.query(":CONF:AVER?")
+        return int(response)
+
+    def set_kill_enable_function(self, enable: int) -> None:
+        """Enable or disable the kill function."""
+        if enable not in [0, 1]:
+            msg = "Enable must be 0 or 1."
+            raise ValueError(msg)
+        self.write(f":CONF:KILL {enable}")
+
+    def get_kill_enable_function(self) -> int:
+        """Get the kill function enable state."""
+        response = self.query(":CONF:KILL?")
+        return int(response)
+
+    def set_fine_adjustment(self, enable: int) -> None:
+        """Enable or disable the fine adjustment function."""
+        if enable not in [0, 1]:
+            msg = "Enable must be 0 or 1."
+            raise ValueError(msg)
+        self.write(f":CONF:ADJUST {enable}")
+
+    def get_fine_adjustment(self) -> int:
+        """Get the fine adjustment function enable state."""
+        response = self.query(":CONF:ADJUST?")
+        return int(response)
+
+    def reset_module_event_status_register(self) -> None:
+        """Reset the Module Event Status register."""
+        self.write("CONF:EVENT CLEAR")
+
+    def clear_module_event_status_register(self, mask: int) -> None:
+        """Clears single bits or bit combinations in the Module Event Status register."""
+        self.write(f"CONF:EVENT {mask}")
+
+    def set_module_event_mask_register(self, mask: int) -> None:
+        """Set the Module Event Mask register."""
+        self.write(f"CONF:EVENT:MASK {mask}")
+
+    def get_module_event_mask_register(self) -> int:
+        """Get the Module Event Mask register."""
+        response = self.query("CONF:EVENT:MASK?")
+        return int(response)
+
+    def set_module_event_channel_mask_register(self, mask: int) -> None:
+        """Set the Module Event Channel Mask register."""
+        self.write(f"CONF:EVENT:CHANMASK {mask}")
+
+    def get_module_event_channel_mask_register(self) -> int:
+        """Get the Module Event Channel Mask register."""
+        response = self.query("CONF:EVENT:CHANMASK?")
+        return int(response)
+
+    def set_module_can_bus_address(self, address: int) -> None:
+        """Set the CAN bus address of the module. Can only be set in configuration mode."""
+        if address < 0 or address > 63:
+            msg = "CAN bus address must be between 0 and 63."
+            raise ValueError(msg)
+        self.write(f"CONF:CAN:ADDR {address}")
+
+    def get_module_can_bus_address(self) -> int:
+        """Get the CAN bus address of the module."""
+        response = self.query("CONF:CAN:ADDR?")
+        return int(response)
+
+    def set_can_bus_bit_rate(self, bitrate: int) -> None:
+        """Set the CAN bus bit rate of the module to 125 kBit/s or 250 kBit/s. Can only be set in configuration mode."""
+        if bitrate not in [125000, 250000]:
+            msg = "CAN bus bit rate must be one of: 125000, 250000."
+            raise ValueError(msg)
+        self.write(f"CONF:CAN:BITRATE {bitrate}")
+
+    def get_can_bus_bit_rate(self) -> int:
+        """Get the CAN bus bit rate of the module."""
+        response = self.query("CONF:CAN:BITRATE?")
+        return int(response)
+
+    def get_serial_baud_rate(self) -> int:
+        """Get the serial baud rate of the module."""
+        response = self.query(":CONF:SERIAL:BAUD?")
+        return int(response)
+
+    def set_serial_baud_rate(self) -> None:
+        """Dynamically switches the serial connection to 115200 Baud."""
+        baud_rate = 115200
+        self.write(f"CONF:SERIAL:BAUD {baud_rate}")
+
+    def get_echo_enabled(self) -> bool:
+        """Get the echo enabled state of the module."""
+        response = self.query("CONF:SERIAL:ECHO?")
+        return response.strip() == "1"
+
+    def set_echo_enabled(self, enable: int) -> None:
+        """Enable or disable the echo function."""
+        if enable not in [0, 1]:
+            msg = "Enable must be 0 or 1."
+            raise ValueError(msg)
+        self.write(f"CONF:SERIAL:ECHO {enable}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
