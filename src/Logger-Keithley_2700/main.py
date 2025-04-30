@@ -130,8 +130,6 @@ class Device(EmptyDevice):
         self.units=["Unit1"]
         self.plottype=[True]
         self.savetype=[True]
-        self.had_trigger = False
-
 
     def set_GUIparameter(self) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
@@ -268,14 +266,12 @@ class Device(EmptyDevice):
 
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
-        self.had_trigger = False
         self.port.write("INIT") #initialize trigger
 
-    def request_result(self) -> None:
-        """Write command to ask the instrument to send measured data."""
+    def read_result(self) -> None:
+        """Read out the result buffer."""
         # normally 16 bytes reserved for each entry in buffer: 8 bytes per measure value, 8 bytes per timestamp
-        bytes_in_use = 0
-        while int(bytes_in_use) < len(self.channel_list)*16:
+        while True:
             if self.is_run_stopped():
                 break
 
@@ -283,24 +279,22 @@ class Device(EmptyDevice):
             bytes_in_buffer = self.port.read().split(",")
             bytes_in_use = bytes_in_buffer[1]
 
-            time.sleep(0.5)
-        else:
-            self.had_trigger = int(bytes_in_use) > len(self.channel_list)*16
+            if int(bytes_in_use) >= len(self.channel_list)*16:
+                break
+
+            time.sleep(0.1)
 
     def call(self) -> list:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        if self.had_trigger:
-            self.port.write("form:elem READ\n;FETCh?")
-            answer = self.port.read()  # here we read the response from the "READ?" request in 'measure'
-            readings_list = np.array([float(x) for x in answer.strip("\n").split(",")])
+        self.port.write("form:elem READ\n;FETCh?")
+        answer = self.port.read()  # here we read the response from the "READ?" request in 'measure'
+        readings_list = np.array([float(x) for x in answer.strip("\n").split(",")])
 
-            if self.scanning:
-                # Currently averaging is not implemented for scanning
-                return list(readings_list) # [np.mean(x) for x in np.split(readings_list,len(self.channel_list))]
-            else:
-                return [np.mean(readings_list)]
+        if self.scanning:
+            # Currently averaging is not implemented for scanning
+            return list(readings_list) # [np.mean(x) for x in np.split(readings_list,len(self.channel_list))]
 
-        return [] * len(self.variables)
+        return [np.mean(readings_list)]
 
     # here, command-wrapping functions are defined
 
