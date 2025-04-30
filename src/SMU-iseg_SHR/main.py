@@ -35,8 +35,6 @@ import time
 
 from pysweepme import debug
 from pysweepme.EmptyDeviceClass import EmptyDevice
-
-print("import shr")
 from shr import IsegDevice
 
 
@@ -89,10 +87,10 @@ class Device(EmptyDevice, IsegDevice):
         self.measured_voltage: float = 0.0
         self.measured_current: float = 0.0
 
-    def set_GUIparameter(self) -> dict:
+    def update_gui_parameters(self, parameter: dict) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
-            "SweepMode": ["Voltage in V", "Current in A", "None"],
+            "SweepMode": ["Voltage in V", "Current in A"],
             "Channel": ["0", "1", "2", "3"],
             "Average": 1,
             "Speed": [100],  # use speed as placeholder for ramp rate
@@ -100,7 +98,7 @@ class Device(EmptyDevice, IsegDevice):
             "RangeVoltage": self.polarity_modes,  # use voltage range as placeholder for polarity
         }
 
-    def get_GUIparameter(self, parameter: dict) -> None:
+    def apply_gui_parameters(self, parameter: dict) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.sweepmode = parameter["SweepMode"]
         self.channel = parameter["Channel"]
@@ -109,51 +107,42 @@ class Device(EmptyDevice, IsegDevice):
         self.port_string = parameter["Port"]
 
         self.average = parameter["Average"]
-        self.ramp_rate = float(parameter["Speed"])
+        self.ramp_rate = parameter["Speed"]
         self.polarity_mode = parameter["RangeVoltage"]
         self.mode = parameter["Range"]
-
-    def connect(self) -> None:
-        """Connect to the device. This function is called only once at the start of the measurement."""
-
-    def disconnect(self) -> None:
-        """Disconnect from the device. This function is called only once at the end of the measurement."""
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
         self.clear_event_status()
 
-        # TODO: Device if the device should be reset, as it resets the ramp rates as well
-        self.reset_device()
+        # TODO: Decide if the device should be reset, as it resets the ramp rates as well
+        self.reset()
+        self.set_local_lockout(True)
 
     def deinitialize(self) -> None:
         """Deinitialize the device. This function is called only once at the end of the measurement."""
+        self.set_local_lockout(False)
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        self.set_local_lockout(True)
-
         if self.polarity_mode == "Positive":
-            self._set_output_polarity("p")
+            self.set_polarity("p")
         elif self.polarity_mode == "Negative":
-            self._set_output_polarity("n")
+            self.set_polarity("n")
 
-        self._set_average(self.average)
-        self._set_output_mode(self.mode)
+        self.set_averaging(self.average)
+        self.set_voltage_range(self.mode)
 
-        self._set_voltage_ramp_rate(self.ramp_rate, "%/s")
-
-    def unconfigure(self) -> None:
-        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
-        self.set_local_lockout(False)
+        # TODO: Ramp rate cannot be changed as the GUI parameter does not allow line editing
+        self._set_voltage_ramp_rate(float(self.ramp_rate), "%/s")
 
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
-        self._set_output_state(True)
+        self.voltage_on()
 
     def poweroff(self) -> None:
         """Turn off the device when leaving a sequencer branch."""
-        self._set_output_state(False)
+        self.voltage_off()
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
@@ -168,7 +157,7 @@ class Device(EmptyDevice, IsegDevice):
             if voltage_changes:
                 timeout_s = 5
                 while timeout_s > 0:
-                    if "Is Voltage Ramp" in self._get_channel_status():
+                    if "Is Voltage Ramp" in self.get_channel_status():
                         break
                     time.sleep(0.1)
                     timeout_s -= 0.1
@@ -179,26 +168,6 @@ class Device(EmptyDevice, IsegDevice):
             # TODO: Currently untested
             self.set_current(self.value)
 
-    def handle_polarity(self, value: float) -> None:
-        """Verify the polarity of the set value. Optionally, set the polarity automatically based on the set value."""
-        if value > 0 and self.polarity_mode == "Negative":
-            msg = f"Polarity mode is set to negative, the value of {value} can not be reached."
-            raise ValueError(msg)
-
-        if value < 0 and self.polarity_mode == "Positive":
-            msg = f"Polarity mode is set to positive, the value of {value} can not be reached."
-            raise ValueError(msg)
-
-        if self.polarity_mode == "Auto":
-            change_polarity = ""
-            if value > 0 and self.output_polarity != "p":
-                change_polarity = "p"
-            elif value < 0 and self.output_polarity != "n":
-                change_polarity = "n"
-
-            if change_polarity:
-                self._set_output_polarity(change_polarity)
-
     def reach(self) -> None:
         """Wait until the device has reached the set value. This function is called after 'apply'."""
         timeout_in_s = 30
@@ -206,8 +175,8 @@ class Device(EmptyDevice, IsegDevice):
 
         while not level_reached and timeout_in_s > 0:
             # TODO: Some values are skipped because the device status still says 'constant' even though a new value was set
-            status = self._get_channel_status()
-            # print(status)
+            status = self.get_channel_status()
+
             if self.sweepmode.startswith("Voltage"):
                 level_reached = "Is Constant Voltage" in status and "Is Voltage Ramp" not in status
             elif self.sweepmode.startswith("Current"):
@@ -234,6 +203,95 @@ class Device(EmptyDevice, IsegDevice):
 
         return [self.measured_voltage, self.measured_current]
 
+    # Configuration
+
+    def set_local_lockout(self, lockout: bool) -> None:
+        """Enable/disable the front panel buttons."""
+        if lockout:
+            self.local_lockout()
+        else:
+            self.goto_local()
+
+    def handle_polarity(self, value: float) -> None:
+        """Verify the polarity of the set value. Optionally, set the polarity automatically based on the set value."""
+        if value > 0 and self.polarity_mode == "Negative":
+            msg = f"Polarity mode is set to negative, the value of {value} can not be reached."
+            raise ValueError(msg)
+
+        if value < 0 and self.polarity_mode == "Positive":
+            msg = f"Polarity mode is set to positive, the value of {value} can not be reached."
+            raise ValueError(msg)
+
+        if self.polarity_mode == "Auto":
+            change_polarity = ""
+            if value > 0 and self.output_polarity != "p":
+                change_polarity = "p"
+            elif value < 0 and self.output_polarity != "n":
+                change_polarity = "n"
+
+            if change_polarity:
+                self.set_polarity(change_polarity)
+
+    def set_polarity(self, polarity: str = "p") -> None:
+        """Set the output polarity."""
+        if polarity not in ["p", "n"]:
+            msg = "Polarity must be 'p' or 'n'"
+            raise ValueError(msg)
+
+        # Can only set polarity when the output is off
+        turn_on_again = False
+        if self.voltage_is_on():
+            self.voltage_off()
+            turn_on_again = True
+
+        self.set_output_polarity(polarity)
+        self.output_polarity = polarity
+        self.wait_for_operation_complete()
+
+        if not self.value_applied_correctly(self.output_polarity, self.get_output_polarity):
+            msg = f"Output polarity {self.output_polarity} could not be set correctly."
+            raise Exception(msg)
+
+        if turn_on_again:
+            self.voltage_on()
+
+    def set_voltage_range(self, mode: int) -> None:
+        """Set the voltage range/output mode to either 2kV/4mA, 4kV/3mA, or 6kV/2mA."""
+        supported_modes = self.get_supported_output_modes()
+        mode_number = self.modes[mode]
+
+        if mode_number not in supported_modes:
+            msg = f"Mode {mode} is not supported. Supported modes are {supported_modes}."
+            raise ValueError(msg)
+
+        # Can only set mode when the output is off
+        turn_on_again = False
+        if self.voltage_is_on():
+            self.voltage_off()
+            turn_on_again = True
+
+        # TODO: Setting the mode does not work consistently yet
+        self.set_output_mode(mode_number)
+
+        if not self.value_applied_correctly(mode_number, self.get_output_mode):
+            msg = f"Output mode {mode_number} not set correctly."
+            raise Exception(msg)
+
+        if turn_on_again:
+            self.voltage_on()
+
+    def value_applied_correctly(self, value: int | str, getter: callable, timeout_s: int = 5) -> bool:
+        """Wait until the getter function returns the updated value or a timeout is reached."""
+        while timeout_s > 0 and not self.is_run_stopped():
+            if getter() == value:
+                return True
+            time.sleep(0.1)
+            timeout_s -= 0.1
+
+        return False
+
+    # Communication
+
     def write(self, command: str) -> None:
         """Write a command to the device. Handle echo if USB connection is used."""
         self.port.write(command)
@@ -253,176 +311,15 @@ class Device(EmptyDevice, IsegDevice):
         self.write(command)
         return self.port.read()
 
-    # Wrapped SCPI commands
-
-    def clear_event_status(self) -> None:
-        """Clear the event status of the device."""
-        # TODO: Why do i need to query? should not return something
-        self.query("*CLS")
-
-    def reset_device(self) -> None:
-        """Reset the device to its default state."""
-        # TODO: Why do i need to query? should not return something
-        self.port.query("*RST")
-
-    def get_identification(self) -> str:
-        """Get the identification string of the device."""
-        return self.query("*IDN?")
-
-    def set_local_lockout(self, lockout: bool) -> None:
-        """Enable/disable the front panel buttons."""
-        if lockout:
-            self.write("*LLO")
-        else:
-            self.write("*GTL")
-
-    # Voltage and current
-
-    # def set_voltage(self, voltage: float) -> None:
-    #     """Set the output voltage."""
-    #     self.write(f"VOLT {voltage},(@{self.channel})")
-
-    # def set_voltage_bounds(self, voltage_limit: float) -> None:
-    #     """Set the output voltage limit/bounds."""
-    #     self.write(f"VOLT:BOUNDS {voltage_limit},(@{self.channel})")
-
-    # def get_voltage(self) -> float:
-    #     """Get the measured voltage."""
-    #     return self.get_value("MEAS:VOLT?")
-    #
-    # def get_value(self, command: str) -> float:
-    #     """Get the value of a command for the channel."""
-    #     answer = self.query(f"{command} (@{self.channel})")
-    #     return float(answer[:-1])
-    #
-    # def get_voltage_set(self) -> float:
-    #     """Get the set output voltage in V."""
-    #     return self.get_value("READ:VOLT?")
-    #
-    # def set_current(self, current: float) -> None:
-    #     """Set the output current."""
-    #     self.write(f"CURR {current},(@{self.channel})")
-    #
-    # def set_current_bounds(self, current_limit: float) -> None:
-    #     """Set the output current limit/bounds."""
-    #     self.write(f"CURR:BOUNDS {current_limit},(@{self.channel})")
-    #
-    # def get_current_set(self) -> float:
-    #     """Get the set output current in A."""
-    #     return self.get_value("READ:CURR?")
-    #
-    # def get_current(self) -> float:
-    #     """Get the measured current."""
-    #     return self.get_value("MEAS:CURR?")
-
-    # Polarity
-
-    def _set_output_polarity(self, polarity: str = "p") -> None:
-        """Set the output polarity."""
-        if polarity not in ["p", "n"]:
-            msg = "Polarity must be 'p' or 'n'"
-            raise ValueError(msg)
-
-        # Can only set polarity when the output is off
-        turn_on_again = False
-        if self._get_output_state():
-            self._set_output_state(False)
-            turn_on_again = True
-
-        self.write(f"CONF:OUTPUT:POL {polarity},(@{self.channel})")
-        self.output_polarity = polarity
-        self.wait_for_operation_complete()
-
-        if not self.value_applied_correctly(self.output_polarity, self.get_output_polarity):
-            msg = f"Output polarity {self.output_polarity} could not be set correctly."
-            raise Exception(msg)
-
-        if turn_on_again:
-            self._set_output_state(True)
-
-    def get_output_polarity(self) -> str:
-        """Get the output polarity."""
-        return self.query(f"CONF:OUTPUT:POL? (@{self.channel})")
-
-    # Output
-
-    def _set_output_state(self, state: bool) -> None:
-        """Set the output state to on or off."""
-        if state:
-            self.write(f"VOLT ON,(@{self.channel})")
-        else:
-            self.write(f"VOLT OFF,(@{self.channel})")
-
-    def _get_output_state(self) -> bool:
-        """Get the output state."""
-        state = self.query(f"READ:VOLT:ON? (@{self.channel})")
-        return str(state) == "1"
-
-    # Configure
-
-    def _set_average(self, average: int) -> None:
-        """Set the number of digital filter averaging steps."""
-        if average not in self.averages:
-            msg = f"Average {average} is not allowed. Allowed values are {self.averages}."
-            raise ValueError(msg)
-
-        self.write(f"CONF: AVER {average}")
-
-    def wait_for_operation_complete(self) -> None:
+    def wait_for_operation_complete(self, timeout_s: float = 5) -> None:
         """Query the *OPC? command until it returns 1."""
-        # TODO: Check if this is needed
-        ret = self.query("*OPC?")
-        while ret != "1":
-            time.sleep(0.1)
-            ret = self.port.read()
-
-    def _set_output_mode(self, mode: int) -> None:
-        """Set the output mode."""
-        supported_modes = self._get_supported_output_modes()
-        mode_number = self.modes[mode]
-        # print(f"Mode number: {mode_number}")
-        if mode_number not in supported_modes:
-            msg = f"Mode {mode} is not supported. Supported modes are {supported_modes}."
-            raise ValueError(msg)
-
-        # Can only set mode when the output is off
-        turn_on_again = False
-        if self._get_output_state():
-            self._set_output_state(False)
-            turn_on_again = True
-
-        # TODO: Setting the mode does not work consistently yet
-        self.query(f"CONF:OUTPUT:MODE {mode_number},(@{self.channel})")
-
-        if not self.value_applied_correctly(mode_number, self._get_output_mode):
-            msg = f"Output mode {mode_number} not set correctly."
-            raise Exception(msg)
-
-        if turn_on_again:
-            self._set_output_state(True)
-
-    def value_applied_correctly(self, value: int | str, getter: callable, timeout_s: int = 5) -> bool:
-        """Wait until the getter function returns the set value."""
-        while timeout_s > 0 and not self.is_run_stopped():
-            if getter() == value:
-                return True
+        while not self.get_operation_complete() and not self.is_run_stopped() and timeout_s > 0:
             time.sleep(0.1)
             timeout_s -= 0.1
 
-        return False
-
-    def _get_output_mode(self) -> int:
-        """Get the output mode."""
-        return int(self.query(f"CONF:OUTPUT:MODE? (@{self.channel})"))
-
-    def _get_supported_output_modes(self) -> list[int]:
-        """Get the available channel output modes."""
-        supported_modes = self.query(f"CONF:OUTPUT:MODE:LIST? (@{self.channel})")
-        return list(map(int, supported_modes.split(",")))
-
-    def _get_channel_status(self) -> list:
+    def get_channel_status(self) -> list:
         """Get the channel status."""
-        status = self.query(f"READ:CHAN:STATUS? (@{self.channel})")
+        status = self.get_channel_status_register()
         return self.decode_channel_status(int(status))
 
     @staticmethod
@@ -471,7 +368,7 @@ class Device(EmptyDevice, IsegDevice):
 
         return active_statuses
 
-    # Ramp
+    # TODO: Ramp rate
 
     def _set_voltage_ramp_rate(self, rate: float, mode: str = "V/s", direction: str = "up") -> None:
         """Set the voltage ramp rate.
