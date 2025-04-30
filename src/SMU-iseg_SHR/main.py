@@ -76,7 +76,7 @@ class Device(EmptyDevice, IsegDevice):
 
         self.averages: list = [1, 16, 64, 256, 512, 1024]
         self.average: int = 64
-        self.ramp_rate: float = 100  # Ramp rate in V/s or %/s, use %/s for now
+        self.ramp_rate: str = "100 V/s"  # Ramp rate in V/s or %/s, use %/s for now
         self.modes = {
             "2kV/4mA": 1,
             "4kV/3mA": 2,
@@ -93,7 +93,7 @@ class Device(EmptyDevice, IsegDevice):
             "SweepMode": ["Voltage in V", "Current in A"],
             "Channel": ["0", "1", "2", "3"],
             "Average": 1,
-            "Speed": [100],  # use speed as placeholder for ramp rate
+            "Speed": ["50 V/s", "100 V/s", "200 V/s", "500 V/s"],  # use speed as placeholder for ramp rate
             "Range": list(self.modes.keys()),  # use range as placeholder for mode
             "RangeVoltage": self.polarity_modes,  # use voltage range as placeholder for polarity
         }
@@ -134,7 +134,7 @@ class Device(EmptyDevice, IsegDevice):
         self.set_voltage_range(self.mode)
 
         # TODO: Ramp rate cannot be changed as the GUI parameter does not allow line editing
-        self._set_voltage_ramp_rate(float(self.ramp_rate), "%/s")
+        self.handle_ramp_rate(self.ramp_rate)
 
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
@@ -280,6 +280,25 @@ class Device(EmptyDevice, IsegDevice):
         if turn_on_again:
             self.voltage_on()
 
+    def handle_ramp_rate(self, rate: str) -> None:
+        """Handle the ramp rate. The rate is given in V/s or %/s.
+
+        rate: Ramp rate in V/s or %/s
+        mode: "V/s" or "%/s"
+        direction: "up" or "down". Only relevant for V/s mode.
+        """
+        if rate.endswith("V/s"):
+            ramp_rate = float(rate[:-3].strip())
+            self.set_voltage_ramp_up_down_speed(ramp_rate)
+
+        elif rate.endswith("%/s"):
+            # %/s is set for both directions
+            ramp_rate = float(rate[:-3].strip())
+            # TODO: Check if the module ramp speed sets it for all channels - might effect other SMU driver instances
+            self.set_module_voltage_ramp_speed(ramp_rate)
+        else:
+            msg = f"No unit detected for ramp rate of {rate}. Use V/s or %/s."
+            raise ValueError(msg)
     def value_applied_correctly(self, value: int | str, getter: callable, timeout_s: int = 5) -> bool:
         """Wait until the getter function returns the updated value or a timeout is reached."""
         while timeout_s > 0 and not self.is_run_stopped():
@@ -367,20 +386,3 @@ class Device(EmptyDevice, IsegDevice):
                 active_statuses.append(desc)
 
         return active_statuses
-
-    # TODO: Ramp rate
-
-    def _set_voltage_ramp_rate(self, rate: float, mode: str = "V/s", direction: str = "up") -> None:
-        """Set the voltage ramp rate.
-
-        rate: Ramp rate in V/s or %/s
-        mode: "V/s" or "%/s"
-        direction: "up" or "down". Only relevant for V/s mode.
-        """
-        if mode == "V/s":
-            direction = "UP" if direction == "up" else "DOWN"
-            self.write(f"CONF:RAMP:VOLT:{direction} {rate},(@{self.channel})")
-        else:
-            # %/s is set for both directions
-            self.write(f"CONF:RAMP:VOLT {rate}")
-
