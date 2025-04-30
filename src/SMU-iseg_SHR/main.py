@@ -299,6 +299,9 @@ class Device(EmptyDevice, IsegDevice):
         else:
             msg = f"No unit detected for ramp rate of {rate}. Use V/s or %/s."
             raise ValueError(msg)
+
+    # Communication
+
     def value_applied_correctly(self, value: int | str, getter: callable, timeout_s: int = 5) -> bool:
         """Wait until the getter function returns the updated value or a timeout is reached."""
         while timeout_s > 0 and not self.is_run_stopped():
@@ -309,9 +312,15 @@ class Device(EmptyDevice, IsegDevice):
 
         return False
 
-    # Communication
-
     def write(self, command: str) -> None:
+        """Write a command to the device. Check via *OPC if the command was received."""
+        self._write(command)
+
+        # wait for the device to process the command
+        # TODO: Check if this is necessary for all commands
+        self.wait_for_operation_complete()
+
+    def _write(self, command: str) -> None:
         """Write a command to the device. Handle echo if USB connection is used."""
         self.port.write(command)
 
@@ -327,7 +336,7 @@ class Device(EmptyDevice, IsegDevice):
 
     def query(self, command: str) -> str:
         """Send a command to the device and read the response."""
-        self.write(command)
+        self._write(command)
         return self.port.read()
 
     def wait_for_operation_complete(self, timeout_s: float = 5) -> None:
