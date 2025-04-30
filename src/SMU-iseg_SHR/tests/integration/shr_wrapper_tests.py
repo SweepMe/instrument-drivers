@@ -47,6 +47,22 @@ def _test_command(driver: pysweepme.EmptyDevice, command: str, parameter: any = 
         pytest.fail(f"Command {command} failed with parameter {parameter}: {e}")
 
 
+def test_basic_commands(driver: pysweepme.EmptyDevice) -> None:
+    """Test the basic commands on page 26."""
+    command_parameters = {
+        "get_identification": None,
+        "clear_event_status": None,
+        "reset": None,
+        "get_instruction_set": None,
+        "local_lockout": None,
+        "goto_local": None,
+        "get_operation_complete": None,
+    }
+
+    for command, parameter in command_parameters.items():
+        _test_command(driver, command, parameter)
+
+
 def test_channel_voltage_commands(driver: pysweepme.EmptyDevice) -> None:
     """Test the channel dependent voltage commands on page 33."""
     command_parameters = {
@@ -114,7 +130,7 @@ def test_channel_read(driver: pysweepme.EmptyDevice) -> None:
         "get_voltage_mode": None,
         "get_supported_voltage_modes": None,
         "get_voltage_bounds": None,
-        "get_voltage_on": None,
+        "voltage_is_on": None,
         "get_voltage_emergency": None,
 
         "get_current_set": None,

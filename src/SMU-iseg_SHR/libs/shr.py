@@ -28,12 +28,18 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Tuple
 
 
 class IsegDevice(ABC):
+    """This class contains the wrapped SCPI commands for iseg devices of type EHS, NRH, SHR, NHS, and MICC.
 
-    def __init__(self):
+    The implementation requires the following methods:
+        - write(command: str) -> None. Write a command to the device.
+        - query(command: str) -> str. Query the device and return the response.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the wrapper class with a channel parameter."""
         super().__init__()
         self.channel = "0"  # Default, can be overridden via GUI parameters or set_parameters()
 
@@ -44,6 +50,51 @@ class IsegDevice(ABC):
     @abstractmethod
     def query(self, command: str) -> str:
         """Queries the device and returns the response."""
+
+    # Basic commands
+
+    def get_identification(self) -> str:
+        """Get the identification string of the device."""
+        return self.query("*IDN?")
+
+    def clear_event_status(self) -> None:
+        """Clear the event status of the device."""
+        # TODO: Why do i need to query? should not return something
+        self.query("*CLS")
+
+    def reset(self) -> None:
+        """Reset the device to its default state.
+
+        - turn high voltage off with ramp for all channel
+        - set voltage set Vset to zero for all channels
+        - set current set Iset to the current nominal for all channels
+        """
+        self.write("*RST")
+
+    def get_instruction_set(self) -> str:
+        """Get the currently selected instruction set.
+
+        All devices support the EDCP command set. Some devices (HPS, EHQ) support further command sets, refer to the
+        devices manual for them.
+        """
+        return self.query("*INSTR?")
+
+    def local_lockout(self) -> None:
+        """Local Lockout: Disable the front panel, the device can only be controlled remotely."""
+        self.write("*LLO")
+
+    def goto_local(self) -> None:
+        """Front panel buttons and rotary encoders are enabled."""
+        self.write("*GTL")
+
+    def get_operation_complete(self) -> bool:
+        """Check if the operation is complete.
+
+        Returns:
+            True if the operation is complete, False otherwise.
+        """
+        response = self.query("*OPC?")
+        return response.strip() == "1"
 
     # Channel Voltage Commands - Page 33
 
@@ -96,9 +147,6 @@ class IsegDevice(ABC):
     def set_event_mask(self, mask: int) -> None:
         """Set the Channel Event Mask register."""
         self.write(f":EVENT:MASK {mask},(@{self.channel})")
-
-
-
 
 
     # Channel configuration commands - Page 34
@@ -191,9 +239,6 @@ class IsegDevice(ABC):
         return response.split(",")
 
 
-
-
-
     # Read channel commands - Page 35
     # Voltage read commands
 
@@ -228,7 +273,7 @@ class IsegDevice(ABC):
         response = self.query(f":READ:VOLT:BOUNDS? (@{self.channel})")
         return float(response[:-1])
 
-    def get_voltage_on(self) -> bool:
+    def voltage_is_on(self) -> bool:
         """Get the channel voltage on state."""
         response = self.query(f":READ:VOLT:ON? (@{self.channel})")
         return response.strip() == "1"
@@ -237,6 +282,7 @@ class IsegDevice(ABC):
         """Get the channel emergency off state."""
         response = self.query(f":READ:VOLT:EMCY? (@{self.channel})")
         return response.strip() == "1"
+
 
     # Current read commands
 
@@ -271,6 +317,7 @@ class IsegDevice(ABC):
         response = self.query(f":READ:CURR:BOUNDS? (@{self.channel})")
         return float(response[:-1])
 
+
     # Ramp read commands
 
     def get_voltage_ramp_speed(self) -> float:
@@ -303,6 +350,7 @@ class IsegDevice(ABC):
         response = self.query(f":READ:RAMP:CURR:MAX? (@{self.channel})")
         return float(response[:-3])
 
+
     # Channel status
 
     def get_channel_control_register(self) -> str:
@@ -320,7 +368,6 @@ class IsegDevice(ABC):
     def get_channel_event_mask_register(self) -> str:
         """Get the channel event mask register."""
         return self.query(f":READ:CHAN:EVENT:MASK? (@{self.channel})")
-
 
 
     # Measure commands - Page 35
@@ -430,6 +477,10 @@ class IsegDevice(ABC):
 
     def set_averaging(self, average: int) -> None:
         """Set the number of digital filter averaging steps. Factory default is 64."""
+        supported_averages = [1, 16, 64, 256, 512, 1024]
+        if average not in supported_averages:
+            msg = f"Average {average} not supported. Average must be one of: {', '.join(map(str, supported_averages))}."
+            raise ValueError(msg)
         self.write(f":CONF:AVER {average}")
 
     def get_averaging(self) -> int:
