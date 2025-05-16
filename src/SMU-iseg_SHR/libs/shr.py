@@ -60,7 +60,7 @@ class IsegDevice(ABC):
     def clear_event_status(self) -> None:
         """Clear the event status of the device."""
         # TODO: Why do i need to query? should not return something
-        self.query("*CLS")
+        self.write("*CLS")
 
     def reset(self) -> None:
         """Reset the device to its default state.
@@ -100,10 +100,12 @@ class IsegDevice(ABC):
 
     def set_voltage(self, voltage: float) -> None:
         """Set the voltage setpoint (Vset) in Volts."""
+        # TODO set write again
         self.write(f":VOLT {voltage},(@{self.channel})")
 
     def voltage_on(self) -> None:
         """Switch on high voltage with configured ramp speed."""
+        # TODO set write again
         self.write(f":VOLT ON,(@{self.channel})")
 
     def voltage_off(self) -> None:
@@ -210,9 +212,13 @@ class IsegDevice(ABC):
         self.write(f":CONF:OUTP:MODE {mode},(@{self.channel})")
 
     def get_output_mode(self) -> int:
-        """Query the channel output mode."""
-        response = self.query(f":CONF:OUTP:MODE? (@{self.channel})")
-        return int(response)
+        """Query the channel output mode. Returns -1 if the device has currently no mode and returns 1,2,3."""
+        mode = self.query(f":CONF:OUTP:MODE? (@{self.channel})")
+        # try:
+        #     mode = int(mode)
+        # except ValueError:
+        #     mode = -1
+        return int(mode)
 
     def get_supported_output_modes(self) -> list[int]:
         """Query the available output modes."""
@@ -243,8 +249,11 @@ class IsegDevice(ABC):
     # Voltage read commands
 
     def get_voltage_set(self) -> float:
-        """Get the voltage set V_set in Volt."""
+        """Get the voltage set V_set in Volt. Returns 'nan' if no voltage is set."""
+        # TODO: Revert
         response = self.query(f":READ:VOLT? (@{self.channel})")
+        if not response:
+            return float("nan")
         return float(response[:-1])
 
     def get_voltage_limit(self) -> float:
