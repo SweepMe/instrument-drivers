@@ -31,11 +31,19 @@
 
 from __future__ import annotations
 
+import math
 import time
 
 from pysweepme import debug
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+import importlib
+import shr
+
+importlib.reload(shr)
 from shr import IsegDevice
+
+_ = IsegDevice
 
 
 class Device(EmptyDevice, IsegDevice):
@@ -56,9 +64,18 @@ class Device(EmptyDevice, IsegDevice):
         # Communication Parameters
         self.port_string: str = ""
         self.port_manager = True
-        self.port_types = ["COM", "TCPIP"]
+        self.port_types = [
+            "COM",
+            "TCPIP",  # For TCPIP, the device must be installed as raw socket via NI Max
+            "SOCKET",
+        ]
         self.port_properties = {
             "timeout": 2,
+            "SOCKET_EOLwrite": "\r\n",
+            "SOCKET_EOLread": "\r\n",
+            "TCPIP_EOLwrite": "\r\n",
+            "TCPIP_EOLread": "\r\n",
+            # "rstrip": False,
         }
 
         # Measurement parameters
@@ -131,6 +148,10 @@ class Device(EmptyDevice, IsegDevice):
             self.set_polarity("n")
 
         self.set_averaging(self.average)
+        average = self.get_averaging()
+        if average != self.average:
+            raise Exception(f"Average {self.average} not set correctly.")
+
         self.set_voltage_range(self.mode)
 
         # TODO: Ramp rate cannot be changed as the GUI parameter does not allow line editing
@@ -139,6 +160,7 @@ class Device(EmptyDevice, IsegDevice):
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
         self.voltage_on()
+        self.value_applied_correctly(True, self.voltage_is_on)
 
     def poweroff(self) -> None:
         """Turn off the device when leaving a sequencer branch."""
@@ -150,7 +172,14 @@ class Device(EmptyDevice, IsegDevice):
 
         if self.sweepmode.startswith("Voltage"):
             # TODO: Decide whether 0.1V is the minimum step size
-            voltage_changes = abs(self.get_voltage_set() - self.value) > 0.1
+
+            previous_set_voltage = self.get_voltage_set()
+
+            if math.isnan(previous_set_voltage) or abs(previous_set_voltage - self.value) > 0.1:
+                voltage_changes = True
+            else:
+                voltage_changes = False
+
             self.set_voltage(self.value)
 
             # wait for the device to start a ramp. Use 5s timeout in case the level is already reached
@@ -173,7 +202,7 @@ class Device(EmptyDevice, IsegDevice):
         timeout_in_s = 30
         level_reached = False
 
-        while not level_reached and timeout_in_s > 0:
+        while not level_reached and timeout_in_s > 0 and not self.is_run_stopped():
             # TODO: Some values are skipped because the device status still says 'constant' even though a new value was set
             status = self.get_channel_status()
 
@@ -182,7 +211,7 @@ class Device(EmptyDevice, IsegDevice):
             elif self.sweepmode.startswith("Current"):
                 level_reached = "Is Constant Current" in status and "Is Current Ramp" not in status
 
-            # if the value is 0, the device will not yiel constant current/voltage
+            # if the value is 0, the device will not yield constant current/voltage
             # TODO: Ensure that the value is reached
             if self.value == 0:
                 level_reached = "Is Voltage Ramp" not in status and "Is Current Ramp" not in status
@@ -243,6 +272,11 @@ class Device(EmptyDevice, IsegDevice):
         if self.voltage_is_on():
             self.voltage_off()
             turn_on_again = True
+
+        # TODO: Decide if this is needed
+        timeout_s = 5
+        while abs(self.get_voltage()) > 0.1 and timeout_s > 0 and not self.is_run_stopped():
+            time.sleep(0.1)
 
         self.set_output_polarity(polarity)
         self.output_polarity = polarity
@@ -318,10 +352,11 @@ class Device(EmptyDevice, IsegDevice):
 
         # wait for the device to process the command
         # TODO: Check if this is necessary for all commands
-        self.wait_for_operation_complete()
+        # self.wait_for_operation_complete()
 
     def _write(self, command: str) -> None:
         """Write a command to the device. Handle echo if USB connection is used."""
+        print(command)
         self.port.write(command)
 
         # Handle echo for COM port
@@ -336,14 +371,38 @@ class Device(EmptyDevice, IsegDevice):
 
     def query(self, command: str) -> str:
         """Send a command to the device and read the response."""
+        # ensure there is no data in the buffer
+        # buffer_size = self.port.port.get_visa_attribute(pyvisa.constants.VI_ATTR_ASRL_RCV_BUF_SIZE)
+
+        # workaround to clear the buffer before sending a command
+        # this increases measurement time and should be removed
+        # but it is necessary as some commands seem to leave empty bytes in the buffer
+        # best case would be self.port.clear() to work
+        self.port.clear()
+        while True:
+            try:
+                ret = self.port.read()
+                print(f"Buffer not empty: {ret}, {len(ret)}, {repr(ret)}")
+            except Exception as e:
+                # print("Buffer empty", e)
+                break
+
         self._write(command)
         return self.port.read()
 
     def wait_for_operation_complete(self, timeout_s: float = 5) -> None:
         """Query the *OPC? command until it returns 1."""
-        while not self.get_operation_complete() and not self.is_run_stopped() and timeout_s > 0:
+        self._write("*OPC?")
+        while not self.is_run_stopped() and timeout_s > 0:
+            ret = self.port.read()
+            if ret == "1":
+                break
             time.sleep(0.1)
             timeout_s -= 0.1
+
+        # while not self.get_operation_complete() and not self.is_run_stopped() and timeout_s > 0:
+        #     time.sleep(0.1)
+        #     timeout_s -= 0.1
 
     def get_channel_status(self) -> list:
         """Get the channel status."""
