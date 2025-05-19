@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme import EmptyDevice, debug
 
 
 class Device(EmptyDevice):
@@ -46,7 +46,7 @@ class Device(EmptyDevice):
         <h4>Setup</h4>
         <ul>
             <li>Set the communication interface in the device menu under <b>System → COM Port</b> (choose RS232 or RS485) and ensure the settings match those configured in the driver GUI.</li>
-            <li>Set the baud rate in the device menu under <b>System → Data Rate</b> (choose 38400).</li>
+            <li>Set the baud rate in the device menu under <b>System → Data Rate</b> (choose 38400). The device must be restarted after changing the baudrate.</li>
             <li>If using <b>RS232</b>, connect the device with a standard 9-pin straight-through serial cable.</li>
             <li>If using <b>RS485</b>:
                 <ul>
@@ -139,7 +139,14 @@ class Device(EmptyDevice):
         """Get the pressure value."""
         command = self.build_read_command(self.channel, 29)
         self.port.write(command)
-        return float(self.get_read_response())
+        response = self.get_read_response()
+        try:
+            pressure = float(response)
+        except ValueError:
+            pressure = float("nan")
+            debug(f"Retrieving pressure results in error: {response}")
+
+        return pressure
 
     def set_unit(self, unit: str = "mbar") -> None:
         """Set the unit to mbar."""
