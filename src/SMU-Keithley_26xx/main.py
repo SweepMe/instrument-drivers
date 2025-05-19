@@ -148,7 +148,7 @@ class Device(EmptyDevice):
         self.toff = float(parameter["PulseOffTime"])
         self.pulseofflevel = parameter['PulseOffLevel']
 
-        self.shortname = "Keithley26xx Ch %s" % self.device[-1]
+        self.shortname = f"Keithley26xx Ch {self.channel[-1]}"
         
         if self.channel[-1] == "A":
             self.smu_ab = "smua"
