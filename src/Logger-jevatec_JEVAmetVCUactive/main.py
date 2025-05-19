@@ -41,14 +41,22 @@ class Device(EmptyDevice):
 
     description = """
         <h3>JEVAmet® VCU active</h3>
-        <p>This driver communicates with the JEVAmet® VCU active vacuum controller via RS232.</p>
+        <p>This driver communicates with the JEVAmet® VCU active vacuum controller.</p>
 
         <h4>Setup</h4>
         <ul>
-            <li>Connect the device via RS232 using a standard 9-pin straight-through serial cable.</li>
-            <li>Set the serial interface on the device to <code>RS232</code> and <code>38400 Baud</code> in the system menu.</li>
-            <li>Ensure the selected sensor is connected to one of the measurement channels (CH1, CH2, CH3).</li>
+            <li>Set the communication interface in the device menu under <b>System → COM Port</b> (choose RS232 or RS485) and ensure the settings match those configured in the driver GUI.</li>
+            <li>Set the baud rate in the device menu under <b>System → Data Rate</b> (choose 38400).</li>
+            <li>If using <b>RS232</b>, connect the device with a standard 9-pin straight-through serial cable.</li>
+            <li>If using <b>RS485</b>:
+                <ul>
+                    <li>Follow the custom RS485 pin assignment as documented in section 5.3.7 of the manual.</li>
+                    <li>Set the RS485 address in the device system menu and enter the same address in the driver GUI.</li>
+                </ul>
+            </li>
+            <li>Connect a supported vacuum sensor to one of the available measurement channels (CH1, CH2, CH3), based on your device type.</li>
         </ul>
+
 
         <p>The available number of channels depends on the device type:</p>
         <ul>
@@ -57,8 +65,6 @@ class Device(EmptyDevice):
             <li><b>Type A0</b> and <b>B0</b>: 1 channel</li>
         </ul>
         """
-
-
 
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
@@ -76,13 +82,12 @@ class Device(EmptyDevice):
         self.port_manager = True
         self.port_types = ["COM"]
         self.port_properties = {
-            "baudrate": 9600,  # 38400,  # see main menu
+            "baudrate": 38400,
             "EOL": "\x04",
             "timeout": 2,
-            "rstrip": False,
         }
         self.use_rs485: bool = False
-        self.address: str = ""
+        self.address: int = -1
 
         self.read_bit = "\x0F"
         self.write_bit = "\x0E"
@@ -90,14 +95,16 @@ class Device(EmptyDevice):
         self.nack = "\x15"
 
         # Measurement parameters
-        self.channel: int = 1
+        self.channel: int = 1  # default channel
+        self.supported_units = ["mbar", "Torr", "Pa", "Micron", "psi"]
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         communication = parameters.get("Communication", "RS232")
 
         new_parameters = {
-            "Channel": ["1", "2", "3"],
+            "Channel": [1, 2, 3],
+            "Unit": self.supported_units,
             "Communication": ["RS232", "RS485"],
         }
 
@@ -109,47 +116,20 @@ class Device(EmptyDevice):
     def apply_gui_parameters(self, parameters: dict) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.channel = parameters["Channel"]
+        self.unit = parameters["Unit"]
+        # Update the return parameter
+        self.units = [self.unit]
+
         self.use_rs485 = parameters["Communication"] == "RS485"
 
         # Reset address
-        self.address = ""
+        self.address = -1
         if self.use_rs485:
-            self.address = parameters.get("RS485 Address", "-1")
+            self.address = parameters.get("RS485 Address", -1)
 
     def configure(self) -> None:
         """Verify the RS485 address, if needed."""
-        # self.get_identification()
-        # if self.use_rs485:
-        #     self.address = self.create_rs485_address(self.address)
-        #     print(f"Converted address: {self.address}")
-        # else:
-        #     print("Configure no rs485")
-
-        # set unit to mbar
-        self.unit_num = 1
-        self.set_unit()
-        # self.set_unit()
-        # self.set_unit()
-        # self.set_unit()
-
-    @staticmethod
-    def create_rs485_address(address_str: str) -> str:
-        """Constructs the RS485 address as two ASCII characters representing a hexadecimal value."""
-        try:
-            _address = int(address_str)
-        except ValueError as e:
-            msg = f"Invalid RS485 address {address_str}."
-            raise ValueError(msg) from e
-
-        if not (1 <= _address <= 126):
-            msg = f"Invalid RS485 address {address_str}. Address must be between 1 and 126."
-            raise ValueError(msg)
-
-        hex_str = f"{_address:02X}"
-        ascii_bytes = [c.encode("utf-8").hex() for c in hex_str]
-        converted_address = fr"{ascii_bytes[0]}{ascii_bytes[1]}"
-        print(converted_address)
-        return ascii_bytes
+        self.set_unit(self.unit)
 
     def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
@@ -157,27 +137,71 @@ class Device(EmptyDevice):
 
     def get_pressure(self) -> float:
         """Get the pressure value."""
-        command = self.build_read_command(29)
+        command = self.build_read_command(self.channel, 29)
         self.port.write(command)
         return float(self.get_read_response())
 
-    def build_read_command(self, parameter_number: int) -> str:
+    def set_unit(self, unit: str = "mbar") -> None:
+        """Set the unit to mbar."""
+        if unit not in self.supported_units:
+            msg = f"Unit {unit} not supported. Choose from {self.supported_units}."
+            raise ValueError(msg)
+
+        command = self.build_write_command(5, 4, unit)
+        self.port.query(command)
+
+    # Communication functions
+
+    def build_read_command(self, parameter_group: int, parameter_number: int) -> str:
         """Builds a read command string with checksum."""
-        base = f"{self.read_bit}{self.channel};{parameter_number}"  # removed ;
+        base = f"{self.read_bit}{parameter_group};{parameter_number}"  # removed ;
         checksum = self.calculate_checksum(base)
 
         if self.use_rs485:
-            # print("Using RS485")
-            # address = self.create_rs485_address(self.address)
-            # TODO: Hardcoded for now
-            a = "\x30"
-            b = "\x41"
-            # print(repr(base))
-            base = f"{a}{b}{base}"
-            # print(repr(base))
+            address = self.create_rs485_address(self.address)
+            base = f"{address}{base}"
 
         # No EOL character needed as the port manager appends it
         return f"{base}{checksum}"
+
+    def get_read_response(self) -> str:
+        """Read the response from the device and handle command structure."""
+        response = self.port.read()
+        if self.use_rs485:
+            # remove the leading address
+            response = response[2:]
+
+        if response[0] != self.ack:
+            msg = f"Device returned NACK or invalid data: {response}"
+            raise ValueError(msg)
+
+        # Remove the ACK and CRC characters
+        return response[1:-1].strip()
+
+    def build_write_command(self, parameter_group: int, parameter_number: int, value: str) -> str:
+        """Builds a write command string with checksum."""
+        base = f"{self.write_bit}{parameter_group};{parameter_number};{value} "
+        checksum = self.calculate_checksum(base)
+        if self.use_rs485:
+            address = self.create_rs485_address(self.address)
+            base = f"{address}{base}"
+
+        return f"{base}{checksum}"
+
+    @staticmethod
+    def create_rs485_address(address_str: str) -> str:
+        """Constructs the RS485 address as two ASCII characters representing a hexadecimal value."""
+        try:
+            _address = int(address_str)
+        except ValueError as e:
+            msg = f"Cannot convert RS485 address {address_str} to integer."
+            raise ValueError(msg) from e
+
+        if not (1 <= _address <= 126):
+            msg = f"Invalid RS485 address {address_str}. Address must be between 1 and 126."
+            raise ValueError(msg)
+
+        return f"{_address:02X}"
 
     @staticmethod
     def calculate_checksum(message: str) -> str:
@@ -192,59 +216,10 @@ class Device(EmptyDevice):
             checksum += 32
         return chr(checksum)
 
-    def get_read_response(self) -> str:
-        """Read the response from the device and handle command structure."""
-        response = self.port.read()
-        if self.use_rs485:
-            # print("485 response: ", repr(response), response)
-            response = response[2:]  # remove the leading address
-            # print("Cut response: ", repr(response), response)
-            # print(repr(self.nack), repr(self.ack))
-
-        if response[0] != self.ack:
-            msg = f"Device returned NACK or invalid data: {response}"
-            raise ValueError(msg)
-
-        # Remove the ACK and CRC characters
-        return response[1:-1].strip()
-
-    # Currently unused wrapper functions
-
-    def build_write_command(self, parameter_number: int, value: str) -> str:
-        """Builds a write command string with checksum."""
-        base = f"{self.write_bit}{self.channel};{parameter_number};{value};"
-        checksum = self.calculate_checksum(base)
-        return f"{base}{checksum}"
-
-    def set_unit(self) -> None:
-        """Set the unit to mbar."""
-        unit = "mbar" if self.unit_num % 2 == 1 else "psi"
-        self.unit_num += 1
-        print(f"Set unit to {unit}")
-        base = f"{self.write_bit}5;4;{unit} "
-        checksum = self.calculate_checksum(base)
-        command = f"{base}{checksum}"
-        if self.use_rs485:
-            a = "\x30"
-            b = "\x41"
-            command = f"{a}{b}{command}"
-        self.port.write(command)
-        print(repr(self.port.read_raw()))
+    # Currently not needed wrapper functions
 
     def get_identification(self) -> str:
         """Get the identification string."""
-        base = f"{self.read_bit}5;2"
-        checksum = self.calculate_checksum(base)
-
-        if self.use_rs485:
-            print("Using RS485")
-            # address = self.create_rs485_address(self.address)
-            # TODO: Hardcoded for now
-            a = "\x30"
-            b = "\x41"
-            # print(repr(base))
-            base = f"{a}{b}{base}"
-            print(repr(base))
-
-        self.port.write(f"{base}{checksum}")
+        command = self.build_read_command(5, 2)
+        self.port.write(command)
         return self.get_read_response()
