@@ -33,7 +33,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from pysweepme import EmptyDevice, debug
+from pysweepme import debug
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -87,15 +88,18 @@ class Device(EmptyDevice):
             "timeout": 2,
         }
         self.use_rs485: bool = False
-        self.address: int = -1
+        self.address: str = "-1"  # handle as string to enable parameter syntax in GUI parameters
 
         self.read_bit = "\x0F"
         self.write_bit = "\x0E"
         self.ack = "\x06"
         self.nack = "\x15"
+        self.last_error: str = ""
+        """Save the last error message to display it in the GUI only if it changes."""
 
         # Measurement parameters
         self.channel: int = 1  # default channel
+        self.unit: str = "mbar"
         self.supported_units = ["mbar", "Torr", "Pa", "Micron", "psi"]
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
@@ -115,17 +119,17 @@ class Device(EmptyDevice):
 
     def apply_gui_parameters(self, parameters: dict) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.channel = parameters["Channel"]
-        self.unit = parameters["Unit"]
+        self.channel = parameters.get("Channel", 1)
+        self.unit = parameters.get("Unit", "mbar")
         # Update the return parameter
         self.units = [self.unit]
 
-        self.use_rs485 = parameters["Communication"] == "RS485"
+        self.use_rs485 = parameters.get("Communication", "RS232") == "RS485"
 
         # Reset address
-        self.address = -1
+        self.address = "-1"
         if self.use_rs485:
-            self.address = parameters.get("RS485 Address", -1)
+            self.address = parameters.get("RS485 Address", "-1")
 
     def configure(self) -> None:
         """Verify the RS485 address, if needed."""
@@ -136,7 +140,7 @@ class Device(EmptyDevice):
         return self.get_pressure()
 
     def get_pressure(self) -> float:
-        """Get the pressure value."""
+        """Get the pressure value. If an error occurs, display the error message and return float('nan)."""
         command = self.build_read_command(self.channel, 29)
         self.port.write(command)
         response = self.get_read_response()
@@ -144,7 +148,11 @@ class Device(EmptyDevice):
             pressure = float(response)
         except ValueError:
             pressure = float("nan")
-            debug(f"Retrieving pressure results in error: {response}")
+            if self.last_error != response:
+                self.last_error = response
+                debug(f"Error in pressure response: {response}")
+        else:
+            self.last_error = ""
 
         return pressure
 
@@ -155,13 +163,16 @@ class Device(EmptyDevice):
             raise ValueError(msg)
 
         command = self.build_write_command(5, 4, unit)
-        self.port.query(command)
+        response = self.port.query(command)
+        if response[0] != self.ack:
+            msg = f"Device NACKed or returned error on set_unit: {response}"
+            raise ValueError(msg)
 
     # Communication functions
 
     def build_read_command(self, parameter_group: int, parameter_number: int) -> str:
         """Builds a read command string with checksum."""
-        base = f"{self.read_bit}{parameter_group};{parameter_number}"  # removed ;
+        base = f"{self.read_bit}{parameter_group};{parameter_number}"
         checksum = self.calculate_checksum(base)
 
         if self.use_rs485:
@@ -187,7 +198,7 @@ class Device(EmptyDevice):
 
     def build_write_command(self, parameter_group: int, parameter_number: int, value: str) -> str:
         """Builds a write command string with checksum."""
-        base = f"{self.write_bit}{parameter_group};{parameter_number};{value} "
+        base = f"{self.write_bit}{parameter_group};{parameter_number};{value} "  # trailing space is mandatory
         checksum = self.calculate_checksum(base)
         if self.use_rs485:
             address = self.create_rs485_address(self.address)

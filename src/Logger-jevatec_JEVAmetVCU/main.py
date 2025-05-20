@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from pysweepme import debug
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -86,6 +87,8 @@ class Device(EmptyDevice):
         }
         self.use_rs485: bool = False
         self.address: str = "FF"  # RS485 address, default is 1
+        self.last_error: str = ""
+        """Save the last error message to display it in the GUI only if it changes."""
 
         # Measurement parameters
         self.channel: int = 1  # default channel
@@ -113,12 +116,12 @@ class Device(EmptyDevice):
 
     def apply_gui_parameters(self, parameters: dict) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.channel = parameters["Channel"]
-        self.unit = parameters["Unit"]
+        self.channel = parameters.get("Channel", 1)
+        self.unit = parameters.get("Unit", "mbar")
         # Update the return parameter
         self.units = [self.unit]
 
-        self.use_rs485 = parameters["Communication"] == "RS485"
+        self.use_rs485 = parameters.get("Communication", "RS232") == "RS485"
 
         # Reset address
         self.address = "FF"
@@ -134,13 +137,23 @@ class Device(EmptyDevice):
         return self.get_pressure()
 
     def get_pressure(self) -> float:
-        """Get the pressure value."""
+        """Get the pressure value. If an error occurs, display the error message and return float('nan)."""
         self.write(f"RPV{self.channel}")
         response = self.port.read()
-        status, result = response.strip().split("\t")
+        status_number, result = response.strip().split("\t")
+        status = self.handle_status(status_number.strip(","))
 
-        self.handle_status(status.strip(","))
-        return float(result)
+        if status != "OK":
+            pressure = float("nan")
+            if self.last_error != status:
+                self.last_error = status
+                debug(f"Error in pressure response: {status}")
+
+        else:
+            self.last_error = ""
+            pressure = float(result)
+
+        return pressure
 
     def set_general_parameter(self) -> None:
         """Configure the device according to manual section 8.3.14."""
@@ -148,10 +161,14 @@ class Device(EmptyDevice):
             msg = f"Unit {self.unit} not supported. Choose from {self.supported_units}."
             raise ValueError(msg)
 
+        unit = self.supported_units[self.unit]
+        decimals = 1  # 3 Decimals
+        display_brightness = 1  # low brightness
+        baudrate = 2  # 38400 baud
         communication = 1 if self.use_rs485 else 0
 
         # unit, decimals, display brightness, baudrate, communication
-        command = f"SGP{self.supported_units[self.unit]},1,1,2,{communication}"
+        command = f"SGP{unit},{decimals},{display_brightness},{baudrate},{communication}"
         self.write(command)
         response = self.port.read()
         if response != "OK":
@@ -172,7 +189,7 @@ class Device(EmptyDevice):
         self.port.write(command_string)
 
     @staticmethod
-    def handle_status(status: str) -> None:
+    def handle_status(status: str) -> str:
         """Handle the status of the device."""
         status_dict = {
             "0": "OK",
@@ -192,10 +209,11 @@ class Device(EmptyDevice):
             "15": "Filament defect (FiLbr)",
         }
 
-        msg = status_dict.get(status, f"Unknown status code for status {status}")
-        if msg != "OK":
-            msg = f"Device returned error: {msg}"
+        if status not in status_dict:
+            msg = f"Invalid status code: {status}"
             raise ValueError(msg)
+
+        return status_dict[status]
 
     @staticmethod
     def create_rs485_address(address_str: str) -> str:
