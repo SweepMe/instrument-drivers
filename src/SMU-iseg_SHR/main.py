@@ -31,15 +31,15 @@
 
 from __future__ import annotations
 
+import importlib
 import math
 import time
 
+import shr
 from pysweepme import debug
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
-import importlib
-import shr
-
+# Reload the shr module to ensure the latest version is used
 importlib.reload(shr)
 from shr import IsegDevice
 
@@ -66,16 +66,13 @@ class Device(EmptyDevice, IsegDevice):
         self.port_manager = True
         self.port_types = [
             "COM",
-            "TCPIP",  # For TCPIP, the device must be installed as raw socket via NI Max
+            # "TCPIP",  # For TCPIP, the device must be installed as raw socket via NI Max - better use socket directly
             "SOCKET",
         ]
         self.port_properties = {
-            "timeout": 2,
+            "timeout": 0.2,
             "SOCKET_EOLwrite": "\r\n",
             "SOCKET_EOLread": "\r\n",
-            "TCPIP_EOLwrite": "\r\n",
-            "TCPIP_EOLread": "\r\n",
-            # "rstrip": False,
         }
 
         # Measurement parameters
@@ -99,12 +96,12 @@ class Device(EmptyDevice, IsegDevice):
             "4kV/3mA": 2,
             "6kV/2mA": 3,
         }
-        self.mode: int = 1
+        self.mode: str = "2kV/4mA"
 
         self.measured_voltage: float = 0.0
         self.measured_current: float = 0.0
 
-    def update_gui_parameters(self, parameter: dict) -> dict:
+    def update_gui_parameters(self, parameters: dict) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
             "SweepMode": ["Voltage in V", "Current in A"],
@@ -115,18 +112,18 @@ class Device(EmptyDevice, IsegDevice):
             "RangeVoltage": self.polarity_modes,  # use voltage range as placeholder for polarity
         }
 
-    def apply_gui_parameters(self, parameter: dict) -> None:
+    def apply_gui_parameters(self, parameters: dict) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.sweepmode = parameter["SweepMode"]
-        self.channel = parameter["Channel"]
+        self.sweepmode = parameters.get("SweepMode", "Voltage in V")
+        self.channel = parameters.get("Channel", 0)
 
         # Receive the port string to decide if echoing is used with COM ports
-        self.port_string = parameter["Port"]
+        self.port_string = parameters.get("Port", "")
 
-        self.average = parameter["Average"]
-        self.ramp_rate = parameter["Speed"]
-        self.polarity_mode = parameter["RangeVoltage"]
-        self.mode = parameter["Range"]
+        self.average = parameters.get("Average", 64)
+        self.ramp_rate = parameters.get("Speed", "100 V/s")
+        self.polarity_mode = parameters.get("RangeVoltage", "Auto")
+        self.mode = parameters.get("Range", "2kV/4mA")
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -147,10 +144,12 @@ class Device(EmptyDevice, IsegDevice):
         elif self.polarity_mode == "Negative":
             self.set_polarity("n")
 
+        self.average = int(self.average)
         self.set_averaging(self.average)
         average = self.get_averaging()
         if average != self.average:
-            raise Exception(f"Average {self.average} not set correctly.")
+            msg = f"Average {self.average} not set correctly."
+            raise Exception(msg)
 
         self.set_voltage_range(self.mode)
 
@@ -171,10 +170,8 @@ class Device(EmptyDevice, IsegDevice):
         self.handle_polarity(self.value)
 
         if self.sweepmode.startswith("Voltage"):
-            # TODO: Decide whether 0.1V is the minimum step size
-
+            # Check if the voltage change is larger than the minimum step size of 0.1V. Otherwise the device does not start ramping
             previous_set_voltage = self.get_voltage_set()
-
             if math.isnan(previous_set_voltage) or abs(previous_set_voltage - self.value) > 0.1:
                 voltage_changes = True
             else:
@@ -203,7 +200,6 @@ class Device(EmptyDevice, IsegDevice):
         level_reached = False
 
         while not level_reached and timeout_in_s > 0 and not self.is_run_stopped():
-            # TODO: Some values are skipped because the device status still says 'constant' even though a new value was set
             status = self.get_channel_status()
 
             if self.sweepmode.startswith("Voltage"):
@@ -212,7 +208,6 @@ class Device(EmptyDevice, IsegDevice):
                 level_reached = "Is Constant Current" in status and "Is Current Ramp" not in status
 
             # if the value is 0, the device will not yield constant current/voltage
-            # TODO: Ensure that the value is reached
             if self.value == 0:
                 level_reached = "Is Voltage Ramp" not in status and "Is Current Ramp" not in status
 
@@ -273,10 +268,11 @@ class Device(EmptyDevice, IsegDevice):
             self.voltage_off()
             turn_on_again = True
 
-        # TODO: Decide if this is needed
+        # Wait until the voltage is 0V
         timeout_s = 5
         while abs(self.get_voltage()) > 0.1 and timeout_s > 0 and not self.is_run_stopped():
             time.sleep(0.1)
+            timeout_s -= 0.1
 
         self.set_output_polarity(polarity)
         self.output_polarity = polarity
@@ -289,7 +285,7 @@ class Device(EmptyDevice, IsegDevice):
         if turn_on_again:
             self.voltage_on()
 
-    def set_voltage_range(self, mode: int) -> None:
+    def set_voltage_range(self, mode: str) -> None:
         """Set the voltage range/output mode to either 2kV/4mA, 4kV/3mA, or 6kV/2mA."""
         supported_modes = self.get_supported_output_modes()
         mode_number = self.modes[mode]
@@ -304,7 +300,6 @@ class Device(EmptyDevice, IsegDevice):
             self.voltage_off()
             turn_on_again = True
 
-        # TODO: Setting the mode does not work consistently yet
         self.set_output_mode(mode_number)
 
         if not self.value_applied_correctly(mode_number, self.get_output_mode):
@@ -328,7 +323,7 @@ class Device(EmptyDevice, IsegDevice):
         elif rate.endswith("%/s"):
             # %/s is set for both directions
             ramp_rate = float(rate[:-3].strip())
-            # TODO: Check if the module ramp speed sets it for all channels - might effect other SMU driver instances
+            # TODO: The module ramp speed sets it for all channels
             self.set_module_voltage_ramp_speed(ramp_rate)
         else:
             msg = f"No unit detected for ramp rate of {rate}. Use V/s or %/s."
@@ -347,16 +342,7 @@ class Device(EmptyDevice, IsegDevice):
         return False
 
     def write(self, command: str) -> None:
-        """Write a command to the device. Check via *OPC if the command was received."""
-        self._write(command)
-
-        # wait for the device to process the command
-        # TODO: Check if this is necessary for all commands
-        # self.wait_for_operation_complete()
-
-    def _write(self, command: str) -> None:
         """Write a command to the device. Handle echo if USB connection is used."""
-        print(command)
         self.port.write(command)
 
         # Handle echo for COM port
@@ -371,38 +357,22 @@ class Device(EmptyDevice, IsegDevice):
 
     def query(self, command: str) -> str:
         """Send a command to the device and read the response."""
-        # ensure there is no data in the buffer
-        # buffer_size = self.port.port.get_visa_attribute(pyvisa.constants.VI_ATTR_ASRL_RCV_BUF_SIZE)
-
-        # workaround to clear the buffer before sending a command
-        # this increases measurement time and should be removed
-        # but it is necessary as some commands seem to leave empty bytes in the buffer
-        # best case would be self.port.clear() to work
-        self.port.clear()
-        while True:
-            try:
-                ret = self.port.read()
-                print(f"Buffer not empty: {ret}, {len(ret)}, {repr(ret)}")
-            except Exception as e:
-                # print("Buffer empty", e)
-                break
-
-        self._write(command)
+        # workaround to clear the socket buffer before sending a query command
+        # It is necessary as some write commands seem to leave \r\n bytes in the buffer
+        if not self.port_string.startswith("COM"):
+            self.port.clear()
+        self.write(command)
         return self.port.read()
 
     def wait_for_operation_complete(self, timeout_s: float = 5) -> None:
         """Query the *OPC? command until it returns 1."""
-        self._write("*OPC?")
+        self.write("*OPC?")
         while not self.is_run_stopped() and timeout_s > 0:
             ret = self.port.read()
             if ret == "1":
                 break
             time.sleep(0.1)
             timeout_s -= 0.1
-
-        # while not self.get_operation_complete() and not self.is_run_stopped() and timeout_s > 0:
-        #     time.sleep(0.1)
-        #     timeout_s -= 0.1
 
     def get_channel_status(self) -> list:
         """Get the channel status."""

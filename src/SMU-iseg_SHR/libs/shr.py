@@ -59,7 +59,6 @@ class IsegDevice(ABC):
 
     def clear_event_status(self) -> None:
         """Clear the event status of the device."""
-        # TODO: Why do i need to query? should not return something
         self.write("*CLS")
 
     def reset(self) -> None:
@@ -100,12 +99,10 @@ class IsegDevice(ABC):
 
     def set_voltage(self, voltage: float) -> None:
         """Set the voltage setpoint (Vset) in Volts."""
-        # TODO set write again
         self.write(f":VOLT {voltage},(@{self.channel})")
 
     def voltage_on(self) -> None:
         """Switch on high voltage with configured ramp speed."""
-        # TODO set write again
         self.write(f":VOLT ON,(@{self.channel})")
 
     def voltage_off(self) -> None:
@@ -155,8 +152,9 @@ class IsegDevice(ABC):
 
     def set_trip_timeout(self, time_ms: int) -> None:
         """Set the delayed trip timeout in milliseconds (1..4095ms)."""
-        if time_ms < 1 or time_ms > 4095:
-            msg = "Timeout must be between 1 and 4095 ms."
+        max_timeout = 4095
+        if time_ms < 1 or time_ms > max_timeout:
+            msg = f"Timeout must be between 1 and {max_timeout} ms."
             raise ValueError(msg)
         self.write(f":CONF:TRIP:TIME {time_ms},(@{self.channel})")
 
@@ -214,10 +212,6 @@ class IsegDevice(ABC):
     def get_output_mode(self) -> int:
         """Query the channel output mode. Returns -1 if the device has currently no mode and returns 1,2,3."""
         mode = self.query(f":CONF:OUTP:MODE? (@{self.channel})")
-        # try:
-        #     mode = int(mode)
-        # except ValueError:
-        #     mode = -1
         return int(mode)
 
     def get_supported_output_modes(self) -> list[int]:
@@ -250,7 +244,6 @@ class IsegDevice(ABC):
 
     def get_voltage_set(self) -> float:
         """Get the voltage set V_set in Volt. Returns 'nan' if no voltage is set."""
-        # TODO: Revert
         response = self.query(f":READ:VOLT? (@{self.channel})")
         if not response:
             return float("nan")
@@ -407,21 +400,27 @@ class IsegDevice(ABC):
         """Set the module voltage ramp speed emergency in %/s."""
         self.write(f":CONF:RAMP:VOLT:EMCY {speed}")
 
-    # TODO: This function does not return the correct value/the device does not support it
     def get_module_voltage_ramp_speed_emergency(self) -> float:
-        """Get the module voltage ramp speed emergency in %/s."""
+        """Get the module voltage ramp speed emergency in %/s.
+
+        This function is not implemented in the SHR device, but works for other iseg SMU devices.
+        """
         response = self.query(":CONF:RAMP:VOLT:EMCY?")
         return float(response[:-3])
 
-    # TODO: This function does not return the correct value/the device does not support it
     def get_module_voltage_ramp_speed_emergency_minimum(self) -> float:
-        """Get the module voltage ramp speed emergency minimum in %/s."""
+        """Get the module voltage ramp speed emergency minimum in %/s.
+
+        This function is not implemented in the SHR device, but works for other iseg SMU devices.
+        """
         response = self.query(":CONF:RAMP:VOLT:EMCY:MIN?")
         return float(response[:-3])
 
-    # TODO: This function does not return the correct value/the device does not support it
     def get_module_voltage_ramp_speed_emergency_maximum(self) -> float:
-        """Get the module voltage ramp speed emergency maximum in %/s."""
+        """Get the module voltage ramp speed emergency maximum in %/s.
+
+        This function is not implemented in the SHR device, but works for other iseg SMU devices.
+        """
         response = self.query(":CONF:RAMP:VOLT:EMCY:MAX?")
         return float(response[:-3])
 
@@ -548,14 +547,21 @@ class IsegDevice(ABC):
         return int(response)
 
     def set_module_can_bus_address(self, address: int) -> None:
-        """Set the CAN bus address of the module. Can only be set in configuration mode."""
-        if address < 0 or address > 63:
-            msg = "CAN bus address must be between 0 and 63."
+        """Set the CAN bus address of the module. Can only be set in configuration mode.
+
+        This function is not implemented in the SHR device, but works for other iseg SMU devices.
+        """
+        maximum_address = 63
+        if address < 0 or address > maximum_address:
+            msg = f"CAN bus address must be between 0 and {maximum_address}."
             raise ValueError(msg)
         self.write(f"CONF:CAN:ADDR {address}")
 
     def get_module_can_bus_address(self) -> int:
-        """Get the CAN bus address of the module."""
+        """Get the CAN bus address of the module.
+
+        This function is not implemented in the SHR device, but works for other iseg SMU devices.
+        """
         response = self.query("CONF:CAN:ADDR?")
         return int(response)
 
@@ -572,12 +578,18 @@ class IsegDevice(ABC):
         return int(response)
 
     def get_serial_baud_rate(self) -> int:
-        """Get the serial baud rate of the module."""
+        """Get the serial baud rate of the module.
+
+        This function is not implemented in the SHR device, but works for other iseg SMU devices.
+        """
         response = self.query(":CONF:SERIAL:BAUD?")
         return int(response)
 
     def set_serial_baud_rate(self) -> None:
-        """Dynamically switches the serial connection to 115200 Baud."""
+        """Dynamically switches the serial connection to 115200 Baud.
+
+        This function is not implemented in the SHR device, but works for other iseg SMU devices.
+        """
         baud_rate = 115200
         self.write(f"CONF:SERIAL:BAUD {baud_rate}")
 
@@ -631,7 +643,7 @@ class IsegDevice(ABC):
     def get_module_event_mask_register_read(self) -> str:
         """Get the module event mask register.
 
-        TODO: Check the difference to get_module_event_mask_register
+        This is the same as get_module_event_mask_register, but uses the READ command.
         """
         return self.query(":READ:MODULE:EVENT:MASK?")
 
@@ -642,14 +654,14 @@ class IsegDevice(ABC):
     def get_module_event_channel_mask_register_read(self) -> str:
         """Get the module event channel mask register.
 
-        TODO: Check the difference to get_module_event_channel_mask_register
+        This is the same as get_module_event_channel_mask_register, but uses the READ command.
         """
         return self.query(":READ:MODULE:EVENT:CHANMASK?")
 
     def get_module_supply(self, index: int = 0) -> float:
         """Get one of the module supplies specified by Index.
 
-        TODO: Could be extended to query multiple supplies at once.
+        This is the same as get_module_supply_voltage, but uses the READ command.
         """
         response = self.query(f":READ:MODULE:SUPPLY? (@{index})")
         return float(response[:-1])
