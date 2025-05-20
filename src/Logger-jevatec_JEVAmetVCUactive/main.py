@@ -140,7 +140,7 @@ class Device(EmptyDevice):
         return self.get_pressure()
 
     def get_pressure(self) -> float:
-        """Get the pressure value. If an error occurs, display the error message and return float('nan)."""
+        """Get the pressure value. If an error occurs, display the error message and return float('nan')."""
         command = self.build_read_command(self.channel, 29)
         self.port.write(command)
         response = self.get_read_response()
