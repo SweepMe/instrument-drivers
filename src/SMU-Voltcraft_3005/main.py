@@ -25,9 +25,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# SweepMe! device class
-# Type: SMU
-# Device: Voltcraft DSP 3005
+# SweepMe! driver
+# * Module: SMU
+# * Instrument: Voltcraft DSP 3005
 
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -75,14 +75,11 @@ class Device(EmptyDevice):
         return gui_parameter
                                  
     def get_GUIparameter(self, parameter={}):
-
         self.source = parameter['SweepMode']
         self.protection = float(parameter['Compliance'])
 
     def initialize(self):
-
-        self.port.write("*IDN?")
-        self.port.read()
+        pass
 
     def configure(self):
         if self.source.startswith("Voltage"):
@@ -97,43 +94,20 @@ class Device(EmptyDevice):
         self.port.write('OUTP OFF')
 
     def apply(self):
-        # print(self.commands[self.source] + f' {float(self.value):1.2f}')
         self.port.write(self.commands[self.source] + f' {float(self.value):1.2f}')
 
-    def measure(self):        
+    def measure(self):
+        self.port.write('MEAS:ALL?')
 
-        self.port.write('MEAS:CURR?')
-        answer = self.port.read()
-        try:
-            self.i = float(answer)
-            
-        except:
-            error()
-            self.port.write('MEAS:CURR?')
-            answer = self.port.read()
-            try:
-                self.i = float(answer)
-            except:
-                error()
-                self.i = float('nan')
-
-        self.port.write('MEAS:VOLT?')   
-        answer = self.port.read()
-        try:
-            self.v = float(answer)
-        except:
-            error()
-            self.port.write('MEAS:VOLT?')   
-            answer = self.port.read()
-            try:
-                self.v = float(answer)
-            except:
-                error()
-                self.v = float('nan')   
+    def read_result(self):
+        self.v, self.i = self.port.read().split(',')
+        self.v, self.i = float(self.v), float(self.i)
 
     def call(self):
         return [self.v, self.i]
 
-
+    def get_identification(self):
+        self.port.write("*IDN?")
+        self.port.read()
 
 
