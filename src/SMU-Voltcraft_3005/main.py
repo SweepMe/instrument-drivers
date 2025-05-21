@@ -79,7 +79,7 @@ class Device(EmptyDevice):
         self.protection = float(parameter['Compliance'])
 
     def initialize(self):
-        pass
+        self.port.write('*RST')
 
     def configure(self):
         if self.source.startswith("Voltage"):
