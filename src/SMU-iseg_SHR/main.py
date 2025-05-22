@@ -220,11 +220,13 @@ class Device(EmptyDevice, IsegDevice):
             if self.is_run_stopped():
                 return
 
-    def call(self) -> list:
-        """Return the measurement results. Must return as many values as defined in self.variables."""
+    def read_result(self) -> None:
+        """Retrieve the measurement results. This function is called after 'reach'."""
         self.measured_voltage = self.get_voltage()
         self.measured_current = self.get_current()
 
+    def call(self) -> list:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
         return [self.measured_voltage, self.measured_current]
 
     # Configuration
