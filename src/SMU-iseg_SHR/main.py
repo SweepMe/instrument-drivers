@@ -357,9 +357,11 @@ class Device(EmptyDevice, IsegDevice):
 
     def query(self, command: str) -> str:
         """Send a command to the device and read the response."""
-        # workaround to clear the socket buffer before sending a query command
-        # It is necessary as some write commands seem to leave \r\n bytes in the buffer
         if not self.port_string.startswith("COM"):
+            # Some write commands seem to leave \r\n bytes in the buffer for socket connections
+            # Workaround: clear the socket buffer before sending a query command
+            # Add a delay to ensure the response to the previous command is fully read
+            time.sleep(0.01)
             self.port.clear()
         self.write(command)
         return self.port.read()
