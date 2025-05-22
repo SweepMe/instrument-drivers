@@ -140,18 +140,27 @@ class Device(EmptyDevice):
         """Get the pressure value. If an error occurs, display the error message and return float('nan')."""
         self.write(f"RPV{self.channel}")
         response = self.port.read()
-        status_number, result = response.strip().split("\t")
-        status = self.handle_status(status_number.strip(","))
+
+        split_response = response.split("\t")
+        pressure = float("nan")
+        if len(split_response) == 2:
+            # If the device is working correctly, it responds with '[ChannelNum]\t[Pressure]'
+            status = self.handle_status(split_response[0].strip(","))
+            pressure = float(split_response[1])
+        elif len(split_response) == 3:
+            # If no sensor is connected, the device responds with '?\tS,\t[ChannelNum]' - Err S means sensor error
+            status = f"Err {split_response[1].strip(',')}"
+        else:
+            # If the response is not in the expected format, handle it as an error
+            status = "Unknown"
 
         if status != "OK":
             pressure = float("nan")
             if self.last_error != status:
                 self.last_error = status
                 debug(f"Error in pressure response: {status}")
-
         else:
             self.last_error = ""
-            pressure = float(result)
 
         return pressure
 
@@ -210,8 +219,7 @@ class Device(EmptyDevice):
         }
 
         if status not in status_dict:
-            msg = f"Invalid status code: {status}"
-            raise ValueError(msg)
+            return f"Invalid status code: {status}"
 
         return status_dict[status]
 
