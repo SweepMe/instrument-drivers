@@ -27,7 +27,7 @@
 #
 # SweepMe! driver
 # * Module: Logger
-# * Instrument: jevatec JEVAmet VCU active
+# * Instrument: JEVATEC JEVAmet VCU active
 
 from __future__ import annotations
 
@@ -38,11 +38,11 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    """Driver to read out the JEVAmet® VCU active vacuum controller."""
+    """Driver to read out the JEVATEC JEVAmet VCU active vacuum controller."""
 
     description = """
         <h3>JEVAmet® VCU active</h3>
-        <p>This driver communicates with the JEVAmet® VCU active vacuum controller.</p>
+        <p>This driver communicates with the JEVATEC JEVAmet VCU active vacuum controller.</p>
 
         <h4>Setup</h4>
         <ul>
