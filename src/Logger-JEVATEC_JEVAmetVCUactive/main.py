@@ -46,8 +46,10 @@ class Device(EmptyDevice):
 
         <h4>Setup</h4>
         <ul>
-            <li>Set the communication interface in the device menu under <b>System → COM Port</b> (choose RS232 or RS485) and ensure the settings match those configured in the driver GUI.</li>
-            <li>Set the baud rate in the device menu under <b>System → Data Rate</b> (choose 38400). The device must be restarted after changing the baudrate.</li>
+            <li>Set the communication interface in the device menu under <b>System → COM Port</b>
+             (choose RS232 or RS485) and ensure the settings match those configured in the driver GUI.</li>
+            <li>Set the baud rate in the device menu under <b>System → Data Rate</b> (choose 38400). The device must be
+             restarted after changing the baudrate.</li>
             <li>If using <b>RS232</b>, connect the device with a standard 9-pin straight-through serial cable.</li>
             <li>If using <b>RS485</b>:
                 <ul>
@@ -55,15 +57,7 @@ class Device(EmptyDevice):
                     <li>Set the RS485 address in the device system menu and enter the same address in the driver GUI.</li>
                 </ul>
             </li>
-            <li>Connect a supported vacuum sensor to one of the available measurement channels (CH1, CH2, CH3), based on your device type.</li>
-        </ul>
-
-
-        <p>The available number of channels depends on the device type:</p>
-        <ul>
-            <li><b>Type AM</b> and <b>BM</b>: 3 channels</li>
-            <li><b>Type C</b>: 2 channels</li>
-            <li><b>Type A0</b> and <b>B0</b>: 1 channel</li>
+            <li>Connect a supported vacuum sensor to one of the available measurement channels (CH1, CH2, CH3).</li>
         </ul>
         """
 

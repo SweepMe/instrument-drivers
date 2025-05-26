@@ -46,7 +46,8 @@ class Device(EmptyDevice):
 
         <h4>Setup</h4>
         <ul>
-            <li>Set the communication interface in the device menu under <b>Config → Gen → rS</b> to either RS232 or RS485. Changes take effect after a device restart.</li>
+            <li>Set the communication interface in the device menu under <b>Config → Gen → rS</b> to either RS232 or
+             RS485. Changes take effect after a device restart.</li>
             <li>Set the baud rate in the device menu under <b>Config → Gen → bAud</b> to 38.4 (38400).</li>
             <li>If using <b>RS232</b>:
                 <ul>
@@ -57,10 +58,19 @@ class Device(EmptyDevice):
                 <ul>
                     <li>Follow the custom RS485 pin assignment as documented in section 5.3.7 of the manual.</li>
                     <li>Older models might not be able to set/read the RS485 address from the device menu.</li>
-                    <li>Workaround: Read/set the address via RS232 communication (<code>RSA[XX]</code>) or use FF as address, which will communicate with all devices.</li>
+                    <li>Workaround: Read/set the address via RS232 communication (<code>RSA[XX]</code>) or use FF as
+                     address, which will communicate with all devices.</li>
                 </ul>
             </li>
-            <li>Connect a supported vacuum sensor to one of the available measurement channels (CH1, CH2, CH3), depending on your device model.</li>
+            <li>Connect a supported vacuum sensor to one of the available measurement channels (CH1, CH2, CH3),
+             depending on your device model.</li>
+        </ul>
+
+        <p>The available number of channels depends on the device type:</p>
+        <ul>
+            <li><b>Type AM</b> and <b>BM</b>: 3 channels</li>
+            <li><b>Type C</b>: 2 channels</li>
+            <li><b>Type A0</b> and <b>B0</b>: 1 channel</li>
         </ul>
         """
 
@@ -144,11 +154,12 @@ class Device(EmptyDevice):
         split_response = response.split("\t")
         pressure = float("nan")
         if len(split_response) == 2:
-            # If the device is working correctly, it responds with '[ChannelNum]\t[Pressure]'
+            # If the device is working correctly, it responds with '[Status],\t[Pressure]'
             status = self.handle_status(split_response[0].strip(","))
             pressure = float(split_response[1])
         elif len(split_response) == 3:
             # If no sensor is connected, the device responds with '?\tS,\t[ChannelNum]' - Err S means sensor error
+            # This is not denoted in the manual, but has been observed in practice
             status = f"Err {split_response[1].strip(',')}"
         else:
             # If the response is not in the expected format, handle it as an error
