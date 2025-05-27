@@ -102,32 +102,19 @@ class Device(EmptyDevice):
         self.port.write(f'OUTP{self.channel}:STATe OFF')
 
     def apply(self):
-        # print(self.commands[self.source] + f' {float(self.value):1.3f}')
-        self.port.write(f'SOURce{self.channel}:' + self.commands[self.source] + f' {float(self.value):1.3f}')
+        self.port.write(f'SOURce{self.channel}:{self.commands[self.source]} {float(self.value):1.3f}')
 
     def measure(self):
-        self.port.write(f'MEAS{self.channel}:CURR?')
-        answer = self.port.read()
-        try:
-            self.i = float(answer)
-            
-        except:
-            error()
-            self.i = float('nan')
+        self.port.write(f'MEAS{self.channel}:ALL?')
 
-        self.port.write(f'MEAS{self.channel}:VOLT?')   
-        answer = self.port.read()
-        try:
-            self.v = float(answer)
-        except:
-            error()
-            self.v = float('nan')   
+    def read_result(self):
+        self.v, self.i, power = [float(val) for val in self.port.read().split(',')]
+        return self.v, self.i
 
     def call(self):
         return [self.v, self.i]
 
     def get_identification(self):
-        self.port.write("*IDN?")
-        self.port.read()
+        self.port.query("*IDN?")
 
 
