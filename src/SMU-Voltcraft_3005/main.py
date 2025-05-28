@@ -34,24 +34,25 @@
 # * Module: SMU
 # * Instrument: Voltcraft DSP 3005
 
+from __future__ import annotations
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
-from pysweepme.ErrorMessage import error
 
 
 class Device(EmptyDevice):
+    """Driver for the Voltcraft DSP 3005 SMU. This driver is used to control the device and read measurements."""
 
-    def __init__(self):
-
+    def __init__(self) -> None:
+        """Initialize the device class and the instrument parameters."""
         super().__init__()
 
         self.shortname = "Voltcraft3005"
-        
+
         self.variables = ["Voltage", "Current"]
         self.units = ["V", "A"]
         self.plottype = [True, True]  # True to plot data
         self.savetype = [True, True]  # True to save data
-        
+
         self.port_manager = True
         self.port_types = ["COM"]
         self.port_properties = {
@@ -66,53 +67,61 @@ class Device(EmptyDevice):
             "Voltage in V": "VOLT",
             "Current in A": "CURR",
         }
+        self.source: str = "Voltage in V"  # default source
+        self.protection: float = 0.3  # default protection value
+        self.voltage: float = 0.0  # measured voltage
+        self.current: float = 0.0  # measured current
 
-        # self.outpon = False
+    def set_GUIparameter(self) -> dict:
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+        return {
+                "SweepMode": ["Voltage in V", "Current in A"],
+                "RouteOut": ["Front"],
+                "Compliance": 0.3,
+                }
 
-    def set_GUIparameter(self):
-        
-        gui_parameter = {
-                        "SweepMode": ["Voltage in V", "Current in A"],
-                        "RouteOut": ["Front"],
-                        "Compliance": 0.3,
-                        }
-                        
-        return gui_parameter
-                                 
-    def get_GUIparameter(self, parameter={}):
-        self.source = parameter['SweepMode']
-        self.protection = float(parameter['Compliance'])
+    def get_GUIparameter(self, parameter: dict) -> None:
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
+        self.source = parameter["SweepMode"]
+        self.protection = float(parameter["Compliance"])
 
-    def initialize(self):
-        self.port.write('*RST')
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
+        self.port.write("*RST")
 
-    def configure(self):
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
         if self.source.startswith("Voltage"):
-            self.port.write(f'CURR {self.protection:1.2f}')
+            self.port.write(f"CURR {self.protection:1.2f}")
         elif self.source.startswith("Current"):
-            self.port.write(f'VOLT {self.protection:1.2f}')
+            self.port.write(f"VOLT {self.protection:1.2f}")
 
-    def poweron(self):
-        self.port.write('OUTP ON')
-        
-    def poweroff(self):
-        self.port.write('OUTP OFF')
+    def poweron(self) -> None:
+        """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
+        self.port.write("OUTP ON")
 
-    def apply(self):
-        self.port.write(self.commands[self.source] + f' {float(self.value):1.2f}')
+    def poweroff(self) -> None:
+        """Turn off the device when leaving a sequencer branch."""
+        self.port.write("OUTP OFF")
 
-    def measure(self):
-        self.port.write('MEAS:ALL?')
+    def apply(self) -> None:
+        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        self.port.write(self.commands[self.source] + f" {float(self.value):1.2f}")
 
-    def read_result(self):
-        self.v, self.i = self.port.read().split(',')
-        self.v, self.i = float(self.v), float(self.i)
+    def measure(self) -> None:
+        """Trigger the acquisition of new data."""
+        self.port.write("MEAS:ALL?")
 
-    def call(self):
-        return [self.v, self.i]
+    def read_result(self) -> None:
+        """Read the measured data from a buffer that was requested during 'measure'."""
+        voltage, current = self.port.read().split(",")
+        self.voltage, self.current = float(voltage), float(current)
 
-    def get_identification(self):
+    def call(self) -> list[float]:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
+        return [self.voltage, self.current]
+
+    def get_identification(self) -> str:
+        """Get the identification of the device."""
         self.port.write("*IDN?")
-        self.port.read()
-
-
+        return self.port.read()
