@@ -26,41 +26,39 @@
 # SOFTWARE.
 
 
-# SweepMe! device class
-# Type: Logger
-# Device: Keithley 6487
+# SweepMe! driver
+# * Module: Logger
+# * Instrument: Keithley 6487
 
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
-# If you like to see the source code of EmptyDevice, take a look at the pysweepme package that contains this file
-
 class Device(EmptyDevice):
     description = """
-                    <p><strong>Usage:</strong></p>
-                    <ul>
-                    <li>Voltage source function: Input the voltage in V and select the voltage range and the current limit. To perform a
-                    voltage sweep, add a Sweep module, configure it, and copy and paste its parameter with brackets from parameter 
-                    window into the Voltage in V field (rf. <a href="https://wiki.sweep-me.net/wiki/Parameter_system">
-                    https://wiki.sweep-me.net/wiki/Parameter_system</a>).</li>
-                    <li>Interlock connection: The Model 6487 has a built-in interlock that works in conjunction with the voltage source. 
-                    The interlock prevents the voltage source from being placed in operate on the 50V and 
-                    500V ranges, and optionally on the 10V range, to assure safe operation. To enable the voltage source output,
-                    pins 1 and 2 of the INTERLOCK connector must be shorted together.</li>
-                    <li>Autozero: Switches autozero on or off. Autozero leads to an internal correction regarding temperature shifts. However, it slows down readings.</li>
-                    <li>Perform zero check: If checked, a zero check is performed in the 2 nA range that sets the value for the offset correction that can be used checking "Use zero correction".</li>
-                    <li>Use zero correction: Must be checked, if the offset correction should be applied that was found using "Perform zero check".</li>
-                    </ul>
-                    <p><strong>Known issues:</strong></p>
-                    <ul>
-                    <li>A manually acquired correction value cannot be used in the measurement as the instrument is reset during initialization which overwrites the value.&nbsp;</li>
-                    </ul>
-                    <p><strong>Range Overflow:</strong></p>
-                    <ul>
-                    <li>If the measured current exceeds the manually selected range, the instrument will return a value of +9.91e37 and the message "OVERFLOW" will be shown on its display.&nbsp;</li>
-                    </ul>
-                    """
+        <p><strong>Usage:</strong></p>
+        <ul>
+        <li>Voltage source function: Input the voltage in V and select the voltage range and the current limit. To perform a
+        voltage sweep, add a Sweep module, configure it, and copy and paste its parameter with brackets from parameter 
+        window into the Voltage in V field (rf. <a href="https://wiki.sweep-me.net/wiki/Parameter_system">
+        https://wiki.sweep-me.net/wiki/Parameter_system</a>).</li>
+        <li>Interlock connection: The Model 6487 has a built-in interlock that works in conjunction with the voltage source. 
+        The interlock prevents the voltage source from being placed in operate on the 50V and 
+        500V ranges, and optionally on the 10V range, to assure safe operation. To enable the voltage source output,
+        pins 1 and 2 of the INTERLOCK connector must be shorted together.</li>
+        <li>Autozero: Switches autozero on or off. Autozero leads to an internal correction regarding temperature shifts. However, it slows down readings.</li>
+        <li>Perform zero check: If checked, a zero check is performed in the 2 nA range that sets the value for the offset correction that can be used checking "Use zero correction".</li>
+        <li>Use zero correction: Must be checked, if the offset correction should be applied that was found using "Perform zero check".</li>
+        </ul>
+        <p><strong>Known issues:</strong></p>
+        <ul>
+        <li>A manually acquired correction value cannot be used in the measurement as the instrument is reset during initialization which overwrites the value.&nbsp;</li>
+        </ul>
+        <p><strong>Range Overflow:</strong></p>
+        <ul>
+        <li>If the measured current exceeds the manually selected range, the instrument will return a value of +9.91e37 and the message "OVERFLOW" will be shown on its display.&nbsp;</li>
+        </ul>
+        """
 
     def __init__(self):
         EmptyDevice.__init__(self)
@@ -73,10 +71,11 @@ class Device(EmptyDevice):
 
         self.port_types = ["COM", "GPIB"]
 
-        self.port_properties = {'timeout': 10.0,
-                                'baudrate': 9600,
-                                'EOL': '\r',
-                                }
+        self.port_properties = {
+            'timeout': 10.0,
+            'baudrate': 9600,
+            'EOL': '\r',
+        }
 
     def set_GUIparameter(self):
 
@@ -119,7 +118,7 @@ class Device(EmptyDevice):
         # result = self.port.read()
         # print(result)
 
-        ## Parameter checking
+        # Parameter checking
         if self.average_count > 100:
             self.stop_Measurement("The number of averages must be equal or below 100.")
             return False
@@ -133,7 +132,7 @@ class Device(EmptyDevice):
 
     def configure(self):
 
-        ## Filters
+        # Filters
         self.port.write(':SENS:MED:STAT OFF')
         self.port.write(':SENS:AVER:ADV:STAT OFF')
 
@@ -144,7 +143,7 @@ class Device(EmptyDevice):
             self.port.write(':SENS:AVER:TCON REP')
             self.port.write(':SENS:AVER:COUN %i' % self.average_count)
 
-        ## Rate
+        # Rate
         if self.rate == 'Fast':
             self.port.write('CURR:NPLC 0.1')
         elif self.rate == 'Medium':
@@ -165,20 +164,20 @@ class Device(EmptyDevice):
 
         self.port.write(':SYST:ZCH:STAT OFF')
 
-        ## Zero correction
+        # Zero correction
         # If user needs zero correction on we have to switch it on
         if self.use_zero_correction:
             self.port.write(':SYST:ZCOR ON')
         else:
             self.port.write(':SYST:ZCOR OFF')
 
-        ## Autozero
+        # Autozero
         if self.use_autozero:
             self.port.write("SYST:AZER ON")
         else:
             self.port.write("SYST:AZER OFF")
 
-        ## Current range
+        # Current range
         if self.current_range == 'Auto':
             self.port.write("CURR:RANG:AUTO ON")
         elif self.current_range.replace(" ", "") == '20mA':
@@ -227,7 +226,7 @@ class Device(EmptyDevice):
                 raise Exception("No source voltage specified.")
 
     def poweron(self):
-        if self.use_voltage_source == True:
+        if self.use_voltage_source:
             self.port.write("SOUR:VOLT:STAT ON")
 
     def reconfigure(self, parameters, keys):
@@ -237,7 +236,7 @@ class Device(EmptyDevice):
             self.port.write("SOUR:VOLT %f" % voltage_value)
 
     def poweroff(self):
-        if self.use_voltage_source == True:
+        if self.use_voltage_source:
             self.port.write("SOUR:VOLT:STAT OFF")
 
     def measure(self):
@@ -249,3 +248,4 @@ class Device(EmptyDevice):
 
     def call(self):
         return [self.current]
+    
