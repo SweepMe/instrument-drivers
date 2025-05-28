@@ -30,9 +30,6 @@
 # SweepMe! driver
 # * Module: SMU
 # * Instrument: Voltcraft DSP 3005
-# SweepMe! driver
-# * Module: SMU
-# * Instrument: Voltcraft DSP 3005
 
 from __future__ import annotations
 
