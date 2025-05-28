@@ -438,9 +438,9 @@ class Device(EmptyDevice):
                 self.lpt.devint()  # This command resets all active instruments in the system to their default states.
 
             elif self.command_set == "US":
-                if self.current_range != "Auto":
-                    msg = "When using KXCI only Auto current range is supported."
-                    raise Exception(msg)
+                # if self.current_range != "Auto":
+                #     msg = "When using KXCI only Auto current range is supported."
+                #     raise Exception(msg)
 
                 self.get_options()
 
@@ -547,10 +547,9 @@ class Device(EmptyDevice):
                 current_range = self.current_ranges[self.current_range]
                 self.set_current_range_limited(self.card_name[-1], current_range)  # low range current
 
-            # TODO: needs to be tested how to see a fixed current range
-            # range = 1e-1
-            # compliance = 1e1
-            # self.set_current_range(self.card_name[-1], range, compliance)
+            elif self.current_range != "Auto":
+                current_range = self.current_ranges[self.current_range]
+                self.set_current_range(self.card_name[-1], current_range, self.protection)
 
     def configure_lptlib(self) -> None:
         """Configure the device using lptlib commands."""
@@ -874,7 +873,7 @@ class Device(EmptyDevice):
             self.port.write(f"RS {int(resolution)}")
         return self.read_tcpip_port()
 
-    def set_current_range(self, channel: str, current_range: str, compliance: str) -> str:
+    def set_current_range(self, channel: str, current_range: float, compliance: float) -> str:
         """Set the current range of the device."""
         if self.command_set == "US":
             self.port.write(f"RI {channel}, {current_range}, {compliance}")
