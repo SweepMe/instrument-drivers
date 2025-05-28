@@ -107,9 +107,9 @@ class Device(EmptyDevice, IsegDevice):
             "SweepMode": ["Voltage in V", "Current in A"],
             "Channel": ["0", "1", "2", "3"],
             "Average": 1,
-            "Speed": ["50 V/s", "100 V/s", "200 V/s", "500 V/s"],  # use speed as placeholder for ramp rate
-            "Range": list(self.modes.keys()),  # use range as placeholder for mode
-            "RangeVoltage": self.polarity_modes,  # use voltage range as placeholder for polarity
+            "Mode": list(self.modes.keys()),
+            "Polarity": self.polarity_modes,
+            "Ramp rate": "50 V/s",
         }
 
     def apply_gui_parameters(self, parameters: dict) -> None:
@@ -121,9 +121,9 @@ class Device(EmptyDevice, IsegDevice):
         self.port_string = parameters.get("Port", "")
 
         self.average = parameters.get("Average", 64)
-        self.ramp_rate = parameters.get("Speed", "100 V/s")
-        self.polarity_mode = parameters.get("RangeVoltage", "Auto")
-        self.mode = parameters.get("Range", "2kV/4mA")
+        self.ramp_rate = parameters.get("Ramp rate", "100 V/s")
+        self.polarity_mode = parameters.get("Polarity", "Auto")
+        self.mode = parameters.get("Mode", "2kV/4mA")
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -144,16 +144,8 @@ class Device(EmptyDevice, IsegDevice):
         elif self.polarity_mode == "Negative":
             self.set_polarity("n")
 
-        self.average = int(self.average)
-        self.set_averaging(self.average)
-        average = self.get_averaging()
-        if average != self.average:
-            msg = f"Average {self.average} not set correctly."
-            raise Exception(msg)
-
+        self.handle_averaging(int(self.average))
         self.set_voltage_range(self.mode)
-
-        # TODO: Ramp rate cannot be changed as the GUI parameter does not allow line editing
         self.handle_ramp_rate(self.ramp_rate)
 
     def poweron(self) -> None:
@@ -167,22 +159,29 @@ class Device(EmptyDevice, IsegDevice):
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        # Retrieve the previous set voltage before changing the polarity, as changing the polarity will reset the set
+        # voltage to 0V
+        previous_set_voltage = self.get_voltage_set()
         self.handle_polarity(self.value)
 
         if self.sweepmode.startswith("Voltage"):
-            # Check if the voltage change is larger than the minimum step size of 0.1V. Otherwise the device does not start ramping
-            previous_set_voltage = self.get_voltage_set()
+            # Check if the voltage change is larger than the minimum step size of 0.1V.
+            # Otherwise, the device does not start ramping
             if math.isnan(previous_set_voltage) or abs(previous_set_voltage - self.value) > 0.1:
                 voltage_changes = True
+            elif (self.get_voltage_set() - self.value) < 0.1:
+                # If the polarity has changed, the voltage was set to 0V. If the new value is close to 0V, no ramping
+                voltage_changes = False
             else:
                 voltage_changes = False
 
             self.set_voltage(self.value)
+            self.value_applied_correctly(self.value, self.get_voltage_set)
 
             # wait for the device to start a ramp. Use 5s timeout in case the level is already reached
             if voltage_changes:
-                timeout_s = 5
-                while timeout_s > 0:
+                timeout_s = 15
+                while timeout_s > 0 and not self.is_run_stopped():
                     if "Is Voltage Ramp" in self.get_channel_status():
                         break
                     time.sleep(0.1)
@@ -238,6 +237,18 @@ class Device(EmptyDevice, IsegDevice):
         else:
             self.goto_local()
 
+    def handle_averaging(self, average: int) -> None:
+        """Set the average number and ensure it is set correctly."""
+        if average not in self.averages:
+            msg = f"Average {average} not supported. Average must be one of: {', '.join(map(str, self.averages))}."
+            raise ValueError(msg)
+
+        self.set_averaging(average)
+        set_average = self.get_averaging()
+        if average != set_average:
+            msg = f"Average {average} not set correctly."
+            raise Exception(msg)
+
     def handle_polarity(self, value: float) -> None:
         """Verify the polarity of the set value. Optionally, set the polarity automatically based on the set value."""
         if value > 0 and self.polarity_mode == "Negative":
@@ -271,20 +282,31 @@ class Device(EmptyDevice, IsegDevice):
             turn_on_again = True
 
         # Wait until the voltage is 0V
-        timeout_s = 5
-        while abs(self.get_voltage()) > 0.1 and timeout_s > 0 and not self.is_run_stopped():
+        timeout_s = 10
+        while abs(self.get_voltage()) > 0.1 and timeout_s > 0:
             time.sleep(0.1)
             timeout_s -= 0.1
+            if self.is_run_stopped():
+                return
+
+        if abs(self.get_voltage()) > 0.1:
+            msg = f"Voltage is not 0V after waiting for {10 - timeout_s} seconds. Cannot set polarity."
+            raise Exception(msg)
 
         self.set_output_polarity(polarity)
         self.output_polarity = polarity
         self.wait_for_operation_complete()
+
+        # Unclear why, but the event status must be cleared or the device will not ramp up again after changing polarity
+        self.clear_event_status()
 
         if not self.value_applied_correctly(self.output_polarity, self.get_output_polarity):
             msg = f"Output polarity {self.output_polarity} could not be set correctly."
             raise Exception(msg)
 
         if turn_on_again:
+            # Wait for the device to be ready before turning on the voltage again
+            time.sleep(1)
             self.voltage_on()
 
     def set_voltage_range(self, mode: str) -> None:
@@ -318,22 +340,38 @@ class Device(EmptyDevice, IsegDevice):
         mode: "V/s" or "%/s"
         direction: "up" or "down". Only relevant for V/s mode.
         """
+        rate = rate.strip()  # remove trailing whitespace
         if rate.endswith("V/s"):
-            ramp_rate = float(rate[:-3].strip())
-            self.set_voltage_ramp_up_down_speed(ramp_rate)
+            ramp_rate = float(rate.strip("V/s").strip())
+            self.set_voltage_ramp_up_speed(ramp_rate)
+
+            if not self.value_applied_correctly(ramp_rate, self.get_voltage_ramp_up_speed):
+                msg = f"Voltage ramp up rate {ramp_rate} V/s was not set correctly. Check if the device supports this ramp rate."
+                raise Exception(msg)
+
+            self.set_voltage_ramp_down_speed(ramp_rate)
+            if not self.value_applied_correctly(ramp_rate, self.get_voltage_ramp_down_speed):
+                msg = f"Voltage ramp down rate {ramp_rate} V/s was not set correctly. Check if the device supports this ramp rate."
+                raise Exception(msg)
 
         elif rate.endswith("%/s"):
+            # TODO: The module ramp speed sets it for all channels. Decide if this is intended or should be forbidden to
+            # allow setting different ramp speeds for each channel.
+
             # %/s is set for both directions
-            ramp_rate = float(rate[:-3].strip())
-            # TODO: The module ramp speed sets it for all channels
+            ramp_rate = float(rate.strip("%/s").strip()) / 100
             self.set_module_voltage_ramp_speed(ramp_rate)
+
+            if not self.value_applied_correctly(ramp_rate, self.get_module_voltage_ramp_speed):
+                msg = f"Module voltage ramp speed {ramp_rate} %/s was not set correctly. Check if the device supports this ramp rate."
+                raise Exception(msg)
         else:
             msg = f"No unit detected for ramp rate of {rate}. Use V/s or %/s."
             raise ValueError(msg)
 
     # Communication
 
-    def value_applied_correctly(self, value: int | str, getter: callable, timeout_s: int = 5) -> bool:
+    def value_applied_correctly(self, value: int | str | float, getter: callable, timeout_s: int = 5) -> bool:
         """Wait until the getter function returns the updated value or a timeout is reached."""
         while timeout_s > 0 and not self.is_run_stopped():
             if getter() == value:

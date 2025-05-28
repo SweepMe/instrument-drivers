@@ -58,17 +58,17 @@ class IsegDevice(ABC):
         return self.query("*IDN?")
 
     def clear_event_status(self) -> None:
-        """Clear the event status of the device."""
-        self.write("*CLS")
+        """Clear the event status of the device. The device responds with an empty string."""
+        self.query("*CLS")
 
     def reset(self) -> None:
-        """Reset the device to its default state.
+        """Reset the device to its default state.  The device responds with an empty string.
 
         - turn high voltage off with ramp for all channel
         - set voltage set Vset to zero for all channels
         - set current set Iset to the current nominal for all channels
         """
-        self.write("*RST")
+        self.query("*RST")
 
     def get_instruction_set(self) -> str:
         """Get the currently selected instruction set.
@@ -79,12 +79,15 @@ class IsegDevice(ABC):
         return self.query("*INSTR?")
 
     def local_lockout(self) -> None:
-        """Local Lockout: Disable the front panel, the device can only be controlled remotely."""
-        self.write("*LLO")
+        """Local Lockout: Disable the front panel, the device can only be controlled remotely.
+
+        The device responds with an empty string.
+        """
+        self.query("*LLO")
 
     def goto_local(self) -> None:
-        """Front panel buttons and rotary encoders are enabled."""
-        self.write("*GTL")
+        """Front panel buttons and rotary encoders are enabled.  The device responds with an empty string."""
+        self.query("*GTL")
 
     def get_operation_complete(self) -> bool:
         """Check if the operation is complete.
