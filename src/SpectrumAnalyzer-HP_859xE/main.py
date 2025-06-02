@@ -203,12 +203,15 @@ class Device(EmptyDevice):
             
     def unconfigure(self):
         if self.vavg == True:
-          self.port.write("VAVG OFF") # disable video averaging if it was enabled before
+            # disable video averaging if it was enabled before
+            self.port.write("VAVG OFF")
         
         # clears trace a to c, disabling max and min hold functions
         self.port.write("BLANK TRA")
-        self.port.write("CLRW TRA") # makes sure Trace A is the active one
-        self.port.write("CONTS") # return to continuous sweep upon exit
+        # makes sure Trace A is the active one
+        self.port.write("CLRW TRA")
+        # return to continuous sweep upon exit
+        self.port.write("CONTS")
         
     def measure(self):
         # set to single sweep
@@ -216,26 +219,35 @@ class Device(EmptyDevice):
         
         # in case the standard aquisition mode "Current" is used, we ignore the repetitions set via GUI
         if self.trace_mode == "Current":
-            self.port.write("CLRW TRA") # makes sure Trace A is the active one
-            self.port.write("TS") # record sweep
+            # makes sure Trace A is the active one
+            self.port.write("CLRW TRA")
+            # record sweep
+            self.port.write("TS")
        
         # enable Max/Min Hold function and run multiple aquisitions if set via GUI
         if self.trace_mode == "Max hold":
-            self.port.write("CLRW TRA") # makes sure Trace A is the active one
-            self.port.write("MXMH TRA") # maximum hold for Trace A
+            # makes sure Trace A is the active one
+            self.port.write("CLRW TRA")
+            # maximum hold for Trace A
+            self.port.write("MXMH TRA")
             for n in range (0, self.repetitions):
-                self.port.write("TS") # record sweep
+                # record sweep
+                self.port.write("TS")
 
         if self.trace_mode == "Min hold":
-            self.port.write("CLRW TRA") # makes sure Trace A is the active one
-            self.port.write("MINH TRA") # maximum hold for Trace A
+            # makes sure Trace A is the active one
+            self.port.write("CLRW TRA")
+            # maximum hold for Trace A
+            self.port.write("MINH TRA")
             for n in range (0, self.repetitions):
-                self.port.write("TS") # record sweep
+                 # record sweep
+                self.port.write("TS")
     
     def read_result(self):
-        self.port.write("TRA?") # transfer Trace A in 16bit 
-
-        self.data = self.port.read().split(",") # retrieves data points from the instrument which are seperated by a comma
+        # transfer Trace A in 16bit 
+        self.port.write("TRA?")
+        # retrieves data points from the instrument which are seperated by a comma
+        self.data = self.port.read().split(",")
 
     def call(self):
         return [self.frequencies] + [self.data]
