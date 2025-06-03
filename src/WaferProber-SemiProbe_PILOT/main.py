@@ -265,7 +265,7 @@ class Device(EmptyDevice):
         """
         self.write_message("24")
         answer_splitted = self.read_message().split(" ")
-        return answer_splitted[-1], answer_splitted[-2]
+        return float(answer_splitted[-1]), float(answer_splitted[-2])
     
     def get_zt_position(self):
         """PIGetZTPosition - Get the current Z and T position of the stage
