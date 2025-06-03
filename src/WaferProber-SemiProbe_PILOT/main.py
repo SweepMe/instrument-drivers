@@ -119,9 +119,19 @@ class Device(EmptyDevice):
             self.client.settimeout(self.timeout)
             try:
                 self.client.connect((ip, port))
-            except:
-                debug("Unable to create a connection. Please check whether 'Communications Controller'"
-                      "of the PILOT suite is running.")
+            try:
+                self.client.connect((ip, port))
+            except socket.timeout:
+                debug("Connection timed out. Please check the IP/port and network connectivity.")
+                raise
+            except ConnectionRefusedError:
+                debug("Connection refused. Please ensure the PILOT 'Communications Controller' is running and accessible.")
+                raise
+            except socket.error as e:
+                debug(f"Socket error during connection: {e}. Please check network configuration.")
+                raise
+            except Exception as e: # Catch other unexpected exceptions
+                debug(f"An unexpected error occurred during connection: {e}")
                 raise
         
     def disconnect(self):
