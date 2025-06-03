@@ -131,8 +131,7 @@ class Device(EmptyDevice):
             except Exception as e: # Catch other unexpected exceptions
                 debug(f"An unexpected error occurred during connection: {e}")
                 raise
-        
-    def disconnect(self):
+
     def disconnect(self):
         try:
             self.reset_connection()
