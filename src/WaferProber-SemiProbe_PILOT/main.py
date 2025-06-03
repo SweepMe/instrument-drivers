@@ -197,7 +197,7 @@ class Device(EmptyDevice):
             print("PILOT command:", cmd)
         
         cmd = cmd + EOL
-        self.client.send(cmd.encode('utf-8'))
+        self.client.send(cmd.encode('latin-1')) # Match the decoding scheme or use the protocol-specified encoding
 
     def read_message(self, timeout=10):
         """This function reads a message from the socket client.
