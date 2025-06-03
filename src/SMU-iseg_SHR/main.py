@@ -43,8 +43,6 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 importlib.reload(shr)
 from shr import IsegDevice
 
-_ = IsegDevice
-
 
 class Device(EmptyDevice, IsegDevice):
     """Driver for the iseg SHR."""
@@ -70,7 +68,7 @@ class Device(EmptyDevice, IsegDevice):
             "SOCKET",
         ]
         self.port_properties = {
-            "timeout": 0.2,
+            "timeout": 0.5,
             "SOCKET_EOLwrite": "\r\n",
             "SOCKET_EOLread": "\r\n",
         }
@@ -103,6 +101,7 @@ class Device(EmptyDevice, IsegDevice):
 
     def update_gui_parameters(self, parameters: dict) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+        del parameters  # Unused parameter, but required by the interface
         return {
             "SweepMode": ["Voltage in V", "Current in A"],
             "Channel": ["0", "1", "2", "3"],
@@ -127,6 +126,7 @@ class Device(EmptyDevice, IsegDevice):
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
+        self.port.clear()
         self.clear_event_status()
 
         # TODO: Decide if the device should be reset, as it resets the ramp rates as well
@@ -159,35 +159,27 @@ class Device(EmptyDevice, IsegDevice):
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        self.value = float(self.value)
+
         # Retrieve the previous set voltage before changing the polarity, as changing the polarity will reset the set
         # voltage to 0V
         previous_set_voltage = self.get_voltage_set()
         self.handle_polarity(self.value)
 
         if self.sweepmode.startswith("Voltage"):
-            # Check if the voltage change is larger than the minimum step size of 0.1V.
-            # Otherwise, the device does not start ramping
-            if math.isnan(previous_set_voltage) or abs(previous_set_voltage - self.value) > 0.1:
-                voltage_changes = True
-            elif (self.get_voltage_set() - self.value) < 0.1:
-                # If the polarity has changed, the voltage was set to 0V. If the new value is close to 0V, no ramping
-                voltage_changes = False
-            else:
-                voltage_changes = False
-
             self.set_voltage(self.value)
             self.value_applied_correctly(self.value, self.get_voltage_set)
 
             # wait for the device to start a ramp. Use 5s timeout in case the level is already reached
-            if voltage_changes:
-                timeout_s = 15
-                while timeout_s > 0 and not self.is_run_stopped():
-                    if "Is Voltage Ramp" in self.get_channel_status():
-                        break
-                    time.sleep(0.1)
-                    timeout_s -= 0.1
-                else:
-                    debug("Device did not start ramping in 5s. Check if the level is reached.")
+            timeout_s = 15
+            while timeout_s > 0 and not self.is_run_stopped():
+                status = self.get_channel_status()
+                if "Is On" in status or "Is Voltage Ramp" in status:
+                    break
+                time.sleep(0.1)
+                timeout_s -= 0.1
+            else:
+                print("Device did not start ramping in 5s. Check if the level is reached.")
 
         elif self.sweepmode.startswith("Current"):
             # TODO: Currently untested
@@ -198,7 +190,7 @@ class Device(EmptyDevice, IsegDevice):
         timeout_in_s = 30
         level_reached = False
 
-        while not level_reached and timeout_in_s > 0 and not self.is_run_stopped():
+        while timeout_in_s > 0:
             status = self.get_channel_status()
 
             if self.sweepmode.startswith("Voltage"):
@@ -213,11 +205,14 @@ class Device(EmptyDevice, IsegDevice):
             if not status:
                 level_reached = False
 
+            # Check the exit conditions before the timeout to speed up the first loop iteration
+            if level_reached or self.is_run_stopped():
+                break
+
             time.sleep(0.1)
             timeout_in_s -= 0.1
-
-            if self.is_run_stopped():
-                return
+        else:
+            print("Device did not reach the set value in 30s. Check if the level is reached.")
 
     def read_result(self) -> None:
         """Retrieve the measurement results. This function is called after 'reach'."""
