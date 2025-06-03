@@ -119,8 +119,6 @@ class Device(EmptyDevice):
             self.client.settimeout(self.timeout)
             try:
                 self.client.connect((ip, port))
-            try:
-                self.client.connect((ip, port))
             except socket.timeout:
                 debug("Connection timed out. Please check the IP/port and network connectivity.")
                 raise
