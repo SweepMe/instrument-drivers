@@ -135,8 +135,12 @@ class Device(EmptyDevice):
                 raise
         
     def disconnect(self):
-        self.reset_connection()
-        self.client.close()
+    def disconnect(self):
+        try:
+            self.reset_connection()
+        finally:
+            if hasattr(self, 'client') and self.client:
+                self.client.close()
 
     def configure(self):
         self.switch_motor(1)
