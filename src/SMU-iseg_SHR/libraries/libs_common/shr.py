@@ -36,6 +36,9 @@ class IsegDevice(ABC):
     The implementation requires the following methods:
         - write(command: str) -> None. Write a command to the device.
         - query(command: str) -> str. Query the device and return the response.
+
+    Fix: Every write command was exchanged to a query command, as the device always responds with an EOL string to write
+    commands, which will disrupt the answer to the next query command.
     """
 
     def __init__(self) -> None:
@@ -102,53 +105,53 @@ class IsegDevice(ABC):
 
     def set_voltage(self, voltage: float) -> None:
         """Set the voltage setpoint (Vset) in Volts."""
-        self.write(f":VOLT {voltage},(@{self.channel})")
+        self.query(f":VOLT {voltage},(@{self.channel})")
 
     def voltage_on(self) -> None:
         """Switch on high voltage with configured ramp speed."""
-        self.write(f":VOLT ON,(@{self.channel})")
+        self.query(f":VOLT ON,(@{self.channel})")
 
     def voltage_off(self) -> None:
         """Switch off high voltage with configured ramp speed."""
-        self.write(f":VOLT OFF,(@{self.channel})")
+        self.query(f":VOLT OFF,(@{self.channel})")
 
     def voltage_emergency_off(self) -> None:
         """Immediately shut down high voltage output without ramp."""
-        self.write(f":VOLT EMCY OFF,(@{self.channel})")
+        self.query(f":VOLT EMCY OFF,(@{self.channel})")
 
     def voltage_emergency_clear(self) -> None:
         """Clear emergency off state, return channel to off state."""
-        self.write(f":VOLT EMCY CLR,(@{self.channel})")
+        self.query(f":VOLT EMCY CLR,(@{self.channel})")
 
     def set_voltage_bounds(self, bounds: float) -> None:
         """Set the voltage bounds (Vbounds) tolerance in Volts."""
-        self.write(f":VOLT:BOUNDS {bounds},(@{self.channel})")
+        self.query(f":VOLT:BOUNDS {bounds},(@{self.channel})")
 
 
     # Channel current commands - page 33
 
     def set_current(self, current: float) -> None:
         """Set the current setpoint (Iset) in Amperes."""
-        self.write(f":CURR {current},(@{self.channel})")
+        self.query(f":CURR {current},(@{self.channel})")
 
     def set_current_bounds(self, bounds: float) -> None:
         """Set the current bounds (Ibounds) tolerance in Amperes."""
-        self.write(f":CURR:BOUNDS {bounds},(@{self.channel})")
+        self.query(f":CURR:BOUNDS {bounds},(@{self.channel})")
 
 
     # Channel event commands - page 33
 
     def clear_event(self) -> None:
         """Clear the Channel Event Status register."""
-        self.write(f":EVENT CLEAR,(@{self.channel})")
+        self.query(f":EVENT CLEAR,(@{self.channel})")
 
     def clear_event_mask(self, mask: int) -> None:
         """Clear specific bits in Channel Event Status register by mask."""
-        self.write(f":EVENT {mask},(@{self.channel})")
+        self.query(f":EVENT {mask},(@{self.channel})")
 
     def set_event_mask(self, mask: int) -> None:
         """Set the Channel Event Mask register."""
-        self.write(f":EVENT:MASK {mask},(@{self.channel})")
+        self.query(f":EVENT:MASK {mask},(@{self.channel})")
 
 
     # Channel configuration commands - Page 34
@@ -159,7 +162,7 @@ class IsegDevice(ABC):
         if time_ms < 1 or time_ms > max_timeout:
             msg = f"Timeout must be between 1 and {max_timeout} ms."
             raise ValueError(msg)
-        self.write(f":CONF:TRIP:TIME {time_ms},(@{self.channel})")
+        self.query(f":CONF:TRIP:TIME {time_ms},(@{self.channel})")
 
     def get_trip_timeout(self) -> int:
         """Query the programmed trip timeout in milliseconds."""
@@ -178,7 +181,7 @@ class IsegDevice(ABC):
             3: Shut down the module without ramp
             4: Disable the delayed trip function
         """
-        self.write(f":CONF:TRIP:ACTION {action},(@{self.channel})")
+        self.query(f":CONF:TRIP:ACTION {action},(@{self.channel})")
 
     def get_trip_action(self) -> int:
         """Query the configured trip action."""
@@ -195,7 +198,7 @@ class IsegDevice(ABC):
             3: Shut down the module without ramp
             4: Disable the External Inhibit function
         """
-        self.write(f":CONF:INH:ACTION {action},(@{self.channel})")
+        self.query(f":CONF:INH:ACTION {action},(@{self.channel})")
 
     def get_inhibit_action(self) -> int:
         """Query the configured external inhibit action."""
@@ -210,7 +213,7 @@ class IsegDevice(ABC):
             2: Alternate mode 1
             3: Alternate mode 2
         """
-        self.write(f":CONF:OUTP:MODE {mode},(@{self.channel})")
+        self.query(f":CONF:OUTP:MODE {mode},(@{self.channel})")
 
     def get_output_mode(self) -> int:
         """Query the channel output mode. Returns -1 if the device has currently no mode and returns 1,2,3."""
@@ -229,7 +232,7 @@ class IsegDevice(ABC):
             'POS' - Positive polarity
             'NEG' - Negative polarity
         """
-        self.write(f":CONF:OUTP:POL {polarity},(@{self.channel})")
+        self.query(f":CONF:OUTP:POL {polarity},(@{self.channel})")
 
     def get_output_polarity(self) -> str:
         """Query the channel output polarity."""
@@ -392,7 +395,7 @@ class IsegDevice(ABC):
 
     def set_module_voltage_ramp_speed(self, speed: float) -> None:
         """Set the module voltage ramp speed in %/s."""
-        self.write(f":CONF:RAMP:VOLT {speed}")
+        self.query(f":CONF:RAMP:VOLT {speed}")
 
     def get_module_voltage_ramp_speed(self) -> float:
         """Get the module voltage ramp speed in %/s."""
@@ -401,7 +404,7 @@ class IsegDevice(ABC):
 
     def set_module_voltage_ramp_speed_emergency(self, speed: float) -> None:
         """Set the module voltage ramp speed emergency in %/s."""
-        self.write(f":CONF:RAMP:VOLT:EMCY {speed}")
+        self.query(f":CONF:RAMP:VOLT:EMCY {speed}")
 
     def get_module_voltage_ramp_speed_emergency(self) -> float:
         """Get the module voltage ramp speed emergency in %/s.
@@ -429,7 +432,7 @@ class IsegDevice(ABC):
 
     def set_module_current_ramp_speed(self, speed: float) -> None:
         """Set the module current ramp speed in %/s."""
-        self.write(f":CONF:RAMP:CURR {speed}")
+        self.query(f":CONF:RAMP:CURR {speed}")
 
     def get_module_current_ramp_speed(self) -> float:
         """Get the module current ramp speed in %/s."""
@@ -441,11 +444,11 @@ class IsegDevice(ABC):
 
     def set_voltage_ramp_up_down_speed(self, speed: float) -> None:
         """Set the channel voltage ramp speed for up and down in Volt/second."""
-        self.write(f":CONF:RAMP:VOLT {speed},(@{self.channel})")
+        self.query(f":CONF:RAMP:VOLT {speed},(@{self.channel})")
 
     def set_voltage_ramp_up_speed(self, speed: float) -> None:
         """Set the channel voltage ramp up speed in Volt/second."""
-        self.write(f":CONF:RAMP:VOLT:UP {speed},(@{self.channel})")
+        self.query(f":CONF:RAMP:VOLT:UP {speed},(@{self.channel})")
 
     def get_voltage_ramp_up_speed(self) -> float:
         """Get the channel voltage ramp up speed in Volt/second."""
@@ -454,7 +457,7 @@ class IsegDevice(ABC):
 
     def set_voltage_ramp_down_speed(self, speed: float) -> None:
         """Set the channel voltage ramp down speed in Volt/second."""
-        self.write(f":CONF:RAMP:VOLT:DOWN {speed},(@{self.channel})")
+        self.query(f":CONF:RAMP:VOLT:DOWN {speed},(@{self.channel})")
 
     def get_voltage_ramp_down_speed(self) -> float:
         """Get the channel voltage ramp down speed in Volt/second."""
@@ -463,11 +466,11 @@ class IsegDevice(ABC):
 
     def set_current_ramp_up_down_speed(self, speed: float) -> None:
         """Set the channel current ramp speed for up and down in Ampere/second."""
-        self.write(f":CONF:RAMP:CURR {speed},(@{self.channel})")
+        self.query(f":CONF:RAMP:CURR {speed},(@{self.channel})")
 
     def set_current_ramp_up_speed(self, speed: float) -> None:
         """Set the channel current ramp up speed in Ampere/second."""
-        self.write(f":CONF:RAMP:CURR:UP {speed},(@{self.channel})")
+        self.query(f":CONF:RAMP:CURR:UP {speed},(@{self.channel})")
 
     def get_current_ramp_up_speed(self) -> float:
         """Get the channel current ramp up speed in Ampere/second."""
@@ -476,7 +479,7 @@ class IsegDevice(ABC):
 
     def set_current_ramp_down_speed(self, speed: float) -> None:
         """Set the channel current ramp down speed in Ampere/second."""
-        self.write(f":CONF:RAMP:CURR:DOWN {speed},(@{self.channel})")
+        self.query(f":CONF:RAMP:CURR:DOWN {speed},(@{self.channel})")
 
     def get_current_ramp_down_speed(self) -> float:
         """Get the channel current ramp down speed in Ampere/second."""
@@ -492,7 +495,7 @@ class IsegDevice(ABC):
         if average not in supported_averages:
             msg = f"Average {average} not supported. Average must be one of: {', '.join(map(str, supported_averages))}."
             raise ValueError(msg)
-        self.write(f":CONF:AVER {average}")
+        self.query(f":CONF:AVER {average}")
 
     def get_averaging(self) -> int:
         """Get the number of digital filter averaging steps."""
@@ -504,7 +507,7 @@ class IsegDevice(ABC):
         if enable not in [0, 1]:
             msg = "Enable must be 0 or 1."
             raise ValueError(msg)
-        self.write(f":CONF:KILL {enable}")
+        self.query(f":CONF:KILL {enable}")
 
     def get_kill_enable_function(self) -> int:
         """Get the kill function enable state."""
@@ -516,7 +519,7 @@ class IsegDevice(ABC):
         if enable not in [0, 1]:
             msg = "Enable must be 0 or 1."
             raise ValueError(msg)
-        self.write(f":CONF:ADJUST {enable}")
+        self.query(f":CONF:ADJUST {enable}")
 
     def get_fine_adjustment(self) -> int:
         """Get the fine adjustment function enable state."""
@@ -525,15 +528,15 @@ class IsegDevice(ABC):
 
     def reset_module_event_status_register(self) -> None:
         """Reset the Module Event Status register."""
-        self.write("CONF:EVENT CLEAR")
+        self.query("CONF:EVENT CLEAR")
 
     def clear_module_event_status_register(self, mask: int) -> None:
         """Clears single bits or bit combinations in the Module Event Status register."""
-        self.write(f"CONF:EVENT {mask}")
+        self.query(f"CONF:EVENT {mask}")
 
     def set_module_event_mask_register(self, mask: int) -> None:
         """Set the Module Event Mask register."""
-        self.write(f"CONF:EVENT:MASK {mask}")
+        self.query(f"CONF:EVENT:MASK {mask}")
 
     def get_module_event_mask_register(self) -> int:
         """Get the Module Event Mask register."""
@@ -542,7 +545,7 @@ class IsegDevice(ABC):
 
     def set_module_event_channel_mask_register(self, mask: int) -> None:
         """Set the Module Event Channel Mask register."""
-        self.write(f"CONF:EVENT:CHANMASK {mask}")
+        self.query(f"CONF:EVENT:CHANMASK {mask}")
 
     def get_module_event_channel_mask_register(self) -> int:
         """Get the Module Event Channel Mask register."""
@@ -558,7 +561,7 @@ class IsegDevice(ABC):
         if address < 0 or address > maximum_address:
             msg = f"CAN bus address must be between 0 and {maximum_address}."
             raise ValueError(msg)
-        self.write(f"CONF:CAN:ADDR {address}")
+        self.query(f"CONF:CAN:ADDR {address}")
 
     def get_module_can_bus_address(self) -> int:
         """Get the CAN bus address of the module.
@@ -573,7 +576,7 @@ class IsegDevice(ABC):
         if bitrate not in [125000, 250000]:
             msg = "CAN bus bit rate must be one of: 125000, 250000."
             raise ValueError(msg)
-        self.write(f"CONF:CAN:BITRATE {bitrate}")
+        self.query(f"CONF:CAN:BITRATE {bitrate}")
 
     def get_can_bus_bit_rate(self) -> int:
         """Get the CAN bus bit rate of the module."""
@@ -594,7 +597,7 @@ class IsegDevice(ABC):
         This function is not implemented in the SHR device, but works for other iseg SMU devices.
         """
         baud_rate = 115200
-        self.write(f"CONF:SERIAL:BAUD {baud_rate}")
+        self.query(f"CONF:SERIAL:BAUD {baud_rate}")
 
     def get_echo_enabled(self) -> bool:
         """Get the echo enabled state of the module."""
@@ -606,7 +609,7 @@ class IsegDevice(ABC):
         if enable not in [0, 1]:
             msg = "Enable must be 0 or 1."
             raise ValueError(msg)
-        self.write(f"CONF:SERIAL:ECHO {enable}")
+        self.query(f"CONF:SERIAL:ECHO {enable}")
 
 
     # Configure module read commands - Page 40
@@ -720,11 +723,11 @@ class IsegDevice(ABC):
 
         Only possible if all channels are off. As parameter, the device serial number must be given.
         """
-        self.write(f":SYSTEM:USER:CONFIG {serial_number}")
+        self.query(f":SYSTEM:USER:CONFIG {serial_number}")
 
     def set_normal_mode(self) -> None:
         """Set the device to normal mode."""
-        self.write(":SYSTEM:USER:CONFIG 0")
+        self.query(":SYSTEM:USER:CONFIG 0")
 
     def get_config_mode(self) -> str:
         """Returns 1 in configuration mode, otherwise 0."""
@@ -732,4 +735,4 @@ class IsegDevice(ABC):
 
     def save_config(self) -> None:
         """Saves the changed output mode or polarity to icsConfig.xml."""
-        self.write(":SYSTEM:USER:CONFIG SAVE")
+        self.query(":SYSTEM:USER:CONFIG SAVE")
