@@ -32,12 +32,11 @@
 from __future__ import annotations
 
 import importlib
-import math
 import time
 
 import shr
-from pysweepme import debug
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme.PortManager import PortManager
 
 # Reload the shr module to ensure the latest version is used
 importlib.reload(shr)
@@ -99,9 +98,17 @@ class Device(EmptyDevice, IsegDevice):
         self.measured_voltage: float = 0.0
         self.measured_current: float = 0.0
 
+        self.last_query_time: float = 0.0
+        self.measurement_is_running = None
+        """Flag to indicate if a measurement is running to avoid querying the supported modes during measurement."""
+
     def update_gui_parameters(self, parameters: dict) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
-        del parameters  # Unused parameter, but required by the interface
+        port_string = parameters.get("Port", "")
+        channel = parameters.get("Channel", "0")
+        if port_string:
+            self.modes = self.get_supported_modes_with_fallback(port_string, channel)
+
         return {
             "SweepMode": ["Voltage in V", "Current in A"],
             "Channel": ["0", "1", "2", "3"],
@@ -110,6 +117,69 @@ class Device(EmptyDevice, IsegDevice):
             "Polarity": self.polarity_modes,
             "Ramp rate": "50 V/s",
         }
+
+    def get_supported_modes_with_fallback(self, port_string: str, channel: str) -> dict[str, int]:
+        """Get the supported modes with a fallback if the time since the last query is too short.
+
+        This function queries the supported output modes from the device.
+        Do not query the modes if:
+        - The time since the last query is less than 10 seconds to avoid flooding increased GUI loading times.
+        - The measurement is running to avoid communication issues.
+        - The port cannot be opened, e.g., if the device is not connected or the port string is invalid.
+
+        As a fallback, return self.modes (Which might have been updated on an earlier run of apply_gui_parameters).
+        """
+        # Check the parameter store if the modes have been queried before
+        # Data is saved as dictionary of format {'modes': {mode_string: mode_number}, 'last_query_time': time}}
+        # key must include port_string and channel to distinguish between multiple connected devices and channels
+        parameter_key = f"{port_string}_{channel}"
+        saved_parameters = self.restore_parameter(parameter_key)
+
+        # 10s time between queries should be sufficient to only query once during the GUI loading and small enough to
+        # update if a new device is connected
+        # If the measurement is running, do not query the modes to avoid communication issues
+        if (saved_parameters is not None and
+                (time.time() - saved_parameters.get("last_query_time", 0) < 10 or self.measurement_is_running)):
+            modes = saved_parameters.get("modes", {})
+            if modes:
+                return modes
+
+        # check if self.port is already open
+        close_port = False
+        if not hasattr(self, "port") or self.port is None or not self.port.port_properties.get("is_open", False):
+            try:
+                port_manager = PortManager()
+                self.port = port_manager.get_port(port_string, self.port_properties)
+                close_port = True
+            except:
+                print(f"Failed to open port {port_string}. Cannot retrieve supported modes.")
+                return self.modes
+
+        # Set the channel to allow querying modes for a specific channel
+        self.channel = int(channel)
+
+        try:
+            # Create supported modes dictionary
+            mode_numbers = self.get_supported_output_modes()
+            voltage_modes = self.get_supported_voltage_modes()
+            current_modes = self.get_supported_current_modes()
+
+            supported_modes = {}
+            for n, number in enumerate(mode_numbers):
+                voltage_range = float(voltage_modes[n]) / 1000  # Convert V to kV
+                current_range = float(current_modes[n]) * 1000  # Convert A to mA
+                mode_string = f"{int(voltage_range)}kV/{int(current_range)}mA"
+                supported_modes[mode_string] = number
+
+            self.store_parameter(parameter_key, {"modes": supported_modes, "last_query_time": time.time()})
+        except:
+            supported_modes = self.modes
+        finally:
+            # close if it was not opened before
+            if close_port:
+                self.port.close()
+
+        return supported_modes
 
     def apply_gui_parameters(self, parameters: dict) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
@@ -126,6 +196,7 @@ class Device(EmptyDevice, IsegDevice):
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
+        self.measurement_is_running = True
         self.port.clear()
         self.clear_event_status()
 
@@ -136,6 +207,7 @@ class Device(EmptyDevice, IsegDevice):
     def deinitialize(self) -> None:
         """Deinitialize the device. This function is called only once at the end of the measurement."""
         self.set_local_lockout(False)
+        self.measurement_is_running = False
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -396,7 +468,7 @@ class Device(EmptyDevice, IsegDevice):
             # Some write commands seem to leave \r\n bytes in the buffer for socket connections
             # Workaround: clear the socket buffer before sending a query command
             # Add a delay to ensure the response to the previous command is fully read
-            time.sleep(0.01)
+            time.sleep(0.0)
             self.port.clear()
         self.write(command)
         return self.port.read()
