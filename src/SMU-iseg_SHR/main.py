@@ -232,26 +232,23 @@ class Device(EmptyDevice, IsegDevice):
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         self.value = float(self.value)
-
-        # Retrieve the previous set voltage before changing the polarity, as changing the polarity will reset the set
-        # voltage to 0V
-        previous_set_voltage = self.get_voltage_set()
         self.handle_polarity(self.value)
 
         if self.sweepmode.startswith("Voltage"):
             self.set_voltage(self.value)
             self.value_applied_correctly(self.value, self.get_voltage_set)
 
-            # wait for the device to start a ramp. Use 5s timeout in case the level is already reached
-            timeout_s = 15
+            # Timeout of 5s for the device to start a ramp to prevent endless loop
+            timeout_s = 5
             while timeout_s > 0 and not self.is_run_stopped():
                 status = self.get_channel_status()
-                if "Is On" in status or "Is Voltage Ramp" in status:
+                # Do not check for 'Is On', as the device might still be 'On' from the previous set point
+                if "Is Voltage Ramp" in status:
                     break
                 time.sleep(0.1)
                 timeout_s -= 0.1
             else:
-                print("Device did not start ramping in 5s. Check if the level is reached.")
+                print(f"Device did not start ramping in to reach {self.value}V. Voltage change compared to previous set voltage might be too small.")
 
         elif self.sweepmode.startswith("Current"):
             # TODO: Currently untested
