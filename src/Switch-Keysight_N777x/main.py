@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2023 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2023, 2025 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -24,19 +24,18 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+#
+# SweepMe! driver
+# * Module: Switch
+# * Instrument: Keysight N777x Tunable Laser
 
-# import time
+from __future__ import annotations
 
-from pysweepme.EmptyDeviceClass import EmptyDevice  # Class comes with SweepMe!
-# from pysweepme.ErrorMessage import error
-from pysweepme.FolderManager import addFolderToPATH
-
-addFolderToPATH()
-
-# from error_codes_N777x import ERROR_CODES
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
+    """Driver for the Keysight N777x Tunable Laser Module."""
 
     description = """
                 <h3>Driver for the Keysight N777x Tuneable Laser</h3>
@@ -47,8 +46,9 @@ class Device(EmptyDevice):
                 <p>&nbsp;</p>
                 """
 
-    def __init__(self):
-        EmptyDevice.__init__(self)
+    def __init__(self) -> None:
+        """Initialize the driver class and the instrument parameters."""
+        super().__init__()
 
         self.shortname = "N777x"  # short name will be shown in the sequencer
         self.variables = ["Wavelength", "Power"]
@@ -61,7 +61,7 @@ class Device(EmptyDevice):
         self.port_types = ["GPIB", "USBTMC", "TCPIP"]
         self.port_properties = {
             "timeout": 10,
-            "EOL": '\n',
+            "EOL": "\n",
         }
 
         # tracking & init
@@ -95,21 +95,18 @@ class Device(EmptyDevice):
             "pm": 1e-12,
         }
 
-    def set_GUIparameter(self):
-        """this is used to generate the switch UI"""
-
-        gui_parameter = {
+    def set_GUIparameter(self) -> dict:
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+        return {
             "Power level": "0.0",  # default is 0 dBm = 1 mW
             "Power unit": list(self.allowed_power_units.keys()),
             "Wavelength": "1550.0",
             "Wavelength unit": list(self.wavelength_conversions.keys()),
             "SweepMode": ["None", "Wavelength", "Power"]
         }
-        return gui_parameter
 
-    def get_GUIparameter(self, parameter):
-        """get user options"""
-
+    def get_GUIparameter(self, parameter: dict) -> None:
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.sweepmode: str = parameter["SweepMode"]
         self.port_string = parameter["Port"]  # auto used by port manager
 
@@ -122,9 +119,8 @@ class Device(EmptyDevice):
 
         self.units = [self.wln_unit, self.power_unit]
 
-    def initialize(self):
-        """ perform initialisation steps needed only once per entire measurement"""
-
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
         self.reset()
         self.clear_status()
         id_ = self.get_identification()
@@ -134,38 +130,33 @@ class Device(EmptyDevice):
         self.get_power_range()
         self.get_wavelength_range()
 
-        is_key_ok = self.check_key_turned()
-        if not is_key_ok:
-            raise ValueError("LASER KEY IS IN OFF STATE")
+        if not self.check_key_turned():
+            msg = "Laser key is in OFF state."
+            raise ValueError(msg)
 
-    def deinitialize(self):
-        """ called last time the instrument is used by sequencer (exit of last branch with inst)"""
+    def deinitialize(self) -> None:
+        """Deinitialize the device. This function is called only once at the end of the measurement."""
         errors = self.check_errors()
         if errors:
             print("Errors for laser after measurement: ", errors)
 
-    def configure(self):
-        """configure for branch"""
-
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
         if self.sweepmode != "Power":
             self.set_power(power_level=self.power_level * self.power_conversion)
         elif self.sweepmode != "Wavelength":
-            self.set_wavelength(wln=self.wln * self.wln_conversion)
+            self.set_wavelength(wavelength_m=self.wln * self.wln_conversion)
 
-    def poweron(self):
-        # called if the measurement procedure enters a branch of the sequencer
-        # and the module has not been used in the previous branch
+    def poweron(self) -> None:
+        """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
         self.set_laser_on()
 
-    def poweroff(self):
-        """ called if branch is exited and module is not in next branch"""
-
+    def poweroff(self) -> None:
+        """Turn off the device when leaving a sequencer branch."""
         self.set_laser_off()
 
-    def apply(self):
-        """ 'apply' is used to set the new setvalue that is always available as 'self.value'
-            and is only called if the setvalue has changed """
-
+    def apply(self) -> None:
+        """This function is called if the set value has changed. Applies the new value available as self.value."""
         value = float(self.value)
 
         if self.sweepmode == "Wavelength":
@@ -173,121 +164,113 @@ class Device(EmptyDevice):
         elif self.sweepmode == "Power":
             self.set_power(power_level=value * self.power_conversion)
 
-    def measure(self):
-
+    def measure(self) -> None:
+        """Trigger the acquisition of new data."""
         self.wln_from_inst = self.get_wavelength()
         self.power_from_inst = self.get_power()
 
-    def call(self):
-        """
-        mandatory function that must be used to return as many values as defined in self.variables
-        This function can only be omitted if no variables are defined in self.variables.
-        """
+    def call(self) -> list[float]:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
         return [
             self.wln_from_inst / self.wln_conversion, self.power_from_inst / self.power_conversion
         ]
 
     # wrapped communication commands below
 
-    def get_identification(self):
+    def get_identification(self) -> str:
+        """Get the instrument identification string."""
+        return self.port.query("*IDN?")
 
-        return self.query_port("*IDN?")
-
-    def reset(self):
+    def reset(self) -> None:
+        """Reset the instrument to its default state."""
         self.port.write("*RST")
 
-    def clear_status(self):
+    def clear_status(self)-> None:
+        """Clear the instrument status and error queue."""
         self.port.write("*CLS")
 
     def get_power(self) -> float:
-        """returns the power in W or dB"""
+        """Returns the power in W or dB."""
+        return float(self.port.query("sour0:pow?"))
 
-        result = self.query_port("sour0:pow?")
-        return float(result)
+    def get_power_range(self) -> None:
+        """Save the power range in mW as self.pow_min and self.pow_max."""
+        self.pow_min = float(self.port.query(":sour0:pow? min"))
+        self.pow_max = float(self.port.query(":sour0:pow? max"))
 
-    def get_power_range(self):
-        """save the power range in mW as self.pow_min"""
-
-        self.pow_min = float(self.query_port(":sour0:pow? min"))
-        self.pow_max = float(self.query_port(":sour0:pow? max"))
-
-    def set_power_units(self, unit="W"):
+    def set_power_units(self, unit: str = "W") -> None:
+        """Set the power units to W or dBm."""
         if unit.lower() not in ["w", "dbm"]:
-            raise ValueError("Valid power units are W and DBM")
+            msg = f"Invalid power unit {unit}. Choose eiher W or DBM."
+            raise ValueError(msg)
         self.port.write(f":sour0:pow:unit {unit}")
 
-    def get_power_units(self):
-        self.query_port(":sour0:pow:unit?")
+    def get_power_units(self) -> str:
+        """Get the current power units."""
+        return self.port.query(":sour0:pow:unit?")
 
     def set_power(self, power_level: float) -> None:
-        """set the power in self.power_unit s"""
-
+        """Set the power level in W or dBm."""
         if not self.pow_max >= power_level >= self.pow_min:
-            raise ValueError(f"Invalid power {power_level:.3f} not in range"
-                             f" [{self.pow_min:.3f},{self.pow_max:.3f}] {self.power_unit}")
+            msg = f"Power {power_level:.3f} out of range [{self.pow_min:.3f},{self.pow_max:.3f}] {self.power_unit}."
+            raise ValueError(msg)
 
         self.port.write(f"sour0:pow {power_level}")
         self.power_level = power_level
 
-    def set_wavelength(self, wln: float):
-        """ set the laser wln in m"""
-        wln = float(wln)
-        if not self.wln_max >= wln >= self.wln_min:
-            err_msg = f"Invalid wln {wln:.1f}m not in instrument range"
-            err_msg += f"[{self.wln_min:.1f}m ,{self.wln_max:.1f}m]"
-            raise ValueError(err_msg)
+    def set_wavelength(self, wavelength_m: float) -> None:
+        """Set the laser wavelength m."""
+        wavelength_m = float(wavelength_m)
+        if not self.wln_max >= wavelength_m >= self.wln_min:
+            msg = (f"Invalid wavelength {wavelength_m:.1f}m not in instrument range "
+                   f"[{self.wln_min:.1f}m ,{self.wln_max:.1f}m]")
+            raise ValueError(msg)
 
-        self.port.write(f":sour0:wav {wln}")
-        self.query_port("*OPC?")
+        self.port.write(f":sour0:wav {wavelength_m}")
+        self.port.query("*OPC?")
 
-        self.wln = wln
+        self.wln = wavelength_m
 
     def get_wavelength(self) -> float:
-        """get the laser wln in meters"""
-        result = self.query_port(":sour0:wav?")  # meters
-        return float(result)
+        """Get the laser wavelength in meters."""
+        return float(self.port.query(":sour0:wav?"))
 
-    def get_wavelength_range(self) -> None:
-        """get the allowed laser wln range in meters"""
-
-        self.wln_min = float(self.query_port(":sour0:wav? min"))
-        self.wln_max = float(self.query_port(":sour0:wav? max"))
+    def get_wavelength_range(self) -> tuple[float, float]:
+        """Get the allowed laser wavelength range in meters."""
+        self.wln_min = float(self.port.query(":sour0:wav? min"))
+        self.wln_max = float(self.port.query(":sour0:wav? max"))
 
         return self.wln_min, self.wln_max
 
     def turn_key(self, onoff=0, password=1234):
-        """ DANGER this changes the lock.
-        Inputs: onoff: 1 for ON 0 for OFF"""
+        """Change the state of the laser safety key. WARNING: THIS IS A POSSIBLE SAFETY RISK!"""
         self.port.write(f":LOCK {onoff},{password}")
 
-    def check_key_turned(self):
-        """check laser safety key turned"""
-        result = self.query_port(":LOCK?")
-        return bool(result)
+    def check_key_turned(self) -> bool:
+        """Check if the laser safety key is turned."""
+        return bool(self.port.query(":LOCK?"))
 
-    def set_laser_on(self):
-        """switch laser on"""
-
+    def set_laser_on(self) -> None:
+        """Switch the laser on."""
         self.port.write("SOUR0:POW:STATE 1")
 
-    def set_laser_off(self):
-        """switch laser off"""
-
+    def set_laser_off(self) -> None:
+        """Switch the laser off."""
         self.port.write("SOUR0:POW:STATE 0")
 
-    def is_laser_on(self):
-        return int(self.query_port("SOUR0:POW:STATE?"))
+    def is_laser_on(self) -> bool:
+        """Returns True if the laser is on, False if it is off."""
+        return bool(int(self.port.query("SOUR0:POW:STATE?")))
 
     def check_errors(self) -> str:
-        """ get error list if any and parse it based on manual"""
-
-        err_count = int(self.query_port(":SYSTem:ERRor:COUNt?"))
+        """Get error list if any and parse it based on manual."""
+        err_count = int(self.port.query(":SYSTem:ERRor:COUNt?"))
         if err_count == 0:
-            return
+            return ""
 
         errors = []
         for _ in range(err_count):
-            err = self.query_port("SYST:ERR?")
+            err = self.port.query("SYST:ERR?")
             if not err.startswith("0"):
                 errors.append(err)
 
@@ -309,8 +292,3 @@ class Device(EmptyDevice):
 
     #     state = self.get_shutter_state()
     #     self.set_shutter_state(not state)
-
-    def query_port(self, query="") -> str:
-        """wrap the write+read as query command"""
-        self.port.write(query)
-        return self.port.read()
