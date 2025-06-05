@@ -24,7 +24,9 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
+#
+# Contribution: We like to thank Tjorben Matthes for providing the initial version of this driver.
+#
 # SweepMe! driver
 # * Module: SMU
 # * Instrument: GWInstek GPP-4323
