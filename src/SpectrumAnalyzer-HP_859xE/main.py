@@ -128,7 +128,7 @@ class Device(EmptyDevice):
             # Normal sweep record, max hold or min hold
             "Trace mode": self.trace_modes,
             # definition by time disabled as this can lead to interrupted sweeps even for the first sweep when using very small RBW which require a long sweep time
-            "Trace mode integration type": ["Repetitions:", "Hold time in s:"],
+            #"Trace mode integration type": ["Repetitions:", "Hold time in s:"],
             # the amount of single sweeps to use for finding the maximum values
             "Trace mode integration": 10,
         }
