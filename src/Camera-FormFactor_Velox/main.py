@@ -79,8 +79,11 @@ class Device(EmptyDevice):
         self.camera_mode: int = 0
 
         self.progress: int = 0
-        self.progress_digits: int = 3
+        self.progress_digits: int = 4  # allows up to 9999 images
         self.save_name: str = ""
+        self.save_folder: str = "TEMP"
+        """If velox runs on a different computer, the save folder must be set to a shared folder."""
+
         self.save_path: str = ""
         self.keep_only_last: bool = False
 
@@ -101,6 +104,7 @@ class Device(EmptyDevice):
             "Camera": list(self.cameras),
             "Mode": list(self.camera_modes),
             "Custom save name": "",
+            "Custom save folder": "TEMP",
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -109,21 +113,24 @@ class Device(EmptyDevice):
         self.camera = parameter["Camera"]
         self.camera_mode = self.camera_modes[parameter["Mode"]]
         self.save_name = parameter["Custom save name"]
+        self.save_folder = parameter["Custom save folder"]
 
         self.file_format = str(parameter["FileFormat"]).lower()
         self.keep_only_last = bool(parameter["KeepLast"])
 
     def handle_port_string(self, port_string: str) -> None:
         """Extract IP address and socket from port string."""
-        if port_string == "localhost":
+        self.target_socket = 1412
+        if port_string.lower() == "localhost":
             self.ip_address = "localhost"
-            self.target_socket = 1412
-        elif "Port:" in port_string:
+        elif "port:" in port_string.lower():
             self.ip_address = port_string.split(";")[0].split(":")[1].strip()
             self.target_socket = int(port_string.split(";")[1].split(":")[1].strip())
-        elif "IP:" in port_string:
-            self.ip_address = port_string.split("IP:")[1].strip()
-            self.target_socket = 1412
+        elif "ip:" in port_string.lower():
+            self.ip_address = port_string.lower().split("ip:")[1].strip()
+        else:
+            # Try to interpret the port string as an IP address
+            self.ip_address = port_string.strip()
 
     def connect(self) -> None:
         """Establish connection to Velox Software."""
@@ -136,7 +143,6 @@ class Device(EmptyDevice):
     def initialize(self) -> None:
         """Initialize image counter."""
         self.progress = 0
-        self.progress_digits = 3
 
     def measure(self) -> None:
         """Capture image from camera."""
@@ -147,7 +153,11 @@ class Device(EmptyDevice):
         """Save image of given camera and return save path as string."""
         file_name = self.save_name if self.save_name else f"Velox_{camera}"
         file_name += f"_{self.progress:0{self.progress_digits}d}"
-        save_path = f"{self.tempfolder}{os.sep}{file_name}.{self.file_format}"
+
+        if not self.save_folder or self.save_folder == "TEMP":
+            save_path = f"{self.tempfolder}{os.sep}{file_name}.{self.file_format}"
+        else:
+            save_path = f"{self.save_folder}{os.sep}{file_name}.{self.file_format}"
 
         velox.SnapImage(camera, save_path, self.camera_mode)
 
