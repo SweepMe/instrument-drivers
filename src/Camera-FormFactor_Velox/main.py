@@ -79,8 +79,11 @@ class Device(EmptyDevice):
         self.camera_mode: int = 0
 
         self.progress: int = 0
-        self.progress_digits: int = 3
+        self.progress_digits: int = 4  # allows up to 9999 images
         self.save_name: str = ""
+        self.save_folder: str = "TEMP"
+        """If velox runs on a different computer, the save folder must be set to a shared folder."""
+
         self.save_path: str = ""
         self.keep_only_last: bool = False
 
@@ -101,6 +104,7 @@ class Device(EmptyDevice):
             "Camera": list(self.cameras),
             "Mode": list(self.camera_modes),
             "Custom save name": "",
+            "Custom save folder": "TEMP",
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -109,6 +113,7 @@ class Device(EmptyDevice):
         self.camera = parameter["Camera"]
         self.camera_mode = self.camera_modes[parameter["Mode"]]
         self.save_name = parameter["Custom save name"]
+        self.save_folder = parameter["Custom save folder"]
 
         self.file_format = str(parameter["FileFormat"]).lower()
         self.keep_only_last = bool(parameter["KeepLast"])
@@ -147,7 +152,11 @@ class Device(EmptyDevice):
         """Save image of given camera and return save path as string."""
         file_name = self.save_name if self.save_name else f"Velox_{camera}"
         file_name += f"_{self.progress:0{self.progress_digits}d}"
-        save_path = f"{self.tempfolder}{os.sep}{file_name}.{self.file_format}"
+
+        if not self.save_folder or self.save_folder == "TEMP":
+            save_path = f"{self.tempfolder}{os.sep}{file_name}.{self.file_format}"
+        else:
+            save_path = f"{self.save_folder}{os.sep}{file_name}.{self.file_format}"
 
         velox.SnapImage(camera, save_path, self.camera_mode)
 
