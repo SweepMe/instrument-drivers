@@ -57,8 +57,6 @@ class Device(EmptyDevice):
         self.units = ["V", "A"]
         self.plottype = [True, True]  # True to plot data
         self.savetype = [True, True]  # True to save data
-        
-        
 
         self.commands = {
             "Voltage [V]": "VSET",  # remains for compatibility reasons
@@ -67,10 +65,7 @@ class Device(EmptyDevice):
             "Current in A": "CURR",
         }
 
-        # self.outpon = False
-
     def set_GUIparameter(self):
-        
         gui_parameter = {
                         "SweepMode": ["Voltage in V", "Current in A"],
                         
@@ -78,11 +73,9 @@ class Device(EmptyDevice):
                         "RouteOut": ["Front"],
                         "Compliance": 0.3,
                         }
-                        
         return gui_parameter
                                  
     def get_GUIparameter(self, parameter={}):
-
         self.source = parameter['SweepMode']
 
         self.channel = parameter['Channel']
@@ -111,12 +104,11 @@ class Device(EmptyDevice):
 
     def read_result(self):
         self.v, self.i, power = [float(val) for val in self.port.read().split(',')]
+        # power is discarded as unneeded if voltage and current are known
         return self.v, self.i
 
     def call(self):
         return [self.v, self.i]
 
     def get_identification(self):
-        self.port.query("*IDN?")
-
-
+        return self.port.query("*IDN?")
