@@ -112,6 +112,7 @@ class Device(EmptyDevice, IsegDevice):
         return {
             "SweepMode": ["Voltage in V", "Current in A"],
             "Channel": ["0", "1", "2", "3"],
+            "Compliance": "0.004",  # 4 mA compliance for 2kV/4mA mode
             "Average": 1,
             "Mode": list(self.modes.keys()),
             "Polarity": self.polarity_modes,
@@ -189,6 +190,7 @@ class Device(EmptyDevice, IsegDevice):
         # Receive the port string to decide if echoing is used with COM ports
         self.port_string = parameters.get("Port", "")
 
+        self.compliance = parameters.get("Compliance", "0.004")  # Default 4 mA for 2kV/4mA mode
         self.average = parameters.get("Average", 64)
         self.ramp_rate = parameters.get("Ramp rate", "100 V/s")
         self.polarity_mode = parameters.get("Polarity", "Auto")
@@ -215,6 +217,17 @@ class Device(EmptyDevice, IsegDevice):
             self.set_polarity("p")
         elif self.polarity_mode == "Negative":
             self.set_polarity("n")
+
+        # For voltage mode, set the current limit (in this case the current value) to the compliance value
+        compliance = float(self.compliance)
+        if self.sweepmode.startswith("Voltage"):
+            self.set_current(compliance)
+            self.value_applied_correctly(compliance, self.get_current_set)
+
+        # For current mode, set the voltage limit (in this case the voltage value) to the compliance value
+        elif self.sweepmode.startswith("Current"):
+            self.set_voltage(compliance)
+            self.value_applied_correctly(compliance, self.get_voltage_set)
 
         self.handle_averaging(int(self.average))
         self.set_voltage_range(self.mode)
