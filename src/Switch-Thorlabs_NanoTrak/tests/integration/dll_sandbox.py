@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import sys
 
 import clr
@@ -17,14 +19,17 @@ if kinesis_path not in sys.path:
 
 
 clr.AddReference("Thorlabs.MotionControl.DeviceManagerCLI")
-clr.AddReference("Thorlabs.MotionControl.GenericMotorCLI")
 clr.AddReference("Thorlabs.MotionControl.GenericNanoTrakCLI")
-
-# clr.AddReference("Thorlabs.MotionControl.IntegratedStepperMotorsCLI")
+clr.AddReference("Thorlabs.MotionControl.Benchtop.NanoTrakCLI")
 
 import Thorlabs.MotionControl.DeviceManagerCLI as DeviceManagerCLI
-import Thorlabs.MotionControl.GenericMotorCLI as GenericMotorCLI
 import Thorlabs.MotionControl.GenericNanoTrakCLI as GenericNanoTrakCLI
+import Thorlabs.MotionControl.Benchtop.NanoTrakCLI as BenchtopNanoTrakCLI
+
+# testing
+import Thorlabs.MotionControl.Benchtop.NanoTrak as NanoTrak
+
+# print("test")
 
 DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
 DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
@@ -32,5 +37,19 @@ device_list = DeviceManagerCLI.DeviceManagerCLI.GetDeviceList()
 port_string = device_list[0]
 print(f"Found device: {port_string}")
 
-kinesis_device = GenericNanoTrakCLI.NanoTrak.CreateDevice(port_string)
+device = BenchtopNanoTrakCLI.BenchtopNanoTrak.CreateBenchtopNanoTrak(port_string)
+# device = BenchtopNanoTrakCLI.BenchtopNanoTrak.CreateDevice(port_string)
+
+device.Connect(port_string)
+
+time.sleep(5)
+
+print(device.GetDeviceInfo())
+
+# kinesis_device = GenericNanoTrakCLI.NanoTrak.CreateDevice(port_string)
+
+# Which command to use to instantiate the device?
+# example from other driver:
+# import Thorlabs.MotionControl.IntegratedStepperMotorsCLI as IntegratedStepperMotorsCLI
+# self.kinesis_device = IntegratedStepperMotorsCLI.CageRotator.CreateDevice(self.serial_num)
 
