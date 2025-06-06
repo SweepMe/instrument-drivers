@@ -150,10 +150,10 @@ class Device(EmptyDevice, IsegDevice):
             try:
                 port_manager = PortManager()
                 self.port = port_manager.get_port(port_string, self.port_properties)
-                close_port = True
             except:
-                print(f"Failed to open port {port_string}. Cannot retrieve supported modes.")
                 return self.modes
+            else:
+                close_port = True
 
         # Set the channel to allow querying modes for a specific channel
         self.channel = int(channel)
