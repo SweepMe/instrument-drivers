@@ -238,21 +238,29 @@ class Device(EmptyDevice, IsegDevice):
             self.set_voltage(self.value)
             self.value_applied_correctly(self.value, self.get_voltage_set)
 
-            # Timeout of 5s for the device to start a ramp to prevent endless loop
-            timeout_s = 5
-            while timeout_s > 0 and not self.is_run_stopped():
-                status = self.get_channel_status()
-                # Do not check for 'Is On', as the device might still be 'On' from the previous set point
-                if "Is Voltage Ramp" in status:
-                    break
-                time.sleep(0.1)
-                timeout_s -= 0.1
-            else:
-                print(f"Device did not start ramping in to reach {self.value}V. Voltage change compared to previous set voltage might be too small.")
-
         elif self.sweepmode.startswith("Current"):
             # TODO: Currently untested
             self.set_current(self.value)
+            self.value_applied_correctly(self.value, self.get_current_set)
+
+        else:
+            return
+
+        # Timeout of 5s for the device to start a ramp to prevent endless loop in reach()
+        timeout_s = 5
+        while timeout_s > 0 and not self.is_run_stopped():
+            status = self.get_channel_status()
+            # Do not check for 'Is On', as the device might still be 'On' from the previous set point
+            if self.sweepmode.startswith("Voltage") and "Is Voltage Ramp" in status:
+                break
+
+            if self.sweepmode.startswith("Current") and "Is Current Ramp" in status:
+                break
+
+            time.sleep(0.1)
+            timeout_s -= 0.1
+        else:
+            print(f"Device did not start ramping in to reach {self.value}{self.sweepmode[0]}. Value change compared to previous set value might be too small.")
 
     def reach(self) -> None:
         """Wait until the device has reached the set value. This function is called after 'apply'."""
@@ -263,7 +271,12 @@ class Device(EmptyDevice, IsegDevice):
             status = self.get_channel_status()
 
             if self.sweepmode.startswith("Voltage"):
-                level_reached = "Is Constant Voltage" in status and "Is Voltage Ramp" not in status
+                # For voltages <6V the device will not return 'Is Constant Voltage'
+                if abs(self.value) <= 6:
+                    level_reached = "Is Voltage Ramp" not in status
+                else:
+                    level_reached = "Is Constant Voltage" in status and "Is Voltage Ramp" not in status
+
             elif self.sweepmode.startswith("Current"):
                 level_reached = "Is Constant Current" in status and "Is Current Ramp" not in status
 
@@ -398,11 +411,9 @@ class Device(EmptyDevice, IsegDevice):
             self.voltage_on()
 
     def handle_ramp_rate(self, rate: str) -> None:
-        """Handle the ramp rate. The rate is given in V/s or %/s.
+        """Handle the ramp rate. The rate is given as string containing the unit (V/s or A/s).
 
-        rate: Ramp rate in V/s or %/s
-        mode: "V/s" or "%/s"
-        direction: "up" or "down". Only relevant for V/s mode.
+        Ramp rate in %/s is not supported, as it sets the ramp speed for all channels.
         """
         rate = rate.strip()  # remove trailing whitespace
         if rate.endswith("V/s"):
@@ -418,19 +429,21 @@ class Device(EmptyDevice, IsegDevice):
                 msg = f"Voltage ramp down rate {ramp_rate} V/s was not set correctly. Check if the device supports this ramp rate."
                 raise Exception(msg)
 
-        elif rate.endswith("%/s"):
-            # TODO: The module ramp speed sets it for all channels. Decide if this is intended or should be forbidden to
-            # allow setting different ramp speeds for each channel.
+        elif rate.endswith("A/s"):
+            ramp_rate = float(rate.strip("A/s").strip())
+            self.set_current_ramp_up_speed(ramp_rate)
 
-            # %/s is set for both directions
-            ramp_rate = float(rate.strip("%/s").strip()) / 100
-            self.set_module_voltage_ramp_speed(ramp_rate)
-
-            if not self.value_applied_correctly(ramp_rate, self.get_module_voltage_ramp_speed):
-                msg = f"Module voltage ramp speed {ramp_rate} %/s was not set correctly. Check if the device supports this ramp rate."
+            if not self.value_applied_correctly(ramp_rate, self.get_current_ramp_up_speed):
+                msg = f"Current ramp up rate {ramp_rate} A/s was not set correctly. Check if the device supports this ramp rate."
                 raise Exception(msg)
+
+            self.set_current_ramp_down_speed(ramp_rate)
+            if not self.value_applied_correctly(ramp_rate, self.get_current_ramp_down_speed):
+                msg = f"Current ramp down rate {ramp_rate} A/s was not set correctly. Check if the device supports this ramp rate."
+                raise Exception(msg)
+
         else:
-            msg = f"No unit detected for ramp rate of {rate}. Use V/s or %/s."
+            msg = f"No supported unit detected for ramp rate of {rate}. Use V/s or %/s."
             raise ValueError(msg)
 
     # Communication
