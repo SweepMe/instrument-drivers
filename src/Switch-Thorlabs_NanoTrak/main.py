@@ -30,6 +30,8 @@
 # * Instrument: Thorlabs NanoTrak
 from __future__ import annotations
 
+import time
+
 import sys
 
 import clr
@@ -49,19 +51,14 @@ if kinesis_path not in sys.path:
 def add_dotnet_references():
     """Importing Kinesis .NET dll."""
     clr.AddReference("Thorlabs.MotionControl.DeviceManagerCLI")
-    clr.AddReference("Thorlabs.MotionControl.GenericMotorCLI")
     clr.AddReference("Thorlabs.MotionControl.GenericNanoTrakCLI")
-
-    # clr.AddReference("Thorlabs.MotionControl.IntegratedStepperMotorsCLI")
+    clr.AddReference("Thorlabs.MotionControl.Benchtop.NanoTrakCLI")
 
     import Thorlabs.MotionControl.DeviceManagerCLI as DeviceManagerCLI
-    import Thorlabs.MotionControl.GenericMotorCLI as GenericMotorCLI
     import Thorlabs.MotionControl.GenericNanoTrakCLI as GenericNanoTrakCLI
-    # import Thorlabs.MotionControl.IntegratedStepperMotorsCLI as IntegratedStepperMotorsCLI
+    import Thorlabs.MotionControl.Benchtop.NanoTrakCLI as NanoTrakCLI
 
-    print("-> Kinesis .NET references added successfully.")
-
-    return DeviceManagerCLI, GenericMotorCLI, GenericNanoTrakCLI
+    return DeviceManagerCLI, GenericNanoTrakCLI, NanoTrakCLI
 
 
 class Device(EmptyDevice):
@@ -80,7 +77,7 @@ class Device(EmptyDevice):
         """Initialize the device class and the instrument parameters."""
         super().__init__()
 
-        self.shortname = "Template"  # short name will be shown in the sequencer
+        self.shortname = "Nanotrak"  # short name will be shown in the sequencer
 
         # Define the variables that can be measured by the device and that are returned by the 'call' function
         self.variables = ["Position"]
@@ -100,11 +97,11 @@ class Device(EmptyDevice):
             # "delay": 0.02,
         # }
         self.DeviceManagerCLI = None
-        self.GenericMotorCLI = None
         self.GenericNanoTrakCLI = None
+        self.BenchtopNanoTrakCLI = None
         # self.IntegratedStepperMotorsCLI = None
 
-        self.kinesis_device = None
+        self.device = None
         self.shortname = "K10CR1"
         self.is_simulation = False
 
@@ -114,11 +111,14 @@ class Device(EmptyDevice):
             self.import_kinesis()
 
         device_list = self.list_devices()
+        self.is_simulation = False
 
         # Searching for simulated devices if there are no real devices found
         if not device_list:
+            print("-> No devices found, initializing simulations...")
             self.DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
             device_list = self.list_devices()
+            self.is_simulation = True
             self.DeviceManagerCLI.SimulationManager.Instance.UninitializeSimulations()
 
         if not device_list:
@@ -129,7 +129,7 @@ class Device(EmptyDevice):
     def import_kinesis(self) -> None:
         """Import Kinesis .NET dll."""
         if not self.dotnet_added:
-            self.DeviceManagerCLI, self.GenericMotorCLI, self.GenericNanoTrakCLI = add_dotnet_references()
+            self.DeviceManagerCLI, self.GenericNanoTrakCLI, self.BenchtopNanoTrakCLI = add_dotnet_references()
             self.dotnet_added = True
 
     def list_devices(self) -> list[str]:
@@ -156,83 +156,72 @@ class Device(EmptyDevice):
         if not self.dotnet_added:
             self.import_kinesis()
 
-        self.kinesis_device = self.GenericNanoTrakCLI
+        # self.kinesis_device = self.GenericNanoTrakCLI
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
         if self.serial_num in ["No devices found!", ""]:
             error("No device connected! Please connect a Thorlabs NanoTrak device.")
             return
+        self.list_devices()
+        # if self.is_simulation:
+        #     print("-> Initializing simulations for Thorlabs NanoTrak...")
+        # self.DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
+
+        self.device = self.BenchtopNanoTrakCLI.BenchtopNanoTrak.CreateBenchtopNanoTrak(self.serial_num)
+        print(f"Device: {self.device}, Serial Number: {self.serial_num}")
+        time.sleep(2.5)
+        self.device.Connect(str(self.serial_num))
+
+        print(self.device.IsSettingsInitialized())
+        # self.kinesis_device.WaitForSettingsInitialized(5000)
+
+        self.device.StartPolling(250)
+        time.sleep(0.5)
+        self.device.EnableDevice()
+        time.sleep(0.5)
+
+        # print(self.get_identification())
+
 
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
+        if not self.device:
+            return
 
-    def initialize(self) -> None:
-        """Initialize the device. This function is called only once at the start of the measurement."""
-
-    def deinitialize(self) -> None:
-        """Deinitialize the device. This function is called only once at the end of the measurement."""
+        self.device.StopPolling()
+        self.device.Disconnect(True)
 
     def configure(self) -> None:
-        """Configure the device. This function is called every time the device is used in the sequencer."""
+        """Configure the device. This function is called only once at the start of the measurement."""
+        config = self.device.GetNanoTrakConfiguration(self.serial_num)
+        self.device.SetMode(self.GenericNanoTrakCLI.NanoTrakStatus.OperatingModes.Tracking)
+        # self.device.SetTIARangeMode(TIARangeModes.AutoRangeAtSelected, TIAOddOrEven.All);
 
-    def unconfigure(self) -> None:
-        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
-
-    def signin(self) -> None:
-        """This function is called if the variation of the module that is loading this device class starts."""
-
-    def signout(self) -> None:
-        """This function is called if the variation of the module that is loading this device class ends."""
-
-    def reconfigure(self, parameters, keys) -> None:
-        """'reconfigure' is called whenever parameters of the GUI change by using the {...}-parameter system."""
-
-    def poweron(self) -> None:
-        """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
-
-    def poweroff(self) -> None:
-        """Turn off the device when leaving a sequencer branch."""
-
-    def start(self) -> None:
-        """This function can be used to do some first steps before the acquisition of a measurement point starts."""
-        debug("->    start")
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        position = self.GenericNanoTrakCLI.HVPosition(float(self.value), float(self.value))
+        self.device.SetCircleHomePosition(position)
+        self.device.HomeCircle()
 
-    def reach(self) -> None:
-        """'reach' can be added to make sure the latest setvalue applied during 'apply' is reached."""
-
-    def adapt(self) -> None:
-        """'adapt' can be used to adapt an instrument to a new situation after other instruments got a new setvalue."""
-
-    def adapt_ready(self) -> None:
-        """'adapt_ready' can be used to make sure that a procedure started in 'adapt' is finished.
-
-        Thus, multiple instrument can start an adapt-procedure simultaneously.
-        """
-
-    def trigger_ready(self) -> None:
-        """'trigger_ready' can be used to make sure that all instruments are ready to start the measurement."""
-
-    def measure(self) -> None:
-        """Trigger the acquisition of new data."""
-
-    def request_result(self) -> None:
-        """Write command to ask the instrument to send measured data."""
-
-    def read_result(self) -> None:
-        """Read the measured data from a buffer that was requested during 'request_result'."""
-
-    def process_data(self) -> None:
-        """'process_data' can be used for some evaluation of the data before it is returned."""
-
-    def call(self) -> list[float]:
+    def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        return [1., 2., 3., 4.]
+        time.sleep(0.5)
+        TIAReading = self.device.GetReading()
+        print(TIAReading.AbsoluteReading, TIAReading.RelativeReading)
+
+        return TIAReading.AbsoluteReading
 
     def finish(self) -> None:
         """Do some final steps after the acquisition of a measurement point."""
 
     """Wrapper Functions"""
+
+    def get_identification(self) -> str:
+        """Returns the identification of the device."""
+        if not self.device:
+            error("Device not connected!")
+            return ""
+
+        return self.device.GetDeviceInfo().SerialNumber
