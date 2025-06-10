@@ -135,15 +135,19 @@ class Device(EmptyDevice):
 
     def handle_port_string(self, port_string: str) -> None:
         """Extract IP address and socket from port string."""
-        if port_string == "localhost":
+        port_string = port_string.strip().lower()
+        self.target_socket = 1412
+
+        if "localhost" in port_string:
             self.ip_address = "localhost"
-            self.target_socket = 1412
-        elif "Port:" in port_string:
+        elif "port" in port_string:
             self.ip_address = port_string.split(";")[0].split(":")[1].strip()
             self.target_socket = int(port_string.split(";")[1].split(":")[1].strip())
-        elif "IP:" in port_string:
-            self.ip_address = port_string.split("IP:")[1].strip()
-            self.target_socket = 1412
+        elif "ip" in port_string:
+            self.ip_address = port_string.split("ip:")[1].strip()
+        else:
+            # Try to interpret the port string as an IP address
+            self.ip_address = port_string.strip()
 
     def connect(self) -> None:
         """Establish connection to Velox Software."""

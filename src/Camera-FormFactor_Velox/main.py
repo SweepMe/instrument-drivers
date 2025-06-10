@@ -120,14 +120,16 @@ class Device(EmptyDevice):
 
     def handle_port_string(self, port_string: str) -> None:
         """Extract IP address and socket from port string."""
+        port_string = port_string.strip().lower()
         self.target_socket = 1412
-        if port_string.lower() == "localhost":
+
+        if "localhost" in port_string:
             self.ip_address = "localhost"
-        elif "port:" in port_string.lower():
+        elif "port" in port_string:
             self.ip_address = port_string.split(";")[0].split(":")[1].strip()
             self.target_socket = int(port_string.split(";")[1].split(":")[1].strip())
-        elif "ip:" in port_string.lower():
-            self.ip_address = port_string.lower().split("ip:")[1].strip()
+        elif "ip" in port_string:
+            self.ip_address = port_string.split("ip:")[1].strip()
         else:
             # Try to interpret the port string as an IP address
             self.ip_address = port_string.strip()
