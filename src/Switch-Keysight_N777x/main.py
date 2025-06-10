@@ -38,7 +38,7 @@ class Device(EmptyDevice):
     """Driver for the Keysight N777x Tunable Laser Module."""
 
     description = """
-                <h3>Driver for the Keysight N777x Tuneable Laser</h3>
+                <h3>Driver for the Keysight N777x Tunable Laser</h3>
                 <p>The driver supports wavelength and power sweeps in various units<br></p>
                 <p><FONT COLOR="#ff0000"> <b>Safety Warning</b>: the user is responsible for the
                  safe operation of the laser and checking that the laser is in a safe state after
@@ -65,18 +65,18 @@ class Device(EmptyDevice):
         }
 
         # tracking & init
-        self.wln = None
-        self.wln_from_inst = None
+        self.wavelength = None
+        self.measured_wavelength = None
         self.power_level = None
-        self.power_from_inst = None
+        self.measured_power = None
         self.pow_max = None
         self.pow_min = None
         self.wln_max = None
         self.wln_min = None
         self.power_conversion = 1
-        self.wln_conversion = 1
+        self.wavelength_conversion = 1
         self.power_unit = None
-        self.wln_unit = None
+        self.wavelength_unit = None
         self.sweepmode = "None"
         self.port_string = ""
 
@@ -102,7 +102,7 @@ class Device(EmptyDevice):
             "Power unit": list(self.allowed_power_units.keys()),
             "Wavelength": "1550.0",
             "Wavelength unit": list(self.wavelength_conversions.keys()),
-            "SweepMode": ["None", "Wavelength", "Power"]
+            "SweepMode": ["None", "Wavelength", "Power"],
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:
@@ -111,13 +111,13 @@ class Device(EmptyDevice):
         self.port_string = parameter["Port"]  # auto used by port manager
 
         self.power_level = float(parameter["Power level"])
-        self.wln = float(parameter["Wavelength"])
+        self.wavelength = float(parameter["Wavelength"])
         self.power_unit = parameter["Power unit"]
         self.power_conversion = 1e-3 if self.power_unit == "mW" else 1
-        self.wln_unit = parameter["Wavelength unit"]
-        self.wln_conversion = self.wavelength_conversions[self.wln_unit]
+        self.wavelength_unit = parameter["Wavelength unit"]
+        self.wavelength_conversion = self.wavelength_conversions[self.wavelength_unit]
 
-        self.units = [self.wln_unit, self.power_unit]
+        self.units = [self.wavelength_unit, self.power_unit]
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -145,7 +145,7 @@ class Device(EmptyDevice):
         if self.sweepmode != "Power":
             self.set_power(power_level=self.power_level * self.power_conversion)
         elif self.sweepmode != "Wavelength":
-            self.set_wavelength(wavelength_m=self.wln * self.wln_conversion)
+            self.set_wavelength(wavelength_m=self.wavelength * self.wavelength_conversion)
 
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
@@ -160,19 +160,20 @@ class Device(EmptyDevice):
         value = float(self.value)
 
         if self.sweepmode == "Wavelength":
-            self.set_wavelength(value * self.wln_conversion)
+            self.set_wavelength(value * self.wavelength_conversion)
         elif self.sweepmode == "Power":
             self.set_power(power_level=value * self.power_conversion)
 
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
-        self.wln_from_inst = self.get_wavelength()
-        self.power_from_inst = self.get_power()
+        self.measured_wavelength = self.get_wavelength()
+        self.measured_power = self.get_power()
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return [
-            self.wln_from_inst / self.wln_conversion, self.power_from_inst / self.power_conversion
+            self.measured_wavelength / self.wavelength_conversion,
+            self.measured_power / self.power_conversion,
         ]
 
     # wrapped communication commands below
@@ -229,7 +230,7 @@ class Device(EmptyDevice):
         self.port.write(f":sour0:wav {wavelength_m}")
         self.port.query("*OPC?")
 
-        self.wln = wavelength_m
+        self.wavelength = wavelength_m
 
     def get_wavelength(self) -> float:
         """Get the laser wavelength in meters."""
@@ -275,20 +276,3 @@ class Device(EmptyDevice):
                 errors.append(err)
 
         return ",".join(errors)
-
-    # def close_shutter(self):
-
-    #     self.set_shutter_state(open_=False)
-
-    # def open_shutter(self, check_laser_on=True):
-
-    #     self.set_shutter_state(open_=True)
-    #     if check_laser_on:
-    #         laser_on = self.get_laser_status()
-    #         if not laser_on:
-    #             raise Exception("Laser is not on")
-
-    # def toggle_shutter(self):
-
-    #     state = self.get_shutter_state()
-    #     self.set_shutter_state(not state)
