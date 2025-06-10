@@ -59,8 +59,6 @@ class Device(EmptyDevice):
         self.savetype = [True, True]  # True to save data
 
         self.commands = {
-            "Voltage [V]": "VSET",  # remains for compatibility reasons
-            "Current [A]": "ISET",  # remains for compatibility reasons
             "Voltage in V": "VOLT",
             "Current in A": "CURR",
         }
