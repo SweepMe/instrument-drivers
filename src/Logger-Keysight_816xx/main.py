@@ -27,7 +27,7 @@
 #
 # SweepMe! driver
 # * Module: Logger
-# * Instrument: Keysight 816x-Lightwave-PowerMeter
+# * Instrument: Keysight 816xx Lightwave Multimeter/Measurement System/Multichannel System
 
 from __future__ import annotations
 
@@ -37,10 +37,12 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    """Driver for the Keysight 816x-Lightwave-PowerMeter."""
+    """Driver for the Keysight 816xx Lightwave system."""
 
     description = """
-    <h3>Keysight 816x-Lightwave Measurement System - Power Meter Modul</h3>
+    <h3>Keysight 816xx-Lightwave Multimeter/Measurement System/Multichannel System</h3>
+    This driver supports the 8163A/B Lightwave Multimeter, 8164A/B Lightwave Measurement System, & 8166A/B Lightwave 
+    Multichannel System
     <h4>Parameters</h4>
     <ul>
     <li>Channel: If your power meter supports multiple channels. Otherwise, choose 1.</li>
@@ -53,7 +55,7 @@ class Device(EmptyDevice):
         """Initialize the driver class and the instrument parameters."""
         super().__init__()
 
-        self.shortname = "Lightwave-PowerMeter"  # short name will be shown in the sequencer
+        self.shortname = "816xx"  # short name will be shown in the sequencer
 
         # SweepMe! parameters
         self.variables = ["Power"]
