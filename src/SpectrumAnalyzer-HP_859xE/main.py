@@ -31,9 +31,8 @@
 # * Instrument: HP 859xE
 
 
-from pysweepme.EmptyDeviceClass import EmptyDevice
 import numpy as np
-import time
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -46,21 +45,21 @@ class Device(EmptyDevice):
         EmptyDevice.__init__(self)
 
         self.shortname = "HP859xE"
-        
+
         self.variables = ["Frequency", "Power"]
         self.units = ["Hz", "dBm"]
 
         self.plottype = [True, True]  # True to plot data
         self.savetype = [True, True]  # True to save data
-        
+
         self.port_manager = True
         self.port_types = ["GPIB"]
 
         self.port_properties = {
             "timeout": 100, # required for very slow sweeps
         }
-        
-        # dictionary for available resolution bandwidths; 
+
+        # dictionary for available resolution bandwidths;
         # options below 1kHz require HP "Option 130" to be installed in the operated instrument
         self.rbws = {
             "Auto": "AUTO",
@@ -80,8 +79,8 @@ class Device(EmptyDevice):
             "3 MHz": "3MHZ",
             "5 MHz (uncalibrated)": "5MHZ",
         }
-        
-        # dictionary for available video bandwidths; 
+
+        # dictionary for available video bandwidths;
         # options below 30Hz require HP "Option 130" to be installed in the operated instrument
         self.vbws = {
             "Auto": "AUTO",
@@ -132,14 +131,14 @@ class Device(EmptyDevice):
             # the amount of single sweeps to use for finding the maximum values
             "Trace mode integration": 10,
         }
-        
+
 
     def get_GUIparameter(self, parameter: dict):
-    
+
         # store the frequency values into variables
         self.fv1 = "{:.9}".format(parameter["Frequency value 1"])
         self.fv2 = "{:.9}".format(parameter["Frequency value 2"])
-        
+
         # check for valid selected input frequency mode combinations
         if parameter["Frequency label 1"] == "Center frequency in Hz:" and parameter["Frequency label 2"] != "Frequency span in Hz:":
             msg = "Input with Center frequency requires second frequency to be entered as Span"
@@ -147,7 +146,7 @@ class Device(EmptyDevice):
         if parameter["Frequency label 1"] == "Min frequency in Hz:" and parameter["Frequency label 2"] != "Max frequency in Hz:":
             msg = "Input with Min frequency requires second frequency to be entered as Max"
             raise Exception(msg)
-        
+
         # recorded spectrum will be defined by two SCPI commands, either setting start & stop frequencies or center & span.
         # this section creates the required two commands as a string, depending on what input format is chosen
         if parameter["Frequency label 1"] == "Center frequency in Hz:":
@@ -161,7 +160,7 @@ class Device(EmptyDevice):
         else:
             #use start frequency command and floating point value with 9 trailing numbers to allow resolution down to 1 Hz within the GHz range
             self.setup_cmd_b = "FB" + self.fv2 +"HZ"
-        
+
         self.reflev = "{:.3}".format(parameter["Reference level in dBm"])
         self.rbw = parameter["Resolution bandwidth"]
         self.vbw = parameter["Video bandwidth"]
@@ -174,7 +173,7 @@ class Device(EmptyDevice):
     def initialize(self):
         # erase TRACE A; will also remove max/min hold function if previously enabled
         self.port.write("BLANK TRA")
-    
+
     def configure(self):
         # if setup_cmd_a starts with "CF" it means frequencies were entered as Center and Span and a frequency array from center-span/2 to center+span/2 with 401 steps is created
         if self.setup_cmd_a.startswith("CF"):
@@ -182,55 +181,55 @@ class Device(EmptyDevice):
         # if setup_cmd_a does not start with "CF" it means frequencies were entered as start and stop frequencies and a frequency array from start to stop with 401 steps is created
         else:
             self.frequencies = np.linspace(float(self.fv1), float(self.fv2), 401)
-      
+
         # setup Center or Start frequency
         self.port.write(self.setup_cmd_a)
 
         # setup Span or Stop frequency
         self.port.write(self.setup_cmd_b)
-        
+
         # setting resolution bandwidth
         self.port.write("RB %s" % self.rbws[self.rbw])
-        
+
         # setting video bandwidth
         self.port.write("VB %s" % self.vbws[self.vbw])
-        
+
         # enable/disable video average function
         if self.vavg == True:
             self.port.write("VAVG ON")
         else:
             self.port.write("VAVG OFF")
-            
+
     def unconfigure(self):
         if self.vavg == True:
             # disable video averaging if it was enabled before
             self.port.write("VAVG OFF")
-        
+
         # clears trace a to c, disabling max and min hold functions
         self.port.write("BLANK TRA")
         # makes sure Trace A is the active one
         self.port.write("CLRW TRA")
         # return to continuous sweep upon exit
         self.port.write("CONTS")
-        
+
     def measure(self):
         # set to single sweep
         self.port.write("SNGLS")
-        
+
         # in case the standard aquisition mode "Current" is used, we ignore the repetitions set via GUI
         if self.trace_mode == "Current":
             # makes sure Trace A is the active one
             self.port.write("CLRW TRA")
             # record sweep
             self.port.write("TS")
-       
+
         # enable Max/Min Hold function and run multiple aquisitions if set via GUI
         if self.trace_mode == "Max hold":
             # makes sure Trace A is the active one
             self.port.write("CLRW TRA")
             # maximum hold for Trace A
             self.port.write("MXMH TRA")
-            for n in range (0, self.repetitions):
+            for n in range (self.repetitions):
                 # record sweep
                 self.port.write("TS")
 
@@ -239,12 +238,12 @@ class Device(EmptyDevice):
             self.port.write("CLRW TRA")
             # maximum hold for Trace A
             self.port.write("MINH TRA")
-            for n in range (0, self.repetitions):
+            for n in range (self.repetitions):
                  # record sweep
                 self.port.write("TS")
-    
+
     def read_result(self):
-        # transfer Trace A in 16bit 
+        # transfer Trace A in 16bit
         self.port.write("TRA?")
         # retrieves data points from the instrument which are seperated by a comma
         self.data = self.port.read().split(",")
