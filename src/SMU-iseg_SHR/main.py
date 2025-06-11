@@ -291,7 +291,12 @@ class Device(EmptyDevice, IsegDevice):
                     level_reached = "Is Constant Voltage" in status and "Is Voltage Ramp" not in status
 
             elif self.sweepmode.startswith("Current"):
-                level_reached = "Is Constant Current" in status and "Is Current Ramp" not in status
+                # For currents <0.1% of max current, the device will not return 'Is Constant Current'
+                max_current = float(self.mode.split("/")[1].strip("mA"))
+                if abs(self.value) <= max_current * 0.001:
+                    level_reached = "Is Current Ramp" not in status
+                else:
+                    level_reached = "Is Constant Current" in status and "Is Current Ramp" not in status
 
             # if the value is 0, the device will not yield constant current/voltage
             if self.value == 0:
