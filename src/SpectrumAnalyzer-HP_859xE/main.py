@@ -25,7 +25,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
 # SweepMe! driver
 # * Module: SpectrumAnalyzer
 # * Instrument: HP 859xE
@@ -36,12 +35,14 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
+    """Device class for HP 859xE Spectrum Analyzer."""
     description = """<p><strong>HP 859xE Spectrum Analyzer driver.</strong></p></p>
                      <p>Might work for 856xA, 856xE and 859xA instruments as well, but untested.</p>
                      <p>Resolution Bandwidths of 200Hz, 9kHz and 120kHz for EMI measurements only.</p>
                     """
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize the device class and the instrument parameters."""
         EmptyDevice.__init__(self)
 
         self.shortname = "HP859xE"
@@ -106,7 +107,8 @@ class Device(EmptyDevice):
             #"Average" # currently not implemented
         ]
 
-    def set_GUIparameter(self):
+    def set_GUIparameter(self) -> dict:
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
             # Center/Min Frequency label
             "Frequency label 1": ["Center frequency in Hz:", "Min frequency in Hz:"],
@@ -132,9 +134,8 @@ class Device(EmptyDevice):
             "Trace mode integration": 10,
         }
 
-
-    def get_GUIparameter(self, parameter: dict):
-
+    def get_GUIparameter(self, parameter: dict) -> None:
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         # store the frequency values into variables
         self.fv1 = "{:.9}".format(parameter["Frequency value 1"])
         self.fv2 = "{:.9}".format(parameter["Frequency value 2"])
@@ -170,11 +171,13 @@ class Device(EmptyDevice):
 
         self.port_string = parameter["Port"]
 
-    def initialize(self):
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
         # erase TRACE A; will also remove max/min hold function if previously enabled
         self.port.write("BLANK TRA")
 
-    def configure(self):
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
         # if setup_cmd_a starts with "CF" it means frequencies were entered as Center and Span and a frequency array from center-span/2 to center+span/2 with 401 steps is created
         if self.setup_cmd_a.startswith("CF"):
             self.frequencies = np.linspace(float(self.fv1) - float(self.fv2)/2, float(self.fv1) + float(self.fv2)/2, 401)
@@ -195,13 +198,14 @@ class Device(EmptyDevice):
         self.port.write("VB %s" % self.vbws[self.vbw])
 
         # enable/disable video average function
-        if self.vavg == True:
+        if self.vavg:
             self.port.write("VAVG ON")
         else:
             self.port.write("VAVG OFF")
 
-    def unconfigure(self):
-        if self.vavg == True:
+    def unconfigure(self) -> None:
+        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
+        if self.vavg:
             # disable video averaging if it was enabled before
             self.port.write("VAVG OFF")
 
@@ -212,11 +216,12 @@ class Device(EmptyDevice):
         # return to continuous sweep upon exit
         self.port.write("CONTS")
 
-    def measure(self):
+    def measure(self) -> None:
+        """Trigger the acquisition of new data."""
         # set to single sweep
         self.port.write("SNGLS")
 
-        # in case the standard aquisition mode "Current" is used, we ignore the repetitions set via GUI
+        # in case the standard acquisition mode "Current" is used, we ignore the repetitions set via GUI
         if self.trace_mode == "Current":
             # makes sure Trace A is the active one
             self.port.write("CLRW TRA")
@@ -242,11 +247,17 @@ class Device(EmptyDevice):
                  # record sweep
                 self.port.write("TS")
 
-    def read_result(self):
+    def read_result(self) -> None:
+        """Read the measured data from a buffer that was requested during 'request_result'."""
         # transfer Trace A in 16bit
         self.port.write("TRA?")
-        # retrieves data points from the instrument which are seperated by a comma
-        self.data = self.port.read().split(",")
+        # retrieves data points from the instrument which are separated by a comma
+        try:
+            self.data = self.port.read().split(",")
+        except Exception as e:
+            print("Error reading data from the instrument:", e)
+            self.data = []
 
-    def call(self):
+    def call(self) -> list[float]:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
         return [self.frequencies] + [self.data]
