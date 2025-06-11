@@ -37,7 +37,7 @@ import sys
 import clr
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
-from pysweepme.ErrorMessage import debug, error
+from pysweepme.ErrorMessage import error
 
 
 # Import Kinesis dll
@@ -48,7 +48,7 @@ if kinesis_path not in sys.path:
     sys.path.insert(0, kinesis_path)
 
 
-def add_dotnet_references():
+def add_dotnet_references() -> tuple:
     """Importing Kinesis .NET dll."""
     clr.AddReference("Thorlabs.MotionControl.DeviceManagerCLI")
     clr.AddReference("Thorlabs.MotionControl.GenericNanoTrakCLI")
@@ -85,24 +85,14 @@ class Device(EmptyDevice):
         self.plottype = [True]
         self.savetype = [True]
 
-        # Communication Parameters
-        self.port_string: str = ""
-        # self.port_manager = True
-        # self.port_types = ["GPIB"]
-        # self.port_properties = {
-        #     "EOL": "\r\n",
-        #     "timeout": 3,
-        #     "baudrate": 9600,
-        #     "stopbits": 2,
-            # "delay": 0.02,
-        # }
+        # Imported Kinesis .NET dlls
         self.DeviceManagerCLI = None
         self.GenericNanoTrakCLI = None
         self.BenchtopNanoTrakCLI = None
-        # self.IntegratedStepperMotorsCLI = None
 
+        # Communication parameters
+        self.serial_number: str = ""  # Serial number of the device
         self.device = None
-        self.shortname = "K10CR1"
         self.is_simulation = False
 
     def find_ports(self) -> list[str]:
@@ -116,15 +106,23 @@ class Device(EmptyDevice):
         # Searching for simulated devices if there are no real devices found
         if not device_list:
             print("-> No devices found, initializing simulations...")
-            self.DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
+            self.set_simulation_mode(True)
             device_list = self.list_devices()
             self.is_simulation = True
-            self.DeviceManagerCLI.SimulationManager.Instance.UninitializeSimulations()
+            self.set_simulation_mode(False)
 
         if not device_list:
             device_list = ["No devices found!"]
 
         return device_list
+
+    def set_simulation_mode(self, state: bool) -> None:
+        """Set the simulation mode for the device."""
+        if state:
+            self.DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
+
+        else:
+            self.DeviceManagerCLI.SimulationManager.Instance.UninitializeSimulations()
 
     def import_kinesis(self) -> None:
         """Import Kinesis .NET dll."""
@@ -135,7 +133,7 @@ class Device(EmptyDevice):
     def list_devices(self) -> list[str]:
         """Lists all devices.
 
-        Bug: Once Simulation mode is switched on, GetDeviceList will also find simulated devices even though simulation
+        Bug: Once Simulation mode is switched on, GetDeviceList will also find simulated devices even when simulation
         mode is uninitialized.
         """
         self.DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
@@ -146,43 +144,40 @@ class Device(EmptyDevice):
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
             "SweepMode": ["Position"],
-            # "Position": "1",
+            "Simulation": False,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        # self.port_string = parameter["Port"]
-        self.serial_num = parameter.get("Port", "")
+        self.serial_number = parameter.get("Port", "")
+        self.is_simulation = parameter.get("Simulation", False)
+
         if not self.dotnet_added:
             self.import_kinesis()
 
-        # self.kinesis_device = self.GenericNanoTrakCLI
-
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
-        if self.serial_num in ["No devices found!", ""]:
+        if self.serial_number in ["No devices found!", ""]:
             error("No device connected! Please connect a Thorlabs NanoTrak device.")
             return
-        self.list_devices()
-        # if self.is_simulation:
-        #     print("-> Initializing simulations for Thorlabs NanoTrak...")
-        # self.DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
 
-        self.device = self.BenchtopNanoTrakCLI.BenchtopNanoTrak.CreateBenchtopNanoTrak(self.serial_num)
-        print(f"Device: {self.device}, Serial Number: {self.serial_num}")
+        # If no devices are found, initialize simulations
+        if self.is_simulation:
+            self.set_simulation_mode(True)
+
+        # TODO: Test if the timeouts are sufficient or can be reduced
+        self.device = self.BenchtopNanoTrakCLI.BenchtopNanoTrak.CreateBenchtopNanoTrak(self.serial_number)
+        print(f"Device: {self.device}, Serial Number: {self.serial_number}")
         time.sleep(2.5)
-        self.device.Connect(str(self.serial_num))
+        self.device.Connect(str(self.serial_number))
 
-        print(self.device.IsSettingsInitialized())
+        # print(self.device.IsSettingsInitialized())
         # self.kinesis_device.WaitForSettingsInitialized(5000)
 
         self.device.StartPolling(250)
         time.sleep(0.5)
         self.device.EnableDevice()
         time.sleep(0.5)
-
-        # print(self.get_identification())
-
 
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
@@ -192,15 +187,18 @@ class Device(EmptyDevice):
         self.device.StopPolling()
         self.device.Disconnect(True)
 
+        if self.is_simulation:
+            self.set_simulation_mode(False)
+
     def configure(self) -> None:
         """Configure the device. This function is called only once at the start of the measurement."""
-        config = self.device.GetNanoTrakConfiguration(self.serial_num)
+        config = self.device.GetNanoTrakConfiguration(self.serial_number)
         self.device.SetMode(self.GenericNanoTrakCLI.NanoTrakStatus.OperatingModes.Tracking)
         # self.device.SetTIARangeMode(TIARangeModes.AutoRangeAtSelected, TIAOddOrEven.All);
 
-
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        # TODO: Check which mode should be used and which values are needed
         position = self.GenericNanoTrakCLI.HVPosition(float(self.value), float(self.value))
         self.device.SetCircleHomePosition(position)
         self.device.HomeCircle()
