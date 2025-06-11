@@ -26,10 +26,6 @@ import Thorlabs.MotionControl.DeviceManagerCLI as DeviceManagerCLI
 import Thorlabs.MotionControl.GenericNanoTrakCLI as GenericNanoTrakCLI
 import Thorlabs.MotionControl.Benchtop.NanoTrakCLI as BenchtopNanoTrakCLI
 
-# testing
-import Thorlabs.MotionControl.Benchtop.NanoTrak as NanoTrak
-
-# print("test")
 
 DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
 DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
@@ -38,18 +34,35 @@ port_string = device_list[0]
 print(f"Found device: {port_string}")
 
 device = BenchtopNanoTrakCLI.BenchtopNanoTrak.CreateBenchtopNanoTrak(port_string)
-# device = BenchtopNanoTrakCLI.BenchtopNanoTrak.CreateDevice(port_string)
-
+time.sleep(1)
 device.Connect(port_string)
 
 time.sleep(5)
 
+device.StartPolling(250)
+time.sleep(0.5)
+device.EnableDevice()
+time.sleep(0.5)
+
 print(device.GetDeviceInfo())
+
+device.SetMode(GenericNanoTrakCLI.NanoTrakStatus.OperatingModes.Tracking)
+
+
+x = 5
+y = 2
+
+position = GenericNanoTrakCLI.HVPosition(x, y)
+device.SetCircleHomePosition(position)
+device.HomeCircle()
+
+TIAReading = device.GetReading()
+print(f"Reading: {TIAReading}")
 
 # kinesis_device = GenericNanoTrakCLI.NanoTrak.CreateDevice(port_string)
 
 # Which command to use to instantiate the device?
 # example from other driver:
 # import Thorlabs.MotionControl.IntegratedStepperMotorsCLI as IntegratedStepperMotorsCLI
-# self.kinesis_device = IntegratedStepperMotorsCLI.CageRotator.CreateDevice(self.serial_num)
+# kinesis_device = IntegratedStepperMotorsCLI.CageRotator.CreateDevice(serial_num)
 

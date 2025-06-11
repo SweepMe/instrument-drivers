@@ -30,15 +30,12 @@
 # * Instrument: Thorlabs NanoTrak
 from __future__ import annotations
 
+import sys
 import time
 
-import sys
-
 import clr
-
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import error
-
 
 # Import Kinesis dll
 bitness = 64 if sys.maxsize > 2**32 else 32
@@ -54,9 +51,8 @@ def add_dotnet_references() -> tuple:
     clr.AddReference("Thorlabs.MotionControl.GenericNanoTrakCLI")
     clr.AddReference("Thorlabs.MotionControl.Benchtop.NanoTrakCLI")
 
-    import Thorlabs.MotionControl.DeviceManagerCLI as DeviceManagerCLI
-    import Thorlabs.MotionControl.GenericNanoTrakCLI as GenericNanoTrakCLI
-    import Thorlabs.MotionControl.Benchtop.NanoTrakCLI as NanoTrakCLI
+    from Thorlabs.MotionControl import DeviceManagerCLI, GenericNanoTrakCLI
+    from Thorlabs.MotionControl.Benchtop import NanoTrakCLI
 
     return DeviceManagerCLI, GenericNanoTrakCLI, NanoTrakCLI
 
@@ -65,6 +61,7 @@ class Device(EmptyDevice):
     """Device class to implement functionalities of Thorlabs NanoTrak via Kinesis."""
     description = """
                     <h3>Driver Template</h3>
+                    When using center position, the value must be a string with two values separated by a comma, e.g. "5,2" for horizontal and vertical position.
                     <p>Setup:</p>
                     <ul>
                     <li>Install Kinesis</li>
@@ -80,10 +77,10 @@ class Device(EmptyDevice):
         self.shortname = "Nanotrak"  # short name will be shown in the sequencer
 
         # Define the variables that can be measured by the device and that are returned by the 'call' function
-        self.variables = ["Position"]
-        self.units = ["m"]
-        self.plottype = [True]
-        self.savetype = [True]
+        self.variables = ["Horizontal Position", "Vertical Position", "Signal Strength"]
+        self.units = ["m", "m", ""]
+        self.plottype = [True, True, True]
+        self.savetype = [True, True, True]
 
         # Imported Kinesis .NET dlls
         self.DeviceManagerCLI = None
@@ -94,6 +91,9 @@ class Device(EmptyDevice):
         self.serial_number: str = ""  # Serial number of the device
         self.device = None
         self.is_simulation = False
+
+        # Measurement parameters
+        self.reading_mode: str = "Absolute"  # Can be "Absolute", "Relative", or "None"
 
     def find_ports(self) -> list[str]:
         """Returns the serial numbers of all devices connected via Kinesis."""
@@ -143,14 +143,28 @@ class Device(EmptyDevice):
     def set_GUIparameter(self) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
-            "SweepMode": ["Position"],
+            "SweepMode": ["Center Position"],
             "Simulation": False,
+            "Reading": ["Absolute", "Relative", "None"],
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.serial_number = parameter.get("Port", "")
         self.is_simulation = parameter.get("Simulation", False)
+        self.reading_mode = parameter.get("Reading", "Absolute")
+
+        self.variables = ["Horizontal Position", "Vertical Position"]
+        self.units = ["m", "m"]
+        if self.reading_mode == "Absolute":
+            self.variables.append("Absolute Reading")
+            self.units.append("")
+        elif self.reading_mode == "Relative":
+            self.variables.append("Relative Reading")
+            self.units.append("%")
+
+        self.plottype = [True] * len(self.variables)
+        self.savetype = [True] * len(self.variables)
 
         if not self.dotnet_added:
             self.import_kinesis()
@@ -199,17 +213,24 @@ class Device(EmptyDevice):
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         # TODO: Check which mode should be used and which values are needed
-        position = self.GenericNanoTrakCLI.HVPosition(float(self.value), float(self.value))
-        self.device.SetCircleHomePosition(position)
-        self.device.HomeCircle()
+        if self.sweepmode == "Center Position":
+            horizontal, vertical = self.value.split(",")
+            position = self.GenericNanoTrakCLI.HVPosition(float(horizontal), vertical(vertical))
 
-    def call(self) -> float:
+            self.device.SetCircleHomePosition(position)
+            self.device.HomeCircle()
+
+    def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        time.sleep(0.5)
-        TIAReading = self.device.GetReading()
-        print(TIAReading.AbsoluteReading, TIAReading.RelativeReading)
+        # time.sleep(0.5)
+        horizontal, vertical = self.get_current_position()
 
-        return TIAReading.AbsoluteReading
+        if self.reading_mode in ["Absolute", "Relative"]:
+            reading = self.device.GetReading()
+            reading_value = reading.AbsoluteReading if self.reading_mode == "Absolute" else reading.RelativeReading
+            return [horizontal, vertical, reading_value]
+
+        return [horizontal, vertical]
 
     def finish(self) -> None:
         """Do some final steps after the acquisition of a measurement point."""
@@ -223,3 +244,30 @@ class Device(EmptyDevice):
             return ""
 
         return self.device.GetDeviceInfo().SerialNumber
+
+    def get_current_position(self) -> tuple[float, float]:
+        """Get the current circular position and signal strength at the current position."""
+        if not self.device:
+            error("Device not connected!")
+            return 0.0, 0.0
+
+        position = self.device.GetCirclePosition()
+        return position.HPosition, position.VPosition
+
+    def set_mode(self, mode_string: str = "Tracking") -> None:
+        """Set the mode of the device to either Tracking or Latch."""
+        if not self.device:
+            error("Device not connected!")
+            return
+
+        mode_string = mode_string.strip().lower()
+
+        if mode_string == "tracking":
+            new_mode = self.GenericNanoTrakCLI.NanoTrakStatus.OperatingModes.Tracking
+        elif mode_string == "latch":
+            new_mode = self.GenericNanoTrakCLI.NanoTrakStatus.OperatingModes.Latch
+        else:
+            error(f"Unknown mode: {mode_string}")
+            return
+
+        self.device.SetMode(new_mode)
