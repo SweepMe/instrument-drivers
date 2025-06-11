@@ -1,14 +1,14 @@
 import os
-import pytest
 
 import pysweepme
+import pytest
 
 # use the system variable SWEEPME_DRIVERS_REPO as path
 DRIVER_REPO = os.getenv("SWEEPME_DRIVERS_REPO")
 DRIVER_NAME = "SMU-iseg_SHR"
 
 # Update depending on the connected device
-PORT = "TCPIP0::192.168.178.30::10001::SOCKET"
+PORT = "192.168.178.30:10001"
 
 
 @pytest.fixture()

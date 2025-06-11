@@ -1,7 +1,7 @@
 import os
-import pytest
 
 import pysweepme
+import pytest
 
 # use the system variable SWEEPME_DRIVERS_REPO as path
 DRIVER_REPO = os.getenv("SWEEPME_DRIVERS_REPO")
