@@ -83,6 +83,7 @@ class Device(EmptyDevice):
         self.power_unit: str = "W"  # can be "W" or "dBm"
         self.automatic_power_ranging: bool = True  # Enable automatic power ranging
         self.wavelength: str = "1550"
+        self.measured_power: float = float('nan')  # Measured power value, initialized to NaN
 
     def update_gui_parameters(self, parameters: dict) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
@@ -94,6 +95,7 @@ class Device(EmptyDevice):
             "Automatic Power Ranging": True,
             "Averaging in s": 0.1,
             "Wavelength in nm": 1550,  # Default wavelength, can be changed later
+            # "Reference State": ["Absolute", "Relative"],
         }
 
     def apply_gui_parameters(self, parameters: dict) -> None:
@@ -118,13 +120,40 @@ class Device(EmptyDevice):
         self.set_automatic_power_ranging(True)  # Enable automatic power ranging
         self.set_wavelength(float(self.wavelength))
 
+        # Set the software trigger system to non-continuous mode
+        self.port.write(f":init{self.slot}:cont OFF")
+
         # TODO: Decide if additional methods are needed: Upper power limit, reference state
+
+    def measure(self) -> None:
+        """Trigger the acquisition of new data."""
+        self.initiate_software_trigger()
+
+    def request_result(self) -> None:
+        """Write command to ask the instrument to send measured data."""
+        self.port.write(f":fetc{self.slot}:chan{self.channel}:scal:pow:dc?")
+
+    def read_result(self) -> None:
+        """Read the measured data from a buffer that was requested during 'request_result'."""
+        result = self.port.read()
+        try:
+            self.measured_power = float(result.strip())
+        except ValueError:
+            self.measured_power = float("nan")
 
     def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        return self.get_power()
+        return self.measured_power
 
     # Wrapper Functions
+
+    def initiate_software_trigger(self) -> None:
+        """Initiates the software trigger system and completes one full trigger cycle.
+
+        Can only be sent to primary channel, the secondary channel will be also be affected.
+        """
+        self.port.write(f":init{self.slot}:imm")
+
 
     def set_averaging_time(self, averaging_time: float) -> None:
         """Set the averaging time for the power measurement."""
@@ -166,11 +195,6 @@ class Device(EmptyDevice):
         self.port.write(f"sens{self.slot}:pow:wav {wavelength_nm}nm")
         self.wait_for_opc()
 
-    def get_power(self) -> float:
-        """Get the current power measurement."""
-        response = self.port.query(f"sens{self.slot}:chan{self.channel}:pow:val?")
-        return float(response.strip())
-
     def wait_for_opc(self, timeout_s: float = 10.0) -> None:
         """Wait for the operation complete (OPC) bit to be set."""
         start_time = time.time()
@@ -180,6 +204,19 @@ class Device(EmptyDevice):
                 break
 
     # Currently unused wrapper functions
+    def set_reference_state(self, reference: str = "absolute") -> None:
+        """Set the reference state of the power measurement to either absolute or relative."""
+        reference = reference.strip().lower()
+        if reference not in ("absolute", "relative"):
+            msg = f"Invalid reference state: {reference}. Must be 'absolute' or 'relative'."
+            raise ValueError(msg)
+
+        if reference == "absolute":
+            self.port.write(f"sens{self.slot}:pow:ref:stat 0")
+        elif reference == "relative":
+            self.port.write(f"sens{self.slot}:pow:ref:stat 1")
+
+        self.wait_for_opc()
 
     def get_averaging_time(self) -> float:
         """Get the current averaging time for the power measurement."""
