@@ -201,7 +201,11 @@ class Device(EmptyDevice):
 
     def set_power_units(self, unit: str = "W") -> None:
         """Set the power units to W or dBm."""
-        if unit.lower() not in ["w", "dbm"]:
+        unit = unit.strip().lower()
+
+        if unit == "mW":
+            unit = "w"  # instrument does not support mW directly, use W instead and calculate the conversion in call()
+        elif unit.lower() not in ["w", "dbm"]:
             msg = f"Invalid power unit {unit}. Choose eiher W or DBM."
             raise ValueError(msg)
         self.port.write(f":sour0:pow:unit {unit}")
