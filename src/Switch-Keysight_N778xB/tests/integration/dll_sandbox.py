@@ -1,46 +1,63 @@
-# from __future__ import annotations
-#
-# import time
-#
-# import sys
-#
-# import clr
-#
-# import platform
-# print(platform.architecture())
-#
-# # Import Polarization Navigator dll
-# navigator_path = "C:\\Program Files\\Keysight\\Polarization Navigator\\bin"
-# if navigator_path not in sys.path:
-#     sys.path.insert(0, navigator_path)
-#
-# clr.AddReference("PolNavClient")
-#
-# import PyPolNav
-#
-# # test some functions
-# print("PyPolNav.dll version:", PyPolNav.GetDLLVersion())
-#
-# ret = PyPolNav.SendCommand("Global", "Get Version")
-# print(ret)
-
-
 import ctypes
-import os
 
-# Pfad zur DLL
-dll_path = r"C:\Program Files\Keysight\Polarization Navigator\bin\PolNavClient.dll"
 
-# DLL laden
-polnav = ctypes.CDLL(dll_path)
+DLL_PATH = r"C:\Program Files\Keysight\Polarization Navigator\bin\PolNavClient.dll"
 
-# Beispiel: Angenommen, die DLL hat eine Funktion int GetDLLVersion()
-# (Du musst die Signatur der Funktion kennen!)
-polnav.GetDLLVersion.restype = ctypes.c_int
+class PolNavClient:
 
-polnav.PolNavC_HelloWorld()
+    def __init__(self):
 
-polnav.PolNavC_SendCommand("Global", "Get Version")
+        self.client = ctypes.CDLL(DLL_PATH)
 
-version = polnav.GetDLLVersion()
-print("DLL Version:", version)
+        # Define argument and return types
+        self.client.PolNavC_SendCommand.argtypes = [
+            ctypes.c_char_p,        # Target
+            ctypes.c_char_p,        # Command
+            ctypes.c_char_p,        # Response buffer (output)
+            ctypes.c_int,           # MaxLen
+            ctypes.POINTER(ctypes.c_int),  # ResponseLen (output by reference)
+        ]
+        self.client.PolNavC_SendCommand.restype = ctypes.c_int
+
+    def hello_world(self) -> None:
+        """Call the HelloWorld function from the Polarization Navigator DLL."""
+        print(self.client.PolNavC_HelloWorld())
+
+    def send_command(self, target: str, command: str, buffer_size: int = 1024) -> str:
+        # Create response buffer
+        response_buffer = ctypes.create_string_buffer(buffer_size)
+        response_len = ctypes.c_int()
+
+        # Call the DLL function
+        result = self.client.PolNavC_SendCommand(
+            ctypes.c_char_p(target.encode("ascii")),
+            ctypes.c_char_p(command.encode("ascii")),
+            response_buffer,
+            ctypes.c_int(buffer_size),
+            ctypes.byref(response_len),
+        )
+
+        # Check for success
+        if result != 0:
+            msg = f"PolNav_SendCommand failed with error code: {result}"
+            print(msg)
+            # raise RuntimeError(msg)
+
+        # Return the actual response string
+        return response_buffer.value.decode("ascii")
+
+    def read(self) -> str:
+        """Read the response from Polarization Navigator."""
+        return self.client.PolNavC_ReadResponse()
+
+if __name__ == "__main__":
+    nav = PolNavClient()
+    ret = nav.send_command("Global", "Get Version")
+    print(ret)
+
+    available_targets = nav.send_command("Global", "Dir")
+
+    # turn the string into a list
+    targets = available_targets.split("\r\n")
+    if "Global" in targets:
+        targets.remove("Global")
