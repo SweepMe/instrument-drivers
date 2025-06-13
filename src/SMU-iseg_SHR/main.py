@@ -31,12 +31,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import time
 
 import shr
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.PortManager import PortManager
+from pysweepme.Ports import Port
 
 # Reload the shr module to ensure the latest version is used
 importlib.reload(shr)
@@ -45,6 +47,8 @@ from shr import IsegDevice
 
 class Device(EmptyDevice, IsegDevice):
     """Driver for the iseg SHR."""
+
+    description = "Averaing will be set for all channels in the module."
 
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
@@ -94,6 +98,7 @@ class Device(EmptyDevice, IsegDevice):
             "6kV/2mA": 3,
         }
         self.mode: str = "2kV/4mA"
+        self.compliance: float = 0.004  # Default compliance for 2kV/4mA mode in A
 
         self.measured_voltage: float = 0.0
         self.measured_current: float = 0.0
@@ -147,10 +152,23 @@ class Device(EmptyDevice, IsegDevice):
 
         # check if self.port is already open
         close_port = False
-        if not hasattr(self, "port") or self.port is None or not self.port.port_properties.get("is_open", False):
+
+        port_not_ready = (
+            not hasattr(self, "port") or
+            self.port is None or
+            not self.port or
+            not self.port.port_properties.get("is_open", False)
+        )
+
+        if port_not_ready:
             try:
                 port_manager = PortManager()
                 self.port = port_manager.get_port(port_string, self.port_properties)
+
+                # Need to double-check if self.port is a valid Port instance, as the PortManager might ignore Exceptions during
+                # port opening and return False or None
+                if not isinstance(self.port, Port):
+                    return self.modes
             except:
                 return self.modes
             else:
@@ -178,7 +196,8 @@ class Device(EmptyDevice, IsegDevice):
         finally:
             # close if it was not opened before
             if close_port:
-                self.port.close()
+                with contextlib.suppress(Exception):
+                    self.port.close()
 
         return supported_modes
 
@@ -221,13 +240,15 @@ class Device(EmptyDevice, IsegDevice):
         # For voltage mode, set the current limit (in this case the current value) to the compliance value
         compliance = float(self.compliance)
         if self.sweepmode.startswith("Voltage"):
-            self.set_current(compliance)
-            self.value_applied_correctly(compliance, self.get_current_set)
+            self.set_current_with_confirmation(compliance)
+            # Start with voltage off to ensure the device does not ramp up on poweron
+            self.set_voltage_with_confirmation(0)
 
         # For current mode, set the voltage limit (in this case the voltage value) to the compliance value
         elif self.sweepmode.startswith("Current"):
-            self.set_voltage(compliance)
-            self.value_applied_correctly(compliance, self.get_voltage_set)
+            self.set_voltage_with_confirmation(compliance)
+            # Start with current off to ensure the device does not ramp up on poweron
+            self.set_current_with_confirmation(0)
 
         self.handle_averaging(int(self.average))
         self.set_voltage_range(self.mode)
@@ -243,40 +264,50 @@ class Device(EmptyDevice, IsegDevice):
         self.voltage_off()
 
     def apply(self) -> None:
-        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-        self.value = float(self.value)
+        """'apply' is used to set the new set value that is always available as 'self.value'."""
+        try:
+            self.value = float(self.value)
+        except:
+            msg = f"Value '{self.value}' is not a valid number. Please check the 'Value' or 'Sweep value' input."
+            raise ValueError(msg)
+
         self.handle_polarity(self.value)
 
         if self.sweepmode.startswith("Voltage"):
-            self.set_voltage(self.value)
-            self.value_applied_correctly(self.value, self.get_voltage_set)
+            self.set_voltage_with_confirmation(self.value)
 
         elif self.sweepmode.startswith("Current"):
-            # TODO: Currently untested
-            self.set_current(self.value)
-            self.value_applied_correctly(self.value, self.get_current_set)
+            self.set_current_with_confirmation(self.value)
 
         else:
+            return
+
+        # If compliance is reached, the device will not ramp up to the set value
+        if self.is_in_compliance():
             return
 
         # Timeout of 5s for the device to start a ramp to prevent endless loop in reach()
         timeout_s = 5
         while timeout_s > 0 and not self.is_run_stopped():
             status = self.get_channel_status()
-            # Do not check for 'Is On', as the device might still be 'On' from the previous set point
-            if self.sweepmode.startswith("Voltage") and "Is Voltage Ramp" in status:
-                break
 
-            if self.sweepmode.startswith("Current") and "Is Current Ramp" in status:
+            # Do not check for 'Is On', as the device might still be 'On' from the previous set point
+            # Do not distinguish between Sweep Modes, as even in current mode the device might ramp voltage
+            if "Is Voltage Ramp" in status or "Is Current Ramp" in status:
                 break
 
             time.sleep(0.1)
             timeout_s -= 0.1
         else:
-            print(f"Device did not start ramping in to reach {self.value}{self.sweepmode[0]}. Value change compared to previous set value might be too small.")
+            print(f"Device did not start ramping in {round(5-timeout_s)} s to reach {self.value} {self.sweepmode[-1]}. "
+                  f"Value change compared to previous set value might be too small.")
 
     def reach(self) -> None:
-        """Wait until the device has reached the set value. This function is called after 'apply'."""
+        """Wait until the device has reached the set value. This function is called after 'apply'.
+
+        The device status will be checked every 100ms until the status does not contain any Ramping and instead contains
+        a constant current or voltage message.
+        """
         timeout_in_s = 30
         level_reached = False
 
@@ -384,8 +415,8 @@ class Device(EmptyDevice, IsegDevice):
             if self.is_run_stopped():
                 return
 
-        if abs(self.get_voltage()) > 0.1:
-            msg = f"Voltage is not 0V after waiting for {10 - timeout_s} seconds. Cannot set polarity."
+        if abs(self.get_voltage()) > 0.2:
+            msg = f"Voltage is not 0V after waiting for {round(10 - timeout_s)} seconds. Cannot set polarity."
             raise Exception(msg)
 
         self.set_output_polarity(polarity)
@@ -463,6 +494,32 @@ class Device(EmptyDevice, IsegDevice):
         else:
             msg = f"No supported unit detected for ramp rate of {rate}. Use V/s or %/s."
             raise ValueError(msg)
+
+    def set_current_with_confirmation(self, value: float) -> None:
+        """Set the current value in A and wait until the device has set the new value."""
+        self.set_current(value)
+        self.value_applied_correctly(value, self.get_current_set)
+
+    def set_voltage_with_confirmation(self, value: float) -> None:
+        """Set the voltage value in V and wait until the device has set the new value."""
+        self.set_voltage(value)
+        self.value_applied_correctly(value, self.get_voltage_set)
+
+    def is_in_compliance(self) -> bool:
+        """Check if the device is in compliance, and higher set values cannot be reached."""
+        if self.sweepmode.startswith("Voltage"):
+            compliance = self.get_current_set()
+            applied_value = self.get_current()
+        elif self.sweepmode.startswith("Current"):
+            compliance = self.get_voltage_set()
+            applied_value = self.get_voltage()
+        else:
+            return False
+
+        # If the applied value is larger than 95% of the compliance, it is considered out of compliance
+        if abs(applied_value) > abs(compliance) * 0.95:
+            return True
+        return False
 
     # Communication
 
