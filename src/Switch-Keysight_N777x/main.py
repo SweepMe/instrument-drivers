@@ -123,8 +123,6 @@ class Device(EmptyDevice):
         """Initialize the device. This function is called only once at the start of the measurement."""
         self.reset()
         self.clear_status()
-        id_ = self.get_identification()
-        # print(f"N777x id: {id_}")
 
         self.set_power_units(self.power_unit)
         self.get_power_range()
@@ -201,14 +199,12 @@ class Device(EmptyDevice):
 
     def set_power_units(self, unit: str = "W") -> None:
         """Set the power units to W or dBm."""
-        unit = unit.strip().lower()
-
-        if unit == "mW":
+        if unit.lower() == "mw":
             unit = "w"  # instrument does not support mW directly, use W instead and calculate the conversion in call()
         elif unit.lower() not in ["w", "dbm"]:
-            msg = f"Invalid power unit {unit}. Choose eiher W or DBM."
+            msg = f"Invalid power unit {unit}. Choose either W or DBM."
             raise ValueError(msg)
-        self.port.write(f":sour0:pow:unit {unit}")
+        self.port.write(f":sour0:pow:unit {unit.lower()}")
 
     def get_power_units(self) -> str:
         """Get the current power units."""
@@ -227,8 +223,8 @@ class Device(EmptyDevice):
         """Set the laser wavelength m."""
         wavelength_m = float(wavelength_m)
         if not self.wln_max >= wavelength_m >= self.wln_min:
-            msg = (f"Invalid wavelength {wavelength_m:.1f}m not in instrument range "
-                   f"[{self.wln_min:.1f}m ,{self.wln_max:.1f}m]")
+            msg = (f"Invalid wavelength {wavelength_m * 1e9:.0f} nm not in instrument range "
+                   f"[{self.wln_min * 1e9:.0f} nm ,{self.wln_max * 1e9:.0f} nm]")
             raise ValueError(msg)
 
         self.port.write(f":sour0:wav {wavelength_m}")
