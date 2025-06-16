@@ -32,6 +32,7 @@
 from __future__ import annotations
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme import debug
 
 
 class Device(EmptyDevice):
@@ -63,30 +64,22 @@ class Device(EmptyDevice):
             "timeout": 10,
             "EOL": "\n",
         }
-
-        # tracking & init
-        self.wavelength = None
-        self.measured_wavelength = None
-        self.power_level = None
-        self.measured_power = None
-        self.pow_max = None
-        self.pow_min = None
-        self.wln_max = None
-        self.wln_min = None
-        self.power_conversion = 1
-        self.wavelength_conversion = 1
-        self.power_unit = None
-        self.wavelength_unit = None
-        self.sweepmode = "None"
         self.port_string = ""
 
-        self.allowed_power_units = {
-            "dBm": "DBM",  # default
-            "W": "W",
-            "mW": "W",  # instrument doesnt directly support mW
+        # Power
+        self.power_level: float = -1
+        self.power_units = {
+            "dBm": 1,  # default
+            "W": 1,
+            "mW": 1e-3,  # instrument doesnt directly support mW
         }
+        self.power_unit: str = ""
+        self.power_conversion: float = 1
+        self.pow_max: float = -1
+        self.pow_min: float = -1
 
-        # conversion factors for wavelength (to get commands capitalize)
+        # Wavelength
+        self.wavelength: float = -1
         self.wavelength_conversions = {
             "nm": 1e-9,
             "µm": 1e-6,
@@ -94,12 +87,23 @@ class Device(EmptyDevice):
             "m": 1e0,
             "pm": 1e-12,
         }
+        self.wavelength_unit: str = ""
+        self.wavelength_conversion: float = 1
+        self.wln_max: float = -1
+        self.wln_min: float = -1
+
+        # Measurement variables
+        self.sweepmode = "None"
+        self.measured_power: float = -1
+        self.measured_wavelength: float = -1
+
+        self.debug_mode: bool = False  # Debug errors and warnings
 
     def set_GUIparameter(self) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
             "Power level": "0.0",  # default is 0 dBm = 1 mW
-            "Power unit": list(self.allowed_power_units.keys()),
+            "Power unit": list(self.power_units.keys()),
             "Wavelength": "1550.0",
             "Wavelength unit": list(self.wavelength_conversions.keys()),
             "SweepMode": ["None", "Wavelength", "Power"],
@@ -113,7 +117,7 @@ class Device(EmptyDevice):
         self.power_level = float(parameter["Power level"])
         self.wavelength = float(parameter["Wavelength"])
         self.power_unit = parameter["Power unit"]
-        self.power_conversion = 1e-3 if self.power_unit == "mW" else 1
+        self.power_conversion = self.power_units[self.power_unit]
         self.wavelength_unit = parameter["Wavelength unit"]
         self.wavelength_conversion = self.wavelength_conversions[self.wavelength_unit]
 
@@ -135,13 +139,13 @@ class Device(EmptyDevice):
     def deinitialize(self) -> None:
         """Deinitialize the device. This function is called only once at the end of the measurement."""
         errors = self.check_errors()
-        if errors:
-            print("Errors for laser after measurement: ", errors)
+        if errors and self.debug_mode:
+            debug("Errors for laser after measurement: ", errors)
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         if self.sweepmode != "Power":
-            self.set_power(power_level=self.power_level * self.power_conversion)
+            self.set_power(self.power_level, self.power_unit)
         elif self.sweepmode != "Wavelength":
             self.set_wavelength(wavelength_m=self.wavelength * self.wavelength_conversion)
 
@@ -160,7 +164,7 @@ class Device(EmptyDevice):
         if self.sweepmode == "Wavelength":
             self.set_wavelength(value * self.wavelength_conversion)
         elif self.sweepmode == "Power":
-            self.set_power(power_level=value * self.power_conversion)
+            self.set_power(value, self.power_unit)
 
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
@@ -201,6 +205,7 @@ class Device(EmptyDevice):
         """Set the power units to W or dBm."""
         if unit.lower() == "mw":
             unit = "w"  # instrument does not support mW directly, use W instead and calculate the conversion in call()
+            self.power_conversion = 1e-3
         elif unit.lower() not in ["w", "dbm"]:
             msg = f"Invalid power unit {unit}. Choose either W or DBM."
             raise ValueError(msg)
@@ -210,11 +215,32 @@ class Device(EmptyDevice):
         """Get the current power units."""
         return self.port.query(":sour0:pow:unit?")
 
-    def set_power(self, power_level: float) -> None:
+    def set_power(self, power_level: float, unit: str = "W") -> None:
         """Set the power level in W or dBm."""
-        if not self.pow_max >= power_level >= self.pow_min:
-            msg = f"Power {power_level:.3f} out of range [{self.pow_min:.3f},{self.pow_max:.3f}] {self.power_unit}."
+        if unit not in self.power_units:
+            msg = f"Invalid power unit {unit}. Choose from {list(self.power_units.keys())}."
             raise ValueError(msg)
+        elif unit == "W":
+            unit = "Watt"  # this command requires W written in full
+
+        # Check if the power level is within the allowed range
+        if self.pow_max < 0 or self.pow_min < 0:
+            self.get_power_range()
+
+        if power_level < self.pow_min * self.power_conversion:
+            power_level = "MIN"  # set to minimum if below
+            if self.debug_mode:
+                debug(f"Warning: Power level {power_level} {unit} below minimum {self.pow_min * self.power_conversion} "
+                      f"{unit}, setting to minimum.")
+
+        elif power_level > self.pow_max * self.power_conversion:
+            power_level = "MAX"  # set to maximum if above
+            if self.debug_mode:
+                debug(f"Warning: Power level {power_level} {unit} above maximum {self.pow_max * self.power_conversion} "
+                      f"{unit}, setting to maximum.")
+
+        else:
+            power_level = f"{power_level} {unit.upper()}"
 
         self.port.write(f"sour0:pow {power_level}")
         self.power_level = power_level
