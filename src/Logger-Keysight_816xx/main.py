@@ -165,7 +165,7 @@ class Device(EmptyDevice):
         if self.list_mode:
             expected_time = self.list_length * self.list_averaging
             timeout_s = max(expected_time * 2, 10)
-            while "COMPLETE" not in self.port.query(f"sens{self.slot}:chan{self.channel}:func:stat?")
+            while "COMPLETE" not in self.port.query(f"sens{self.slot}:chan{self.channel}:func:stat?"):
                 if self.is_run_stopped():
                     break
 
