@@ -61,10 +61,16 @@ class Device(EmptyDevice):
     """Device class to implement functionalities of Thorlabs NanoTrak via Kinesis."""
     description = """
                     <h3>Driver Template</h3>
-                    When using center position, the value must be a string with two values separated by a comma, e.g. "5,2" for horizontal and vertical position.
+                    When using center position, the value must be a string with two values separated by a semicolon, e.g. "5;2" for horizontal and vertical position.
                     <p>Setup:</p>
                     <ul>
                     <li>Install Kinesis</li>
+                    <li>Kinesis must be closed when running this driver.</li>
+                    </ul>
+
+                    <p>Parameters:</p>
+                    <ul>
+                    <li>Reading: Return the reading as absolute, relative, or not.</li>
                     </ul>
                     """
 
@@ -93,6 +99,8 @@ class Device(EmptyDevice):
         self.is_simulation = False
 
         # Measurement parameters
+        self.sweepmode: str = "Center Position"
+        self.tracking_mode: str = "Tracking"  # Can be "Tracking" or "Latch"
         self.reading_mode: str = "Absolute"  # Can be "Absolute", "Relative", or "None"
 
     def find_ports(self) -> list[str]:
@@ -144,13 +152,15 @@ class Device(EmptyDevice):
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
             "SweepMode": ["Center Position"],
-            "Simulation": False,
+            "Mode": ["Tracking", "Latch"],
             "Reading": ["Absolute", "Relative", "None"],
+            "Simulation": False,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.serial_number = parameter.get("Port", "")
+        self.tracking_mode = parameter.get("Mode", "Tracking")
         self.is_simulation = parameter.get("Simulation", False)
         self.reading_mode = parameter.get("Reading", "Absolute")
 
@@ -181,7 +191,7 @@ class Device(EmptyDevice):
 
         # TODO: Test if the timeouts are sufficient or can be reduced
         self.device = self.BenchtopNanoTrakCLI.BenchtopNanoTrak.CreateBenchtopNanoTrak(self.serial_number)
-        print(f"Device: {self.device}, Serial Number: {self.serial_number}")
+        # print(f"Device: {self.device}, Serial Number: {self.serial_number}")
         time.sleep(2.5)
         self.device.Connect(str(self.serial_number))
 
@@ -207,22 +217,28 @@ class Device(EmptyDevice):
     def configure(self) -> None:
         """Configure the device. This function is called only once at the start of the measurement."""
         config = self.device.GetNanoTrakConfiguration(self.serial_number)
-        self.device.SetMode(self.GenericNanoTrakCLI.NanoTrakStatus.OperatingModes.Tracking)
+        self.set_mode(self.tracking_mode)
         # self.device.SetTIARangeMode(TIARangeModes.AutoRangeAtSelected, TIAOddOrEven.All);
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         # TODO: Check which mode should be used and which values are needed
         if self.sweepmode == "Center Position":
-            horizontal, vertical = self.value.split(",")
-            position = self.GenericNanoTrakCLI.HVPosition(float(horizontal), vertical(vertical))
+            if "," in self.value:
+                horizontal, vertical = map(float, self.value.split(","))
+            elif ";" in self.value:
+                horizontal, vertical = map(float, self.value.split(";"))
+            else:
+                msg = f"Invalid format for Center Position: {self.value}. Expected 'x,y' or 'x;y'."
+                raise ValueError(msg)
+
+            position = self.GenericNanoTrakCLI.HVPosition(horizontal, vertical)
 
             self.device.SetCircleHomePosition(position)
             self.device.HomeCircle()
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        # time.sleep(0.5)
         horizontal, vertical = self.get_current_position()
 
         if self.reading_mode in ["Absolute", "Relative"]:

@@ -57,7 +57,7 @@ device.SetCircleHomePosition(position)
 device.HomeCircle()
 
 TIAReading = device.GetReading()
-print(f"Reading: {TIAReading}")
+print(f"Reading: {TIAReading.HPosition}, {TIAReading.VPosition}")
 
 # kinesis_device = GenericNanoTrakCLI.NanoTrak.CreateDevice(port_string)
 
