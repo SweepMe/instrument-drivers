@@ -41,6 +41,21 @@ import velox
 class Device(EmptyDevice):
     """Driver class for Velox Wafer Prober Systems."""
 
+    description = """
+    <h3>Velox Wafer Prober</h3>
+    <p>This driver controls the prober functions of FormFactor Velox wafer probers.</p>
+    <h4>Setup</h4>
+    <ul>
+        <li>Requires Velox Installation</li>
+    </ul>
+    <h4>Parameters</h4>
+    <ul>
+        <li>Port: Use 'localhost' when running SweepMe! on the same PC as Velox. For TCP/IP remote control, enter
+         the Velox PCs IP address either as blank string "192.168.XXX.XXX" or containing a specific port 
+         "IP:xxx.xxx.xxx.xxx; Port:xxxx" </li>
+    </ul>
+    """
+
     def __init__(self) -> None:
         """Initialize measurement and analysis parameter."""
         EmptyDevice.__init__(self)
