@@ -43,6 +43,24 @@ import velox
 class Device(EmptyDevice):
     """Device Class for Cameras in Velox Wafer Prober Systems."""
 
+    description = """
+    <h3>Velox Camera</h3>
+    <p>This driver controls the camera functions of FormFactor Velox wafer probers.</p>
+    <h4>Setup</h4>
+    <ul>
+        <li>Requires Velox Installation</li>
+    </ul>
+    <h4>Parameters</h4>
+    <ul>
+        <li>Port: Use 'localhost' when running SweepMe! on the same PC as Velox. For TCP/IP remote control, enter
+         the Velox PCs IP address either as blank string "192.168.XXX.XXX" or containing a specific port 
+         "IP:xxx.xxx.xxx.xxx; Port:xxxx" </li>
+        <li>Custom save folder: Velox allows only for saving the acquired images, but not to send it via TCP/IP. When
+         using remote control, choose a folder on the Velox PC or on a common fileshare. For local control, the images
+         are saved in the SweepMe! Temp folder together with your other measurement data.</li>
+    </ul>
+    """
+
     def __init__(self) -> None:
         """Initialize the Velox Camera."""
         EmptyDevice.__init__(self)
@@ -104,7 +122,7 @@ class Device(EmptyDevice):
             "Camera": list(self.cameras),
             "Mode": list(self.camera_modes),
             "Custom save name": "",
-            "Custom save folder": "TEMP",
+            "Custom save folder": "",
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -156,10 +174,8 @@ class Device(EmptyDevice):
         file_name = self.save_name if self.save_name else f"Velox_{camera}"
         file_name += f"_{self.progress:0{self.progress_digits}d}"
 
-        if not self.save_folder or self.save_folder == "TEMP":
-            save_path = f"{self.tempfolder}{os.sep}{file_name}.{self.file_format}"
-        else:
-            save_path = f"{self.save_folder}{os.sep}{file_name}.{self.file_format}"
+        base_path = self.tempfolder if not self.save_folder else self.save_folder
+        save_path = f"{base_path}{os.sep}{file_name}.{self.file_format}"
 
         velox.SnapImage(camera, save_path, self.camera_mode)
 
