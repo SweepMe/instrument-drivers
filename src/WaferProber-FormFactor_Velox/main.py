@@ -41,6 +41,21 @@ import velox
 class Device(EmptyDevice):
     """Driver class for Velox Wafer Prober Systems."""
 
+    description = """
+    <h3>Velox Wafer Prober</h3>
+    <p>This driver controls the prober functions of FormFactor Velox wafer probers.</p>
+    <h4>Setup</h4>
+    <ul>
+        <li>Requires Velox Installation</li>
+    </ul>
+    <h4>Parameters</h4>
+    <ul>
+        <li>Port: Use 'localhost' when running SweepMe! on the same PC as Velox. For TCP/IP remote control, enter
+         the Velox PCs IP address either as blank string "192.168.XXX.XXX" or containing a specific port 
+         "IP:xxx.xxx.xxx.xxx; Port:xxxx" </li>
+    </ul>
+    """
+
     def __init__(self) -> None:
         """Initialize measurement and analysis parameter."""
         EmptyDevice.__init__(self)
@@ -93,15 +108,19 @@ class Device(EmptyDevice):
 
     def handle_port_string(self, port_string: str) -> None:
         """Extract IP address and socket from port string."""
-        if port_string == "localhost":
+        port_string = port_string.strip().lower()
+        self.target_socket = 1412
+
+        if "localhost" in port_string:
             self.ip_address = "localhost"
-            self.target_socket = 1412
-        elif "Port:" in port_string:
+        elif "port" in port_string:
             self.ip_address = port_string.split(";")[0].split(":")[1].strip()
             self.target_socket = int(port_string.split(";")[1].split(":")[1].strip())
-        elif "IP:" in port_string:
-            self.ip_address = port_string.split("IP:")[1].strip()
-            self.target_socket = 1412
+        elif "ip" in port_string:
+            self.ip_address = port_string.split("ip:")[1].strip()
+        else:
+            # Try to interpret the port string as an IP address
+            self.ip_address = port_string.strip()
 
     def connect(self) -> None:
         """Establish connection to Velox Software."""
