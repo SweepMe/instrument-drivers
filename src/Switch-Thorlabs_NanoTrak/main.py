@@ -32,36 +32,39 @@ from __future__ import annotations
 
 import sys
 import time
+from typing import Any
 
 import clr
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import error
 
 # Import Kinesis dll
+kinesis_imported = False
+
 bitness = 64 if sys.maxsize > 2**32 else 32
 kinesis_path = "C:\\Program Files\\Thorlabs\\Kinesis" # if bitness == 64 else "C:\\Program Files (x86)\\Thorlabs\\Kinesis"
+try:
+    if kinesis_path not in sys.path:
+        sys.path.insert(0, kinesis_path)
 
-if kinesis_path not in sys.path:
-    sys.path.insert(0, kinesis_path)
-
-
-def add_dotnet_references() -> tuple:
-    """Importing Kinesis .NET dll."""
     clr.AddReference("Thorlabs.MotionControl.DeviceManagerCLI")
     clr.AddReference("Thorlabs.MotionControl.GenericNanoTrakCLI")
-    clr.AddReference("Thorlabs.MotionControl.Benchtop.NanoTrakCLI")
 
     from Thorlabs.MotionControl import DeviceManagerCLI, GenericNanoTrakCLI
-    from Thorlabs.MotionControl.Benchtop import NanoTrakCLI
-
-    return DeviceManagerCLI, GenericNanoTrakCLI, NanoTrakCLI
+except:
+    pass
+else:
+    kinesis_imported = True
 
 
 class Device(EmptyDevice):
     """Device class to implement functionalities of Thorlabs NanoTrak via Kinesis."""
     description = """
-                    <h3>Driver Template</h3>
-                    When using center position, the value must be a string with two values separated by a semicolon, e.g. "5;2" for horizontal and vertical position.
+                    <h3>Thorlabs NanoTrak</h3>
+                    This drivers implements the functionalities of the Thorlabs NanoTrak devices via Kinesis. NanoTrak
+                    comes in three different versions: Benchtop, TCube, and KCube. The driver detects the device type
+                    automatically based on the serial number prefix.
+
                     <p>Setup:</p>
                     <ul>
                     <li>Install Kinesis</li>
@@ -71,6 +74,8 @@ class Device(EmptyDevice):
                     <p>Parameters:</p>
                     <ul>
                     <li>Reading: Return the reading as absolute, relative, or not.</li>
+                    <li>When using center position, the value must be a string with two values separated by a semicolon,
+                     e.g. "5;2" for horizontal and vertical position.</li>
                     </ul>
                     """
 
@@ -89,14 +94,26 @@ class Device(EmptyDevice):
         self.savetype = [True, True, True]
 
         # Imported Kinesis .NET dlls
-        self.DeviceManagerCLI = None
-        self.GenericNanoTrakCLI = None
-        self.BenchtopNanoTrakCLI = None
+        self.kinesis_client = None
+        """The device specific NanoTrak CLI module, e.g. BenchtopNanoTrakCLI, TCubeNanoTrakCLI, or KCubeNanoTrakCLI."""
 
         # Communication parameters
         self.serial_number: str = ""  # Serial number of the device
-        self.device = None
+        self.nanotrak = None
         self.is_simulation = False
+
+        self.device_prefixes = {
+            "benchtop": 22,  # BenchtopNanoTrakCLI.BenchtopNanoTrak.DevicePrefix
+            "tcube": 82,  # TCubeNanoTrakCLI.TCubeNanoTrak.DevicePrefix
+            "kcube": 57,  # KCubeNanoTrakCLI.KCubeNanoTrak.DevicePrefix
+        }
+        """These prefixes can be loaded from the corresponding CLI modules, e.g.:
+            clr.AddReference("Thorlabs.MotionControl.Benchtop.NanoTrakCLI")
+            import Thorlabs.MotionControl.Benchtop.NanoTrakCLI as BenchtopNanoTrakCLI
+            benchtop_prefix = BenchtopNanoTrakCLI.BenchtopNanoTrak.DevicePrefix
+        For ease of use they are hardcoded in this function.
+        """
+        self.nanotrak_type: str = "Unknown"  # Will be set in the connect() function
 
         # Measurement parameters
         self.sweepmode: str = "Center Position"
@@ -105,9 +122,6 @@ class Device(EmptyDevice):
 
     def find_ports(self) -> list[str]:
         """Returns the serial numbers of all devices connected via Kinesis."""
-        if not self.dotnet_added:
-            self.import_kinesis()
-
         device_list = self.list_devices()
         self.is_simulation = False
 
@@ -124,45 +138,22 @@ class Device(EmptyDevice):
 
         return device_list
 
-    def set_simulation_mode(self, state: bool) -> None:
-        """Set the simulation mode for the device."""
-        if state:
-            self.DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
-
-        else:
-            self.DeviceManagerCLI.SimulationManager.Instance.UninitializeSimulations()
-
-    def import_kinesis(self) -> None:
-        """Import Kinesis .NET dll."""
-        if not self.dotnet_added:
-            self.DeviceManagerCLI, self.GenericNanoTrakCLI, self.BenchtopNanoTrakCLI = add_dotnet_references()
-            self.dotnet_added = True
-
-    def list_devices(self) -> list[str]:
-        """Lists all devices.
-
-        Bug: Once Simulation mode is switched on, GetDeviceList will also find simulated devices even when simulation
-        mode is uninitialized.
-        """
-        self.DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
-        device_list = self.DeviceManagerCLI.DeviceManagerCLI.GetDeviceList()
-        return [str(serial_num) for serial_num in device_list]
-
-    def set_GUIparameter(self) -> dict:
-        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        """Determine the new GUI parameters of the driver depending on the current parameters."""
+        del parameters
         return {
-            "SweepMode": ["Center Position"],
+            "SweepMode": ["Center Position", "None"],
             "Mode": ["Tracking", "Latch"],
             "Reading": ["Absolute", "Relative", "None"],
             "Simulation": False,
         }
 
-    def get_GUIparameter(self, parameter: dict) -> None:
-        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.serial_number = parameter.get("Port", "")
-        self.tracking_mode = parameter.get("Mode", "Tracking")
-        self.is_simulation = parameter.get("Simulation", False)
-        self.reading_mode = parameter.get("Reading", "Absolute")
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Apply the parameters received from the SweepMe GUI or the pysweepme instance to the driver instance."""
+        self.serial_number = parameters.get("Port", "")
+        self.tracking_mode = parameters.get("Mode", "Tracking")
+        self.is_simulation = parameters.get("Simulation", False)
+        self.reading_mode = parameters.get("Reading", "Absolute")
 
         self.variables = ["Horizontal Position", "Vertical Position"]
         self.units = ["m", "m"]
@@ -176,53 +167,77 @@ class Device(EmptyDevice):
         self.plottype = [True] * len(self.variables)
         self.savetype = [True] * len(self.variables)
 
-        if not self.dotnet_added:
-            self.import_kinesis()
-
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
-        if self.serial_number in ["No devices found!", ""]:
-            error("No device connected! Please connect a Thorlabs NanoTrak device.")
-            return
+        if not kinesis_imported:
+            msg = ("Kinesis .NET dlls not found! Please install Kinesis to C:\\Program Files\\Thorlabs\\Kinesis, and "
+                   "ensure it is closed when running this driver.")
+            raise ImportError(msg)
 
-        # If no devices are found, initialize simulations
         if self.is_simulation:
             self.set_simulation_mode(True)
 
-        # TODO: Test if the timeouts are sufficient or can be reduced
-        self.device = self.BenchtopNanoTrakCLI.BenchtopNanoTrak.CreateBenchtopNanoTrak(self.serial_number)
-        # print(f"Device: {self.device}, Serial Number: {self.serial_number}")
-        time.sleep(2.5)
-        self.device.Connect(str(self.serial_number))
+        available_devices = self.list_devices()
+        if self.serial_number in ["No devices found!", ""]:
+            msg = "No device connected! Please connect a Thorlabs NanoTrak device."
+            raise ValueError(msg)
 
-        # print(self.device.IsSettingsInitialized())
-        # self.kinesis_device.WaitForSettingsInitialized(5000)
+        if self.serial_number not in available_devices:
+            msg = f"Device with serial number {self.serial_number} not found in the list of available devices: {available_devices}"
+            raise ValueError(msg)
 
-        self.device.StartPolling(250)
-        time.sleep(0.5)
-        self.device.EnableDevice()
-        time.sleep(0.5)
+        # Determine device type based on the serial number prefix
+        self.nanotrak_type = self.determine_nanotrak_type(self.serial_number)
+        self.import_device_dlls(self.nanotrak_type)
+        self.nanotrak = self.create_nanotrak(self.serial_number, self.nanotrak_type)
+
+        # Wait for device connection
+        print("Waiting for device to set IsConnected to True...")
+        timeout_s = 10
+        while not self.nanotrak.IsConnected:
+            try:
+                self.nanotrak.Connect(str(self.serial_number))
+            except self.DeviceManagerCLI.DeviceNotReadyException:
+                print("DeviceNotReadyException: Device is not ready yet, retrying...")
+                time.sleep(0.2)
+                timeout_s -= 0.2
+
+            if timeout_s <= 0:
+                msg = f"Failed to connect to the device {self.serial_number} within the timeout period."
+                raise TimeoutError(msg)
 
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
-        if not self.device:
+        if not self.nanotrak:
             return
 
-        self.device.StopPolling()
-        self.device.Disconnect(True)
+        self.nanotrak.StopPolling()
+        self.nanotrak.Disconnect(True)
 
         if self.is_simulation:
             self.set_simulation_mode(False)
 
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
+        if not self.nanotrak.IsSettingsInitialized():
+            print("Waiting for settings to be initialized...")
+            self.nanotrak.WaitForSettingsInitialized(10000)  # ms
+
+        print("Start polling the device...")
+        polling_rate = 250
+        self.nanotrak.StartPolling(polling_rate)
+        time.sleep(0.5)
+        self.nanotrak.EnableDevice()
+        time.sleep(0.5)
+
     def configure(self) -> None:
         """Configure the device. This function is called only once at the start of the measurement."""
-        config = self.device.GetNanoTrakConfiguration(self.serial_number)
+        # config = self.device.GetNanoTrakConfiguration(self.serial_number)
         self.set_mode(self.tracking_mode)
         # self.device.SetTIARangeMode(TIARangeModes.AutoRangeAtSelected, TIAOddOrEven.All);
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-        # TODO: Check which mode should be used and which values are needed
         if self.sweepmode == "Center Position":
             if "," in self.value:
                 horizontal, vertical = map(float, self.value.split(","))
@@ -232,58 +247,136 @@ class Device(EmptyDevice):
                 msg = f"Invalid format for Center Position: {self.value}. Expected 'x,y' or 'x;y'."
                 raise ValueError(msg)
 
-            position = self.GenericNanoTrakCLI.HVPosition(horizontal, vertical)
+            position = GenericNanoTrakCLI.HVPosition(horizontal, vertical)
 
-            self.device.SetCircleHomePosition(position)
-            self.device.HomeCircle()
+            self.nanotrak.SetCircleHomePosition(position)
+            self.nanotrak.HomeCircle()
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         horizontal, vertical = self.get_current_position()
 
         if self.reading_mode in ["Absolute", "Relative"]:
-            reading = self.device.GetReading()
+            reading = self.nanotrak.GetReading()
             reading_value = reading.AbsoluteReading if self.reading_mode == "Absolute" else reading.RelativeReading
             return [horizontal, vertical, reading_value]
 
         return [horizontal, vertical]
 
-    def finish(self) -> None:
-        """Do some final steps after the acquisition of a measurement point."""
+    # Utility functions
 
-    """Wrapper Functions"""
+    def list_devices(self, nanotrak_type: str = "") -> list[str]:
+        """Lists all devices.
+
+        filter: either empty, 'benchtop', 'kcube' or 'tcube'.
+
+        Bug: Once Simulation mode is switched on, GetDeviceList will also find simulated devices even when simulation
+        mode is uninitialized.
+        The device list can be filtered by the device prefix, e.g. BenchtopNanoTrakCLI.BenchtopNanoTrak.DevicePrefix
+        """
+        if not kinesis_imported:
+            msg = ("Kinesis .NET dlls not found! Please install Kinesis to C:\\Program Files\\Thorlabs\\Kinesis, and "
+                   "ensure it is closed when running this driver.")
+            raise ImportError(msg)
+
+        DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
+
+        if not nanotrak_type:
+            device_list = DeviceManagerCLI.DeviceManagerCLI.GetDeviceList()
+        elif nanotrak_type.lower() in self.device_prefixes:
+            prefix = self.device_prefixes[nanotrak_type.lower()]
+            device_list = DeviceManagerCLI.DeviceManagerCLI.GetDeviceList(prefix)
+        else:
+            msg = f"Unknown filter '{nanotrak_type}'. Valid filters are: {', '.join(self.device_prefixes.keys())} or an empty string."
+            raise ValueError(msg)
+
+        return [str(serial_num) for serial_num in device_list]
+
+    def determine_nanotrak_type(self, serial_number: str) -> str:
+        """Determine the device type based on the serial number prefix."""
+        for supported_type, prefix in self.device_prefixes.items():
+            if serial_number.startswith(str(prefix)):
+                return supported_type
+
+        return "Unknown"
+
+    def import_device_dlls(self, nanotrak_type: str) -> None:
+        """Import the device specific Kinesis .NET dll based on the device type."""
+        if nanotrak_type == "benchtop":
+            clr.AddReference("Thorlabs.MotionControl.Benchtop.NanoTrakCLI")
+            import Thorlabs.MotionControl.Benchtop.NanoTrakCLI as BenchtopNanoTrakCLI
+            self.kinesis_client = BenchtopNanoTrakCLI
+
+        elif nanotrak_type == "tcube":
+            clr.AddReference("Thorlabs.MotionControl.TCube.NanoTrakCLI")
+            import Thorlabs.MotionControl.TCube.NanoTrakCLI as TCubeNanoTrakCLI
+            self.kinesis_client = TCubeNanoTrakCLI
+
+        elif nanotrak_type == "kcube":
+            clr.AddReference("Thorlabs.MotionControl.KCube.NanoTrakCLI")
+            import Thorlabs.MotionControl.KCube.NanoTrakCLI as KCubeNanoTrakCLI
+            self.kinesis_client = KCubeNanoTrakCLI
+
+        else:
+            msg = f"Unknown device type: {nanotrak_type}. Supported prefixes (first two numbers) are: {', '.join(self.device_prefixes.values())}."
+            raise ValueError(msg)
+
+    def create_nanotrak(self, serial_number: str, nanotrak_type: str) -> GenericNanoTrakCLI.GenericNanoTrak:
+        """Create a nanotrak instance based on the serial number and device type."""
+        if nanotrak_type == "benchtop":
+            self.nanotrak = self.kinesis_client.BenchtopNanoTrak.CreateBenchtopNanoTrak(serial_number)
+        elif nanotrak_type == "tcube":
+            self.nanotrak = self.kinesis_client.TCubeNanoTrak.CreateTCubeNanoTrak(serial_number)
+        elif nanotrak_type == "kcube":
+            self.nanotrak = self.kinesis_client.KCubeNanoTrak.CreateKCubeNanoTrak(serial_number)
+        else:
+            msg = f"Unknown nanotrak type for serial number {self.serial_number}. Supported prefixes (first two numbers) are: {', '.join(self.device_prefixes.values())}."
+            raise ValueError(msg)
+
+        return self.nanotrak
+
+    # Wrapper Functions
+
+    @staticmethod
+    def set_simulation_mode(state: bool) -> None:
+        """Set the simulation mode for the device."""
+        if state:
+            DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
+
+        else:
+            DeviceManagerCLI.SimulationManager.Instance.UninitializeSimulations()
 
     def get_identification(self) -> str:
         """Returns the identification of the device."""
-        if not self.device:
-            error("Device not connected!")
+        if not self.nanotrak:
+            error("NanoTrak not connected!")
             return ""
 
-        return self.device.GetDeviceInfo().SerialNumber
+        return self.nanotrak.GetDeviceInfo().SerialNumber
 
     def get_current_position(self) -> tuple[float, float]:
         """Get the current circular position and signal strength at the current position."""
-        if not self.device:
-            error("Device not connected!")
+        if not self.nanotrak:
+            error("NanoTrak not connected!")
             return 0.0, 0.0
 
-        position = self.device.GetCirclePosition()
+        position = self.nanotrak.GetCirclePosition()
         return position.HPosition, position.VPosition
 
     def set_mode(self, mode_string: str = "Tracking") -> None:
         """Set the mode of the device to either Tracking or Latch."""
-        if not self.device:
-            error("Device not connected!")
+        if not self.nanotrak:
+            error("NanoTrak not connected!")
             return
 
         mode_string = mode_string.strip().lower()
 
         if mode_string == "tracking":
-            new_mode = self.GenericNanoTrakCLI.NanoTrakStatus.OperatingModes.Tracking
+            new_mode = GenericNanoTrakCLI.NanoTrakStatus.OperatingModes.Tracking
         elif mode_string == "latch":
-            new_mode = self.GenericNanoTrakCLI.NanoTrakStatus.OperatingModes.Latch
+            new_mode = GenericNanoTrakCLI.NanoTrakStatus.OperatingModes.Latch
         else:
             error(f"Unknown mode: {mode_string}")
             return
 
-        self.device.SetMode(new_mode)
+        self.nanotrak.SetMode(new_mode)
