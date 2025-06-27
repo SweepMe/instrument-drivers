@@ -90,6 +90,20 @@ else:
 class Device(EmptyDevice):
     """Keithley 4200-SCS driver."""
 
+    description = """
+        <h3>Keithley 4200-SCS</h3>
+
+        <h4>Setup</h4>
+        This driver can be used in three different ways:
+        <ul>
+        <li>Using the KXCI software running on the device and a GPIB connection.</li>
+        <li>Using the LPTlib server application running on the device and a TCP/IP connection.</li>
+        <li>Running SweepMe! directly on the device.</li>
+        </ul>
+        <p>Please note that for the KXCI mode, some features like Pulse Mode, List Mode, and fast acquisition are not
+        supported yet.</p>
+        """
+
     def __init__(self) -> None:
         """Initialize device parameters."""
         EmptyDevice.__init__(self)
