@@ -406,6 +406,13 @@ class Device(EmptyDevice):
             # very important, triggers a (DCL) in KXCI, seems to be essential to read correct values
             self.port.port.clear()
 
+            if self.pulse_mode:
+                msg = "Pulse mode is not supported with US command set via GPIB. Use control via 'LPTlib' instead."
+                raise Exception(msg)
+
+            if self.list_master:
+                msg = "List sweep is not supported with US command set via GPIB. Use control via 'LPTlib' instead."
+                raise Exception(msg)
         else:
             self.command_set = "LPTlib"  # "US" user mode, "LPTlib", # check manual p. 677/1510
 
@@ -451,10 +458,6 @@ class Device(EmptyDevice):
                 self.lpt.devint()  # This command resets all active instruments in the system to their default states.
 
             elif self.command_set == "US":
-                # if self.current_range != "Auto":
-                #     msg = "When using KXCI only Auto current range is supported."
-                #     raise Exception(msg)
-
                 self.get_options()
 
                 self.clear_buffer()
@@ -555,7 +558,7 @@ class Device(EmptyDevice):
             nplc = 1 if self.speed == "Fast" else 2
             self.set_integration_time(nplc)
 
-            # Current Range
+            # Current Range - the KXCI implementation has not been tested yet
             if "Limited" in self.current_range:
                 current_range = self.current_ranges[self.current_range]
                 self.set_current_range_limited(self.card_name[-1], current_range)  # low range current
