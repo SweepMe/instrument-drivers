@@ -90,6 +90,20 @@ else:
 class Device(EmptyDevice):
     """Keithley 4200-SCS driver."""
 
+    description = """
+        <h3>Keithley 4200-SCS</h3>
+
+        <h4>Setup</h4>
+        This driver can be used in three different ways:
+        <ul>
+        <li>Using the KXCI software running on the device and a GPIB connection.</li>
+        <li>Using the LPTlib server application running on the device and a TCP/IP connection.</li>
+        <li>Running SweepMe! directly on the device.</li>
+        </ul>
+        <p>Please note that for the KXCI mode, some features like Pulse Mode, List Mode, and fast acquisition are not
+        supported yet.</p>
+        """
+
     def __init__(self) -> None:
         """Initialize device parameters."""
         EmptyDevice.__init__(self)
@@ -225,7 +239,6 @@ class Device(EmptyDevice):
             "PulseMeasStart": 50,
             "PulseMeasTime": 20,
             "PulseOnTime": 0.5e-6,
-            "PulseWidth": 1e-6,
             "PulsePeriod": 2e-6,
             "PulseDelay": 20e-9,
             "PulseOffLevel": 0.0,
@@ -393,6 +406,13 @@ class Device(EmptyDevice):
             # very important, triggers a (DCL) in KXCI, seems to be essential to read correct values
             self.port.port.clear()
 
+            if self.pulse_mode:
+                msg = "Pulse mode is not supported with US command set via GPIB. Use control via 'LPTlib' instead."
+                raise Exception(msg)
+
+            if self.list_master:
+                msg = "List sweep is not supported with US command set via GPIB. Use control via 'LPTlib' instead."
+                raise Exception(msg)
         else:
             self.command_set = "LPTlib"  # "US" user mode, "LPTlib", # check manual p. 677/1510
 
@@ -438,10 +458,6 @@ class Device(EmptyDevice):
                 self.lpt.devint()  # This command resets all active instruments in the system to their default states.
 
             elif self.command_set == "US":
-                if self.current_range != "Auto":
-                    msg = "When using KXCI only Auto current range is supported."
-                    raise Exception(msg)
-
                 self.get_options()
 
                 self.clear_buffer()
@@ -542,15 +558,14 @@ class Device(EmptyDevice):
             nplc = 1 if self.speed == "Fast" else 2
             self.set_integration_time(nplc)
 
-            # Current Range
+            # Current Range - the KXCI implementation has not been tested yet
             if "Limited" in self.current_range:
                 current_range = self.current_ranges[self.current_range]
                 self.set_current_range_limited(self.card_name[-1], current_range)  # low range current
 
-            # TODO: needs to be tested how to see a fixed current range
-            # range = 1e-1
-            # compliance = 1e1
-            # self.set_current_range(self.card_name[-1], range, compliance)
+            elif self.current_range != "Auto":
+                current_range = self.current_ranges[self.current_range]
+                self.set_current_range(self.card_name[-1], current_range, self.protection)
 
     def configure_lptlib(self) -> None:
         """Configure the device using lptlib commands."""
@@ -874,7 +889,7 @@ class Device(EmptyDevice):
             self.port.write(f"RS {int(resolution)}")
         return self.read_tcpip_port()
 
-    def set_current_range(self, channel: str, current_range: str, compliance: str) -> str:
+    def set_current_range(self, channel: str, current_range: float, compliance: float) -> str:
         """Set the current range of the device."""
         if self.command_set == "US":
             self.port.write(f"RI {channel}, {current_range}, {compliance}")
