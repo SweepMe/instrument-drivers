@@ -225,7 +225,6 @@ class Device(EmptyDevice):
             "PulseMeasStart": 50,
             "PulseMeasTime": 20,
             "PulseOnTime": 0.5e-6,
-            "PulseWidth": 1e-6,
             "PulsePeriod": 2e-6,
             "PulseDelay": 20e-9,
             "PulseOffLevel": 0.0,
