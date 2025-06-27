@@ -99,6 +99,8 @@ class Device(EmptyDevice, IsegDevice):
         }
         self.mode: str = "2kV/4mA"
         self.compliance: float = 0.004  # Default compliance for 2kV/4mA mode in A
+        self.nominal_voltage: float = 0.0
+        """The maximum output voltage of the device. This is used to determine the voltage accuracy for low voltages."""
 
         self.measured_voltage: float = 0.0
         self.measured_current: float = 0.0
@@ -224,6 +226,8 @@ class Device(EmptyDevice, IsegDevice):
         # TODO: Decide if the device should be reset, as it resets the ramp rates as well
         self.reset()
         self.set_local_lockout(True)
+        self.nominal_voltage = self.get_voltage_nominal()
+        self.output_polarity = self.get_output_polarity()
 
     def deinitialize(self) -> None:
         """Deinitialize the device. This function is called only once at the end of the measurement."""
@@ -377,6 +381,7 @@ class Device(EmptyDevice, IsegDevice):
 
     def handle_polarity(self, value: float) -> None:
         """Verify the polarity of the set value. Optionally, set the polarity automatically based on the set value."""
+        self.output_polarity = self.get_output_polarity()
         if value > 0 and self.polarity_mode == "Negative":
             msg = f"Polarity mode is set to negative, the value of {value} can not be reached."
             raise ValueError(msg)
@@ -401,23 +406,25 @@ class Device(EmptyDevice, IsegDevice):
             msg = "Polarity must be 'p' or 'n'"
             raise ValueError(msg)
 
+        if self.get_output_polarity() == polarity:
+            # Polarity is already set, no need to change it
+            return
+
         # Can only set polarity when the output is off
         turn_on_again = False
         if self.voltage_is_on():
             self.voltage_off()
             turn_on_again = True
 
-        # Wait until the voltage is 0V
+        # Wait until the voltage close to 0V
         timeout_s = 10
-        while abs(self.get_voltage()) > 0.1 and timeout_s > 0:
-            time.sleep(0.1)
-            timeout_s -= 0.1
+        voltage_accuracy = self.nominal_voltage * 1e-4  # 0.01% of the nominal voltage, e.g., 0.2V for 2kV
+        while abs(self.get_voltage()) > voltage_accuracy and timeout_s > 0:
             if self.is_run_stopped():
                 return
 
-        if abs(self.get_voltage()) > 0.2:
-            msg = f"Voltage is not 0V after waiting for {round(10 - timeout_s)} seconds. Cannot set polarity."
-            raise Exception(msg)
+            time.sleep(0.1)
+            timeout_s -= 0.1
 
         self.set_output_polarity(polarity)
         self.output_polarity = polarity
