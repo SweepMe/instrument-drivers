@@ -51,6 +51,9 @@ try:
     clr.AddReference("Thorlabs.MotionControl.GenericNanoTrakCLI")
 
     from Thorlabs.MotionControl import DeviceManagerCLI, GenericNanoTrakCLI
+
+    clr.AddReference("Thorlabs.MotionControl.ModularRackCLI")
+    import Thorlabs.MotionControl.ModularRackCLI as ModularRackCLI
 except:
     pass
 else:
@@ -114,6 +117,8 @@ class Device(EmptyDevice):
         For ease of use they are hardcoded in this function.
         """
         self.nanotrak_type: str = "Unknown"  # Will be set in the connect() function
+        self.is_modular_rack: bool = False  # True if the device is a modular rack device
+        self.bay: int = 1  # Bay number for modular rack devices, default is 1
 
         # Measurement parameters
         self.sweepmode: str = "Center Position"
@@ -140,13 +145,18 @@ class Device(EmptyDevice):
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
-        del parameters
-        return {
+        new_parameters = {
             "SweepMode": ["Center Position", "None"],
             "Mode": ["Tracking", "Latch"],
             "Reading": ["Absolute", "Relative", "None"],
+            "Modular Rack": False,
             "Simulation": False,
         }
+
+        if parameters.get("Modular Rack", False):
+            new_parameters["Bay"] = 1
+
+        return new_parameters
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Apply the parameters received from the SweepMe GUI or the pysweepme instance to the driver instance."""
@@ -154,6 +164,10 @@ class Device(EmptyDevice):
         self.tracking_mode = parameters.get("Mode", "Tracking")
         self.is_simulation = parameters.get("Simulation", False)
         self.reading_mode = parameters.get("Reading", "Absolute")
+
+        self.is_modular_rack = parameters.get("Modular Rack", False)
+        if self.is_modular_rack:
+            self.bay = parameters.get("Bay", 1)
 
         self.variables = ["Horizontal Position", "Vertical Position"]
         self.units = ["m", "m"]
@@ -294,6 +308,10 @@ class Device(EmptyDevice):
 
     def determine_nanotrak_type(self, serial_number: str) -> str:
         """Determine the device type based on the serial number prefix."""
+        if self.is_modular_rack:
+            # TODO: Add prefix
+            return "modular_rack"
+
         for supported_type, prefix in self.device_prefixes.items():
             if serial_number.startswith(str(prefix)):
                 return supported_type
@@ -317,6 +335,10 @@ class Device(EmptyDevice):
             import Thorlabs.MotionControl.KCube.NanoTrakCLI as KCubeNanoTrakCLI
             self.kinesis_client = KCubeNanoTrakCLI
 
+        elif nanotrak_type == "modular_rack":
+            # TODO: import ModularRackCLI
+            pass  # Modular Rack does not require a specific CLI module, it uses the ModularRackCLI
+
         else:
             msg = f"Unknown device type: {nanotrak_type}. Supported prefixes (first two numbers) are: {', '.join(self.device_prefixes.values())}."
             raise ValueError(msg)
@@ -329,6 +351,16 @@ class Device(EmptyDevice):
             self.nanotrak = self.kinesis_client.TCubeNanoTrak.CreateTCubeNanoTrak(serial_number)
         elif nanotrak_type == "kcube":
             self.nanotrak = self.kinesis_client.KCubeNanoTrak.CreateKCubeNanoTrak(serial_number)
+
+        elif nanotrak_type == "modular_rack":
+            # Create a modular rack instance
+            device_factory = DeviceManagerCLI.DeviceFactory
+            device_info = device_factory.GetDeviceInfo(serial_number)
+            type_id = device_info.GetTypeID()
+            ModularRack = ModularRackCLI.Rack.ModularRack
+            rack = ModularRack.CreateModularRack(type_id, serial_number)
+            self.nanotrak = rack.GetNanoTrakChannel(self.bay)
+
         else:
             msg = f"Unknown nanotrak type for serial number {self.serial_number}. Supported prefixes (first two numbers) are: {', '.join(self.device_prefixes.values())}."
             raise ValueError(msg)
