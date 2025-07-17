@@ -47,6 +47,12 @@ class Device(EmptyDevice):
                  safe operation of the laser and checking that the laser is in a safe state after
                  each SweepMe! run finishes.</p>
                 <p>&nbsp;</p>
+                
+                <h4>Parameters</h4>
+                <ul>
+                    <li>The scan speed can only be set to discrete values depending on your device type. Check the 
+                    manual or the device interface for available speed values.</li>
+                </ul>
                 """
 
     def __init__(self) -> None:
@@ -196,10 +202,13 @@ class Device(EmptyDevice):
         self.port.write(":sour0:wav:swe:mode CONT")  # Set sweep mode to continuous
         self.set_sweep_speed(self.scan_speed)
         self.set_sweep_start(self.list_start)
+        self.set_sweep_stop(self.list_stop)
         self.set_sweep_step(self.list_step)
 
         # use lambda logging?
         self.port.write(":sour0:wav:swe:llog ON")
+
+        # TODO: Check if sweep parameter inconsistent message is returned - manual page 71
 
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
@@ -235,7 +244,8 @@ class Device(EmptyDevice):
             self.wait_for_sweep_completion()
             # Read the lambda logging data
             # TODO: Convert data to list
-            self.measured_wavelength = self.port.write("sour0:read:data? llog")
+            # TODO: check if this the correct way/command
+            self.measured_wavelength = self.port.query("sour0:read:data? llog")
             self.measured_power = self.get_power()
 
     def wait_for_sweep_completion(self) -> None:
@@ -244,7 +254,14 @@ class Device(EmptyDevice):
         expected_time = (self.list_stop - self.list_start) / self.scan_speed
         timeout_s = expected_time * 2
 
-        while self.port.query(":sour0:wav:swe?") != "0":
+        while True:
+            # the status is returned with a leading '+'
+            status = self.port.query(":sour0:wav:swe:stat?")[-1]
+
+            if status == "0":
+                # Sweep finished successfully
+                break
+
             if self.is_run_stopped():
                 break
 
