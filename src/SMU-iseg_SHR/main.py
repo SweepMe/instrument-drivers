@@ -91,6 +91,7 @@ class Device(EmptyDevice, IsegDevice):
 
         self.averages: list = [1, 16, 64, 256, 512, 1024]
         self.average: int = 64
+
         self.ramp_rate: str = "100 V/s"  # Ramp rate in V/s or %/s, use %/s for now
         self.modes = {
             "2kV/4mA": 1,
@@ -120,7 +121,7 @@ class Device(EmptyDevice, IsegDevice):
             "SweepMode": ["Voltage in V", "Current in A"],
             "Channel": ["0", "1", "2", "3"],
             "Compliance": "0.004",  # 4 mA compliance for 2kV/4mA mode
-            "Average": 1,
+            # "Average": 1,
             "Mode": list(self.modes.keys()),
             "Polarity": self.polarity_modes,
             "Ramp rate": "50 V/s",
@@ -212,7 +213,7 @@ class Device(EmptyDevice, IsegDevice):
         self.port_string = parameters.get("Port", "")
 
         self.compliance = parameters.get("Compliance", "0.004")  # Default 4 mA for 2kV/4mA mode
-        self.average = parameters.get("Average", 64)
+        # self.average = parameters.get("Average", 64)
         self.ramp_rate = parameters.get("Ramp rate", "100 V/s")
         self.polarity_mode = parameters.get("Polarity", "Auto")
         self.mode = parameters.get("Mode", "2kV/4mA")
@@ -254,7 +255,9 @@ class Device(EmptyDevice, IsegDevice):
             # Start with current off to ensure the device does not ramp up on poweron
             self.set_current_with_confirmation(0)
 
-        self.handle_averaging(int(self.average))
+        # Currently, averaging is not implemented, because the average can only be set for all channels at once and
+        # changing the average will change the voltage measurement mode.
+        # self.handle_averaging(int(self.average))
         self.set_voltage_range(self.mode)
         self.handle_ramp_rate(self.ramp_rate)
 
@@ -281,6 +284,11 @@ class Device(EmptyDevice, IsegDevice):
             self.set_voltage_with_confirmation(self.value)
 
         elif self.sweepmode.startswith("Current"):
+            if abs(self.value) < 20e-6:
+                msg = (f"Current value of {self.value} A is too low. For current mode, the driver only supports "
+                       f"currents above 20 µA, because setting lower currents changes the voltage ramp rate.")
+                raise ValueError(msg)
+
             self.set_current_with_confirmation(self.value)
 
         else:
@@ -504,8 +512,9 @@ class Device(EmptyDevice, IsegDevice):
 
     def set_current_with_confirmation(self, value: float) -> None:
         """Set the current value in A and wait until the device has set the new value."""
-        self.set_current(value)
-        self.value_applied_correctly(value, self.get_current_set)
+        # The firmware does not support setting negative currents, independent of the polarity mode.
+        self.set_current(abs(value))
+        self.value_applied_correctly(abs(value), self.get_current_set)
 
     def set_voltage_with_confirmation(self, value: float) -> None:
         """Set the voltage value in V and wait until the device has set the new value."""
