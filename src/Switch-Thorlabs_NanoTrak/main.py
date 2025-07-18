@@ -51,9 +51,6 @@ try:
     clr.AddReference("Thorlabs.MotionControl.GenericNanoTrakCLI")
 
     from Thorlabs.MotionControl import DeviceManagerCLI, GenericNanoTrakCLI
-
-    clr.AddReference("Thorlabs.MotionControl.ModularRackCLI")
-    import Thorlabs.MotionControl.ModularRackCLI as ModularRackCLI
 except:
     pass
 else:
@@ -79,6 +76,7 @@ class Device(EmptyDevice):
                     <li>Reading: Return the reading as absolute, relative, or not.</li>
                     <li>When using center position, the value must be a string with two values separated by a semicolon,
                      e.g. "5;2" for horizontal and vertical position.</li>
+                    <li>When using circle diameter, the value must be a float representing the diameter in NT Units.</li>
                     </ul>
                     """
 
@@ -109,6 +107,7 @@ class Device(EmptyDevice):
             "benchtop": 22,  # BenchtopNanoTrakCLI.BenchtopNanoTrak.DevicePrefix
             "tcube": 82,  # TCubeNanoTrakCLI.TCubeNanoTrak.DevicePrefix
             "kcube": 57,  # KCubeNanoTrakCLI.KCubeNanoTrak.DevicePrefix
+            "modular_rack": 52,  # Not been tested, but could be NanoTrack in a Modular Rack
         }
         """These prefixes can be loaded from the corresponding CLI modules, e.g.:
             clr.AddReference("Thorlabs.MotionControl.Benchtop.NanoTrakCLI")
@@ -146,11 +145,11 @@ class Device(EmptyDevice):
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         new_parameters = {
-            "SweepMode": ["Center Position", "None"],
+            "SweepMode": ["Center Position", "Circle Diameter", "None"],
             "Mode": ["Tracking", "Latch"],
             "Reading": ["Absolute", "Relative", "None"],
-            "Modular Rack": False,
             "Simulation": False,
+            "Modular Rack": False,
         }
 
         if parameters.get("Modular Rack", False):
@@ -241,11 +240,19 @@ class Device(EmptyDevice):
         polling_rate = 250
         self.nanotrak.StartPolling(polling_rate)
         time.sleep(0.5)
+
+        # Enable the device
         self.nanotrak.EnableDevice()
         time.sleep(0.5)
 
     def configure(self) -> None:
         """Configure the device. This function is called only once at the start of the measurement."""
+        # ToDo: Could add
+        # DeviceSettingsUseOptionType = DeviceManagerCLI.DeviceConfiguration.DeviceSettingsUseOptionType
+        # nanoTrakConfiguration = nanoTrak.GetNanoTrakConfiguration(serialNo, DeviceSettingsUseOptionType.UseConfiguredSettings)
+        # currentDeviceSettings = nanoTrak.NanoTrakDeviceSettings
+        # nanoTrak.SetSettings(currentDeviceSettings, False)
+
         # config = self.device.GetNanoTrakConfiguration(self.serial_number)
         self.set_mode(self.tracking_mode)
         # self.device.SetTIARangeMode(TIARangeModes.AutoRangeAtSelected, TIAOddOrEven.All);
@@ -264,6 +271,13 @@ class Device(EmptyDevice):
             position = GenericNanoTrakCLI.HVPosition(horizontal, vertical)
 
             self.nanotrak.SetCircleHomePosition(position)
+            self.nanotrak.HomeCircle()
+
+        elif self.sweepmode == "Circle Diameter":
+            diameter = abs(float(self.value))
+            self.nanotrak.SetCircleDiameter(diameter)
+            time.sleep(0.5)  # Optional: wait for device to update
+
             self.nanotrak.HomeCircle()
 
     def call(self) -> list[float]:
@@ -336,8 +350,10 @@ class Device(EmptyDevice):
             self.kinesis_client = KCubeNanoTrakCLI
 
         elif nanotrak_type == "modular_rack":
-            # TODO: import ModularRackCLI
-            pass  # Modular Rack does not require a specific CLI module, it uses the ModularRackCLI
+            # Modular Rack does not require a specific CLI module, it uses the ModularRackCLI
+            clr.AddReference("Thorlabs.MotionControl.ModularRackCLI")
+            import Thorlabs.MotionControl.ModularRackCLI as ModularRackCLI
+            self.kinesis_client = ModularRackCLI
 
         else:
             msg = f"Unknown device type: {nanotrak_type}. Supported prefixes (first two numbers) are: {', '.join(self.device_prefixes.values())}."
@@ -357,8 +373,10 @@ class Device(EmptyDevice):
             device_factory = DeviceManagerCLI.DeviceFactory
             device_info = device_factory.GetDeviceInfo(serial_number)
             type_id = device_info.GetTypeID()
-            ModularRack = ModularRackCLI.Rack.ModularRack
-            rack = ModularRack.CreateModularRack(type_id, serial_number)
+            modular_rack = self.kinesis_client.Rack.ModularRack
+            rack = modular_rack.CreateModularRack(type_id, serial_number)
+
+            # Could also be rack[1] or rack[bay]
             self.nanotrak = rack.GetNanoTrakChannel(self.bay)
 
         else:
