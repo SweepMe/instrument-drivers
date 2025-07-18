@@ -122,12 +122,12 @@ class Device(EmptyDevice):
         """Configure the device. This function is called every time the device is used in the sequencer."""
 
     def apply(self) -> None:
-        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        """'apply' is used to set the new set value that is always available as 'self.value'."""
         if self.mode == "SOP":
             try:
-                x, y, z = map(float, self.port_string.split(","))
+                x, y, z = map(float, self.value.split(";"))
             except ValueError as e:
-                msg = f"Invalid SOP format. Expected 'x,y,z' format, got '{self.port_string}'."
+                msg = f"Invalid SOP format. Expected 'x,y,z' format, got '{self.value}'."
                 raise ValueError(msg) from e
 
             self.send_command(f"Set TargetSOP,{x},{y},{z}")
@@ -141,6 +141,10 @@ class Device(EmptyDevice):
             except Exception as e:
                 print(e)
                 break
+
+        # Normalize SOP
+        # TODO: Test if CurrentSOP works
+        # TODO: Test buffer size = 3? No bc it should be 3 floats
         self.send_command("Get CurrentSOPN")
         sop = self.read()
         try:
