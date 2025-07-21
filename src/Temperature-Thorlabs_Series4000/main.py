@@ -58,7 +58,7 @@ class Device(EmptyDevice):
 
     description = """
     <h3>Thorlabs Series 4000</h3>
-    <p>E.g. LDC40xx, TED4015, ITC40xx.</p>
+    <p>E.g. TED4015, ITC40xx. LDC is not supported as it does not allow for direct temperature control.</p>
     <h4>Parameters</h4>
     <ul>
          <li>Reach Temperature: Set the PID parameters.</li>
@@ -86,6 +86,7 @@ class Device(EmptyDevice):
             "EOL": "\n",
         }
         self.channel: str = "1"
+        self.device_type: str = ""  # "TED" or "ITC"
 
         # Measurement Parameter
         self.sweep_mode: str = "Temperature"
@@ -101,22 +102,14 @@ class Device(EmptyDevice):
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
-        new_parameters = {
+        del parameters
+        return {
             "SweepMode": ["Temperature", "None"], #[TemperatureMode.SET_TEMPERATURE.value],
             "TemperatureUnit": list(self.temperature_units.keys()),
             "Channel": ["1", "2"],
             "MeasureT": True,
             "ReachT": True,
         }
-
-        # use_pid = parameters.get("Use PID", False)
-        # if use_pid:
-        #     new_parameters["PID Gain"] = "1.0"
-        #     new_parameters["PID Integral"] = "0.1"
-        #     new_parameters["PID Derivative"] = "0.0"
-        #     new_parameters["PID Period"] = "1.0"
-
-        return new_parameters
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Apply the parameters received from the SweepMe GUI or the pysweepme instance to the driver instance."""
@@ -131,7 +124,16 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Establish connection to Velox Software."""
-        print(f"Connected to {self.get_identification()}")
+        identification = self.get_identification()
+        print(f"Connected to {identification}")
+
+        if "TED" in identification:
+            self.device_type = "TED"
+        elif "ITC" in identification:
+            self.device_type = "ITC"
+        else:
+            msg = f"Unsupported device type: {identification}. Only TED and ITC series are supported."
+            raise RuntimeError(msg)
 
     def disconnect(self) -> None:
         """Disconnect from Velox Software."""
@@ -139,9 +141,7 @@ class Device(EmptyDevice):
     def configure(self) -> None:
         """Configure the device."""
         self.port.wrte("CONF:TEMP")  # Set the device to temperature mode
-
-        # TODO: Add GUI parameters - extend Temperature Module with Parameter Box
-        self.set_pid_constants()
+        self.port.write(f"UNIT:TEMP {self.temperature_unit}")  # Possible values: C, F, K
 
     def unconfigure(self) -> None:
         """Unconfigure the device."""
@@ -151,27 +151,6 @@ class Device(EmptyDevice):
         """Set the target temperature."""
         if self.sweep_mode == "Temperature":
             self.set_temperature(self.value)
-
-            if self.use_reach:
-                self.start_pid_auto_tune()
-
-    def reach(self) -> None:
-        """Wait until set temperature is reached."""
-        if self.use_reach:
-            while True:
-                state, phase, loop = self.get_pid_auto_tune_status()
-
-                if state == PIDState.FINISHED:
-                    break
-
-                if state in [PIDState.FAILED, PIDState.CANCELED, PIDState.NEVER_RUN]:
-                    msg = f"PID auto-tuning failed or was canceled. Current state: {state}"
-                    raise RuntimeError(msg)
-
-                if self.is_run_stopped():
-                    break
-
-                time.sleep(0.5)
 
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
@@ -191,20 +170,31 @@ class Device(EmptyDevice):
         """Return the device identification string."""
         return self.port.query("*IDN?").strip()
 
-    def get_temperature(self) -> float:
-        """Reads the current temperature from given sensor."""
+    def set_temperature(self, temperature: float) -> None:
+        """Sets the target temperature.
+
+        is it TEC Temperature Setpoint (3.11.5)
+        """
+        # For TED4000 Series instruments the command suffix is 1 (can be omitted), for ITC4000 Series instruments its 2.
+        suffixes = {
+            "TED": "1",  # TED4000 Series
+            "ITC": "2",  # ITC4000 Series
+        }
+        if self.device_type not in suffixes:
+            msg = f"Unsupported device type: {self.device_type}. Only TED and ITC series are supported."
+            raise RuntimeError(msg)
+
+        self.port.write(f"SOUR{suffixes[self.device_type]}:TEMP {temperature}")
+
+    def measure_temperature(self) -> float:
+        """Retrieve measured temperature directly.
+
+        LDC Series does not support temperature measurement.
+        This command is simple, but does not offer any additional configuration options.
+        """
         return float(self.port.query("MEAS:TEMP?"))
 
-    def set_temperature(self, temperature: float) -> None:
-        """Sets the target temperature."""
-        self.port.write(f"SOUR:TEMP:SET {temperature}")
-
-    def is_temperature_reached(self) -> bool:
-        """Reads the thermal Chuck status."""
-
-    def set_temperature_setpoint(self, temperature: float) -> None:
-        """Sets the temperature setpoint."""
-        self.port.write(f"SOUR{self.channel}:TEMP:SET {temperature}")
+    # PID Control Functions - currently not used
 
     def set_pid_constants(self, gain: float = 1.0, integral: float = 0.1, derivative: float = 0, period: float = 1) -> None:
         """Sets the PID constants for the temperature control.
@@ -237,3 +227,20 @@ class Device(EmptyDevice):
         }
 
         return pid_state[state]
+
+    def wait_for_pid_auto_tune(self) -> None:
+        """Waits for the PID auto-tuning procedure to finish."""
+        while True:
+            state, phase, loop = self.get_pid_auto_tune_status()
+
+            if state == PIDState.FINISHED:
+                break
+
+            if state in [PIDState.FAILED, PIDState.CANCELED, PIDState.NEVER_RUN]:
+                msg = f"PID auto-tuning failed or was canceled. Current state: {state}"
+                raise RuntimeError(msg)
+
+            if self.is_run_stopped():
+                break
+
+            time.sleep(0.5)
