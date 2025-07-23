@@ -45,8 +45,7 @@ class Device(EmptyDevice):
     <h3>Keysight Polarization Navigator</h3>
     <h4>Parameters</h4>
     <ul>
-    <li>Sweep mode: Orientation and Retardation: Provide comma-separated string of orientation in rad and retardation in
-     fractions of lambda. The format must be Orientation Plate 1, Retardation Plate 1, Orientation Plate 2, ...</li>
+    <li>Sweep mode: SOP: Currently the measured SOP cannot be read out, hence nothing is returned.</li>
     </ul>
     """
     def __init__(self) -> None:
@@ -56,10 +55,10 @@ class Device(EmptyDevice):
         self.shortname = "N778xB"  # short name will be shown in the sequencer
 
         # SweepMe! parameters
-        self.variables = ["SOP"]
-        self.units = [""]
-        self.plottype = [False]
-        self.savetype = [True]
+        # self.variables = ["SOP"]
+        # self.units = [""]
+        # self.plottype = [False]
+        # self.savetype = [True]
 
         # Communication Parameters
         self.client: ctypes.CDLL | None = None
@@ -133,30 +132,6 @@ class Device(EmptyDevice):
             self.send_command(f"Set TargetSOP,{x},{y},{z}")
             self.send_command("Set Stabilize,1")
 
-    def call(self) -> str:
-        """Return the measurement results. Must return as many values as defined in self.variables."""
-        while True:
-            try:
-                print(self.read())
-            except Exception as e:
-                print(e)
-                break
-
-        # Normalize SOP
-        # TODO: Test if CurrentSOP works
-        # TODO: Test buffer size = 3? No bc it should be 3 floats
-        self.send_command("Get CurrentSOPN")
-        sop = self.read()
-        try:
-            sop_values = [float(value) for value in sop.split(",")]
-        except ValueError as e:
-            msg = f"Invalid SOP response format: '{sop}'. Expected 'x,y,z' format."
-            print(msg)
-            sop_values = "-1,-1,-1"
-        return sop_values
-
-    # Wrapper Functions
-
     def send_command(self, command: str, target: str = "", buffer_size: int = 1024) -> str:
         """Send a command to the Polarization Navigator, check the response for error codes, and return the response.
 
@@ -188,6 +163,16 @@ class Device(EmptyDevice):
         # Return the actual response string
         return response_buffer.value.decode("ascii")
 
+    # Wrapper Functions
+
     def read(self) -> str:
         """Read the response from Polarization Navigator."""
         return self.client.PolNavC_ReadResponse()
+
+    def get_sop(self) -> str:
+        """Get the current SOP from the Polarization Navigator.
+
+        Sending the 'Get CurrentSOPN' command results in an access error, which is why this function is currently not implemented.
+        """
+        self.send_command("Get CurrentSOPN")
+        return self.read()
