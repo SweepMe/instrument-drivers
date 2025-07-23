@@ -51,7 +51,8 @@ class Device(EmptyDevice):
         self.port_types = ["GPIB"]
 
         self.port_properties = {
-            # each self.port.write will have the necessary "X" character appended automatically; also gets rid of the "value out of range" error uppon gpib initialisation
+            # each self.port.write will have the necessary "X" character appended automatically; also gets rid of the
+            # "value out of range" error uppon gpib initialisation
             "GPIB_EOLwrite": "X",
         }
 
@@ -169,8 +170,7 @@ class Device(EmptyDevice):
         self.model_id=self.port.read()
 
         if int(round(np.log2(self.average))) not in [0,1,2,3,4,5]:
-            new_readings =  int(round(np.log2(self.average)))
-            msg = ("Please use 1, 2, 4, 8, 16, or 32 for the number of averages. Changed it to %s." % new_readings)
+            msg = f"Unsupported number of averages: {self.average}. Please use 1, 2, 4, 8, 16, or 32."
             raise Exception(msg)
         # clearing the warning status register
         self.port.write("J0")
@@ -209,14 +209,16 @@ class Device(EmptyDevice):
                     raise Exception(msg)
             else:
                 # not every measuring range specifies a voltage, some just define a current only;
-                # therefore, in case current is sourced and compliance defines a voltage, we check if the selected m(easurement)range is an entry of the list of v(oltage)ranges?
+                # therefore, in case current is sourced and compliance defines a voltage, we check if the selected
+                # m(easurement)range is an entry of the list of v(oltage)ranges?
                 if self.mrange in self.vranges:
                     # if source = current is selected, the voltage compliance is checked for being below mrange limit:
                     if float(self.protection) > float(self.vranges[self.mrange]):
                         msg = "Error: compliance limit higher than measuring range."
                         raise Exception(msg)
                 else:
-                    msg = "Error: selected measuring range defines currents only and cannot be used to observe the entered voltage compliance."
+                    msg = ("Error: selected measuring range defines currents only and cannot be used to observe the "
+                           "entered voltage compliance.")
                     raise Exception(msg)
 
         if self.checkpulse == True:
@@ -289,14 +291,18 @@ class Device(EmptyDevice):
     def apply(self):
 
         if self.checkpulse == False:
-            # in case of Sweep Type "DC", the "B" command applies "self.value" as the DC level output and sets the measuring range
+            # in case of Sweep Type "DC", the "B" command applies "self.value" as the DC level output and sets the
+            # measuring range
             self.port.write("B%s,%s,0" % (self.value, self.sranges[self.srange]))
         else:
-            # in case of Sweep Type "Pulse", the "B" command applies "self.bias" as the bias level for the pulses instead, together with the measuring range
-            # note: the bias command and the pulse command must use the same sourcing range as otherwise a range switch might occur in between, leading to the instrument not being able to meet the requested pulse times
+            # in case of Sweep Type "Pulse", the "B" command applies "self.bias" as the bias level for the pulses
+            # instead, together with the measuring range
+            # note: the bias command and the pulse command must use the same sourcing range as otherwise a range switch
+            # might occur in between, leading to the instrument not being able to meet the requested pulse times
             self.port.write("B%s,%s,0" % (self.bias, self.sranges[self.srange]))
             # pulses command "Q3,(level),(range),(pulses),(toN),(toFF)"
-            # the gui requests all times to be entered in seconds but the instrument expects the time values in full figure milliseconds
+            # the gui requests all times to be entered in seconds but the instrument expects the time values in full
+            # figure milliseconds
             self.port.write("Q3,%s,%s,%s,%s,%s" % (self.value, self.sranges[self.srange], self.pulsecount, int(float(self.ton)*1000), int(float(self.toff)*1000)))
 
     def measure(self):
@@ -308,11 +314,14 @@ class Device(EmptyDevice):
         self.warnings = self.port.read()
 
         # self.warnings = ASCII string "WRSxx1xxxxxxx" were 1 means "Value Out of Range" error positive
-        # Explaination: the V.O.o.T. error will be output when compliance limit is above the measurement range AND/OR the sweep value is above the sourcing range.
-        # To be able to differentiate between both cases, we check for compliance limit validity once during setup by value comparison and for sourcing range validity after each sweep by checking for respective errors.
+        # Explanation: the V.O.o.T. error will be output when compliance limit is above the measurement range AND/OR the
+        # sweep value is above the sourcing range.
+        # To be able to differentiate between both cases, we check for compliance limit validity once during setup by
+        # value comparison and for sourcing range validity after each sweep by checking for respective errors.
         if self.rangeverify == "Enabled":
             if self.warnings[5] == "1":
-                msg = 'Instrument reported "Value Out of Range" warning as it was unable to apply the requested voltage or current within the selected sourcing range.'
+                msg = ('Instrument reported "Value Out of Range" warning as it was unable to apply the requested '
+                       'voltage or current within the selected sourcing range.')
                 raise Exception(msg)
 
         # if the instrument was set to output pulses, we check the warning register afterward regarding timing issues
@@ -320,7 +329,8 @@ class Device(EmptyDevice):
             print(self.warnings[8])
             # self.warnings = ASCII string "WRSxxxxx1xxxx" were 1 means "Pulse Times Not Met" error positive
             if self.warnings[8] == "1":
-                msg = 'Instrument reported "Pulse Times Not Met" warning as it was unable to apply the requested voltage or current over the specified time.'
+                msg = ('Instrument reported "Pulse Times Not Met" warning as it was unable to apply the requested '
+                       'voltage or current over the specified time.')
                 raise Exception(msg)
 
     def call(self):
@@ -332,6 +342,3 @@ class Device(EmptyDevice):
             i,v = self.port.read().split(",")
 
         return [float(v), float(i)]
-
-    def finish(self):
-        pass
