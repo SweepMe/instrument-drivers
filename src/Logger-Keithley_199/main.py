@@ -31,13 +31,12 @@
 
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
-import time
 
 
 class Device(EmptyDevice):
-    description = """<p><strong>Keithley 199 DMM driver</strong></p></p>
-                     <p>5.5 digit DMM, transmits 6.5 digit resolution via GPIB that is used in SweepMe.</p></p>
-                     <p>Scanner card currently not supported.</p></p>
+    description = """<p><strong>Keithley 199 DMM driver</strong></p>
+                     <p>5.5 digit DMM, transmits 6.5 digit resolution via GPIB that is used in SweepMe.</p>
+                     <p>Scanner card currently not supported.</p>
                     """
 
     def __init__(self):
@@ -79,7 +78,7 @@ class Device(EmptyDevice):
             "Current AC (db)": "dbA",
             "Resistance": "Ohm",
         }
-        
+
         # measuring range
         self.ranges = {
             "Auto": "R0",
@@ -91,13 +90,13 @@ class Device(EmptyDevice):
             "300 V|3 A|30 MOhm": "R6",
             "300 V|3 A|300 MOhm": "R7",
         }
-        
+
         # number of displayed digits as dictionary
         self.resolutions = {
             "5.5 digits (default)": "S1",
             "4.5 digits": "S0",
         }
-        
+
         # filter settings
         # refer to manual for details; short version: front panel filter means fixed amount of samples for averaging, internal filter uses range and mode dependend settings
         self.filters = {
@@ -107,7 +106,7 @@ class Device(EmptyDevice):
         }
 
     def update_gui_parameters(self, parameters):
-            
+
         new_parameters = {
             "Mode": list(self.modes.keys()),
             "Range": list(self.ranges.keys()),
@@ -118,7 +117,7 @@ class Device(EmptyDevice):
         return new_parameters
 
     def apply_gui_parameters(self, parameters):
-       
+
         self.mode = parameters.get("Mode")
         self.range = parameters.get("Range")
         self.resolution = parameters.get("Resolution")
@@ -141,15 +140,15 @@ class Device(EmptyDevice):
         self.savetype = [True]
 
     def initialize(self):
-        
+
         # K0 is used to enable EOI on GPIB communication and disable the holding of the bus
         self.port.write("K2X")
-        
+
         # defines CR+LF as terminator characters on GPIB communication
         self.port.write("Y0X")
 
     def configure(self):
-    
+
         # Data output format; sets output to "no prefix", returning only the numerical value
         self.port.write("G1X")
 
@@ -164,8 +163,8 @@ class Device(EmptyDevice):
 
         # Filter
         self.port.write("%sX" % self.filters[self.filter])
-        
-        # configure to "single trigger" 
+
+        # configure to "single trigger"
         ##but do not execute ("X" missing); this prevents triggering at this point
         self.port.write("T05")
 
