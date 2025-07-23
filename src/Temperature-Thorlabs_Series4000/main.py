@@ -31,10 +31,9 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import time
 from enum import Enum
+from typing import Any
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
@@ -80,10 +79,10 @@ class Device(EmptyDevice):
         self.port_types = ["USB", "COM", "GPIB"]
         self.port_properties = {
             "timeout": 5,
-            "baudrate": 57600,
-            "stopbits": 1,
-            "parity": "N",
-            "EOL": "\n",
+            # "baudrate": 57600,
+            # "stopbits": 1,
+            # "parity": "N",
+            # "EOL": "\n",
         }
         self.channel: str = "1"
         self.device_type: str = ""  # "TED" or "ITC"
@@ -140,7 +139,7 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device."""
-        self.port.wrte("CONF:TEMP")  # Set the device to temperature mode
+        self.port.write("CONF:TEMP")  # Set the device to temperature mode
         self.port.write(f"UNIT:TEMP {self.temperature_unit}")  # Possible values: C, F, K
 
     def unconfigure(self) -> None:
@@ -158,7 +157,7 @@ class Device(EmptyDevice):
 
     def read_result(self) -> None:
         """Read the measured data."""
-        self.measured_temperature = float(self.port.write("FETC:TEMP?"))
+        self.measured_temperature = float(self.port.query("FETC:TEMP?"))
 
     def call(self) -> float:
         """Return the current temperature."""
