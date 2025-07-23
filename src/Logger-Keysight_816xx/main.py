@@ -42,7 +42,7 @@ class Device(EmptyDevice):
     description = """
     <h3>Keysight 816xx-Lightwave Multimeter/Measurement System/Multichannel System</h3>
     This driver supports the 8163A/B Lightwave Multimeter, 8164A/B Lightwave Measurement System, & 8166A/B Lightwave 
-    Multichannel System
+    Multichannel System. Can also work for HP 8135A.
     <h4>Parameters</h4>
     <ul>
     <li>Channel: If your power meter supports multiple channels. Otherwise, choose 1.</li>
