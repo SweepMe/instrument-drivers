@@ -109,7 +109,7 @@ class Device(EmptyDevice):
         self.list_mode: bool = False
         self.list_start: float = 0.0  # Start of the list in nm
         self.list_stop: float = 0.0  # Stop of the list in nm
-        self.list_step: int = 10  # Number of steps in the list
+        self.list_step: float = 10  # step size in nm
         self.scan_speed: float = 10.0  # Scan speed in nm/s
 
         self.debug_mode: bool = False  # Debug errors and warnings
@@ -153,7 +153,7 @@ class Device(EmptyDevice):
             self.list_mode = True
             self.list_start = float(parameters.get("List Start in nm", "1250"))
             self.list_stop = float(parameters.get("List Stop in nm", "1650"))
-            self.list_step = int(parameters.get("List Step in nm", "10"))
+            self.list_step = float(parameters.get("List Step in nm", "10"))
             self.scan_speed = float(parameters.get("Scan speed in nm/s", "10"))
 
     def initialize(self) -> None:
