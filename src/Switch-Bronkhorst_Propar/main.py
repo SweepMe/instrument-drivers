@@ -4,19 +4,19 @@
 # find those in the corresponding folders or contact the maintainer.
 #
 # MIT License
-# 
+#
 # Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -33,14 +33,13 @@
 
 # must be done before 'import propar' to make sure libs folder is added to PATH
 import FolderManager as FoMa
+
 FoMa.addFolderToPATH()
 
+
 import propar
-import os
-
-from pysweepme.ErrorMessage import error, debug
-
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
 
 class Device(EmptyDevice):
 
@@ -71,84 +70,84 @@ class Device(EmptyDevice):
                     """
 
     def __init__(self):
-    
+
         EmptyDevice.__init__(self)
-        
-        self.shortname = "Bronkhorst" # short name will be shown in the sequencer       
-        
+
+        self.shortname = "Bronkhorst" # short name will be shown in the sequencer
+
         #self.port_manager = True  # We don't need it because propar package handles the communication
-           
+
         self.port_types = ["COM"]  # We just this here, to find ports via SweepMe! port manager, but we do not use the port manager to do the communication
-            
+
 
     def set_GUIparameter(self):
-    
+
         # add keys and values to generate GUI elements in the Parameters-Box
-        
+
         GUIparameter = {
                         "SweepMode": ["Flow in %", "Flow in custom unit"],  # 'None' ??
-                                  
+
                         # "Model": ["EL-FLOW"], # can be later used to make a difference between different models
                         "Address" : ["RS232"] + ["FLOW-BUS address %i" % (i+1) for i in range(120)],
                         "Baudrate": ["38400", "115200"],
 
                         "": None,
-                        
+
                         "Custom unit (c.u.)": "",
                         "Flow in c.u. at 100%": "",
                         }
 
-        
+
         return GUIparameter
-     
-        
+
+
     def get_GUIparameter(self, parameter):
 
         self.sweepmode = parameter["SweepMode"]
         self.port_string = parameter["Port"]
         self.address = parameter["Address"]
         self.baudrate = parameter["Baudrate"]
-        
+
         self.use_custom_unit = parameter["Custom unit (c.u.)"] != ""
         self.custom_unit = parameter["Custom unit (c.u.)"]
         self.conversion_factor = parameter["Flow in c.u. at 100%"]
 
         if self.use_custom_unit:
-        
-            self.variables = ["Flow", "Flow", "Flow, set", "Flow, set", "Temperature", "Density"] 
-            self.units = [self.custom_unit, "%", self.custom_unit, "%", "°C", "g/l"] 
+
+            self.variables = ["Flow", "Flow", "Flow, set", "Flow, set", "Temperature", "Density"]
+            self.units = [self.custom_unit, "%", self.custom_unit, "%", "°C", "g/l"]
             self.plottype = [True, True, True, True, True, True]
-            self.savetype = [True, True, True, True, True, True] 
-        
+            self.savetype = [True, True, True, True, True, True]
+
         else:
             self.variables = ["Flow", "Flow, set", "Temperature", "Density"]
-            self.units = ["%", "%", "°C", "g/l"] 
-            self.plottype = [True, True, True, True] 
+            self.units = ["%", "%", "°C", "g/l"]
+            self.plottype = [True, True, True, True]
             self.savetype = [True, True, True, True]
 
     """ here, semantic standard function start """
-            
+
     def connect(self):
-                    
+
         # Please find a full list of all parameters at the bottom of this file. #
-        
+
         self.database = propar.database()
         # print("Database:", self.database)
-        
+
         self.create_friendly_parameter_list()
-               
+
         if self.address == "RS232":
             self.flow_controller = propar.instrument(self.port_string, baudrate = int(self.baudrate))
-            
+
         elif self.address.startswith("FLOW-BUS"):
             address_number = int(self.address.split()[-1])
             self.flow_controller = propar.instrument(self.port_string, address = address_number)
-        
+
         ## Can be used to find nodes
         # self.flow_controller.get_nodes()
-            
+
         self.flow_controller.master.start()
-        
+
     def disconnect(self):
 
         # check in case there is an exception in connect before flow_controller is created
@@ -156,16 +155,16 @@ class Device(EmptyDevice):
             self.flow_controller.master.stop()
 
     def initialize(self):
-   
+
         identification = self.get_identification()
         # print("Identification:", identification)
-        
+
         if self.sweepmode == "Flow in custom unit" and not self.use_custom_unit:
             self.stop_Measurement("Please use custom unit to use sweep mode 'Flow in custom unit'")
             return False
-        
+
     def configure(self):
-    
+
         if self.use_custom_unit:
             try:
                 self.conversion_factor = float(self.conversion_factor)/100.0  # we divide by 100.0 to have the conversion factor in c.u per %, so that it can be multiplied directly with any flow value in %
@@ -178,13 +177,13 @@ class Device(EmptyDevice):
                 return False
 
     def apply(self):
-    
+
         self.value = float(self.value)
-        
+
         if self.sweepmode == "Flow in %":
             self.set_flow_rate(self.value)
-        
-        elif self.sweepmode == "Flow in custom unit":            
+
+        elif self.sweepmode == "Flow in custom unit":
             self.set_flow_rate(self.value/self.conversion_factor)
 
     def reach(self):
@@ -195,17 +194,17 @@ class Device(EmptyDevice):
         self.flow_rate = self.get_measured_flow_rate()
         self.temperature = self.get_temperature()
         self.density = self.get_density()
-        
+
         # Comment: Pressure is not read out yet, as not all controllers provide a pressure sensor
         # It means that one needs to check whether the controller has a pressure sensor first or
         # whether the value is returned with status Ok
 
     def call(self):
-    
+
         if self.use_custom_unit:
             if self.sweepmode == "Flow in %":
                 return self.flow_rate*self.conversion_factor, self.flow_rate, self.value*self.conversion_factor, self.value, self.temperature, self.density
-            elif self.sweepmode == "Flow in custom unit": 
+            elif self.sweepmode == "Flow in custom unit":
                 return self.flow_rate*self.conversion_factor, self.flow_rate, self.value, self.value/self.conversion_factor, self.temperature, self.density
         else:
             return self.flow_rate, self.value, self.temperature, self.density
@@ -214,13 +213,12 @@ class Device(EmptyDevice):
 
         # get all parameters
         # print(self.database.get_all_parameters())
-                
+
         # returns a dictionary with dde number, process number, parameter number, parameter type, and parameter name
         # print(self.database.get_parameter(8))#
 
     def create_friendly_parameter_list(self):
-        """ we create it every time as it does not take much time """
-        
+        """We create it every time as it does not take much time"""
         self.parameters_dict = {}
         for index in range(1, 379, 1):
             try:
@@ -231,21 +229,20 @@ class Device(EmptyDevice):
                 # IndexError is needed for SweepMe! 1.5.5/Python 3.6
                 # KeyError is needed for SweepMe! 1.5.6/Python 3.9
                 pass
-        
+
         return self.parameters_dict
-        
+
     def get_index_from_friendly_name(self, name):
-        
+
         if name in self.parameters_dict:
             return self.parameters_dict[name]
         else:
             raise Exception("Bronkhorst: Parameter name '%s' unknown. Please check use of capital letters." % name)
-    
+
     def get_parameter(self, *args):
-        """ convenience function to get the value of a parameter indicated by the dde_nr index """
-    
+        """Convenience function to get the value of a parameter indicated by the dde_nr index"""
         # later on multiple indices can be handed over and returned
-        
+
         if isinstance(args[0], (int, float)):
             index = int(args[0])
             params = self.database.get_parameter(index)
@@ -254,19 +251,18 @@ class Device(EmptyDevice):
             params = self.database.get_parameter(index)
         else:
             raise Exception("Bronkhorst: Data type not defined in get_parameter. Please use int, float for dde_nr index or string of a variable name to identify a parameter.")
-                
+
         values = self.flow_controller.read_parameters([params])
-        
+
         return values[0]["data"]
-        
+
     def set_parameter(self, index, value):
-        """ convenience function to set the value of a parameter indicated by the dde_nr index """
-            
+        """Convenience function to set the value of a parameter indicated by the dde_nr index"""
         if isinstance(index, (int, float)):
             index = int(index)
             params = self.database.get_parameter(index)
         elif isinstance(index, str):
-            params = self.database.get_parameters_like('value')
+            params = self.database.get_parameters_like("value")
         else:
             raise Exception("Bronkhorst: Data type not defined in set_parameter. Please use int, float for dde_nr index or string of a variable name to identify a parameter.")
 
@@ -274,56 +270,47 @@ class Device(EmptyDevice):
         values = self.flow_controller.write_parameters([params])
 
     """ setter/getter functions start here """
-    
-    def get_identification(self):
-        """ returns the identification number including the serial number as string """
 
+    def get_identification(self):
+        """Returns the identification number including the serial number as string"""
         return self.get_parameter("Identification string")
 
     def get_flow_rate(self):
-        """ get the setpoint flowrate in % """
-        
+        """Get the setpoint flowrate in %"""
         value = self.get_parameter(9)
-        
+
         value = float(value)/32000 * 100.0  # conversion to %
-        
+
         return value
 
     def set_flow_rate(self, value):
-        """ set the setpoint flow rate in % """
-        
+        """Set the setpoint flow rate in %"""
         value = int(float(value)/100.0*32000)
-        
+
         self.set_parameter(9, value)
         # self.flow_controller.setpoint = value
-        
+
     def get_measured_flow_rate(self):
-        """ get the measured flow rate in % """
-        
+        """Get the measured flow rate in %"""
         value = self.get_parameter(8)
-        
+
         value = float(value)/32000 * 100.0  # conversion to %
-        
+
         return value
-        
+
     def get_temperature(self):
-        """ returns the temperature of the sensor in °C """
-
+        """Returns the temperature of the sensor in °C"""
         return self.get_parameter(142)
-        
+
     def get_density(self):
-        
-        """ returns the density in g/cm^3? """
-
+        """Returns the density in g/cm^3?"""
         return self.get_parameter(170)
-        
-    def set_density(self, value):
-        
-        """ sets the density in g/cm^3? """
 
+    def set_density(self, value):
+        """Sets the density in g/cm^3?"""
         return self.get_parameter(170, value)
-        
-        
+
+
 """
 {'dde_nr': 1, 'proc_nr': 0, 'parm_nr': 0, 'parm_type': 96, 'parm_name': 'Identification string'}
 {'dde_nr': 2, 'proc_nr': 0, 'parm_nr': 1, 'parm_type': 0, 'parm_name': 'Primary node address'}
@@ -695,4 +682,3 @@ class Device(EmptyDevice):
 {'dde_nr': 377, 'proc_nr': 127, 'parm_nr': 13, 'parm_type': 65, 'parm_name': 'Special parameter f5 float'}
 {'dde_nr': 378, 'proc_nr': 125, 'parm_nr': 7, 'parm_type': 0, 'parm_name': 'Fieldbus interface index'}
 """
-        
