@@ -105,9 +105,16 @@ class Device(EmptyDevice):
         self.temperature: float = 0.0
         self.density: float = 0.0
 
+        self.measure_capacity: bool = False
+        self.capacity: float = 0.0
+        self.measure_fluid_name: bool = False
+        self.fluid_name: str = ""
+        self.measure_valve_output: bool = False
+        self.valve_output: float = 0.0
+
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
-        new_parameters = {
+        new_parameters: dict[str, Any] = {
                 "SweepMode": ["Flow in %", "Flow in custom unit"],  # 'None' ??
                 # "Model": ["EL-FLOW"], # can be later used to make a difference between different models
                 "Address" : ["RS232"] + ["FLOW-BUS address %i" % (i+1) for i in range(120)],
@@ -120,6 +127,9 @@ class Device(EmptyDevice):
             "": None,  # empty line
             "Custom unit (c.u.)": "",
             "Flow in c.u. at 100%": "",
+            "Measure capacity": False,
+            "Measure fluid name": False,
+            "Measure valve output": False,
         })
 
         return new_parameters
@@ -148,6 +158,26 @@ class Device(EmptyDevice):
             self.plottype = [True, True, True, True]
             self.savetype = [True, True, True, True]
 
+        if parameters.get("Measure capacity", False):
+            # TODO: Retrieve the capacity unit before starting the run
+            self.measure_capacity = True
+            self.add_return_variable("Capacity", "Capacity unit", plottype = True, savetype = True)
+
+        if parameters.get("Measure fluid name", False):
+            self.measure_fluid_name = True
+            self.add_return_variable("Fluid name", "", plottype = False, savetype = True)
+
+        if parameters.get("Measure valve output", False):
+            self.measure_valve_output = True
+            self.add_return_variable("Valve output", "%", plottype = True, savetype = True)
+
+    def add_return_variable(self, name: str, unit: str = "", plottype: bool = True, savetype: bool = True) -> None:
+        """Add a return variable to the device class."""
+        self.variables.append(name)
+        self.units.append(unit)
+        self.plottype.append(plottype)
+        self.savetype.append(savetype)
+
     """ here, semantic standard function start """
 
     def connect(self) -> None:
@@ -170,7 +200,7 @@ class Device(EmptyDevice):
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
         # check in case there is an exception in connect before flow_controller is created
-        if hasattr(self, "flow_controller"):
+        if self.flow_controller is not None:
             self.flow_controller.master.stop()
 
     def initialize(self) -> None:
@@ -221,15 +251,40 @@ class Device(EmptyDevice):
         self.temperature = self.get_temperature()
         self.density = self.get_density()
 
-    def call(self) -> list[float]:
+        if self.measure_capacity:
+            self.capacity = self.get_capacity()
+
+        if self.measure_fluid_name:
+            self.fluid_name = self.get_fluid_name()
+
+        if self.measure_valve_output:
+            self.valve_output = self.get_valve_output()
+
+    def call(self) -> list:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         if self.use_custom_unit:
-            if self.sweepmode == "Flow in %":
-                return [self.flow_rate*self.conversion_factor, self.flow_rate, self.value*self.conversion_factor, self.value, self.temperature, self.density]
-            elif self.sweepmode == "Flow in custom unit":
-                return [self.flow_rate*self.conversion_factor, self.flow_rate, self.value, self.value/self.conversion_factor, self.temperature, self.density]
+            results = [self.flow_rate*self.conversion_factor, self.flow_rate]
 
-        return [self.flow_rate, self.value, self.temperature, self.density]
+            if self.sweepmode == "Flow in %":
+                results.extend([self.value*self.conversion_factor, self.value])
+            elif self.sweepmode == "Flow in custom unit":
+                results.extend([self.value, self.value/self.conversion_factor])
+
+            results.extend([self.temperature, self.density])
+
+        else:
+            results = [self.flow_rate, self.value, self.temperature, self.density]
+
+        if self.measure_capacity:
+            results.append(self.capacity)
+
+        if self.measure_fluid_name:
+            results.append(self.fluid_name)
+
+        if self.measure_valve_output:
+            results.append(self.valve_output)
+
+        return results
 
     # Device specific functions
 
@@ -305,7 +360,7 @@ class Device(EmptyDevice):
         """Returns the identification number including the serial number as string."""
         return self.get_parameter("Identification string")
 
-    def get_flow_rate(self) -> float:
+    def get_flow_rate_setpoint(self) -> float:
         """Get the setpoint flowrate in %."""
         value = self.get_parameter(9)
         return float(value)/32000 * 100.0  # conversion to %
@@ -334,6 +389,37 @@ class Device(EmptyDevice):
         """Sets the density in g/cm^3?"""
         return self.get_parameter(170, density)
 
+    def get_capacity(self) -> float:
+        """Get the readout value at 100% in capacity (readout) unit."""
+        value = self.get_parameter(21)
+        try:
+            value = float(value)
+        except:
+            print(f"Bronkhorst: Cannot convert capacity value {value} to float. Returning -1.")
+            value = -1
+
+        return value
+
+    def get_capacity_unit(self) -> str:
+        """Get the capacity readout unit."""
+        # TODO: retrieve unit before starting the run
+        return self.get_parameter(129)
+
+    def get_fluid_name(self) -> str:
+        """Get the fluid name as string."""
+        return self.get_parameter(25)
+
+    def get_valve_output(self) -> float:
+        """Get the valve output signal in % ."""
+        # Value is given as 24-bit number in range 0..14.3Vdc/0..23.3Vdc
+        value = self.get_parameter(55)
+        try:
+            value = float(value) / 2**24 * 100  # conversion to %
+        except:
+            print(f"Bronkhorst: Cannot convert valve output value {value} to float. Returning -1.")
+            value = -1
+
+        return value
 
 """
 {'dde_nr': 1, 'proc_nr': 0, 'parm_nr': 0, 'parm_type': 96, 'parm_name': 'Identification string'}
