@@ -80,8 +80,6 @@ class Device(EmptyDevice):
                     </ul>
                     """
 
-    dotnet_added = False
-
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters."""
         super().__init__()
