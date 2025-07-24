@@ -31,10 +31,12 @@
 
 from __future__ import annotations
 
+import numpy as np
+import struct
 import time
 
-from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme import debug
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -47,10 +49,10 @@ class Device(EmptyDevice):
                  safe operation of the laser and checking that the laser is in a safe state after
                  each SweepMe! run finishes.</p>
                 <p>&nbsp;</p>
-                
+
                 <h4>Parameters</h4>
                 <ul>
-                    <li>The scan speed can only be set to discrete values depending on your device type. Check the 
+                    <li>The scan speed can only be set to discrete values depending on your device type. Check the
                     manual or the device interface for available speed values.</li>
                 </ul>
                 """
@@ -103,7 +105,7 @@ class Device(EmptyDevice):
         # Measurement variables
         self.sweepmode: str = "None"
         self.measured_power: float = -1
-        self.measured_wavelength: float = -1
+        self.measured_wavelength: float | np.array = -1
 
         # List mode
         self.list_mode: bool = False
@@ -191,10 +193,7 @@ class Device(EmptyDevice):
     def configure_list_mode(self) -> None:
         """Configure the device for wavelength sweeps in list mode."""
         # Configure trigger: The Input Trigger Connector is activated, the incoming trigger response for each slot.
-        # Configures for all modules???
-        self.port.write(f"trigger:configuration 1") #:TRIGger:CONFiguration
-        # this goes to detector???
-        # self.port.write(f"trigger1:input sme") # PD will finish a function when input trigger is abled                          #:TRIGger[n][:CHANnel[m]]:INPut
+        self.port.write("trigger:configuration 1")
         self.configure_trigger_output("STF")  # Trigger when a sweep step finishes
 
         # Configure list parameters
@@ -242,10 +241,7 @@ class Device(EmptyDevice):
         """Wait for the sweep to finish."""
         if self.list_mode:
             self.wait_for_sweep_completion()
-            # Read the lambda logging data
-            # TODO: Convert data to list
-            # TODO: check if this the correct way/command
-            self.measured_wavelength = self.port.query("sour0:read:data? llog")
+            self.measured_wavelength = self.get_lambda_logging_data()
             self.measured_power = self.get_power()
 
     def wait_for_sweep_completion(self) -> None:
@@ -271,6 +267,29 @@ class Device(EmptyDevice):
 
             time.sleep(0.1)
             timeout_s -= 0.1
+
+    def get_lambda_logging_data(self) -> np.array:
+        """Get the lambda logging data after a sweep in list mode.
+
+        Data is returned from the device as a binary stream that contains each wavelength step of the lambda logging
+        operation
+        Each binary block is an 8-byte long double in Intel byte order, therefore we use read_raw()
+        """
+        self.port.write("sour0:read:data? llog")
+        raw_data = self.port.port.read_raw()
+
+        # Strip header if any (IEEE 488.2 format block: starts with '#' and size header)
+        if raw_data[0:1] == b"#":
+            header_len = int(raw_data[1:2])
+            num_bytes = int(raw_data[2:2+header_len])
+            data = raw_data[2+header_len:2+header_len+num_bytes]
+        else:
+            msg = "Lambda logging data does not start with a header. This is unexpected."
+            raise ValueError(msg)
+
+        # Parse the binary data: each value is an 8-byte little-endian double
+        num_values = len(data) // 8
+        return np.array(list(struct.unpack("<" + "d"*num_values, data)))
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
