@@ -27,7 +27,7 @@
 #
 # SweepMe! driver
 # * Module: Switch
-# * Instrument: Thorlabs MST601
+# * Instrument: Thorlabs Stepper Motor
 
 from __future__ import annotations
 
@@ -59,13 +59,13 @@ else:
 
 
 class Device(EmptyDevice):
-    """Driver for the Thorlabs MST601."""
+    """Driver for the Thorlabs Stepper Motor."""
 
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
         super().__init__()
 
-        self.shortname = "MST601"  # short name will be shown in the sequencer
+        self.shortname = "Stepper Motor"  # short name will be shown in the sequencer
 
         # SweepMe! parameters
         self.variables = ["Position"]
