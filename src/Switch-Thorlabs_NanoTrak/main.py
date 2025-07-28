@@ -375,7 +375,7 @@ class Device(EmptyDevice):
             rack = modular_rack.CreateModularRack(type_id, serial_number)
 
             # Could also be rack[1] or rack[bay]
-            self.nanotrak = rack.GetNanoTrakChannel(self.bay)
+            self.nanotrak = rack.GetNanoTrakChannel(int(self.bay))
 
         else:
             msg = f"Unknown nanotrak type for serial number {self.serial_number}. Supported prefixes (first two numbers) are: {', '.join(self.device_prefixes.values())}."
