@@ -153,13 +153,13 @@ class Device(EmptyDevice):
 
         if self.use_custom_unit:
 
-            self.variables = ["Flow", "Flow", "Flow, set", "Flow, set", "Temperature", "Density"]
+            self.variables = ["Flow", "Flow", "Flow setpoint", "Flow setpoint", "Temperature", "Density"]
             self.units = [self.custom_unit, "%", self.custom_unit, "%", "°C", "g/l"]
             self.plottype = [True, True, True, True, True, True]
             self.savetype = [True, True, True, True, True, True]
 
         else:
-            self.variables = ["Flow", "Flow, set", "Temperature", "Density"]
+            self.variables = ["Flow", "Flow setpoint", "Temperature", "Density"]
             self.units = ["%", "%", "°C", "g/l"]
             self.plottype = [True, True, True, True]
             self.savetype = [True, True, True, True]
@@ -167,7 +167,7 @@ class Device(EmptyDevice):
         if parameters.get("Measure capacity", False):
             # TODO: Retrieve the capacity unit before starting the run
             self.measure_capacity = True
-            self.add_return_variable("Capacity", "Capacity unit", plottype = True, savetype = True)
+            self.add_return_variable("Capacity", "ln/min", plottype = True, savetype = True)
 
         if parameters.get("Measure fluid name", False):
             self.measure_fluid_name = True
@@ -238,7 +238,7 @@ class Device(EmptyDevice):
             self.set_flow_rate(self.value)
 
         elif self.sweepmode == "Flow in custom unit":
-            self.set_flow_rate(self.value/self.conversion_factor)
+            self.set_flow_rate(self.value/float(self.conversion_factor))
 
     def reach(self) -> None:
         """'reach' can be added to make sure the latest setvalue applied during 'apply' is reached.
@@ -274,7 +274,7 @@ class Device(EmptyDevice):
             if self.sweepmode == "Flow in %":
                 results.extend([self.value*self.conversion_factor, self.value])
             elif self.sweepmode == "Flow in custom unit":
-                results.extend([self.value, self.value/self.conversion_factor])
+                results.extend([self.value, self.value/float(self.conversion_factor)])
 
             results.extend([self.temperature, self.density])
 
