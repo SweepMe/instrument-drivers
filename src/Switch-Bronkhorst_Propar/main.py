@@ -46,13 +46,16 @@ class Device(EmptyDevice):
 
     description =   """
                     <p><strong>Bronkhorst Propar<br /><br /></strong></p>
-                    <p>This device class can be used to connect to different devices such as&nbsp;EL-Flow, ES-Flow, (mini) CORI-FLOW, IQ+FLOW, and others), Pressure Meters and Controllers (EL-PRESS).</p>
+                    <p>This device class can be used to connect to different devices such as&nbsp;EL-Flow, ES-Flow,
+                     (mini) CORI-FLOW, IQ+FLOW, and others), Pressure Meters and Controllers (EL-PRESS).</p>
                     <p>&nbsp;</p>
                     <p><strong>Handling:</strong></p>
                     <ul>
                     <li>Flow is a value 0 and 100 with unit %.</li>
-                    <li>Choose between RS-232 or FLOW-BUS. In case of FLOW-BUS that is based on RS-485, please select the corresponding address your controller unit has.</li>
-                    <li>The baudrate is only used for communication via RS-232. Otherwise, the default value is used.</li>
+                    <li>Choose between RS-232 or FLOW-BUS. In case of FLOW-BUS that is based on RS-485, please select
+                     the corresponding address your controller unit has.</li>
+                    <li>The baudrate is only used for communication via RS-232. Otherwise, the default value is used.
+                    </li>
                     </ul>
                     <p><strong>Custom unit:</strong></p>
                     <ul>
@@ -63,11 +66,14 @@ class Device(EmptyDevice):
                     </ul>
                     <p><strong>Information:</strong></p>
                     <ul>
-                    <li>Not all devices are tested yet and returned variables might have to be adapted later to certain types of controllers.</li>
+                    <li>Not all devices are tested yet and returned variables might have to be adapted later to certain
+                     types of controllers.</li>
                     </ul>
                     <p>&nbsp;</p>
                     <p><strong>Acknowledgement:</strong></p>
-                    <p>This device class is based on the python package bronkhorst-propar<br /><a href="https://pypi.org/project/bronkhorst-propar/"> https://pypi.org/project/bronkhorst-propar/</a><br />that has been released under MIT license by Bronkhorst.</p>
+                    <p>This device class is based on the python package bronkhorst-propar<br />
+                    <a href="https://pypi.org/project/bronkhorst-propar/"> https://pypi.org/project/bronkhorst-propar/
+                    </a><br />that has been released under MIT license by Bronkhorst.</p>
                     """
 
     def __init__(self) -> None:
