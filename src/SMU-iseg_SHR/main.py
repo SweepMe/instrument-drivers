@@ -48,7 +48,7 @@ from shr import IsegDevice
 class Device(EmptyDevice, IsegDevice):
     """Driver for the iseg SHR."""
 
-    description = "Averaing will be set for all channels in the module."
+    description = "Averaging will be set for all channels in the module."
 
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
