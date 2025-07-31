@@ -102,6 +102,12 @@ class Device(EmptyDevice):
         </ul>
         <p>Please note that for the KXCI mode, some features like Pulse Mode, List Mode, and fast acquisition are not
         supported yet.</p>
+
+        <h4>Parameters</h4>
+        <ul>
+        <li>Current range: Limited: Sets the lowest current range of the SMU to be used when measuring with auto range 
+        to save time. Current range denotes the measurement range. The source range is set to 'auto' by default.</li>
+        </ul>
         """
 
     def __init__(self) -> None:
@@ -559,13 +565,16 @@ class Device(EmptyDevice):
             self.set_integration_time(self.speed)
 
             # Current Range - the KXCI implementation has not been tested yet
+            current_range_float = self.current_ranges[self.current_range]
             if "Limited" in self.current_range:
-                current_range = self.current_ranges[self.current_range]
-                self.set_current_range_limited(self.card_name[-1], current_range)  # low range current
+                self.set_current_range_limited(self.card_name[-1], current_range_float)
 
-            elif self.current_range != "Auto":
-                current_range = self.current_ranges[self.current_range]
-                self.set_current_range(self.card_name[-1], current_range, self.protection)
+            elif self.current_range == "Auto":
+                # Use the lowest current range for auto-ranging
+                self.set_current_range_limited(self.card_name[-1], self.current_ranges["Limited 1 pA"])
+
+            else:
+                self.set_current_range(self.card_name[-1], current_range_float, self.protection)
 
     def configure_lptlib(self) -> None:
         """Configure the device using lptlib commands."""
@@ -581,20 +590,20 @@ class Device(EmptyDevice):
         elif self.source == "Current in A":
             self.lpt.limitv(self.card_id, float(self.protection))  # compliance/protection
 
-        # Integration/Speed
+        # Integration/Speed for intgX and sintgX commands. Allowed values are from 0.01 to 10
         nplc_value = self.speed_dict[self.speed]
-        self.lpt.setmode(self.card_id, self.param.KI_INTGPLC, nplc_value)  # integration time
+        self.lpt.setmode(self.card_id, self.param.KI_INTGPLC, nplc_value)
 
         # Current Range
         if self.current_range == "Auto" or "Limited" in self.current_range:
             self.lpt.rangei(self.card_id, 0)  # auto-ranging
+
+            if "Limited" in self.current_range:
+                current_range = self.current_ranges[self.current_range]
+                self.lpt.lorangei(self.card_id, current_range)  # minimum current range for auto-ranging
         else:
             current_range = self.current_ranges[self.current_range]
             self.lpt.rangei(self.card_id, current_range)  # fixed range
-
-        if "Limited" in self.current_range:
-            current_range = self.current_ranges[self.current_range]
-            self.lpt.lorangei(self.card_id, current_range)  # low range current
 
         # self.lpt.lorangev(self.card_id, 1e-1)  # low range voltage
 
@@ -646,13 +655,15 @@ class Device(EmptyDevice):
                 self.lpt.forcei(self.card_id, self.value)
 
         elif self.command_set == "US":
-            voltage_range = 0  # auto
-            current_range = 0  # auto
+            # These ranges are the source ranges, not the compliance or measurement ranges
+            voltage_source_range = 0  # auto
+            # Currently, the current source range is always set to auto - should issue a warning
+            current_source_range = 0  # auto
 
             if self.source == "Voltage in V":
-                self.set_voltage(self.card_name[-1], voltage_range, self.value, self.protection)
+                self.set_voltage(self.card_name[-1], voltage_source_range, self.value, float(self.protection))
             elif self.source == "Current in A":
-                self.set_current(self.card_name[-1], current_range, self.value, self.protection)
+                self.set_current(self.card_name[-1], current_source_range, self.value, float(self.protection))
 
     def trigger_ready(self) -> None:
         """Start the pulse output if in pulse mode."""
@@ -890,13 +901,16 @@ class Device(EmptyDevice):
         return self.read_tcpip_port()
 
     def set_current_range(self, channel: str, current_range: float, compliance: float) -> str:
-        """Set the current range of the device."""
+        """Set the current range of the device. Requires to set the compliance as well.
+
+        When the SMU channel is used as a voltage source, the compliance is overwritten when setting the set value.
+        """
         if self.command_set == "US":
             self.port.write(f"RI {channel}, {current_range}, {compliance}")
         return self.read_tcpip_port()
 
     def set_current_range_limited(self, channel: str, current: float) -> str:
-        """Set the current range of the device."""
+        """Set the lowest current range of the SMU to be used when measuring."""
         if self.command_set == "US":
             self.port.write(f"RG {channel}, {current}")
         return self.read_tcpip_port()
@@ -914,7 +928,9 @@ class Device(EmptyDevice):
 
     def set_to_4200(self) -> str:
         """Set the device to 4200 mode."""
-        self.port.write("EM 1,0")  # set to 4200 mode for this session
+        # First parameter: 0 - 4145 Emulation, 1 - 4200A
+        # Second parameter: 0 - this session only, 1 - permanently (Write to KCON)
+        self.port.write("EM 1,0")
         return self.read_tcpip_port()
 
     def enable_user_mode(self) -> str:
@@ -954,16 +970,33 @@ class Device(EmptyDevice):
             self.port.write("IT" + commands[speed.lower()])  # IT1 short, IT2 medium, IT3 long
         return self.read_tcpip_port()
 
-    def set_current(self, channel: str, current_range: int, value: float, protection: float) -> str:
-        """Set the current of the given channel."""
+    def set_current(self, channel: str, current_range: int, value: float, voltage_compliance: float) -> str:
+        """Set the current of the given channel.
+
+        Current source ranges:
+        Auto - 0
+        1 nA - 1 (only with preamplifier)
+        10 nA - 2 (only with preamplifier)
+        100 nA - 3
+        1 uA - 4
+        10 uA - 5
+        100 uA - 6
+        1 mA - 7
+        10 mA - 8
+        100 mA - 9
+        1 A - 10 (only with 4210 or 4211-SMU)
+        1 pa - 11 (only with preamplifier)
+        10 pa - 12 (only with preamplifier)
+        100 pa - 13 (only with preamplifier)
+        """
         if self.command_set == "US":
-            self.port.write(f"DI{channel}, {current_range}, {value}, {protection}")
+            self.port.write(f"DI{channel}, {current_range}, {value}, {voltage_compliance}")
         return self.read_tcpip_port()
 
-    def set_voltage(self, channel: str, voltage_range: int, value: float, protection: float) -> str:
+    def set_voltage(self, channel: str, voltage_range: int, value: float, current_compliance: float) -> str:
         """Set the voltage of the given channel."""
         if self.command_set == "US":
-            self.port.write(f"DV{channel}, {voltage_range}, {value}, {protection}")
+            self.port.write(f"DV{channel}, {voltage_range}, {value}, {current_compliance}")
         return self.read_tcpip_port()
 
     def get_voltage(self, channel: str) -> float:
@@ -971,8 +1004,7 @@ class Device(EmptyDevice):
         voltage = float("nan")
         overflow_value = 1e37
         if self.command_set == "US":
-            self.port.write("TV" + str(channel))
-            answer = self.port.read()
+            answer = self.port.query("TV" + str(channel))
             voltage = float(answer[3:])
             if voltage > overflow_value:
                 voltage = float("nan")
@@ -990,8 +1022,7 @@ class Device(EmptyDevice):
         current = float("nan")
         overflow_value = 1e37
         if self.command_set == "US":
-            self.port.write("TI" + str(channel))
-            answer = self.port.read()
+            answer = self.port.query("TI" + str(channel))
             current = float(answer[3:])
             if current > overflow_value:
                 current = float("nan")
