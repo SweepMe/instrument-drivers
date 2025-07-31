@@ -159,6 +159,7 @@ class Device(EmptyDevice):
             "Medium": 1.0,
             "Slow": 10.0,
         }
+        """Speed names as keys and PLC values as values."""
 
         # Communication Parameter
         self.port_string: str = "192.168.0.1"
@@ -555,8 +556,7 @@ class Device(EmptyDevice):
                     "Use control via 'LPTlib' instead."
                 )
                 raise ValueError(msg)
-            nplc = 1 if self.speed == "Fast" else 2
-            self.set_integration_time(nplc)
+            self.set_integration_time(self.speed)
 
             # Current Range - the KXCI implementation has not been tested yet
             if "Limited" in self.current_range:
@@ -928,10 +928,30 @@ class Device(EmptyDevice):
             self.port.write("DR0")  # data ready service request
         return self.read_tcpip_port()
 
-    def set_integration_time(self, nplc: int) -> str:
-        """Set the integration time of the device."""
+    def set_integration_time(self, speed: str) -> str:
+        """Set the integration time of the device (KXCI Integration).
+
+        Allowed values for speed are:
+        fast - 0.1 PLC (named short in the manual)
+        medium - 1 PLC
+        slow - 10 PLC (named long in the manual)
+        Keep the naming of previous drivers for compatibility (fast + slow) and allow manual naming (short + long).
+
+        Custom (4200A command set only) - command 4, not integrated in this driver. Includes delay and filter factor
+        """
+        commands = {
+            "fast" : "1",  # = short
+            "short": "1",
+            "medium" : "2",  # medium
+            "slow": "3",  # = long
+            "long": "3",
+        }
+        if speed.lower() not in commands:
+            msg = f"Speed must be one of {list(commands.keys())}."
+            raise ValueError(msg)
+
         if self.command_set == "US":
-            self.port.write("IT" + str(nplc))
+            self.port.write("IT" + commands[speed.lower()])  # IT1 short, IT2 medium, IT3 long
         return self.read_tcpip_port()
 
     def set_current(self, channel: str, current_range: int, value: float, protection: float) -> str:
