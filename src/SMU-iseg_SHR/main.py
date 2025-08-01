@@ -242,24 +242,32 @@ class Device(EmptyDevice, IsegDevice):
         elif self.polarity_mode == "Negative":
             self.set_polarity("n")
 
-        # For voltage mode, set the current limit (in this case the current value) to the compliance value
-        compliance = float(self.compliance)
-        if self.sweepmode.startswith("Voltage"):
-            self.set_current_with_confirmation(compliance)
-            # Start with voltage off to ensure the device does not ramp up on poweron
-            self.set_voltage_with_confirmation(0)
-
-        # For current mode, set the voltage limit (in this case the voltage value) to the compliance value
-        elif self.sweepmode.startswith("Current"):
-            self.set_voltage_with_confirmation(compliance)
-            # Start with current off to ensure the device does not ramp up on poweron
-            self.set_current_with_confirmation(0)
+        self.configure_compliance()
 
         # Currently, averaging is not implemented, because the average can only be set for all channels at once and
         # changing the average will change the voltage measurement mode.
         # self.handle_averaging(int(self.average))
         self.set_voltage_range(self.mode)
         self.handle_ramp_rate(self.ramp_rate)
+
+    def configure_compliance(self) -> None:
+        """Configure the compliance limit based on the sweep mode.
+
+        For voltage mode, set the current limit (in this case the current value) to the compliance value
+        For current mode, set the voltage limit (in this case the voltage value) to the compliance value
+        Sets the set value to 0 to ensure the device does not immediately ramp up.
+        """
+        compliance = float(self.compliance)
+        if self.sweepmode.startswith("Voltage"):
+            self.set_current_with_confirmation(compliance)
+            # Start with voltage off to ensure the device does not immediately ramp up
+            self.set_voltage_with_confirmation(0)
+
+        # For current mode, set the voltage limit (in this case the voltage value) to the compliance value
+        elif self.sweepmode.startswith("Current"):
+            self.set_voltage_with_confirmation(compliance)
+            # Start with current off to ensure the device does not immediately up
+            self.set_current_with_confirmation(0)
 
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
@@ -408,8 +416,18 @@ class Device(EmptyDevice, IsegDevice):
             if change_polarity:
                 self.set_polarity(change_polarity)
 
+                # Changing the output polarity resets the Voltage set value
+                # For Voltage mode, the set value will be changed in 'apply' after this function call
+                # For Current mode, the Voltage set value corresponds to the compliance value, which must be set again
+                if self.sweepmode.startswith("Current"):
+                    self.configure_compliance()
+
     def set_polarity(self, polarity: str = "p") -> None:
-        """Set the output polarity."""
+        """Set the output polarity.
+
+        The polarity can only be changed when the output is off and the voltage is <10V. After changing the polarity,
+        the device resets the voltage set value to 0V, so the voltage must be set again after changing the polarity.
+        """
         if polarity not in ["p", "n"]:
             msg = "Polarity must be 'p' or 'n'"
             raise ValueError(msg)
