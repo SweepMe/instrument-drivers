@@ -4,9 +4,9 @@
 # find those in the corresponding folders or contact the maintainer.
 #
 # MIT License
-# 
-# Copyright (c) 2018 Axel Fischer (sweep-me.net)
-# 
+#
+# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
@@ -26,15 +26,15 @@
 # SOFTWARE.
 
 
-# SweepMe! device class
-# Type: SMU
-# Device: Keithley 236
+# SweepMe! driver
+# * Module: SMU
+# * Instrument: Keithley 236
 
 
 import numpy as np
 import time
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
 
@@ -174,7 +174,7 @@ class Device(EmptyDevice):
         
         if not int(round(np.log2(self.average))) in [0,1,2,3,4,5]:
             new_readings =  int(round(np.log2(self.average)))
-            msg = ("Please use 1, 2, 4, 8, 16, or 32 for the number of averages. Changed it to %s." % new_readings)
+            msg = ("Please use 1, 2, 4, 8, 16, or 32 for the number of averages.")
             raise Exception(msg)
         # clearing the warning status register
         self.port.write("J0")
@@ -182,14 +182,14 @@ class Device(EmptyDevice):
     def configure(self):
         # check for model 237 special high voltage mode selection
         if self.source == "Voltage [V]":
-            if self.model_id.startswith("237"):
+            if not self.model_id.startswith("237"):
                 if self.srange == "1 uA | (1100 V 237 only)" or self.mrange == "1 uA | (1100 V 237 only)":
                     msg = "1100V range only available on Keithley 237."
                     raise Exception(msg)
                 
         # check for model 238 special high voltage mode selection
         if self.source == "Current [A]":
-            if self.model_id.startswith("238"):
+            if not self.model_id.startswith("238"):
                 if self.srange == "1A (238 only)" or self.mrange == "1A (238 only)":
                     msg = "1A range only available on Keithley 238."
                     raise Exception(msg)
@@ -241,12 +241,8 @@ class Device(EmptyDevice):
         # Protection
         self.port.write("L%s,%s" % (self.protection, self.mranges[self.mrange]))
                
-        if self.speed == "Fast":
-            self.nplc = 0
-        if self.speed == "Medium":
-            self.nplc = 1
-        if self.speed == "Slow":
-            self.nplc = 3
+        speed_to_nplc = {"Fast": 0, "Medium": 1, "Slow": 3}
+        self.nplc = speed_to_nplc[self.speed]
         
         #NPLC integration, 0=0.4ms,1=4ms,2=17ms,3=20ms;    
         self.port.write("S%s" % self.nplc)
@@ -328,7 +324,6 @@ class Device(EmptyDevice):
         
         # if the instrument was set to output pulses, we check the warning register afterward regarding timing issues
         if self.checkpulse == True and self.pulseverify == "Enabled":
-            print(self.warnings[8])
             # self.warnings = ASCII string "WRSxxxxx1xxxx" were 1 means "Pulse Times Not Met" error positive
             if self.warnings[8] == "1":
                 msg = "Instrument reported \"Pulse Times Not Met\" warning as it was unable to apply the requested voltage or current over the specified time."
