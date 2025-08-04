@@ -43,6 +43,7 @@ class Device(EmptyDevice):
     <ul>
     <li>Sweep mode: Orientation and Retardation: Provide comma-separated string of orientation in rad and retardation in
      fractions of lambda. The format must be Orientation Plate 1, Retardation Plate 1, Orientation Plate 2, ...</li>
+     <li>SOP: Provide semicolon separated string of 3 SOP values.</li>
     </ul>
     """
     def __init__(self) -> None:
@@ -52,10 +53,10 @@ class Device(EmptyDevice):
         self.shortname = "N778xB"  # short name will be shown in the sequencer
 
         # SweepMe! parameters
-        # self.variables = ["Voltage", "Current"]
-        # self.units = ["V", "A"]
-        # self.plottype = [True, True]
-        # self.savetype = [True, True]
+        self.variables = ["Voltage", "Current"]
+        self.units = ["V", "A"]
+        self.plottype = [True, True]
+        self.savetype = [True, True]
 
         # Communication Parameters
         self.port_string: str = ""
@@ -69,7 +70,7 @@ class Device(EmptyDevice):
     def set_GUIparameter(self) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
-            "SweepMode": ["Orientation and Retardation"],
+            "SweepMode": ["Orientation and Retardation", "SOP"],
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:
@@ -77,6 +78,11 @@ class Device(EmptyDevice):
         self.port_string = parameter["Port"]
 
         self.mode = parameter["SweepMode"]
+        if self.mode == "SOP":
+            self.variables = ["SOP 1", "SOP 2", "SOP 3"]
+            self.units = ["", "", ""]
+            self.plottype = [False, False, False]
+            self.savetype = [True, True, True]
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -85,10 +91,28 @@ class Device(EmptyDevice):
         if self.mode == "Orientation and Retardation":
             self.port.write("POLCON:PROGRAM MANUAL")  # Set the device to manual mode for orientation and retardation
 
+        elif self.mode == "SOP":
+            self.port.write(":STAB:STAB 1")  # Enable stabilization for SOP mode
+            # sequence, manual, scramble, sop stalibtze
+
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         if self.mode == "Orientation and Retardation":
-            self.set_waveplates(self.values)
+            self.set_waveplates(self.value)
+        elif self.mode == "SOP":
+            try:
+                stokes_1, stokes_2, stokes_3 = map(float, self.value.split(";"))
+            except ValueError as e:
+                msg = f"Invalid SOP value: {self.value}. Must be a semicolon-separated string of 3 numbers."
+                raise ValueError(msg) from e
+            self.set_sop(stokes_1, stokes_2, stokes_3)
+
+    def call(self) -> list[float]:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
+        if self.mode == "SOP":
+            return self.get_sop()
+
+        return []
 
     # Wrapper Functions
 
@@ -133,3 +157,15 @@ class Device(EmptyDevice):
             configuration += f"{orientation},{retardation},"
 
         error = self.port.query(f"POLCON:WAVEPL {configuration}")
+
+    def get_sop(self) -> list[float]:
+        """Returns a single state of polarization (SOP)."""
+        # TODO: could also be 'POLMET:SOP?' - manual page 226, allows NSOP as well
+        # or this could return the set value, try :POL:SOP?
+        response = self.port.query(":STAB:SOP?")
+        return list(map(float, response.split(",")))
+
+    def set_sop(self, stokes_1: float, stokes_2: float, stokes_3: float) -> None:
+        """Set the state of polarization."""
+        # TODO: Could also be
+        self.port.write(f"STAB:SOP {stokes_1}, {stokes_2}, {stokes_3}")
