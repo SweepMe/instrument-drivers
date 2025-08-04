@@ -28,6 +28,7 @@
 # SweepMe! driver
 # * Module: Switch
 # * Instrument: Thorlabs NanoTrak
+
 from __future__ import annotations
 
 import sys
@@ -99,6 +100,7 @@ class Device(EmptyDevice):
         # Communication parameters
         self.serial_number: str = ""  # Serial number of the device
         self.nanotrak = None
+        self.rack = None  # When using a rack, the rack element contains the self.nanotrak element
         self.is_simulation = False
 
         self.device_prefixes = {
@@ -220,9 +222,16 @@ class Device(EmptyDevice):
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
         if not self.nanotrak:
+            print(f"self.nanotrak {self.nanotrak} is not")
             return
 
         self.nanotrak.StopPolling()
+        self.nanotrak.DisableDevice()
+
+        # TODO: Check if both rack and nanotrack must be disconnected individually
+        if self.rack is not None:
+            self.rack.Disconnect(True)
+
         self.nanotrak.Disconnect(True)
 
         if self.is_simulation:
@@ -372,10 +381,10 @@ class Device(EmptyDevice):
             device_info = device_factory.GetDeviceInfo(serial_number)
             type_id = device_info.GetTypeID()
             modular_rack = self.kinesis_client.Rack.ModularRack
-            rack = modular_rack.CreateModularRack(type_id, serial_number)
+            self.rack = modular_rack.CreateModularRack(type_id, serial_number)
 
             # Could also be rack[1] or rack[bay]
-            self.nanotrak = rack.GetNanoTrakChannel(int(self.bay))
+            self.nanotrak = self.rack.GetNanoTrakChannel(int(self.bay))
 
         else:
             msg = f"Unknown nanotrak type for serial number {self.serial_number}. Supported prefixes (first two numbers) are: {', '.join(self.device_prefixes.values())}."
