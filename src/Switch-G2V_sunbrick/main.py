@@ -31,6 +31,9 @@
 
 from __future__ import annotations
 
+import pathlib
+
+import time
 from pathlib import Path
 from typing import Any
 
@@ -72,17 +75,21 @@ class Device(EmptyDevice):
         self.nodes: list[int] = [0]  # default to all nodes
         self.channels_string: str = "0"
         self.channels: list[int] = [0]  # default to all channels
+        self.intensity: str | float = 100
 
     def update_gui_parameters(self, parameter: dict[str, Any]) -> dict[str, Any]:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         new_parameters = {
-            "SweepMode": ["Intensity", "Spectrum"],
+            "SweepMode": ["Intensity", "Spectrum", "None"],
         }
 
         sweepmode = parameter.get("SweepMode", "Intensity")
         if sweepmode == "Intensity":
+            new_parameters["Spectrum"] = pathlib.Path("my.spectrum")  # TODO
             new_parameters["Nodes"] = "0"
             new_parameters["Channels"] = "0"
+        elif sweepmode == "Spectrum":
+            new_parameters["Intensity in %"] = "100"
 
         return new_parameters
 
@@ -90,12 +97,13 @@ class Device(EmptyDevice):
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.sweepmode = parameter["SweepMode"]
 
-        self.node_string = parameter["Nodes"]
+        self.node_string = parameter.get("Nodes", "")
         self.channels_string = parameter.get("Channels", "")
+        self.intensity = parameter.get("Intensity in %", "100")
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
-        self.sunbrick = G2VSunbrick(self.port)
+        self.sunbrick = G2VSunbrick(self.port.port)
 
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
@@ -112,6 +120,15 @@ class Device(EmptyDevice):
         if self.sweepmode == "Intensity":
             self.handle_nodes()
             self.handle_channels()
+        elif self.sweepmode == "Spectrum":
+            try:
+                intensity = float(self.intensity)
+            except ValueError as e:
+                msg = f"Invalid value for intensity: {self.intensity}. Must be between 0 and 100%."
+                raise Exception(msg) from e
+            self.sunbrick.set_intensity_factor(intensity)
+            # Wait for the new value to be applied
+            time.sleep(1)
 
     def handle_nodes(self) -> None:
         """Verify the chosen nodes."""
@@ -171,6 +188,8 @@ class Device(EmptyDevice):
 
         elif self.sweepmode == "Spectrum":
             self.set_spectrum(self.value)
+            # Wait for the new spectrum to be applied
+            time.sleep(1)
 
     def call(self) -> float:
         """Return the average temperature."""
@@ -211,7 +230,8 @@ class Device(EmptyDevice):
             raise ValueError(msg)
 
         if self.sunbrick:
-            self.sunbrick.set_spectrum(spectrum_file)
+            status = self.sunbrick.set_spectrum(spectrum_file)
+            # todo: check status
 
     def get_identification(self) -> str:
         """Get the sunbrick ID."""
