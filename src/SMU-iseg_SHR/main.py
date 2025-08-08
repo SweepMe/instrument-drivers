@@ -48,7 +48,32 @@ from shr import IsegDevice
 class Device(EmptyDevice, IsegDevice):
     """Driver for the iseg SHR."""
 
-    description = "Averaging will be set for all channels in the module."
+    description = """<h3>iseg SHR Source Measure Unit (SMU)</h3>
+        <p>This driver controls the iseg SHR high-voltage source with integrated current measurement.</p>
+        <h4>Features</h4>
+        <ul>
+            <li>Precise setting and measurement of voltage and current</li>
+            <li>Supports Voltage or Current mode.</li>
+            <li>Automatic or manual polarity switching</li>
+            <li>Configurable ramp rates for voltage and current</li>
+            <li>Compliance settings to protect the device and the test object</li>
+        </ul>
+        <h4>Setup</h4>
+        <ul>
+            <li>Connect the device to the PC via USB or Ethernet (Only for SweepMe! >= 1.5.7.3)</li>
+            <li>When using Ethernet, ensure that the devices IP address is in the same network as the SweepMe! PC.</li>
+            <li>When using Ethernet, the raw socket must be added to your PC via NI VISA / NI Max.</li>
+        </ul>
+        <h4>Parameters</h4>
+        <ul>
+            <li>Voltage and current ranges depend on the selected mode</li>
+            <li>Polarity can be set automatically based on the set value or manually</li>
+            <li>Compliance limits prevent overload of the device and the test object</li>
+            <li>Ramp rates should be adjusted to the requirements of your measurement</li>
+            <li>Averaging is disabled, as it is set for all channels.</li>
+            <li>Ramp rate can only be set in V/s.</li>
+        </ul
+        """
 
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
