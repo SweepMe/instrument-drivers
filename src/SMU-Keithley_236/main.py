@@ -61,6 +61,8 @@ class Device(EmptyDevice):
         self.sources = {
             "Voltage in V": "0",
             "Current in A": "1",
+            "Voltage [V]": "0",  # legacy support for settings containing older versions of this driver
+            "Current [A]": "1",  # legacy support for settings containing older versions of this driver
         }
 
         # sourcing range, defines limit and resolution of output value
@@ -118,7 +120,7 @@ class Device(EmptyDevice):
     def set_GUIparameter(self):
 
         GUIparameter = {
-                        "SweepMode" : list(self.sources.keys()),
+                        "SweepMode" : list(self.sources.keys())[:2],  # omit the legacy entries
                         "RouteOut": ["Rear"],
                         "Speed": ["Fast", "Medium", "Slow"],
                         "Average":1,
