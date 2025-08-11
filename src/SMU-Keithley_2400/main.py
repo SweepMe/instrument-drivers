@@ -4,19 +4,19 @@
 # find those in the corresponding folders or contact the maintainer.
 #
 # MIT License
-# 
+#
 # Copyright (c) 2023-2024 SweepMe! GmbH (sweep-me.net)
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -27,14 +27,14 @@
 
 # Contribution: We like to thank Dr. Anton Kirch for providing the initial list sweep feature.
 
-# SweepMe! device class
-# Type: SMU
-# Device: Keithley 2400
+# SweepMe! driver
+# * Module: SMU
+# * Instrument: Keithley 2400
 
-
-from pysweepme.EmptyDeviceClass import EmptyDevice
-import numpy as np
 import time
+
+import numpy as np
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -102,14 +102,14 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter={}):
 
         self.sweepvalue = parameter["SweepValue"]
-        self.listtype = parameter['ListSweepType']
-        self.four_wire = parameter['4wire']
-        self.route_out = parameter['RouteOut']
-        self.source = parameter['SweepMode']
-        self.protection = parameter['Compliance']
-        self.range = parameter['Range']
-        self.speed = parameter['Speed']
-        self.average_gui = int(parameter['Average'])
+        self.listtype = parameter["ListSweepType"]
+        self.four_wire = parameter["4wire"]
+        self.route_out = parameter["RouteOut"]
+        self.source = parameter["SweepMode"]
+        self.protection = parameter["Compliance"]
+        self.range = parameter["Range"]
+        self.speed = parameter["Speed"]
+        self.average_gui = int(parameter["Average"])
         self.port_string = parameter["Port"]
 
         self.average = self.average_gui
@@ -129,7 +129,7 @@ class Device(EmptyDevice):
             self.custom_values = str(parameter["ListSweepCustomValues"])
 
         # source delay, time between applying source value and measurement
-        # use None (later AUTO), if empty 
+        # use None (later AUTO), if empty
         try:
             self.listsweep_hold = float(parameter["ListSweepHoldtime"])
         except:
@@ -208,7 +208,7 @@ class Device(EmptyDevice):
         # if Custom List Sweep is chosen, check if the entered values are a comma-separated list
         if self.sweepvalue == "List sweep" and self.listtype == "Custom":
             try:
-                value_list = list(map(float, self.custom_values.split(',')))
+                value_list = list(map(float, self.custom_values.split(",")))
             except:
                 msg = "Wrong custom values format. Please use comma-separated values for custom list sweeps."
                 raise ValueError(msg)
@@ -231,7 +231,7 @@ class Device(EmptyDevice):
             # sourcemode = Voltage
             self.port.write(":SOUR:VOLT:MODE FIX")
             # sourcemode fix
-            self.port.write(":SENS:FUNC \"CURR\"")
+            self.port.write(':SENS:FUNC "CURR"')
             # measurement mode
             self.port.write(":SENS:CURR:PROT " + self.protection)
             # Protection with Imax
@@ -247,7 +247,7 @@ class Device(EmptyDevice):
             # sourcemode = Voltage
             self.port.write(":SOUR:CURR:MODE FIX")
             # sourcemode fix
-            self.port.write(":SENS:FUNC \"VOLT\"")
+            self.port.write(':SENS:FUNC "VOLT"')
             # measurement mode
             self.port.write(":SENS:VOLT:PROT " + self.protection)
             # Protection with Imax
@@ -329,7 +329,7 @@ class Device(EmptyDevice):
 
             # convert custom string to float list, count the list entries,
             # which gives the trigger points for the measurement
-            value_list = list(map(float, list_string.split(',')))
+            value_list = list(map(float, list_string.split(",")))
             points = len(value_list)
 
             # hand over dataset to Keithley
@@ -372,9 +372,9 @@ class Device(EmptyDevice):
 
     def call(self):
 
-        answer = self.port.read().split(',')
+        answer = self.port.read().split(",")
         if answer == [""]:
-            answer = self.port.read().split(',')
+            answer = self.port.read().split(",")
 
         # answer comes as a string separated by commas, 5 values per source point
         data = np.asarray(answer)
@@ -436,7 +436,7 @@ class Device(EmptyDevice):
             points = len(sweep_list)
 
         # Keithlety 2400 expects sweep list as a string separated by commas
-        list_string = ','.join(format(value, ".6e") for value in sweep_list)
+        list_string = ",".join(format(value, ".6e") for value in sweep_list)
 
         # hand over dataset to Keithley
         self.set_listvalues(source, list_string, points, delay, hold)
