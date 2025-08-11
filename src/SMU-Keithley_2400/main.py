@@ -100,8 +100,9 @@ class Device(EmptyDevice):
         return gui_parameter
 
     def get_GUIparameter(self, parameter={}):
+        # When this driver is used with pysweepme, the SweepValue parameter might be missing.
+        self.sweepvalue = parameter.get("SweepValue", "SweepEditor")
 
-        self.sweepvalue = parameter["SweepValue"]
         self.listtype = parameter["ListSweepType"]
         self.four_wire = parameter["4wire"]
         self.route_out = parameter["RouteOut"]
