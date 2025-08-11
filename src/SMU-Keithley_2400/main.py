@@ -66,7 +66,6 @@ class Device(EmptyDevice):
 
         gui_parameter = {
             "SweepMode": ["Voltage in V", "Current in A"],
-            "SweepValue": ["SweepEditor"],
             "RouteOut": ["Front", "Rear"],
             "Speed": ["Fast", "Medium", "Slow", "Very fast"],
             "Range": [
