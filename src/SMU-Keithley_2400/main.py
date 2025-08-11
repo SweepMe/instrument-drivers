@@ -24,6 +24,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+from __future__ import annotations
 
 # Contribution: We like to thank Dr. Anton Kirch for providing the initial list sweep feature.
 
@@ -285,6 +286,10 @@ class Device(EmptyDevice):
             self.port.write(":SENS:AVER OFF")
             self.port.write(":SENSe:AVER:COUN 1")
 
+        # Set the delay to auto. This is the standard after *RST, which has to be set in case the device used list mode
+        # in a previous branch
+        self.set_delay()
+
         # If 'List sweep' with type 'Sweep' is selected, generate data from respective input parameters
         # List-sweep options: mode 1 is linear, mode 2 is logarithmic, both single sweep start to stop
         if self.sweepvalue == "List sweep" and self.listtype == "Sweep":
@@ -484,8 +489,16 @@ class Device(EmptyDevice):
             self.port.write(":TRIGger:DELay AUTO")
 
         # set hold time between source value and measurement, AUTO if no value given
-        if type(hold) == float:
-            self.port.write(":SOURce:DELay %.6f" % hold)
+        self.set_delay(hold)
+
+    def set_delay(self, delay_in_s: float | None = None) -> None:
+        """Set a delay (settling time) in s for the source. If no value is given, AUTO is set.
+
+        After the programmed source is turned on, this delay occurs to allow the source level to settle before a
+        measurement is taken. Note that this delay is the same for both the I-Source and V-Source.
+        """
+        if type(delay_in_s) == float:
+            self.port.write(":SOURce:DELay %.6f" % delay_in_s)
         else:
             self.port.write(":SOURce:DELay AUTO")
 
