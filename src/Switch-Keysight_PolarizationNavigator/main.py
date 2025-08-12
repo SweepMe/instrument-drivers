@@ -97,7 +97,7 @@ class Device(EmptyDevice):
             ctypes.c_int,           # MaxLen
             ctypes.POINTER(ctypes.c_int),  # ResponseLen (output by reference)
         ]
-        self.client.PolNavC_SendCommand.restype = ctypes.c_int
+        self.client.PolNavC_SendCommand.restype = ctypes.c_int  # TODO: This is why it crashes when reading the SOP???
 
     def set_GUIparameter(self) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
@@ -132,7 +132,7 @@ class Device(EmptyDevice):
             self.send_command(f"Set TargetSOP,{x},{y},{z}")
             self.send_command("Set Stabilize,1")
 
-    def send_command(self, command: str, target: str = "", buffer_size: int = 1024) -> str:
+    def send_command(self, command: str, target: str = "", buffer_size: int = 1024, response_type: str = "int") -> str:
         """Send a command to the Polarization Navigator, check the response for error codes, and return the response.
 
         The target can be either a specific device, a group command like "Global", or the first device as "PolCon*".
@@ -145,13 +145,35 @@ class Device(EmptyDevice):
         response_buffer = ctypes.create_string_buffer(buffer_size)
         response_len = ctypes.c_int()
 
+        send_command = self.client.PolNavC_SendCommand
+        send_command.argtypes = [
+            ctypes.c_char_p,        # Target
+            ctypes.c_char_p,        # Command
+            ctypes.c_char_p,        # Response buffer (output)
+            ctypes.c_int,           # MaxLen
+            ctypes.POINTER(ctypes.c_int),  # ResponseLen (output by reference)
+        ]
+
+        if response_type == "str":
+            send_command.restype = ctypes.c_char_p
+        else:
+            send_command.restype = ctypes.c_int
+
+        send_command(
+            target.encode("ascii"),
+            command.encode("ascii"),
+            response_buffer,
+            buffer_size,
+            response_len,
+        )
+
         # Call the DLL function
         result = self.client.PolNavC_SendCommand(
             ctypes.c_char_p(target.encode("ascii")),
             ctypes.c_char_p(command.encode("ascii")),
             response_buffer,
             ctypes.c_int(buffer_size),
-            ctypes.byref(response_len),
+            ctypes.byref(response_len),  # why is this empty?
         )
 
         # Check for success

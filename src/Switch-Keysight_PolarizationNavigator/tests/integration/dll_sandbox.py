@@ -9,15 +9,15 @@ class PolNavClient:
 
         self.client = ctypes.CDLL(DLL_PATH)
 
-        # Define argument and return types
-        self.client.PolNavC_SendCommand.argtypes = [
-            ctypes.c_char_p,        # Target
-            ctypes.c_char_p,        # Command
-            ctypes.c_char_p,        # Response buffer (output)
-            ctypes.c_int,           # MaxLen
-            ctypes.POINTER(ctypes.c_int),  # ResponseLen (output by reference)
-        ]
-        self.client.PolNavC_SendCommand.restype = ctypes.c_int
+        # # Define argument and return types
+        # self.client.PolNavC_SendCommand.argtypes = [
+        #     ctypes.c_char_p,        # Target
+        #     ctypes.c_char_p,        # Command
+        #     ctypes.c_char_p,        # Response buffer (output)
+        #     ctypes.c_int,           # MaxLen
+        #     ctypes.POINTER(ctypes.c_int),  # ResponseLen (output by reference)
+        # ]
+        # self.client.PolNavC_SendCommand.restype = ctypes.c_int
 
     def hello_world(self) -> None:
         """Call the HelloWorld function from the Polarization Navigator DLL."""
@@ -37,11 +37,7 @@ class PolNavClient:
             ctypes.byref(response_len),
         )
 
-        # Check for success
-        if result != 0:
-            msg = f"PolNav_SendCommand failed with error code: {result}"
-            print(msg)
-            # raise RuntimeError(msg)
+        self.handle_error(result)
 
         # Return the actual response string
         return response_buffer.value.decode("ascii")
@@ -61,6 +57,53 @@ class PolNavClient:
 
         print(self.read())
 
+    @staticmethod
+    def handle_error(error_code: str) -> None:
+        """Handle errors based on the error code returned by the DLL."""
+        error = int(error_code)
+        # No error
+        if error == 0:
+            return
+
+        # error += 1  # It seems the error codes are shifted by 1
+
+        error_messages = {
+            0: "No error",
+            3: "Undefined function",
+            7: "Memory allocation error",
+            8: "Memory overflow error",
+            11: "Variable type mismatch",
+            17: "Generic error",
+            53: "Unknown tree number",
+            54: "Unknown variable",
+            55: "Variable access violation",
+            56: "Unknown variable type",
+            57: "Parameter missing/Wrong number of parameters",
+            84: "Health check error",
+            99: "Target not found",
+            100: "Unknown command",
+            101: "Response buffer overflow",
+            103: "Referencing error",
+            104: "Resolution error",
+            1024: "Polcontroller generic error",
+            1025: "Polcontroller memory allocation error",
+            1537: "Polarimeter no calibration data",
+            1538: "Polarimeter calibration range",
+            1539: "Polarimeter measurement timeout",
+            1540: "Polarimeter measurement in progress",
+            1541: "Polarimeter measurement sequence error",
+            1545: "Polarimeter measurement over range",
+            1546: "Polarimeter measurement under range",
+        }
+
+        if error not in error_messages:
+            msg = f"Unknown error code: {error}"
+            print(msg)
+            return
+
+        if error != 0:
+            msg = f"Error: {error_messages[error]}"
+            print(msg)
 
 if __name__ == "__main__":
     nav = PolNavClient()
@@ -75,4 +118,7 @@ if __name__ == "__main__":
         targets.remove("Global")
 
     print("Available Targets:" + str(targets))
-    nav.set_sop()
+    # nav.set_sop()
+
+    ret = nav.send_command("Global", "Get CurrentSOPN")
+    print(ret)
