@@ -4,19 +4,19 @@
 # find those in the corresponding folders or contact the maintainer.
 #
 # MIT License
-# 
+#
 # Copyright (c) 2023-2024 SweepMe! GmbH (sweep-me.net)
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -24,17 +24,18 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+from __future__ import annotations
 
 # Contribution: We like to thank Dr. Anton Kirch for providing the initial list sweep feature.
 
-# SweepMe! device class
-# Type: SMU
-# Device: Keithley 2400
+# SweepMe! driver
+# * Module: SMU
+# * Instrument: Keithley 2400
 
-
-from pysweepme.EmptyDeviceClass import EmptyDevice
-import numpy as np
 import time
+
+import numpy as np
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
@@ -66,7 +67,6 @@ class Device(EmptyDevice):
 
         gui_parameter = {
             "SweepMode": ["Voltage in V", "Current in A"],
-            "SweepValue": ["SweepEditor"],
             "RouteOut": ["Front", "Rear"],
             "Speed": ["Fast", "Medium", "Slow", "Very fast"],
             "Range": [
@@ -100,16 +100,17 @@ class Device(EmptyDevice):
         return gui_parameter
 
     def get_GUIparameter(self, parameter={}):
+        # When this driver is used with pysweepme, the SweepValue parameter might be missing.
+        self.sweepvalue = parameter.get("SweepValue", "SweepEditor")
 
-        self.sweepvalue = parameter["SweepValue"]
-        self.listtype = parameter['ListSweepType']
-        self.four_wire = parameter['4wire']
-        self.route_out = parameter['RouteOut']
-        self.source = parameter['SweepMode']
-        self.protection = parameter['Compliance']
-        self.range = parameter['Range']
-        self.speed = parameter['Speed']
-        self.average_gui = int(parameter['Average'])
+        self.listtype = parameter["ListSweepType"]
+        self.four_wire = parameter["4wire"]
+        self.route_out = parameter["RouteOut"]
+        self.source = parameter["SweepMode"]
+        self.protection = parameter["Compliance"]
+        self.range = parameter["Range"]
+        self.speed = parameter["Speed"]
+        self.average_gui = int(parameter["Average"])
         self.port_string = parameter["Port"]
 
         self.average = self.average_gui
@@ -129,7 +130,7 @@ class Device(EmptyDevice):
             self.custom_values = str(parameter["ListSweepCustomValues"])
 
         # source delay, time between applying source value and measurement
-        # use None (later AUTO), if empty 
+        # use None (later AUTO), if empty
         try:
             self.listsweep_hold = float(parameter["ListSweepHoldtime"])
         except:
@@ -208,7 +209,7 @@ class Device(EmptyDevice):
         # if Custom List Sweep is chosen, check if the entered values are a comma-separated list
         if self.sweepvalue == "List sweep" and self.listtype == "Custom":
             try:
-                value_list = list(map(float, self.custom_values.split(',')))
+                value_list = list(map(float, self.custom_values.split(",")))
             except:
                 msg = "Wrong custom values format. Please use comma-separated values for custom list sweeps."
                 raise ValueError(msg)
@@ -231,7 +232,7 @@ class Device(EmptyDevice):
             # sourcemode = Voltage
             self.port.write(":SOUR:VOLT:MODE FIX")
             # sourcemode fix
-            self.port.write(":SENS:FUNC \"CURR\"")
+            self.port.write(':SENS:FUNC "CURR"')
             # measurement mode
             self.port.write(":SENS:CURR:PROT " + self.protection)
             # Protection with Imax
@@ -247,7 +248,7 @@ class Device(EmptyDevice):
             # sourcemode = Voltage
             self.port.write(":SOUR:CURR:MODE FIX")
             # sourcemode fix
-            self.port.write(":SENS:FUNC \"VOLT\"")
+            self.port.write(':SENS:FUNC "VOLT"')
             # measurement mode
             self.port.write(":SENS:VOLT:PROT " + self.protection)
             # Protection with Imax
@@ -285,6 +286,10 @@ class Device(EmptyDevice):
         else:
             self.port.write(":SENS:AVER OFF")
             self.port.write(":SENSe:AVER:COUN 1")
+
+        # Set the delay to auto. This is the standard after *RST, which has to be set in case the device used list mode
+        # in a previous branch
+        self.set_delay()
 
         # If 'List sweep' with type 'Sweep' is selected, generate data from respective input parameters
         # List-sweep options: mode 1 is linear, mode 2 is logarithmic, both single sweep start to stop
@@ -329,7 +334,7 @@ class Device(EmptyDevice):
 
             # convert custom string to float list, count the list entries,
             # which gives the trigger points for the measurement
-            value_list = list(map(float, list_string.split(',')))
+            value_list = list(map(float, list_string.split(",")))
             points = len(value_list)
 
             # hand over dataset to Keithley
@@ -372,9 +377,9 @@ class Device(EmptyDevice):
 
     def call(self):
 
-        answer = self.port.read().split(',')
+        answer = self.port.read().split(",")
         if answer == [""]:
-            answer = self.port.read().split(',')
+            answer = self.port.read().split(",")
 
         # answer comes as a string separated by commas, 5 values per source point
         data = np.asarray(answer)
@@ -436,7 +441,7 @@ class Device(EmptyDevice):
             points = len(sweep_list)
 
         # Keithlety 2400 expects sweep list as a string separated by commas
-        list_string = ','.join(format(value, ".6e") for value in sweep_list)
+        list_string = ",".join(format(value, ".6e") for value in sweep_list)
 
         # hand over dataset to Keithley
         self.set_listvalues(source, list_string, points, delay, hold)
@@ -485,8 +490,16 @@ class Device(EmptyDevice):
             self.port.write(":TRIGger:DELay AUTO")
 
         # set hold time between source value and measurement, AUTO if no value given
-        if type(hold) == float:
-            self.port.write(":SOURce:DELay %.6f" % hold)
+        self.set_delay(hold)
+
+    def set_delay(self, delay_in_s: float | None = None) -> None:
+        """Set a delay (settling time) in s for the source. If no value is given, AUTO is set.
+
+        After the programmed source is turned on, this delay occurs to allow the source level to settle before a
+        measurement is taken. Note that this delay is the same for both the I-Source and V-Source.
+        """
+        if type(delay_in_s) == float:
+            self.port.write(":SOURce:DELay %.6f" % delay_in_s)
         else:
             self.port.write(":SOURce:DELay AUTO")
 
