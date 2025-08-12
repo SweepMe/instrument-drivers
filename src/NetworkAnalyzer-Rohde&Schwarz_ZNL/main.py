@@ -100,8 +100,6 @@ class Device(EmptyDevice):
         return {
             "Terminals": "1,2",
             "Sparameters": "",
-            # Calibrations file from Module not from driver
-            "Calibration": [""],
             "Average": 1,
             "SourcePower": ["Min", "Max"] + [f"{i}" for i in range(-95, 30, 5)],
             "SourceAttenuation": ["Auto"] + [f"{i}" for i in range(0, 70, 5)],
@@ -134,7 +132,7 @@ class Device(EmptyDevice):
         self.source_attenuation = parameter["SourceAttenuation"]
         self.IF_bandwidth = parameter["IFBandwidth"]
 
-        self.calibration_file_name = parameter["Calibration"]
+        self.calibration_file_name = parameter.get("Calibration", "")
 
         self.number_averages = int(parameter["Average"])
         self.correction = parameter["Correction"]
