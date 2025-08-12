@@ -53,10 +53,10 @@ class Device(EmptyDevice):
         self.shortname = "N778xB"  # short name will be shown in the sequencer
 
         # SweepMe! parameters
-        self.variables = ["Voltage", "Current"]
-        self.units = ["V", "A"]
-        self.plottype = [True, True]
-        self.savetype = [True, True]
+        self.variables = []
+        self.units = []
+        self.plottype = []
+        self.savetype = []
 
         # Communication Parameters
         self.port_string: str = ""
@@ -64,7 +64,7 @@ class Device(EmptyDevice):
         self.port_types = ["GPIB"]
 
         # Measurement parameters
-        self.mode = "Orientation and Retardation"
+        self.mode = "SOP"
         self.channel: int = 1
 
     def set_GUIparameter(self) -> dict:
