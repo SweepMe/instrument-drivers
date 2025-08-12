@@ -206,6 +206,7 @@ class Device(EmptyDevice):
 
         # use lambda logging?
         self.port.write(":sour0:wav:swe:llog ON")
+        print(self.port.query("trig0:outp?"))
 
         # TODO: Check if sweep parameter inconsistent message is returned - manual page 71
 
