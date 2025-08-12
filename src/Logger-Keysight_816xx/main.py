@@ -138,9 +138,14 @@ class Device(EmptyDevice):
         self.set_wavelength(float(self.wavelength))
 
         if self.list_mode:
-            # self.port.write(f'trigger:configuration 1') #:TRIGger:CONFiguration
-            self.port.write(f"trigger{self.slot}:input sme")
+            self.port.write("trigger:configuration 1") # activate trigger input connector page 214
+            # self.port.write(f"trigger{self.slot}:input sme")
+            self.configure_input_trigger_response("sme")
             self.port.write(f"sense{self.slot}:chan{self.channel}:function:parameter:logging {self.list_length},{self.list_averaging}")
+
+            # see 208 page - trig not armed
+            print("Trigger armed: ", self.port.query(f"trig{self.slot}:chan{self.channel}:inp:rearm?"))  # This should return "0" if the trigger is not armed
+            self.port.write("trig:inp:rearm")
         else:
             # Set the software trigger system to non-continuous mode
             self.port.write(f":init{self.slot}:cont OFF")
@@ -150,7 +155,25 @@ class Device(EmptyDevice):
     def start(self) -> None:
         """This function can be used to do some first steps before the acquisition of a measurement point starts."""
         if self.list_mode:
+            # trig:inp:rearm
             self.port.write(f"sense{self.slot}:chan{self.channel}:function:state logg,star")
+
+            # page 210
+
+            # in the description this done for the laser
+            self.port.write(f"sour{self.slot}:chan{self.channel}:wav:swe STOP")  # Stop any ongoing sweep
+            self.port.write(f"sour{self.slot}:chan{self.channel}:wav:swe star")  # Stop any ongoing sweep
+
+            """
+            Generally, a continuous sweep can only be started if:
+            the trigger frequency, derived from the sweep speed and sweep step, is <= 40kHz, or <=1MHz for 81602A, 81606A, 81607A,
+            81608A, and 81960A.
+            the number of triggers, calculated from the sweep span and sweep span, is <=100001
+            the start wavelength is less than the stop wavelength.
+            In addition, a continuous sweep with lambda logging requires:
+            the trigger output to be set to step finished
+            modulation set to coherence control or off.
+            """
 
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
@@ -277,6 +300,24 @@ class Device(EmptyDevice):
         Can only be sent to primary channel, the secondary channel will be also be affected.
         """
         self.port.write(f":init{self.slot}:imm")
+
+    def configure_input_trigger_response(self, response: str = ign) -> None:
+        """Configure the input trigger response for the device.
+
+        IGNore: ignore incoming triggers.
+        SMEasure: Start a single measurement. If a measurement function is active (func:stat), one sample is performed and stored in an array
+        CMEasure: Start a complete measurement. If a measurement function is active, a complete measurement function is performed
+        NEXTstep: Perform next step of a stepped sweep
+        SWSart: Start a sweep cycle.
+
+        Affects all tunable laser modules, power meter, and return loss modules.
+        """
+        response = response.strip().lower()
+        if response not in ["ign", "sme", "cme", "next", "sws"]:
+            msg = f"Invalid trigger response: {response}. Must be 'ign', 'sme', 'cme', 'next', or 'sws'."
+            raise ValueError(msg)
+
+        self.port.write(f"trig{self.slot}:chan{self.channel}:inp {response}")
 
     # Currently unused wrapper functions
 
