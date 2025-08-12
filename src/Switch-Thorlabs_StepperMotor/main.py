@@ -75,9 +75,6 @@ class Device(EmptyDevice):
 
         # Communication Parameters
         self.serial_number: str = ""
-        self.port_manager = True
-        self.port_types = ["GPIB", "COM", "TCPIP"]
-
         self.rack = None
         self.stepper = None
 
@@ -149,7 +146,7 @@ class Device(EmptyDevice):
         self.stepper = self.rack[self.channel]
 
         # Open Connection
-        self.rack.connect(self.serial_number)
+        self.rack.Connect(int(self.serial_number))
 
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
@@ -157,7 +154,7 @@ class Device(EmptyDevice):
             return
 
         self.stepper.StopPolling()
-        self.stepper.Disconnect(True)
+        self.rack.Disconnect(True)
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -187,8 +184,9 @@ class Device(EmptyDevice):
 
     def deinitialize(self) -> None:
         """Deinitialize the device. This function is called only once at the end of the measurement."""
+        # TODO: Here or in disconnect?
         self.stepper.StopPolling()
-        self.rack.disconnect()
+        self.rack.Disconnect()
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
