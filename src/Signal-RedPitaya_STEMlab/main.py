@@ -29,8 +29,8 @@
 
 # SweepMe! device class
 # Type: Signal
-# Device: Red pitaya STEMlab
-
+# Device: Red Pitaya STEMlab
+# Red Pitaya OS: 2.05-37
 
 import numpy as np
 import time
@@ -65,7 +65,6 @@ class Device(EmptyDevice):
             "Internal": "INT", 
             "External NE": "EXT_NE", 
             "External PE": "EXT_PE", 
-            "Immediately": "IMM", 
             "Gated": "GATED",
             }
                         
@@ -207,12 +206,8 @@ class Device(EmptyDevice):
     def trigger_ready(self):
         
         # set trigger
-        if self.triggertypes[self.triggertype] == "IMM":
-            self.port.write('SOUR{0}:TRIG:IMM'.format(self.channel))
-            self.port.write('SOUR{0}:BURS:STAT CONTINUOUS'.format(self.channel))
-        else:
-            self.port.write('SOUR{0}:TRIG:SOUR {1}'.format(self.channel, self.triggertypes[self.triggertype]))
-            self.port.write('SOUR{0}:BURS:STAT CONTINUOUS'.format(self.channel))
+        self.port.write('SOUR{0}:TRig:SOUR {1}'.format(self.channel, self.triggertypes[self.triggertype]))
+        self.port.write('SOUR{0}:BURS:STAT CONTINUOUS'.format(self.channel))
 
         # set burst mode (after trigger settings!)
         self.set_burst_mode()                                          # set Burst mode
@@ -221,6 +216,9 @@ class Device(EmptyDevice):
         self.port.write('OUTPUT{0}:STATE ON'.format(self.channel))
         # self.port.write('OUTPUT{0}:STATE?'.format(self.channel))
         # self.port.read()
+
+        if (self.triggertype == "INT"):                                # Trigger generator if internal trigger is selected
+            self.port.write('SOUR{0}:TRig:INT'.format(self.channel))
 
     def call(self):
         if self.sweep_mode != "None":
@@ -329,8 +327,8 @@ class Device(EmptyDevice):
         self.port.write('SOUR{0}:BURS:STAT {1}'.format(self.channel, self.operationmodes[self.operationmode]))  # set OperationMode
         if self.operationmodes[self.operationmode] != "CONTINUOUS":
             self.burstperiod = 10**6 * (self.periodnumber / self.frequency + self.burstdelay)
-            self.port.write('SOUR{0}:BURS:INT:PER {1}'.format(self.channel, self.burstperiod))          # set total Burst period (signal + delay)
-            self.port.write('SOUR{0}:BURS:NOR {1}'.format(self.channel, self.burstnumber))            # set number of Periods in one Burst
+            self.port.write('SOUR{0}:BURS:INT:PER {1}'.format(self.channel, self.burstperiod))            # set total Burst period (signal + delay)
+            self.port.write('SOUR{0}:BURS:NOR {1}'.format(self.channel, self.burstnumber))                # set number of Periods in one Burst
             self.port.write('SOUR{0}:BURS:NCYC {1}'.format(self.channel, self.periodnumber))              # set number of repeated Bursts
 
     def get_identification(self):
@@ -351,6 +349,6 @@ class Device(EmptyDevice):
         return self.port.read()
      
     def get_system_version(self):
-        self.port.write("SYST:VERS?")
+        self.port.write("SYSTem:VERS?")
         return self.port.read()
     
