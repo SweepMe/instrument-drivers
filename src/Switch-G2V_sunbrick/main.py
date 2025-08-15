@@ -32,7 +32,6 @@
 from __future__ import annotations
 
 import pathlib
-
 import time
 from pathlib import Path
 from typing import Any
@@ -98,6 +97,7 @@ class Device(EmptyDevice):
         # Measurement parameters
         self.sweepmode: str = "Intensity"
 
+        self.stabilization_time: str | float = 0.5
         self.node_string: str = "0"
         self.nodes: list[int] = [0]  # default to all nodes
         self.channels_string: str = "0"
@@ -108,14 +108,16 @@ class Device(EmptyDevice):
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         new_parameters = {
             "SweepMode": ["Intensity", "Spectrum", "None"],
+            "Stabilization time in s": "0.5",
         }
 
         sweepmode = parameter.get("SweepMode", "Intensity")
-        if sweepmode == "Intensity":
-            new_parameters["Spectrum"] = pathlib.Path("my.spectrum")  # TODO
+        if sweepmode != "Spectrum":
+            new_parameters["Spectrum"] = pathlib.Path("my.spectrum")
             new_parameters["Nodes"] = "0"
             new_parameters["Channels"] = "0"
-        elif sweepmode == "Spectrum":
+
+        if sweepmode != "Intensity":
             new_parameters["Intensity in %"] = "100"
 
         return new_parameters
@@ -124,6 +126,7 @@ class Device(EmptyDevice):
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.sweepmode = parameter["SweepMode"]
 
+        self.stabilization_time = parameter.get("Stabilization time in s", "0.5")
         self.node_string = parameter.get("Nodes", "")
         self.channels_string = parameter.get("Channels", "")
         self.intensity = parameter.get("Intensity in %", "100")
@@ -143,6 +146,12 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
+        try:
+            self.stabilization_time = float(self.stabilization_time)
+        except ValueError:
+            msg = f"Unsupported value for stabilization time: {self.stabilization_time}. Parameter must be float."
+            raise ValueError(msg)
+
         # check if the provided nodes and channels are supported
         if self.sweepmode == "Intensity":
             self.handle_nodes()
@@ -218,6 +227,20 @@ class Device(EmptyDevice):
             # Wait for the new spectrum to be applied
             time.sleep(1)
 
+    def reach(self) -> None:
+        """Wait for the device to apply the new parameters."""
+        if self.stabilization_time > 0:
+            # for longer stabilization times, check every 1s if the run has been aborted
+            maximum_sleep_at_once = 5
+            if self.stabilization_time > maximum_sleep_at_once:
+                stabilization_time_left = self.stabilization_time
+                while not self.is_run_stopped() or stabilization_time_left <= 0:
+                    sleep_time = min(1, stabilization_time_left)
+                    time.sleep(sleep_time)
+                    stabilization_time_left -= sleep_time
+            else:
+                time.sleep(self.stabilization_time)
+
     def call(self) -> float:
         """Return the average temperature."""
         return self.sunbrick.get_avg_temperature()
@@ -256,9 +279,7 @@ class Device(EmptyDevice):
             msg = f"The spectrum file {spectrum_file} does not exist."
             raise ValueError(msg)
 
-        if self.sunbrick:
-            status = self.sunbrick.set_spectrum(spectrum_file)
-            # todo: check status
+        self.sunbrick.set_spectrum(spectrum_file)
 
     def get_identification(self) -> str:
         """Get the sunbrick ID."""
