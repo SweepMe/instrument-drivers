@@ -31,7 +31,6 @@
 
 from __future__ import annotations
 
-import pathlib
 import time
 from pathlib import Path
 from typing import Any
@@ -96,8 +95,11 @@ class Device(EmptyDevice):
 
         # Measurement parameters
         self.sweepmode: str = "Intensity"
+        self.spectrum: Path = Path()
 
         self.stabilization_time: str | float = 0.5
+        self.timestamp_of_last_change: float = 0.
+
         self.node_string: str = "0"
         self.nodes: list[int] = [0]  # default to all nodes
         self.channels_string: str = "0"
@@ -113,7 +115,7 @@ class Device(EmptyDevice):
 
         sweepmode = parameter.get("SweepMode", "Intensity")
         if sweepmode != "Spectrum":
-            new_parameters["Spectrum"] = pathlib.Path("my.spectrum")
+            new_parameters["Spectrum"] = Path("my.spectrum")
             new_parameters["Nodes"] = "0"
             new_parameters["Channels"] = "0"
 
@@ -127,6 +129,7 @@ class Device(EmptyDevice):
         self.sweepmode = parameter["SweepMode"]
 
         self.stabilization_time = parameter.get("Stabilization time in s", "0.5")
+        self.spectrum = parameter.get("Spectrum", "")
         self.node_string = parameter.get("Nodes", "")
         self.channels_string = parameter.get("Channels", "")
         self.intensity = parameter.get("Intensity in %", "100")
@@ -153,18 +156,25 @@ class Device(EmptyDevice):
             raise ValueError(msg)
 
         # check if the provided nodes and channels are supported
-        if self.sweepmode == "Intensity":
+        if self.sweepmode != "Spectrum":
+            self.set_spectrum(str(self.spectrum))
             self.handle_nodes()
             self.handle_channels()
-        elif self.sweepmode == "Spectrum":
+
+        if self.sweepmode != "Intensity":
             try:
                 intensity = float(self.intensity)
             except ValueError as e:
                 msg = f"Invalid value for intensity: {self.intensity}. Must be between 0 and 100%."
                 raise Exception(msg) from e
             self.sunbrick.set_intensity_factor(intensity)
-            # Wait for the new value to be applied
-            time.sleep(1)
+
+        if self.timestamp_of_last_change - time.time() < self.stabilization_time:
+            self.wait_for_device_to_stabilize()
+
+    def update_timestamp_of_last_change(self) -> None:
+        """Set the timestamp of last change to the current timestamp to handle stabilization times."""
+        self.timestamp_of_last_change = time.time()
 
     def handle_nodes(self) -> None:
         """Verify the chosen nodes."""
@@ -220,22 +230,26 @@ class Device(EmptyDevice):
 
         elif self.sweepmode == "Spectrum":
             self.set_spectrum(self.value)
-            # Wait for the new spectrum to be applied
-            time.sleep(1)
 
     def reach(self) -> None:
         """Wait for the device to apply the new parameters."""
+        self.wait_for_device_to_stabilize()
+
+    def wait_for_device_to_stabilize(self) -> None:
+        """Wait until the stabilization time has passed after changing the last value (spectrum or intensity)."""
         if self.stabilization_time > 0:
-            # for longer stabilization times, check every 1s if the run has been aborted
-            maximum_sleep_at_once = 5
-            if self.stabilization_time > maximum_sleep_at_once:
-                stabilization_time_left = self.stabilization_time
-                while not self.is_run_stopped() or stabilization_time_left <= 0:
-                    sleep_time = min(1, stabilization_time_left)
-                    time.sleep(sleep_time)
-                    stabilization_time_left -= sleep_time
-            else:
-                time.sleep(self.stabilization_time)
+            stabilization_time_left = time.time() - self.timestamp_of_last_change
+
+            # Split the sleep time in 1s intervals to check every if the run has been aborted
+            sleep_interval_length = 1
+
+            while stabilization_time_left > 0:
+                if self.is_run_stopped():
+                    break
+
+                sleep_time = min(stabilization_time_left, sleep_interval_length)
+                time.sleep(sleep_time)
+                stabilization_time_left -= sleep_time
 
     def call(self) -> float:
         """Return the average temperature."""
@@ -265,6 +279,8 @@ class Device(EmptyDevice):
                 msg = f"Failed to set the intensity of node {node} and channel {channel} to {value}."
                 raise RuntimeError(msg)
 
+        self.update_timestamp_of_last_change()
+
     def set_spectrum(self, spectrum_file: str) -> None:
         """Set the spectrum of the sunbrick.
 
@@ -276,6 +292,7 @@ class Device(EmptyDevice):
             raise ValueError(msg)
 
         self.sunbrick.set_spectrum(spectrum_file)
+        self.update_timestamp_of_last_change()
 
     def get_identification(self) -> str:
         """Get the sunbrick ID."""
