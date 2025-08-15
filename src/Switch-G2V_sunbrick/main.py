@@ -47,6 +47,33 @@ class Device(EmptyDevice):
     Nodes are only supported in intensity mode. Channel only makes sense in intensity mode.
     Use comma separated list for specific nodes: 1,2,3 or 0 for all.
     Use comma separated list for specific channels: 1,2,3 or 0 for all.
+    Stabilization time: the wait time after setting a new spectrum or intensity to wait until the device is settled.
+    """
+
+    description = """
+    <h3>G2V Sunbrick Sun Simulator</h3>
+    <p>This driver controls the G2V Sunbrick, a programmable LED-based sun simulator.</p>
+    <h4>Parameters</h4>
+    <ul>
+    <li><b>Mode:</b> The driver currently can sweep Intensity, Spectrum, or None. Depending on the selection, different
+     parameters are available. This driver might need be refreshed by opening the dropdown driver selection to update
+     the input parameters.
+    </li>
+    <li><b>Nodes:</b> Specify which nodes to control.
+        <ul>
+            <li>Use a comma-separated list (e.g., <code>1,2,3</code>) to select specific nodes.</li>
+            <li>Use <code>0</code> to select all nodes.</li> 
+        </ul>
+    </li>
+    <li><b>Channels:</b> Specify which LED channels to control within the selected nodes.
+        <ul>
+            <li>Use a comma-separated list (e.g., <code>1,2,3</code>) to select specific channels.</li>
+            <li>Use <code>0</code> to select all channels.</li>
+        </ul>
+    </li>
+    <li><b>Stabilization Time:</b> Defines the wait time (in seconds) after setting a new spectrum or intensity before
+     the measurement continues, allowing the system to adapt. The recommended stabilization time can differ depending on
+      the device and should be tested.</li> </ul>
     """
 
     def __init__(self) -> None:
