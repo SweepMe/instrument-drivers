@@ -175,9 +175,7 @@ class Device(EmptyDevice):
             msg = f"Invalid node format: {nodes}. Use comma separated list or '0' to select all nodes."
             raise ValueError(msg) from e
 
-        if len(self.nodes) == 0:
-            self.nodes = [0]  # default to all nodes
-        elif 0 in self.nodes:
+        if 0 in self.nodes:
             self.nodes = [0]  # If 0 is in the list, set all nodes
         else:
             available_nodes = self.sunbrick.node_list
@@ -195,9 +193,7 @@ class Device(EmptyDevice):
             msg = f"Invalid channel format: {channels}. Use comma separated list or '0' to select all channels."
             raise ValueError(msg) from e
 
-        if self.channels == 0:
-            self.channels = [0]  # default to all channels
-        elif 0 in self.channels:
+        if 0 in self.channels:
             self.channels = [0]  # If 0 is in the list, set all channels
         else:
             available_channels = self.sunbrick.channel_list
