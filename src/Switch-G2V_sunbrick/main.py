@@ -130,8 +130,8 @@ class Device(EmptyDevice):
 
         self.stabilization_time = parameter.get("Stabilization time in s", "0.5")
         self.spectrum = parameter.get("Spectrum", "")
-        self.node_string = parameter.get("Nodes", "")
-        self.channels_string = parameter.get("Channels", "")
+        self.node_string = parameter.get("Nodes", "0")
+        self.channels_string = parameter.get("Channels", "0")
         self.intensity = parameter.get("Intensity in %", "100")
 
     def connect(self) -> None:
