@@ -193,7 +193,7 @@ class Device(EmptyDevice):
         channels = self.channels_string
         try:
             self.channels = [int(channel.strip()) for channel in channels.split(",")]
-        except Exception as e:
+        except ValueError as e:
             msg = f"Invalid channel format: {channels}. Use comma separated list or '0' to select all channels."
             raise ValueError(msg) from e
 
