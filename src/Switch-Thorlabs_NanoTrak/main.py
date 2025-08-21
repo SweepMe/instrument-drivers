@@ -31,6 +31,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import sys
 import time
 from typing import Any
@@ -65,6 +67,7 @@ class Device(EmptyDevice):
                     This drivers implements the functionalities of the Thorlabs NanoTrak devices via Kinesis. NanoTrak
                     comes in three different versions: Benchtop, TCube, and KCube. The driver detects the device type
                     automatically based on the serial number prefix.
+                    The driver detects the optimum position during 'configure', and does not require a set value.
 
                     <p>Setup:</p>
                     <ul>
@@ -88,10 +91,10 @@ class Device(EmptyDevice):
         self.shortname = "Nanotrak"  # short name will be shown in the sequencer
 
         # Define the variables that can be measured by the device and that are returned by the 'call' function
-        self.variables = ["Horizontal Position", "Vertical Position", "Signal Strength"]
-        self.units = ["m", "m", ""]
-        self.plottype = [True, True, True]
-        self.savetype = [True, True, True]
+        self.variables = ["Horizontal Position", "Vertical Position"]
+        self.units = ["m", "m"]
+        self.plottype = [True, True]
+        self.savetype = [True, True]
 
         # Imported Kinesis .NET dlls
         self.kinesis_client = None
@@ -119,6 +122,16 @@ class Device(EmptyDevice):
         self.is_modular_rack: bool = False  # True if the device is a modular rack device
         self.bay: int = 1  # Bay number for modular rack devices, default is 1
 
+        # Feedback sources
+        nano_trak_feedback_source = GenericNanoTrakCLI.Settings.IOSettingsSettings.FeedbackSources
+        self.feedback_sources = {
+            "BNC 10V ": nano_trak_feedback_source.BNC_10V,
+            "BNC 5V": nano_trak_feedback_source.BNC_5V,
+            "BNC 2V": nano_trak_feedback_source.BNC_2V,
+            "BNC 1V": nano_trak_feedback_source.BNC_1V,
+            "TIA": nano_trak_feedback_source.TIA,
+        }
+
         # Measurement parameters
         self.sweepmode: str = "Center Position"
         self.tracking_mode: str = "Tracking"  # Can be "Tracking" or "Latch"
@@ -145,10 +158,12 @@ class Device(EmptyDevice):
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         new_parameters = {
-            "SweepMode": ["Center Position", "Circle Diameter", "None"],
-            "Mode": ["Tracking", "Latch"],
-            "Reading": ["Absolute", "Relative", "None"],
+            "Home position": "1.0,1.0",
+            "Circle diameter in NT": "1",
+            "Tracking time in s": "10",
+            "Feedback Source": list(self.feedback_sources.keys()),
             "Simulation": False,
+            "Debug while Tracking": False,
             "Modular Rack": False,
         }
 
@@ -160,25 +175,17 @@ class Device(EmptyDevice):
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Apply the parameters received from the SweepMe GUI or the pysweepme instance to the driver instance."""
         self.serial_number = parameters.get("Port", "")
-        self.tracking_mode = parameters.get("Mode", "Tracking")
+        self.home_position_string = parameters.get("Home position", "1.0,1.0")
+        self.circle_diameter_string = parameters.get("Circle diameter in NT", "1")
+        self.feedback_source = parameters.get("Feedback Source", "BNC 10V")
+        self.tracking_time_string = parameters.get("Tracking time in s", 10)
+        self.debug_while_tracking = parameters.get("Debug while Tracking", False)
+
         self.is_simulation = parameters.get("Simulation", False)
-        self.reading_mode = parameters.get("Reading", "Absolute")
 
         self.is_modular_rack = parameters.get("Modular Rack", False)
         if self.is_modular_rack:
             self.bay = parameters.get("Bay", 1)
-
-        self.variables = ["Horizontal Position", "Vertical Position"]
-        self.units = ["m", "m"]
-        if self.reading_mode == "Absolute":
-            self.variables.append("Absolute Reading")
-            self.units.append("")
-        elif self.reading_mode == "Relative":
-            self.variables.append("Relative Reading")
-            self.units.append("%")
-
-        self.plottype = [True] * len(self.variables)
-        self.savetype = [True] * len(self.variables)
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -204,13 +211,14 @@ class Device(EmptyDevice):
         self.import_device_dlls(self.nanotrak_type)
         self.nanotrak = self.create_nanotrak(self.serial_number, self.nanotrak_type)
 
-        # Wait for device connection
+        # Connect to device / rack
+        connecting_element = self.nanotrak if not self.is_modular_rack else self.rack
         print("Waiting for device to set IsConnected to True...")
         timeout_s = 10
-        while not self.nanotrak.IsConnected:
+        while not connecting_element.IsConnected:
             try:
-                self.nanotrak.Connect(str(self.serial_number))
-            except self.DeviceManagerCLI.DeviceNotReadyException:
+                connecting_element.Connect(str(self.serial_number))
+            except DeviceManagerCLI.DeviceNotReadyException:
                 print("DeviceNotReadyException: Device is not ready yet, retrying...")
                 time.sleep(0.2)
                 timeout_s -= 0.2
@@ -226,13 +234,9 @@ class Device(EmptyDevice):
             return
 
         self.nanotrak.StopPolling()
-        self.nanotrak.DisableDevice()
-
-        # TODO: Check if both rack and nanotrack must be disconnected individually
-        if self.rack is not None:
+        # self.nanotrak.DisableDevice()
+        if self.is_modular_rack:
             self.rack.Disconnect(True)
-
-        self.nanotrak.Disconnect(True)
 
         if self.is_simulation:
             self.set_simulation_mode(False)
@@ -240,10 +244,11 @@ class Device(EmptyDevice):
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
         if not self.nanotrak.IsSettingsInitialized():
-            print("Waiting for settings to be initialized...")
-            self.nanotrak.WaitForSettingsInitialized(10000)  # ms
+            # If the device is already initialized, this would raise an exception.
+            with contextlib.suppress(Exception):
+                self.nanotrak.WaitForSettingsInitialized(5000)  # ms
 
-        print("Start polling the device...")
+        # Start polling
         polling_rate = 250
         self.nanotrak.StartPolling(polling_rate)
         time.sleep(0.5)
@@ -254,48 +259,68 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called only once at the start of the measurement."""
-        # ToDo: Could add
-        # DeviceSettingsUseOptionType = DeviceManagerCLI.DeviceConfiguration.DeviceSettingsUseOptionType
-        # nanoTrakConfiguration = nanoTrak.GetNanoTrakConfiguration(serialNo, DeviceSettingsUseOptionType.UseConfiguredSettings)
-        # currentDeviceSettings = nanoTrak.NanoTrakDeviceSettings
-        # nanoTrak.SetSettings(currentDeviceSettings, False)
+        # Unsure why, but when using a modular rack, there is a difference between rack.GetNanoTrakChannel and rack[bay].
+        if self.is_modular_rack:
+            self.nanotrak_channel = self.rack.GetNanoTrakChannel(int(self.bay))
+        else:
+            self.nanotrak_channel = self.nanotrak
 
-        # config = self.device.GetNanoTrakConfiguration(self.serial_number)
-        self.set_mode(self.tracking_mode)
-        # self.device.SetTIARangeMode(TIARangeModes.AutoRangeAtSelected, TIAOddOrEven.All);
+        try:
+            tracking_time = float(self.tracking_time_string)
+        except ValueError as e:
+            msg = f"Invalid tracking time: {self.tracking_time_string}. Expected a float value."
+            raise ValueError(msg) from e
 
-    def apply(self) -> None:
-        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-        if self.sweepmode == "Center Position":
-            if "," in self.value:
-                horizontal, vertical = map(float, self.value.split(","))
-            elif ";" in self.value:
-                horizontal, vertical = map(float, self.value.split(";"))
-            else:
-                msg = f"Invalid format for Center Position: {self.value}. Expected 'x,y' or 'x;y'."
-                raise ValueError(msg)
+        # Configure NanoTrak
+        DeviceSettingsUseOptionType = DeviceManagerCLI.DeviceConfiguration.DeviceSettingsUseOptionType
+        nanoTrakConfiguration = self.nanotrak_channel.GetNanoTrakConfiguration(self.serial_number, DeviceSettingsUseOptionType.UseConfiguredSettings)
+        currentDeviceSettings = self.nanotrak_channel.NanoTrakDeviceSettings
+        self.nanotrak_channel.SetSettings(currentDeviceSettings, False)
 
-            position = GenericNanoTrakCLI.HVPosition(horizontal, vertical)
+        self.nanotrak_channel.GetSettings(currentDeviceSettings)
+        NanoTrakStatusBase = GenericNanoTrakCLI.NanoTrakStatusBase
 
-            self.nanotrak.SetCircleHomePosition(position)
-            self.nanotrak.HomeCircle()
+        # Set feedback source depending on the GUI parameter
+        self.nanotrak_channel.SetFeedbackSource(self.feedback_sources[self.feedback_source])
 
-        elif self.sweepmode == "Circle Diameter":
-            diameter = abs(float(self.value))
-            self.nanotrak.SetCircleDiameter(diameter)
-            time.sleep(0.5)  # Optional: wait for device to update
+        # Home Position
+        home_pos1, home_pos2 = map(float, self.home_position_string.split(","))
+        HVPosition = GenericNanoTrakCLI.HVPosition
+        self.nanotrak_channel.SetCircleHomePosition(HVPosition(home_pos1, home_pos2))
+        self.nanotrak_channel.HomeCircle()
 
-            self.nanotrak.HomeCircle()
+        # Allow comma separated values for multiple trackings
+        diameter_list = self.circle_diameter_string.split(",")
+        for diameter in diameter_list:
+            # we latch before changing the diameter
+            self.nanotrak_channel.SetMode(NanoTrakStatusBase.OperatingModes.Latch)
+            self.set_circle_diameter(float(diameter))
+            self.track()
+
+            # tracking time
+            remaining_tracking_time = tracking_time
+            while remaining_tracking_time > 0:
+                if self.is_run_stopped():
+                    break
+
+                # Check position
+                horizontal_position, vertical_position = self.get_current_position()
+                self.debug(f"{horizontal_position}, {vertical_position}")
+
+                wait_time = min(remaining_tracking_time, 0.5)
+                time.sleep(wait_time)
+                remaining_tracking_time -= wait_time
+
+            # Latch after tracking is finished
+            self.latch()
+
+            # TODO: Check if position is too close to the edges
+
+        print("NanoTrak finished configuration.")
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         horizontal, vertical = self.get_current_position()
-
-        if self.reading_mode in ["Absolute", "Relative"]:
-            reading = self.nanotrak.GetReading()
-            reading_value = reading.AbsoluteReading if self.reading_mode == "Absolute" else reading.RelativeReading
-            return [horizontal, vertical, reading_value]
-
         return [horizontal, vertical]
 
     # Utility functions
@@ -384,7 +409,8 @@ class Device(EmptyDevice):
             self.rack = modular_rack.CreateModularRack(type_id, serial_number)
 
             # Could also be rack[1] or rack[bay]
-            self.nanotrak = self.rack.GetNanoTrakChannel(int(self.bay))
+            self.nanotrak = self.rack[int(self.bay)]
+            # self.nanotrak = self.rack.GetNanoTrakChannel(int(self.bay))
 
         else:
             msg = f"Unknown nanotrak type for serial number {self.serial_number}. Supported prefixes (first two numbers) are: {', '.join(self.device_prefixes.values())}."
@@ -413,27 +439,34 @@ class Device(EmptyDevice):
 
     def get_current_position(self) -> tuple[float, float]:
         """Get the current circular position and signal strength at the current position."""
-        if not self.nanotrak:
+        if not self.nanotrak_channel:
             error("NanoTrak not connected!")
             return 0.0, 0.0
 
-        position = self.nanotrak.GetCirclePosition()
+        position = self.nanotrak_channel.GetCirclePosition()
         return position.HPosition, position.VPosition
 
-    def set_mode(self, mode_string: str = "Tracking") -> None:
-        """Set the mode of the device to either Tracking or Latch."""
-        if not self.nanotrak:
-            error("NanoTrak not connected!")
-            return
+    def latch(self) -> None:
+        """Set the mode to latch."""
+        self.nanotrak_channel.SetMode(GenericNanoTrakCLI.NanoTrakStatusBase.OperatingModes.Latch)
+        TIAOddOrEven = GenericNanoTrakCLI.TIAOddOrEven
+        TIARangeModes = GenericNanoTrakCLI.TIARangeModes
+        self.nanotrak_channel.SetTIARangeMode(TIARangeModes.AutoRangeAtSelected, TIAOddOrEven.All)
+        time.sleep(0.5)
+        self.debug("NanoTrak latched")
 
-        mode_string = mode_string.strip().lower()
+    def track(self) -> None:
+        """Set the mode to tracking."""
+        self.nanotrak_channel.SetMode(GenericNanoTrakCLI.NanoTrakStatusBase.OperatingModes.Tracking)
+        self.debug("NanoTrak set to Tracking mode.")
 
-        if mode_string == "tracking":
-            new_mode = GenericNanoTrakCLI.NanoTrakStatus.OperatingModes.Tracking
-        elif mode_string == "latch":
-            new_mode = GenericNanoTrakCLI.NanoTrakStatus.OperatingModes.Latch
-        else:
-            error(f"Unknown mode: {mode_string}")
-            return
+    def set_circle_diameter(self, diameter: float) -> None:
+        """Set the circle diameter and wait."""
+        self.nanotrak_channel.SetCircleDiameter(diameter)
+        self.debug(f"Set circle diameter to {diameter}")
+        time.sleep(0.5)  # Optional: wait for device to update
 
-        self.nanotrak.SetMode(new_mode)
+    def debug(self, message: str) -> None:
+        """Print the message if 'debug while tracking' is activated."""
+        if self.debug_while_tracking:
+            print(message)
