@@ -175,7 +175,7 @@ class Device(EmptyDevice):
         nodes = self.node_string
         try:
             self.nodes = [int(node.strip()) for node in nodes.split(",")]
-        except Exception as e:
+        except ValueError as e:
             msg = f"Invalid node format: {nodes}. Use comma separated list or '0' to select all nodes."
             raise ValueError(msg) from e
 
