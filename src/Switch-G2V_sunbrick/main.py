@@ -53,10 +53,7 @@ class Device(EmptyDevice):
     <p>This driver controls the G2V Sunbrick, a programmable LED-based sun simulator.</p>
     <h4>Parameters</h4>
     <ul>
-    <li><b>Mode:</b> The driver currently can sweep Intensity, Spectrum, or None. Depending on the selection, different
-     parameters are available. This driver might need be refreshed by opening the dropdown driver selection to update
-     the input parameters.
-    </li>
+    <li><b>Mode:</b> The driver currently can sweep Intensity, Spectrum, or None.</li>
     <li><b>Nodes:</b> Specify which nodes to control.
         <ul>
             <li>Use a comma-separated list (e.g., <code>1,2,3</code>) to select specific nodes.</li>
@@ -108,21 +105,17 @@ class Device(EmptyDevice):
 
     def update_gui_parameters(self, parameter: dict[str, Any]) -> dict[str, Any]:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
-        new_parameters = {
+        # Currently (SweepMe! 1.5.7.5), dynamic GUI parameters do not check for changes in the SweepMode parameter
+        # TODO: For Intensity mode hide 'Intensity', and for Spectrum mode hide 'Spectrum', 'Nodes', 'Channels'.
+        del parameter
+        return {
             "SweepMode": ["Intensity", "Spectrum", "None"],
             "Stabilization time in s": "0.5",
+            "Spectrum" : Path("my.spectrum"),
+            "Nodes" : "0",
+            "Channels" : "0",
+            "Intensity in %" : "100",
         }
-
-        sweepmode = parameter.get("SweepMode", "Intensity")
-        if sweepmode != "Spectrum":
-            new_parameters["Spectrum"] = Path("my.spectrum")
-            new_parameters["Nodes"] = "0"
-            new_parameters["Channels"] = "0"
-
-        if sweepmode != "Intensity":
-            new_parameters["Intensity in %"] = "100"
-
-        return new_parameters
 
     def apply_gui_parameters(self, parameter: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
