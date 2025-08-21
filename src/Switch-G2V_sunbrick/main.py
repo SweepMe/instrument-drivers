@@ -159,7 +159,7 @@ class Device(EmptyDevice):
                 intensity = float(self.intensity)
             except ValueError as e:
                 msg = f"Invalid value for intensity: {self.intensity}. Must be between 0 and 100%."
-                raise Exception(msg) from e
+                raise ValueError(msg) from e
             self.sunbrick.set_intensity_factor(intensity)
             self.update_timestamp_of_last_change()
 
