@@ -37,6 +37,7 @@ from typing import Any
 
 import clr
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from System import Decimal, Int32
 
 # Import Kinesis dll
 kinesis_imported = False
@@ -115,12 +116,12 @@ class Device(EmptyDevice):
             try:
                 self.rack.Connect(self.serial_number)
             except DeviceManagerCLI.DeviceNotReadyException:
-                print("DeviceNotReadyException: Device is not ready yet, retrying...")
+                #print("DeviceNotReadyException: Device is not ready yet, retrying...")
                 time.sleep(0.2)
                 timeout_s -= 0.2
 
             if timeout_s <= 0:
-                print("Timeout: Device connection failed after 10 seconds.")
+                #print("Timeout: Device connection failed after 10 seconds.")
                 msg = "Failed to connect to the device within the timeout period."
                 raise TimeoutError(msg)
 
@@ -137,14 +138,14 @@ class Device(EmptyDevice):
         """Initialize the device. This function is called only once at the start of the measurement."""
         try:
             status = self.rack.IsSettingsInitialized()
-            print(f"Rack settings initialized: {status}")
+            #print(f"Rack settings initialized: {status}")
         except Exception as e:
             print("Could not check if rack is initialized:", e)
 
         if not self.stepper.IsSettingsInitialized():
             try:
                 self.stepper.WaitForSettingsInitialized(5000)
-                print("Settings initialized.")
+                #print("Settings initialized.")
             except Exception as e:
                 print("Settings failed to initialize:", e)
 
@@ -157,15 +158,16 @@ class Device(EmptyDevice):
         time.sleep(0.5)  # Wait for device to be enabled
 
         print("Device is initialized, polling, and enabled.")
-
+        self.stepper_motor = self.rack.GetStepperChannel(int(self.channel))
         # Why?
-        motorConfiguration = self.stepper.LoadMotorConfiguration(self.stepper.DeviceID)
-        currentDeviceSettings = self.stepper.MotorDeviceSettings
+        motorConfiguration = self.stepper_motor.LoadMotorConfiguration(self.stepper.DeviceID)
+        currentDeviceSettings = self.stepper_motor.MotorDeviceSettings
 
-        # make optional
-        print("Homing device")
-        self.stepper.Home(60000)
-        print("Device Homed")
+        #print("Homing device")
+        #self.stepper_motor.Home(60000)
+        #print("Device Homed")
+
+        #print(self.stepper, type(self.stepper), self.stepper_motor, type(self.stepper_motor))
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -175,19 +177,21 @@ class Device(EmptyDevice):
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        print(self.stepper_motor.MoveTo.Overloads)
         if self.sweep_mode == "Position":
             try:
-                position = int(self.value)
+                position = Decimal(self.value)
             except ValueError as e:
-                msg = f"Invalid position format. Expected a float, got '{self.value}'."
+                msg = f"Invalid position format. Expected a integer, got '{self.value}'."
                 raise ValueError(msg) from e
 
-            print(f"Moving Device to {position}")
+            #print(f"Moving Device to {position}")
             # Move the stepper motor to the specified position
-            self.stepper.MoveTo(position, self.timeout_ms)
-            print(f"Device Moved to {self.stepper.Position}")
+            self.stepper_motor.MoveTo(position, Int32(self.timeout_ms))
+            #print(f"Device Moved to {self.stepper_motor.Position}")
 
     def call(self) -> str:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        return self.stepper.Position
+        #return 1
+        return float(str(self.stepper_motor.Position))
 
