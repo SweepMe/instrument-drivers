@@ -113,8 +113,8 @@ class Device(EmptyDevice):
         self.variables: list[str] = []
         self.units: list[str] = []
 
-        self.plottype = [True, True, True, True]  # True to plot data
-        self.savetype = [True, True, True, True]  # True to save data
+        self.plottype = []
+        self.savetype = []
 
         self.value_1: float | list[float] = 0.0
         self.value_2: float | list[float] = 0.0
@@ -127,7 +127,6 @@ class Device(EmptyDevice):
         return {
             "Average": ["1", "2", "4", "8", "16", "32", "64"],
             "SweepMode": list(self.sweepmode_commands),
-            "SweepValue": ["List"],
             "StepMode": list(self.sweepmode_commands),
             "ValueTypeRMS": ["Voltage RMS in V:", "Current RMS in A:"],
             "ValueRMS": 0.02,
@@ -207,6 +206,8 @@ class Device(EmptyDevice):
 
     def handle_operating_mode(self, mode: str) -> None:
         """Set the return variables and units for the chosen operating mode."""
+        self.plottype = [True, True, True, True]  # True to plot data
+        self.savetype = [True, True, True, True]  # True to save data
         if mode == "R-X":
             self.variables = ["R", "X", "Frequency", self.bias_modes_variables[self.bias_mode]]
             self.units = ["Ohm", "Ohm", "Hz", self.bias_modes_units[self.bias_mode]]
