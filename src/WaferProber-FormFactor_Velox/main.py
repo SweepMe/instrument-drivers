@@ -103,7 +103,7 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter: dict[str, str]) -> None:  # noqa: N802
         """Handle GUI parameter values."""
         self.handle_port_string(parameter["Port"])
-        self.load_angle = float(parameter["Load angle"])
+        self.load_angle = float(parameter.get("Load angle", "0.0"))
         self.sweep_mode_wafer = parameter["SweepValueWafer"]
 
     def handle_port_string(self, port_string: str) -> None:
@@ -171,9 +171,6 @@ class Device(EmptyDevice):
             self.step_to_subsite(subsite)
 
         velox.MoveChuckContact()
-
-    def reach(self) -> None:
-        """After the new position is reached, go to contact."""
 
     def call(self) -> tuple[str, str, str]:
         """Return the current wafer, die, and subsite."""
