@@ -29,22 +29,13 @@
 # * Module: Switch
 # * Instrument: Rohde & Schwarz NGPV
 
-# from pysweepme.ErrorMessage import error
+from __future__ import annotations
+
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
+
 class Device(EmptyDevice):
-    """<p><strong>Rohde & Schwarz NGPV Power Supply</strong></p>
-    <ul>
-    <li>Attention: the NGPV only offers to receive commands to setup its output.</li>
-    <li>Measured output values are only available via the analogue displays on 
-    the instrument's front panel and therefore cannot be transmitted digitally.</li>
-    <li>In addition, please be reminded that the line of NGPV instruments 
-    (with the exception of the 8/10, see manual) will shutdown if the full 
-    nominal value is requested, e.g. 300V for the NGPV 300. Maximum value is 
-    full nominal value minus 1 on the last digit, e.g. 299.9V for the NGPV 300.
-    Refer to the manual for details.</li>
-    </ul>
-    """
+    """Driver for Rohde & Schwarz NGPV."""
 
     def __init__(self):
         EmptyDevice.__init__(self)
@@ -63,7 +54,7 @@ class Device(EmptyDevice):
             "delay": 0.1,
             "timeout": 3,
         }
-        
+
         # Selection of NGPV Models and its specific current mode dictionary using nested dictionaries
         self.ngpvmodels = {
             "NGPV 8/10": {
@@ -101,9 +92,9 @@ class Device(EmptyDevice):
             "NGPV 300/0.6": {
             "Low, 0-99.9mA": "\"{:0.4f}\".format(self.currentlimit)",
             "High, 0-599mA": "\"{:0.3f}\".format(self.currentlimit)"
-            }
-        } 
-        
+            },
+        }
+
         # Selection of model-depending Voltage input format
         self.voltageformat = {
             "NGPV 8/10": "\"{:2.2f}\".format(self.value)",
@@ -114,15 +105,15 @@ class Device(EmptyDevice):
             "NGPV 100/1": "\"{:2.1f}\".format(self.value)",
             "NGPV 100/2": "\"{:2.1f}\".format(self.value)",
             "NGPV 300/0.3": "\"{:3.1f}\".format(self.value)",
-            "NGPV 300/0.6": "\"{:3.1f}\".format(self.value)"
-        } 
-        
-    def update_gui_parameters(self, parameters):
-        
+            "NGPV 300/0.6": "\"{:3.1f}\".format(self.value)",
+        }
+
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        """Determine the new GUI parameters of the driver depending on the current parameters."""
         # retrieve currently set NGPV Model, default to "NGPV 8/10" if unset
         self.ngpvmodel = parameters.get("NGPV Model", "NGPV 8/10")
-        
-        new_parameters = {
+
+        return {
             "NGPV Model": list(self.ngpvmodels.keys()),
             "Current Mode": list(self.ngpvmodels[self.ngpvmodel].keys()),
             "SweepMode": ["Voltage in V"],
@@ -131,10 +122,8 @@ class Device(EmptyDevice):
             "Output Capacitor":["Disabled", "Enabled"],
         }
 
-        return new_parameters
-
-    def apply_gui_parameters(self, parameters):
-        
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Apply the parameters received from the SweepMe GUI or the pysweepme instance to the driver instance."""
         self.ngpvmodel = parameters.get("NGPV Model")
         self.currentmode = parameters.get("Current Mode")
         self.port_string = parameters.get("Port")
@@ -145,7 +134,6 @@ class Device(EmptyDevice):
 
     def initialize(self):
         pass
-        
 
     def configure(self):
         # sets current mode and output smoothing capacitor enabled/disabled
@@ -163,7 +151,7 @@ class Device(EmptyDevice):
             else:
                 # sets output cap enabled and high current range
                 self.port.write("4R")
-        
+
         # check if the requested compliance limit is within the range of the selected current mode
         # 1. extract only the last 6 characters; this will return "-999mA", "99.9mA" or "-x.99A"
         compliancelimit = self.currentmode[-6:]
@@ -205,6 +193,6 @@ class Device(EmptyDevice):
 
     def measure(self):
         pass
-        
+
     def call(self):
         return float(self.value)
