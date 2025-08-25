@@ -174,7 +174,7 @@ class Device(EmptyDevice):
         self.trigger_type = parameter["Trigger"]
 
         # List Mode
-        if parameter["SweepValue"] == "List sweep":
+        if parameter.get("SweepValue", "None") == "List sweep":
             self.use_list_sweep = True
             self.handle_list_sweep_parameter(parameter)
 
@@ -302,7 +302,6 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device with the user settings."""
-        print("Configuring LCRmeter")
         self.set_integration(self.integration, self.average)
 
         # No Cable correction
@@ -604,5 +603,4 @@ class Device(EmptyDevice):
         """
         if 0 < time_in_s < 100e-6:
             time_in_s = 100e-6
-        print(f"Setting delay time to {time_in_s} s")
         self.port.write(f"TRIG:DEL {time_in_s}")
