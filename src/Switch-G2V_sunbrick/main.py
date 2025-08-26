@@ -142,12 +142,6 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        try:
-            self.stabilization_time = float(self.stabilization_time)
-        except ValueError:
-            msg = f"Unsupported value for stabilization time: {self.stabilization_time}. Parameter must be float."
-            raise ValueError(msg)
-
         # check if the provided nodes and channels are supported
         if self.sweepmode != "Spectrum":
             self.set_spectrum_and_update_timestamp_of_last_change(str(self.spectrum))
@@ -233,6 +227,9 @@ class Device(EmptyDevice):
 
     def wait_for_device_to_stabilize(self) -> None:
         """Wait until the stabilization time has passed after changing the last value (spectrum or intensity)."""
+        if not isinstance(self.stabilization_time, float):
+            self.stabilization_time = float(self.stabilization_time)
+
         if self.stabilization_time > 0:
             time_since_last_change = time.time() - self.timestamp_of_last_change
 
