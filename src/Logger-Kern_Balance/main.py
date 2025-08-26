@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2021 SweepMe! GmbH
+# Copyright (c) 2021, 2025 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,19 +26,17 @@
 # SOFTWARE.
 
 
-# SweepMe! device class
-# Type: Logger
-# Device: Kern Balance
+# SweepMe! instrument driver
+# * Module: Logger
+# * Instrument: Kern Balance
 
 
-from ErrorMessage import error, debug
+from pysweepme.ErrorMessage import error, debug
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
-from EmptyDeviceClass import EmptyDevice # Class comes with SweepMe!
-# If you like to see the source code of EmptyDevice, take a look at the pysweepme package that contains this file
 
 class Device(EmptyDevice):
 
-    ## here you can add html formatted description to your device class that is shown by modules like 'Logger' or 'Switch' that have a description field.
     description =   """
                     <p>
                       The driver supports all balances, scales, and terminals from
@@ -87,52 +85,55 @@ class Device(EmptyDevice):
 
     def __init__(self):
         EmptyDevice.__init__(self)
-        
-        
-        ### use/uncomment the next line to use the port manager
-        self.port_manager = True 
-           
-        ### use/uncomment the next line to let SweepMe! search for ports of these types. Also works if self.port_manager is False or commented.
+
+        self.port_manager = True
         self.port_types = ["COM"]
-        
         self.port_properties = {
                                 "baudrate": 9600,
-                                "EOL": "\r\n", # terminator is CR/LF
+                                "EOL": "\r\n",  # terminator is CR/LF
                                 "parity": "N",
                                 "timeout": 10,
                                 }
             
     def set_GUIparameter(self):
     
-        GUIparameter = {
+        gui_parameter = {
                         "Mode": ["Weight in kg", "Weight in g"],
-                        "": None, # empty line
+                        "": None,  # empty line
                         "Read stabilized": False,
                         "Initial zero": False,
                         "Initial tare": False,
+                        # " ": None,  # empty line
+                        # "Flow calculation": False,
+                        # "Time unit": ["s", "min", "h"],
                         }
 
-        
-        return GUIparameter
+        return gui_parameter
 
     def get_GUIparameter(self, parameter):
 
-        self.is_read_stabilied = parameter["Read stabilized"]
+        self.is_read_stabilized = parameter["Read stabilized"]
         self.do_initial_zero = parameter["Initial zero"]
         self.do_initial_tare = parameter["Initial tare"]
         self.unit_str = parameter["Mode"].split(" ")[-1]
         self.variable_str = parameter["Mode"].split(" ")[0]
 
-
-        self.shortname = "Balance" # short name will be shown in the sequencer
-        self.variables = [self.variable_str, "stable"] # define as many variables you need
+        self.shortname = "Balance"
+        self.variables = [self.variable_str, "stable"]  # define as many variables you need
         self.units = [self.unit_str, ""]
-        self.plottype = [True, True]   # True to plot data, corresponding to self.variables
-        self.savetype = [True, True]   # True to save data, corresponding to self.variables
-        
-        
+        self.plottype = [True, True]  # True to plot data, corresponding to self.variables
+        self.savetype = [True, True]  # True to save data, corresponding to self.variables
 
     """ here, semantic standard functions start that are called by SweepMe! during a measurement """
+
+    def connect(self):
+        # figure out which protocol is used
+        try:
+            self.port.write("I5")  # queries the SW identification number
+            answer = self.port.read()
+            self.protocol = "KCP"  # Kern Communication Protocol
+        except:
+            self.protocol = "tws"  # t, w, and s are the only three commands that the older protocol supports
 
     def initialize(self):
     
@@ -140,77 +141,131 @@ class Device(EmptyDevice):
         #answer = self.port.read()
         #print("Response on @:", answer)
         
-        ## not used because I0 returns multiple lines
+        # not used because I0 returns multiple lines
         # self.port.write("I0")
         # answer = self.port.read() # query list of implemented commands, this might be useful later to check whether the balance can be used with this driver.
         # print("SW identification number:", answer)
         
         self.port.write("I5")
-        answer = self.port.read() # queries the SW identification number
+        answer = self.port.read()  # queries the SW identification number
         # print("SW identification number:", answer)
-        
-        if self.do_initial_zero:
-            self.port.write("Z")
+
+        if self.protocol == "KCP":
+            self.port.write("U %s" % self.unit_str)
             answer = self.port.read()
-            
+            # print("Unit:    ", answer)
+
+    def configure(self):
+
+        if self.do_initial_zero:
+            if self.protocol == "KCP":
+                self.port.write("Z")
+                answer = self.port.read()
+
         if self.do_initial_tare:
-            self.port.write("T")
-            answer = self.port.read()    
-            
-        self.port.write("U %s" % self.unit_str)
-        answer = self.port.read()
-        # print("Unit:    ", answer)
-               
-     
+            self.tare()
+
+        # if self.do_flow_calculation:
+            # self.reference_weight = self.get_weight_immediately()
+            # self.reference_time = time.perf_counter()
+
     def measure(self):
-        
-        if self.is_read_stabilied:
-            self.port.write("S") # send stable value
-        else:
-            self.port.write("SI") # = Send Immediately (can be also unstable value)
-        
-    def read_result(self):
-        
-        weight = float('nan') # default value that will be overwritten, whenever the balance responds with a correct value
-        
-        answer = self.port.read()
-        # print("My answer=", answer)
-        
-        vals = answer.split() # split must have no argument as this automatically removed multiple spaces
-        # print("vals: ", vals)
-        
-        if vals[0] != "S":
-            self.stop_measurement("Response to weight query incorrect.")
-            return False
-        else:
-            if not vals[1] in ["S", "D"]: 
-                self.stop_measurement("Unable to query weight.")
-                return False
-                
+
+        if self.protocol == "KCP":
+            if self.is_read_stabilized:
+                self.port.write("S")  # send stable value
             else:
-                self.is_stable = (vals[1] == "S")
+                self.port.write("SI")  # = Send Immediately (can be also unstable value)
 
-                weight = float(vals[2])
-                unit = vals[3]
+    def read_result(self):
 
-                if unit != self.unit_str:
-                    self.stop_measurement("Queried weight has wrong unit.")
-                    return False
-                
-        self.weight = weight # todo: do some processing here to get a float value in kg
-        
+        # default value
+        weight = float('nan')
+
+        answer = self.port.read()
+
+        if self.protocol == "KCP":
+
+            vals = answer.split()
+
+            if vals[0] != "S":
+                msg = "Queried weight has wrong prefix."
+                raise Exception(msg)
+
+            if vals[1] not in ["S", "D"]:
+                msg = "Queried weight has wrong status."
+                raise Exception(msg)
+
+            self.is_stable = (vals[1] == "S")
+
+            weight = float(vals[2])
+            unit = vals[3]
+
+            if unit != self.unit_str:
+                msg = "Queried weight has wrong unit."
+                raise Exception(msg)
+
+        elif self.protocol == "tws":
+
+            # Unclear whether balance returns whether value is stabilized so we use the information from
+
+            self.is_stable = self.is_read_stabilized
+
+            try:
+                weight = float(answer.split("g")[0].replace(" ", ""))
+
+                if "kg" in answer:
+                    if self.mode_str == "Weight in kg":
+                        pass
+                    elif self.mode_str == "Weight in g":
+                        weight = weight * 1000.0
+
+                else:
+                    if self.mode_str == "Weight in kg":
+                        weight = weight / 1000.0
+                    elif self.mode_str == "Weight in g":
+                        pass
+            except:
+                raise Exception("Unable to query weight.")
+
+        self.weight = weight
 
     def call(self):
 
         return [self.weight, self.is_stable]
-        
-        
+
     def tare(self):
-        self.port.write("T")
-        answer = self.port.read()  
-        
+        if self.protocol == "KCP":
+            self.port.write("T")
+            answer = self.port.read()
+
+        elif self.protocol == "tws":
+            self.port.write("t")
+            answer = self.port.read()
+
     def zero(self):
         self.port.write("Z")
         answer = self.port.read()
 
-             
+    def get_weight_immediately(self):
+
+        if self.protocol == "KCP":
+            self.port.write("SI")
+            answer = self.port.read()
+
+        elif self.protocol == "tws":
+            self.port.write("w")
+            answer = self.port.read()
+
+    def get_weight_stable(self):
+
+        if self.protocol == "KCP":
+            self.port.write("S")
+            answer = self.port.read()
+        elif self.protocol == "tws":
+            self.port.write("s")
+            answer = self.port.read()
+
+    def read_weight(self):
+
+        answer = self.port.read()
