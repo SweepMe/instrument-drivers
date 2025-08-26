@@ -92,7 +92,7 @@ class Device(EmptyDevice):
 
         # Measurement parameters
         self.sweepmode: str = "Intensity"
-        self.spectrum: Path = Path()
+        self.spectrum: str = ""
 
         self.stabilization_time: str | float = 0.5
         self.timestamp_of_last_change: float = 0.
@@ -111,7 +111,7 @@ class Device(EmptyDevice):
         return {
             "SweepMode": ["Intensity", "Spectrum", "None"],
             "Stabilization time in s": "0.5",
-            "Spectrum" : Path("my.spectrum"),
+            "Spectrum" : "my.spectrum",
             "Nodes" : "0",
             "Channels" : "0",
             "Intensity in %" : "100",
