@@ -5,6 +5,9 @@ It allows you to set and sweep voltages on NI DAQ analog output (AO) channels..
 
 ---
 
+## Requirements
+- The software 'NI-DAQmx' from National Instruments must be installed before using this driver. It is typically provided with your instrument.
+
 ## Features
 - Control **analog output channels (AO)** of NI DAQ devices.
 - Voltage sweep support via **SweepEditor** or other variables selected in the field **Sweep Value**.
