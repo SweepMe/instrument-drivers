@@ -29,6 +29,7 @@
 # * Module: SMU
 # * Instrument: aSpectSystems idSMU modules
 
+from __future__ import annotations
 
 import time
 
@@ -114,6 +115,7 @@ class Device(EmptyDevice):
             "Slow": 2**12,  # 4096
             "Very slow": 2**16,  # 65536
         }
+        self.speed: str = "Medium"
 
         # Output ranges
         self.v_min: float = -11
@@ -171,7 +173,6 @@ class Device(EmptyDevice):
         """Set the standard GUI parameters."""
         return {
             "SweepMode": ["Voltage in V", "Current in A"],
-            # "Channel": self.channels,
             "RouteOut": ["Front"],
             "Compliance": 0.07,
             "Range": list(self.current_ranges),
@@ -332,7 +333,7 @@ class Device(EmptyDevice):
                 )
 
     def configure(self) -> None:
-
+        """Set compliance, current range, speed, and list mode."""
         # Protection
         self.set_compliance(self.protection)
 
@@ -394,18 +395,17 @@ class Device(EmptyDevice):
         # adding channel name as the SMU gets active
         self.device_communication[self.identifier][self.identifier_channel_names].append(self.channel.name)
 
-    def unconfigure(self):
-
-        # removing channel name if the SMU is no longer active
+    def unconfigure(self) -> None:
+        """Removing channel name if the SMU is no longer active."""
         self.device_communication[self.identifier][self.identifier_channel_names].remove(self.channel.name)
 
-    def poweron(self):
-        """Enable the channel"""
+    def poweron(self) -> None:
+        """Enable the channel."""
         if not self.channel.enabled:
             self.channel.enabled = True
 
-    def poweroff(self):
-        """Disable the channel"""
+    def poweroff(self) -> None:
+        """Disable the channel."""
         if self.channel.enabled:
             self.channel.enabled = False
 
@@ -463,8 +463,8 @@ class Device(EmptyDevice):
             self.v = self.channel.voltage
             self.i = self.channel.current
 
-    def read_result(self):
-
+    def read_result(self) -> None:
+        """Read the results using either async or normal readout."""
         if self.list_role in ("List master", "List receiver", "List creator"):
             return
 
