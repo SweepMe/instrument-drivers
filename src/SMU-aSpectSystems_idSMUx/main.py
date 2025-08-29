@@ -411,6 +411,8 @@ class Device(EmptyDevice):
 
     def apply(self) -> None:
         """Set the voltage or current on the SMU."""
+        self.value = float(self.value)
+
         if self.source_mode == "Voltage":
             if self.value > self.v_max or self.value < self.v_min:
                 msg = f"Voltage {self.value} V out of range {self.v_min} V to {self.v_max} V"
