@@ -31,6 +31,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import numpy as np
 import struct
 import time
@@ -52,6 +54,15 @@ class Device(EmptyDevice):
 
                 <h4>Parameters</h4>
                 <ul>
+                    <li>List Mode: If enabled, the laser will perform a wavelength sweep between the start and stop
+                    values with the specified step size and scan speed. The laser will output a trigger signal at
+                    the end of each wavelength step. The power can be set to a fixed value in this mode.</li>
+                    <li>Sweep Mode: Choose between sweeping the wavelength or the power.</li>
+                    <li>Wavelength: Set the wavelength in the selected unit. Only used if Sweep Mode is not set to
+                    Wavelength and List Mode is disabled.</li>
+                    <li>Power Level: Set the power level in the selected unit. Only used if Sweep Mode is not set to Power.</li>
+                    <li>Power Unit: Choose between W, mW, and dBm.</li>
+                    <li>Wavelength Unit: Choose between nm, µm, mm, m, and pm.</li>
                     <li>The scan speed can only be set to discrete values depending on your device type. Check the
                     manual or the device interface for available speed values.</li>
                 </ul>
@@ -135,6 +146,11 @@ class Device(EmptyDevice):
                 "Scan speed in nm/s": "10",
             })
 
+            # remove wavelength from parameters
+            with contextlib.suppress(KeyError):
+                del new_parameters["Wavelength"]
+                del new_parameters["Wavelength unit"]
+
         return new_parameters
 
     def apply_gui_parameters(self, parameters: dict) -> None:
@@ -180,25 +196,25 @@ class Device(EmptyDevice):
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         if self.list_mode:
-            if self.sweepmode != "Wavelength":
-                msg = "List mode is only supported for wavelength sweeps."
+            if self.sweepmode == "Wavelength":
+                msg = "SweepMe! cannot sweep wavelength if the device does a wavelength sweep."
                 raise ValueError(msg)
             self.configure_list_mode()
 
         if self.sweepmode != "Power":
             self.set_power(self.power_level, self.power_unit)
-        elif self.sweepmode != "Wavelength":
+
+        if self.sweepmode != "Wavelength" and not self.list_mode:
             self.set_wavelength(wavelength_m=self.wavelength * self.wavelength_conversion)
 
     def configure_list_mode(self) -> None:
         """Configure the device for wavelength sweeps in list mode."""
         # Configure trigger: The Input Trigger Connector is activated, the incoming trigger response for each slot.
-        self.port.write("trigger:configuration 1")
         self.configure_trigger_output("STF")  # Trigger when a sweep step finishes
 
         # Configure list parameters
-        self.set_sweep_cycles(1)
         self.port.write(":sour0:wav:swe:mode CONT")  # Set sweep mode to continuous
+        self.set_sweep_cycles(1)
         self.set_sweep_speed(self.scan_speed)
         self.set_sweep_start(self.list_start)
         self.set_sweep_stop(self.list_stop)
@@ -206,9 +222,12 @@ class Device(EmptyDevice):
 
         # use lambda logging?
         self.port.write(":sour0:wav:swe:llog ON")
-        print(self.port.query("trig0:outp?"))
 
-        # TODO: Check if sweep parameter inconsistent message is returned - manual page 71
+        # Check the sweep parameters
+        status = self.port.query(":sour0:wav:swe:chec?")
+        if status != "0,OK":
+            msg = f"Sweep parameters not set correctly. Status: {status}"
+            raise ValueError(msg)
 
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
@@ -219,10 +238,10 @@ class Device(EmptyDevice):
         self.set_laser_off()
 
     def apply(self) -> None:
-        """This function is called if the set value has changed. Applies the new value available as self.value."""
-        if self.list_mode:
-            return
+        """This function is called if the set value has changed. Applies the new value available as self.value.
 
+        If the device is in list mode, it should only set the power
+        """
         value = float(self.value)
 
         if self.sweepmode == "Wavelength":
@@ -269,7 +288,7 @@ class Device(EmptyDevice):
             time.sleep(0.1)
             timeout_s -= 0.1
 
-    def get_lambda_logging_data(self) -> np.array:
+    def get_lambda_logging_data(self) -> np.ndarray:
         """Get the lambda logging data after a sweep in list mode.
 
         Data is returned from the device as a binary stream that contains each wavelength step of the lambda logging
