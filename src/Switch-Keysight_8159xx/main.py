@@ -80,7 +80,7 @@ class Device(EmptyDevice):
         return {
             "Channel": "1",
             "Slot": "1",
-            "Sweep Mode": ["Route", "None"],
+            "SweepMode": ["Route", "None"],
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
@@ -88,11 +88,10 @@ class Device(EmptyDevice):
         self.port_string = parameters.get("Port", "")
         self.channel = parameters.get("Channel", "")
         self.slot = parameters.get("Slot", "")
-        self.sweep_mode = parameters.get("Sweep Mode", "None")
+        self.sweep_mode = parameters.get("SweepMode", "None")
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
-        print(self.get_identification())
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -152,11 +151,16 @@ class Device(EmptyDevice):
             msg = f"Right port must be a single digit, got '{right_port}'."
             raise ValueError(msg)
 
+        current_route = self.get_route().strip()
+        if current_route == f"{left_port},{right_port}":
+            return
+
         command = f":ROUT{self.slot}:CHAN{self.channel} {left_port},{right_port}"
-        response = self.port.query(command)
-        if "StatParamError" in response:
-            msg = f"Invalid route command: {command}. Response: {response}"
-            raise ValueError(msg)
+        self.port.write(command)
+        # print(f"Response: {response}")
+        # if "StatParamError" in response:
+        #     msg = f"Invalid route command: {command}. Response: {response}"
+        #     raise ValueError(msg)
 
     def get_route(self) -> str:
         """Get the current route of the device."""
