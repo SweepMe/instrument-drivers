@@ -164,6 +164,7 @@ class Device(EmptyDevice):
             "Fast": 0.1,
             "Medium": 1.0,
             "Slow": 10.0,
+            "Custom": 10,
         }
         """Speed names as keys and PLC values as values."""
 
@@ -180,8 +181,13 @@ class Device(EmptyDevice):
         self.route_out: str = "Rear"
         self.source: str = "Voltage in V"
         self.protection: float = 100e-6
-        self.speed: str = "Very fast"
         self.channel: str = "SMU1"
+
+        # Speed
+        self.speed: str = "Very fast"
+        self.delay_factor: str = "0"
+        self.filter_factor: str = "0"
+        self.ad_aperture_time: str = "0.01"
 
         self.card_name = "SMU" + self.channel[-1]
         self.pulse_channel = None
@@ -230,9 +236,9 @@ class Device(EmptyDevice):
         """Find available ports."""
         return ["LPTlib"] if RUNNING_ON_4200SCS else ["LPTlib via xxx.xxx.xxx.xxx"]
 
-    def set_GUIparameter(self) -> dict:  # noqa: N802
+    def update_gui_parameters(self, parameters: dict) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
-        return {
+        new_parameters = {
             "SweepMode": ["Voltage in V", "Current in A"],
             "RouteOut": ["Rear"],
             "Channel": ["SMU1", "SMU2", "SMU3", "SMU4", "PMU1 - CH1", "PMU1 - CH2"],
@@ -265,24 +271,85 @@ class Device(EmptyDevice):
             "ListSweepDelaytime": "0.0",
         }
 
-    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
+        if parameters.get("Speed", "Slow") == "Custom":
+            new_parameters["Delay factor"] = 0
+            new_parameters["Filter factor"] = 0
+            new_parameters["A/D aperture time"] = 0.01
+
+        return new_parameters
+
+    def apply_gui_parameters(self, parameters: dict) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.port_string = parameter["Port"]
+        self.port_string = parameters.get("Port", "")
         self.identifier = "Keithley_4200-SCS_" + self.port_string
 
-        self.route_out = parameter["RouteOut"]
-        self.current_range = parameter["Range"]
+        self.route_out = parameters.get("RouteOut", "")
+        self.current_range = parameters.get("Range", "")
 
-        self.source = parameter["SweepMode"]
+        self.source = parameters.get("SweepMode", "")
 
-        self.protection = parameter["Compliance"]
-        self.speed = parameter["Speed"]
+        self.protection = parameters.get("Compliance", "")
+        self.speed = parameters.get("Speed", "")
 
-        self.channel = parameter["Channel"]
+        self.channel = parameters.get("Channel", "")
+        self.handle_card_name()
+        self.shortname = "4200-SCS %s" % parameters.get("Channel", "")
 
-        # The channel can be either "SMU1", "SMU2", "PMU1 - CH1" or "PMU1 - CH2"
-        # It means that in case of PMU the pulse channel is additionally added after the card name
-        # The card name is now always "SMU1", "SMU2", or "PMU1" etc.
+        self.port_manager = "lptlib" not in self.port_string.lower()
+
+        # Custom speed parameters
+        if self.speed == "Custom":
+            self.delay_factor = parameters.get("Delay factor", "0")
+            self.filter_factor = parameters.get("Filter factor", "0")
+            self.ad_aperture_time = parameters.get("A/D aperture time", "0.01")
+
+        # Pulse Mode Parameters
+        self.pulse_master = False
+        self.pulse_mode = parameters.get("CheckPulse", "")
+        if self.pulse_mode:
+            # backward compatibility as new fields have been added that are not
+            # present in older SMU module versions
+            try:
+                self.pulse_count = parameters.get("PulseCount", "")
+                self.pulse_meas_start = parameters.get("PulseMeasStart", "")
+                self.pulse_meas_duration = parameters.get("PulseMeasTime", "")
+                self.pulse_width = float(parameters.get("PulseOnTime", ""))
+                self.pulse_period = float(parameters.get("PulsePeriod", ""))
+                self.pulse_delay = float(parameters.get("PulseDelay", ""))
+                self.pulse_base_level = parameters.get("PulseOffLevel", "")
+                self.pulse_rise_time = parameters.get("PulseRiseTime", "")
+                self.pulse_fall_time = parameters.get("PulseFallTime", "")
+                self.pulse_impedance = parameters.get("PulseImpedance", "")
+            except KeyError:
+                debug("Please update the SMU module to support all features of the Keithley 4200-SCS instrument driver")
+
+        # List Mode Parameters
+        try:
+            sweep_value = parameters.get("SweepValue", "")
+        except KeyError:
+            # this might be the case when driver is used with pysweepme
+            # then, "SweepValue" is not defined during set_GUIparameter
+            sweep_value = None
+
+        if sweep_value == "List sweep":
+            self.list_master = True
+            self.list_receiver = False
+            self.handle_list_sweep_parameter(parameters)
+
+        # The list keys must be updated with the channel name
+        self.list_measurement_keys = {
+            "voltage": f"voltage_{self.channel}",
+            "current": f"current_{self.channel}",
+            "time": f"time_{self.channel}",
+        }
+
+    def handle_card_name(self) -> None:
+        """Extract the card name and pulse channel from the selected channel.
+
+        The channel can be either "SMU1", "SMU2", "PMU1 - CH1" or "PMU1 - CH2"
+        It means that in case of PMU the pulse channel is additionally added after the card name
+        The card name is now always "SMU1", "SMU2", or "PMU1" etc.
+        """
         if "PMU" in self.channel:
             self.card_name = self.channel.split("-")[0].strip()
             self.pulse_channel = int(self.channel.split("-")[1][-1])
@@ -294,50 +361,6 @@ class Device(EmptyDevice):
             # necessary to distinguish between SMU and PMU
             self.card_name = "SMU" + self.channel[-1]
             self.pulse_channel = None
-
-        self.shortname = "4200-SCS %s" % parameter["Channel"]
-
-        self.port_manager = "lptlib" not in self.port_string.lower()
-
-        # Pulse Mode Parameters
-        self.pulse_master = False
-        self.pulse_mode = parameter["CheckPulse"]
-        if self.pulse_mode:
-            # backward compatibility as new fields have been added that are not
-            # present in older SMU module versions
-            try:
-                self.pulse_count = parameter["PulseCount"]
-                self.pulse_meas_start = parameter["PulseMeasStart"]
-                self.pulse_meas_duration = parameter["PulseMeasTime"]
-                self.pulse_width = float(parameter["PulseOnTime"])
-                self.pulse_period = float(parameter["PulsePeriod"])
-                self.pulse_delay = float(parameter["PulseDelay"])
-                self.pulse_base_level = parameter["PulseOffLevel"]
-                self.pulse_rise_time = parameter["PulseRiseTime"]
-                self.pulse_fall_time = parameter["PulseFallTime"]
-                self.pulse_impedance = parameter["PulseImpedance"]
-            except KeyError:
-                debug("Please update the SMU module to support all features of the Keithley 4200-SCS instrument driver")
-
-        # List Mode Parameters
-        try:
-            sweep_value = parameter["SweepValue"]
-        except KeyError:
-            # this might be the case when driver is used with pysweepme
-            # then, "SweepValue" is not defined during set_GUIparameter
-            sweep_value = None
-
-        if sweep_value == "List sweep":
-            self.list_master = True
-            self.list_receiver = False
-            self.handle_list_sweep_parameter(parameter)
-
-        # The list keys must be updated with the channel name
-        self.list_measurement_keys = {
-            "voltage": f"voltage_{self.channel}",
-            "current": f"current_{self.channel}",
-            "time": f"time_{self.channel}",
-        }
 
     def handle_list_sweep_parameter(self, parameter: dict) -> None:
         """Read out the list sweep parameters and create self.list_sweep_values."""
@@ -559,10 +582,19 @@ class Device(EmptyDevice):
             if self.speed == "Very fast":
                 msg = (
                     "Speed of 'Very Fast' is not supported for US command set via GPIB/TCPIP. "
-                    "Use control via 'LPTlib' instead."
+                    "Use control via 'LPTlib' or custom speed instead."
                 )
                 raise ValueError(msg)
-            self.set_integration_time(self.speed)
+
+            if self.speed == "Custom":
+                self.set_speed_mode(
+                    self.speed,
+                    float(self.delay_factor),
+                    float(self.filter_factor),
+                    float(self.ad_aperture_time),
+                )
+            else:
+                self.set_speed_mode(self.speed)
 
             # Current Range - the KXCI implementation has not been tested yet
             current_range_float = self.current_ranges[self.current_range]
@@ -591,6 +623,18 @@ class Device(EmptyDevice):
             self.lpt.limitv(self.card_id, float(self.protection))  # compliance/protection
 
         # Integration/Speed for intgX and sintgX commands. Allowed values are from 0.01 to 10
+        if self.speed.lower() == "custom":
+            msg = "Custom speed mode can only be used with US command set via GPIB."
+            raise NotImplementedError(msg)
+
+            # ad factor = KI_INTGPLC (NPLC up to 100)
+            # delay factor = KI_DELAY_FACTOR
+            # filter factor =
+
+        # TODO: lptlib allows for setting NPLC integration to custom values between 0.01 and 10
+        # but we cannot set filter factor (only for CVU cards)
+        # we could set the delay factor, but it does not make much sense because we can also use SweepMes Hold
+
         nplc_value = self.speed_dict[self.speed]
         self.lpt.setmode(self.card_id, self.param.KI_INTGPLC, nplc_value)
 
@@ -944,16 +988,18 @@ class Device(EmptyDevice):
             self.port.write("DR0")  # data ready service request
         return self.read_tcpip_port()
 
-    def set_integration_time(self, speed: str) -> str:
+    def set_speed_mode(self, speed: str, delay_factor: float = 1., filter_factor: float = 1., ad_integration_time: float = 1.) -> str:
         """Set the integration time of the device (KXCI Integration).
 
         Allowed values for speed are:
         fast - 0.1 PLC (named short in the manual)
         medium - 1 PLC
         slow - 10 PLC (named long in the manual)
+        custom
         Keep the naming of previous drivers for compatibility (fast + slow) and allow manual naming (short + long).
 
-        Custom (4200A command set only) - command 4, not integrated in this driver. Includes delay and filter factor
+        Custom (4200A command set only) - command 4: Requires delay factor (0 - 100), filter factor (0 - 100),
+        and A/D integration time (0.01 - 10 NPLC) to be set.
         """
         commands = {
             "fast" : "1",  # = short
@@ -961,13 +1007,34 @@ class Device(EmptyDevice):
             "medium" : "2",  # medium
             "slow": "3",  # = long
             "long": "3",
+            "custom": "4",
         }
         if speed.lower() not in commands:
             msg = f"Speed must be one of {list(commands.keys())}."
             raise ValueError(msg)
 
-        if self.command_set == "US":
+        if self.command_set != "US":
+            msg = "set_speed_mode can only be set when using US command set via KXCI controls."
+            raise NotImplementedError(msg)
+
+        if speed.lower() == "custom":
+            if delay_factor < 0 or delay_factor > 100:
+                msg = "Delay factor must be between 0 and 100."
+                raise ValueError(msg)
+
+            if filter_factor < 0 or filter_factor > 100:
+                msg = "Filter factor must be between 0 and 100."
+                raise ValueError(msg)
+
+            if ad_integration_time < 0.01 or ad_integration_time > 10:
+                msg = "A/D integration time must be between 0.01 and 10 (NPLC)."
+                raise ValueError(msg)
+
+            self.port.write(f"IT4, {delay_factor}, {filter_factor}, {ad_integration_time}")
+
+        else:
             self.port.write("IT" + commands[speed.lower()])  # IT1 short, IT2 medium, IT3 long
+
         return self.read_tcpip_port()
 
     def set_current(self, channel: str, current_range: int, value: float, voltage_compliance: float) -> str:
