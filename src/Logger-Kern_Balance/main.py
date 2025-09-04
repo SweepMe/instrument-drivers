@@ -284,7 +284,7 @@ class Device(EmptyDevice):
 
     def zero(self) -> None:
         """Sets the balance to zero (without load)."""
-        if self.protocol == "KCP"
+        if self.protocol == "KCP":
             self.port.write("Z")
         elif self.protocol == "tws":
             raise NotImplementedError("Zeroing not supported in tws protocol.")
