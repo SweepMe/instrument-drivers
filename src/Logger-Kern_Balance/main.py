@@ -106,7 +106,7 @@ class Device(EmptyDevice):
             answer = self.port.read()
             # TODO: check whether answer is valid for KCP
             self.protocol = "KCP"  # Kern Communication Protocol
-        except:
+        except:  # TODO: catch specific exception
             self.protocol = "tws"  # t, w, and s are the only three commands that the older protocol supports
             # if it fails to use the first command, we will proceed with tws command set
             if not self.port.port_properties["open"]:
@@ -131,7 +131,7 @@ class Device(EmptyDevice):
             # print("SW identification number:", answer)
 
         if self.protocol == "KCP":
-            self.port.write("U %s" % self.unit_str)
+            self.port.write(f"U {self.unit_str}")
             answer = self.port.read()
             # print("Unit:    ", answer)
 
@@ -148,7 +148,7 @@ class Device(EmptyDevice):
             elif self.protocol == "tws":
             
                 if self.is_read_stabilized:
-                    self.weight_initial_g = self.get_weight_stable()
+                    self.weight_initial_g = self.get_weight_stable_g()
                 else:
                     self.weight_initial_g = self.get_weight_immediately_g()
                     
@@ -242,15 +242,18 @@ class Device(EmptyDevice):
                         elif self.mode_str == "g":
                             pass
                 except:
-                    raise Exception(f"Unable to interprete weight: '{repr(answer)}'")
+                    raise ValueError(f"Unable to interprete weight: '{repr(answer)}'")
                     
                 if self.do_initial_zero:
                     weight = weight - self.weight_initial
                     
         if self.do_flow_calculation:
             now = time.perf_counter()
-            
-            flow = (weight - self.weight_last) / (now-self.time_last)
+
+            if (now - self.last_time) > 0.0:
+                flow = (weight - self.weight_last) / (now - self.time_last)
+            else:
+                flow = float('nan')
             
             if self.time_unit == "s":
                 pass
@@ -281,8 +284,10 @@ class Device(EmptyDevice):
 
     def zero(self) -> None
         """Sets the balance to zero (without load)."""
-        self.port.write("Z")
-        self.port.read()
+        if self.protocol == "KCP"
+            self.port.write("Z")
+        elif self.protocol == "tws":
+            raise NotImplementedError("Zeroing not supported in tws protocol.")
 
     def get_weight_immediately_g(self):
 
@@ -340,12 +345,12 @@ class Device(EmptyDevice):
         
             self.port.write("w")
             answer = self.port.read()        
-            self.is_stable = "g" in answer
+            is_stable = "g" in answer
 
-            while not self.is_stable and not self.is_run_stopped():
+            while not is_stable and not self.is_run_stopped():
                 self.port.write("w")
                 answer = self.port.read()
-                self.is_stable = "g" in answer
+                is_stable = "g" in answer
             
             answer = answer[2:].replace(" ", "").replace("g", "")
             weight = float(answer)
