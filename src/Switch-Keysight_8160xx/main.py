@@ -31,6 +31,12 @@
 
 from __future__ import annotations
 
+import struct
+import time
+
+import contextlib
+import numpy as np
+
 from typing import Any
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -39,17 +45,18 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
     """Driver for the Keysight 8160xx Laser module."""
 
+    description = """Driver for the Keysight 8160xx Laser module. Very close to the Keysight N777x driver."""
+
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
         super().__init__()
 
         self.shortname = "8160xx"  # short name will be shown in the sequencer
 
-        # No measured variables - laser is a source
-        self.variables = []
-        self.units = []
-        self.plottype = []
-        self.savetype = []
+        self.variables = ["Wavelength", "Power"]
+        self.units = ["nm", "W"]  # will be overwritten in get_GUIparameter
+        self.plottype = [True, True]
+        self.savetype = [True, True]
 
         # Communication Parameters
         self.port_string: str = ""
@@ -58,41 +65,89 @@ class Device(EmptyDevice):
 
         # Measurement parameters
         self.channel: int = 1
+        self.slot: int = 0
+        self.output_path: str = "1"  # 1 = low power/high sens, 2 = high power
 
-    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        # Power
+        self.power_level: float = -1
+        self.power_units = {
+            "dBm": 1,  # default
+            "W": 1,
+            "mW": 1e-3,  # instrument doesnt directly support mW
+        }
+        self.power_unit: str = ""
+
+        # Wavelength
+        self.wavelength: float = -1
+        self.wavelength_unit: str = ""
+        self.wln_max: float = -1
+        self.wln_min: float = -1
+
+        # Measurement variables
+        self.sweep_mode: str = "None"
+        self.measured_power: float = -1
+        self.measured_wavelength: float | np.array = -1
+
+        # List mode
+        self.list_mode: bool = False
+        self.list_start: float = 0.0  # Start of the list in nm
+        self.list_stop: float = 0.0  # Stop of the list in nm
+        self.list_step: float = 10  # step size in nm
+        self.scan_speed: float = 10.0  # Scan speed in nm/s
+
+    def update_gui_parameters(self, parameters: dict) -> dict:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
-        del parameters
-        return {
+        new_parameters =  {
             "SweepMode": ["None", "Wavelength", "Power"],
-            "Slot": 0,  # TLS module slot number
-            # "Output Path": [1, 2],  # 1 = low power/high sens, 2 = high power
+            "Slot": 0,
+            "Output Path": ["1", "2"],  # 1 = low power/high sens, 2 = high power
             "Wavelength in nm": 1550.0,
             "Power unit": ["dBm", "W"],
             "Power": 0.0,
+            "Mode": ["Single", "List"],
         }
+
+        if "List" in parameters.get("Mode", "Single"):
+            new_parameters.update({
+                "List Start in nm": "1250",
+                "List Stop in nm": "1650",
+                "List Step in nm": "10",
+                "Scan speed in nm/s": "10",
+            })
+
+            # remove wavelength from parameters
+            with contextlib.suppress(KeyError):
+                del new_parameters["Wavelength in nm"]
+
+        return new_parameters
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.port_string = parameters.get("Port", "")
-        self.channel = parameters.get("Channel", 1)
-
-        self.slot = parameters.get("Slot", "")
-        # self.output_path = parameters.get("Output Path", "")
-        self.wavelength = parameters.get("Wavelength in nm", "")
-        self.power = parameters.get("Power", "")
-        self.power_unit = parameters.get("Power unit", "dBm")
         self.sweep_mode = parameters.get("SweepMode", "")
 
-    def connect(self) -> None:
-        """Connect to the device. This function is called only once at the start of the measurement."""
-        idn = self.port.query("*IDN?")
-        print(f"Connected to: {idn.strip()}")
+        self.channel = parameters.get("Channel", 1)
+        self.slot = parameters.get("Slot", "")
 
-    def disconnect(self) -> None:
-        """Disconnect from the device. This function is called only once at the end of the measurement."""
+        self.output_path = parameters.get("Output Path", "")
+        self.wavelength = parameters.get("Wavelength in nm", "")
+        self.power_level = parameters.get("Power", "")
+        self.power_unit = parameters.get("Power unit", "dBm")
+
+        if parameters.get("Mode", "Single") == "List":
+            self.list_mode = True
+            self.list_start = float(parameters.get("List Start in nm", "1250"))
+            self.list_stop = float(parameters.get("List Stop in nm", "1650"))
+            self.list_step = float(parameters.get("List Step in nm", "10"))
+            self.scan_speed = float(parameters.get("Scan speed in nm/s", "10"))
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
+        # Reset / Preset
+        self.port.write("*CLS")
+        self.port.write(":SYSTem:PRESet")
+
+        self.get_wavelength_range()
 
     def poweron(self) -> None:
         """Turn on the power."""
@@ -104,56 +159,146 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        # Reset / Preset
-        self.port.write("*CLS")
-        self.port.write(":SYSTem:PRESet")
-
-        self.set_wavelength(float(self.wavelength))
-
-        # Configure output
-        # self.port.write(f"OUTPut{self.slot}:PATH {self.output_path}")
+        self.set_output_path(int(self.output_path))
         self.set_power_unit(self.power_unit)
-        self.set_power(float(self.power))
 
-        # # Sweep settings if enabled
-        # if self.sweep_mode == "Continuous":
-        #     self.port.write("WAVelength:SWEep:MODE CONTinuous")
-        #     self.port.write(f"WAVelength:SWEep:SPEed {self.sweep_speed}NM/S")
-        #     self.port.write(f"WAVelength:SWEep:STARt {self.sweep_start}NM")
-        #     self.port.write(f"WAVelength:SWEep:STOP {self.sweep_stop}NM")
-        #     self.port.write(f"WAVelength:SWEep:STEP:WIDTh {self.sweep_step}NM")
-        # elif self.sweep_mode == "Step":
-        #     self.port.write("WAVelength:SWEep:MODE STEP")
-        #     self.port.write(f"WAVelength:SWEep:STARt {self.sweep_start}NM")
-        #     self.port.write(f"WAVelength:SWEep:STOP {self.sweep_stop}NM")
-        #     self.port.write(f"WAVelength:SWEep:STEP:WIDTh {self.sweep_step}NM")
+        if self.list_mode:
+            if self.sweep_mode == "Wavelength":
+                msg = "SweepMe! cannot sweep wavelength if the device does a wavelength sweep."
+                raise ValueError(msg)
+            self.configure_list_mode()
 
-        # Output ON/OFF
-        # self.port.write(f"OUTPut{self.slot}:STATe {self.output_state}")
+        if self.sweep_mode != "Power":
+            self.set_power(float(self.power_level))
+
+        if self.sweep_mode != "Wavelength" and not self.list_mode:
+            self.set_wavelength(float(self.wavelength))
+
+    def configure_list_mode(self) -> None:
+        """Configure the device for wavelength sweeps in list mode."""
+        self.port.write("trigger:configuration 1")  #:TRIGger:CONFiguration
+        self.port.write(f"trigger{self.slot}:output stf")  # TLS will send a output trigger when sweep starts (input trigger generated)   #:TRIGger[n][:CHANnel[m]]:OUTPut
+
+        # Laser Lambda Logging settings
+        self.port.write("wavelength:sweep:mode continuous")
+
+        # # only 0.5 5 40 nm/s allowed
+        self.port.write(f"wavelength:sweep:speed {self.scan_speed}nm/s")
+        self.port.write(f"wavelength:sweep:start {self.list_start}nm")
+        self.port.write(f"wavelength:sweep:step:width {self.list_step}nm")
+        self.port.write(f"wavelength:sweep:stop {self.list_stop}nm")
+        self.port.write("wavelength:sweep:cycles 1") #Set the number of cycles
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
 
     def apply(self) -> None:
-        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-        self.port.write(f"SOURce{self.slot}:WAVelength {self.value}NM")
+        """'apply' is used to set the new setvalue that is always available as 'self.value'.
+
+        If the device is in list mode, it should only set the power
+        """
+        value = float(self.value)
+
         if self.sweep_mode.startswith("Wavelength"):
-            self.set_wavelength(float(self.value))
+            self.set_wavelength(value)
         elif self.sweep_mode.startswith("Power"):
-            self.set_power(float(self.value))
+            self.set_power(value)
+
+    def measure(self) -> None:
+        """Trigger the acquisition of new data."""
+        if self.list_mode:
+            self.port.write(":sour0:wav:swe START")
+        else:
+            self.measured_wavelength = self.get_wavelength()
+            self.measured_power = self.get_power()
+
+    def request_result(self) -> None:
+        """Wait for the sweep to finish."""
+        if self.list_mode:
+            self.wait_for_sweep_completion()
+            self.measured_wavelength = self.get_lambda_logging_data()
+            self.measured_power = self.get_power()
+
+    def wait_for_sweep_completion(self) -> None:
+        """Wait until the sweep is completed, the measurement is aborted, or the timeout is reached."""
+        # Calculate expected measurement time
+        expected_time = (self.list_stop - self.list_start) / self.scan_speed
+        timeout_s = expected_time * 2
+
+        while True:
+            # the status is returned with a leading '+'
+            status = self.port.query(f"source{self.slot}:wav:sweep:state?")[1]
+
+            if status == "0":
+                # Sweep finished successfully
+                break
+
+            if self.is_run_stopped():
+                break
+
+            if timeout_s <= 0:
+                msg = f"Sweep did not finish within the timeout period of {expected_time*2}s."
+                raise TimeoutError(msg)
+
+            time.sleep(0.1)
+            timeout_s -= 0.1
+
+    def get_lambda_logging_data(self) -> np.ndarray:
+        """Get the lambda logging data after a sweep in list mode.
+
+        Data is returned from the device as a binary stream that contains each wavelength step of the lambda logging
+        operation
+        Each binary block is an 8-byte long double in Intel byte order, therefore we use read_raw()
+        """
+        self.port.write(f"sour{self.slot}:read:data? llog")
+        raw_data = self.port.port.read_raw()
+
+        # Strip header if any (IEEE 488.2 format block: starts with '#' and size header)
+        if raw_data[0:1] == b"#":
+            header_len = int(raw_data[1:2])
+            num_bytes = int(raw_data[2:2+header_len])
+            data = raw_data[2+header_len:2+header_len+num_bytes]
+        else:
+            msg = "Lambda logging data does not start with a header. This is unexpected."
+            raise ValueError(msg)
+
+        # Parse the binary data: each value is an 8-byte little-endian double
+        num_values = len(data) // 8
+        return np.array(list(struct.unpack("<" + "d"*num_values, data)))
+
+    def call(self) -> list[float]:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
+        return [
+            self.measured_wavelength,
+            self.measured_power,
+        ]
 
     # --- Helper functions ---
-    def set_wavelength(self, wavelength_nm: float) -> None:
-        """Set the wavelength in nm."""
-        self.port.write(f"SOURce{self.slot}:WAVelength {wavelength_nm}NM")
 
     def get_wavelength(self) -> float:
         """Get the current wavelength in nm."""
         return float(self.port.query(f"SOURce{self.slot}:WAVelength?")) * 1e9
 
-    def set_power(self, power_dbm: float) -> None:
-        """Set the power in dBm."""
-        self.port.write(f"SOURce{self.slot}:POWer:LEVel:IMMediate:AMPLitude {power_dbm}")
+    def set_wavelength(self, wavelength_nm: float) -> None:
+        """Set the wavelength in nm."""
+        wavelength_m = float(wavelength_nm) * 1e-9
+        if not self.wln_max >= wavelength_m >= self.wln_min:
+            msg = (f"Invalid wavelength {wavelength_m * 1e9:.0f} nm not in instrument range "
+                   f"[{self.wln_min * 1e9:.0f} nm ,{self.wln_max * 1e9:.0f} nm]")
+            raise ValueError(msg)
+
+        self.port.write(f"SOURce{self.slot}:WAVelength {wavelength_nm}NM")
+
+    def get_wavelength_range(self) -> tuple[float, float]:
+        """Get the allowed laser wavelength range in meters."""
+        self.wln_min = float(self.port.query(f"source{self.slot}:wav? min"))
+        self.wln_max = float(self.port.query(f"source{self.slot}:wav? max"))
+
+        return self.wln_min, self.wln_max
+
+    def set_power(self, power: float) -> None:
+        """Set the power in dBm or W depending on set_power_unit."""
+        self.port.write(f"SOURce{self.slot}:POWer:LEVel:IMMediate:AMPLitude {power}")
 
     def get_power(self) -> float:
         """Get the current power in dBm."""
@@ -165,6 +310,13 @@ class Device(EmptyDevice):
             msg = f"Invalid power unit '{unit}'. Use 'DBM' or 'W'."
             raise ValueError(msg)
         self.port.write(f"SOURce{self.slot}:POWer:UNIT {unit}")
+
+    def set_output_path(self, path: int = 1) -> None:
+        """Set the output path of the tunable laser. Options: 1 (low power high sens) or 2 (high power)."""
+        if path not in [1, 2]:
+            msg = f"Invalid output path '{path}'. Use 1 (low power high sens) or 2 (high power)."
+            raise ValueError(msg)
+        self.port.write(f"output{self.slot}:path {path}")
 
     def turn_on(self) -> None:
         """Turn laser output ON."""
@@ -178,4 +330,10 @@ class Device(EmptyDevice):
         """Check if a wavelength sweep is active."""
         state = self.port.query(f"SOURce{self.slot}:WAV:SWEep:STATe?")
         return state.strip() != "0"
+
+    # Currently unused wrapper functions
+
+    def get_identification(self) -> str:
+        """Return the identification string of the device."""
+        return self.port.query("*IDN?")
 
