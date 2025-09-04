@@ -282,7 +282,7 @@ class Device(EmptyDevice):
         elif self.protocol == "tws":
             self.port.write("t")
 
-    def zero(self) -> None
+    def zero(self) -> None:
         """Sets the balance to zero (without load)."""
         if self.protocol == "KCP"
             self.port.write("Z")
