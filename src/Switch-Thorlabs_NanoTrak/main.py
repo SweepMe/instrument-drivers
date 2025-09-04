@@ -84,6 +84,8 @@ class Device(EmptyDevice):
                     </ul>
                     """
 
+    actions = ["latch", "track"]  # Enables the latch and track actions in the GUI
+
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters."""
         super().__init__()
