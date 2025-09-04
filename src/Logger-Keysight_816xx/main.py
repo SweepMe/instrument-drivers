@@ -83,9 +83,14 @@ class Device(EmptyDevice):
         self.averaging_time: str = "0.1"  # in seconds
         self.power_units = ["W", "dBm"]
         self.power_unit: str = "W"  # can be "W" or "dBm"
-        self.automatic_power_ranging: bool = True  # Enable automatic power ranging
         self.wavelength: str = "1550"
         self.measured_power: float = float("nan")  # Measured power value, initialized to NaN
+
+        self.power_ranges = ["Auto"] + [
+            f"{power:+} dBm" if power != 0 else "0 dBm"
+            for power in range(30, -120, -10)
+        ]  # +30 to -110 dBm
+        self.power_range: str = "Auto"
 
         # List mode
         self.list_mode: bool = False  # If True, the device will operate in list mode
@@ -98,7 +103,7 @@ class Device(EmptyDevice):
             "Channel": ["1", "2"],
             "Slot": "1",
             "Power unit": self.power_units,
-            "Automatic Power Ranging": True,
+            "Power range": self.power_ranges,
             "Averaging in s": 0.1,
             "Wavelength in nm": 1550,  # Default wavelength, can be changed later
             # "Reference State": ["Absolute", "Relative"],
@@ -123,7 +128,7 @@ class Device(EmptyDevice):
         self.power_unit = parameters.get("Power unit", "W")
         self.units = [self.power_unit]
 
-        self.automatic_power_ranging = parameters.get("Automatic Power Ranging", True)
+        self.power_range = parameters.get("Power range", "Auto")
         self.averaging_time = parameters.get("Averaging in s", "0.1")
         self.wavelength = parameters.get("Wavelength in nm", "1550")
 
@@ -136,8 +141,7 @@ class Device(EmptyDevice):
         """Configure the device. This function is called every time the device is used in the sequencer."""
         self.set_power_unit(self.power_unit)
         self.set_averaging_time(float(self.averaging_time))
-        # TODO: Add power range setting
-        self.set_automatic_power_ranging(bool(self.automatic_power_ranging))  # Enable automatic power ranging
+        self.set_power_range(self.power_range)
         self.set_wavelength(float(self.wavelength))
 
         if self.list_mode:
@@ -151,8 +155,6 @@ class Device(EmptyDevice):
         else:
             # Set the software trigger system to non-continuous mode
             self.port.write(f":init{self.slot}:cont OFF")
-
-        # TODO: Decide if additional methods are needed: Upper power limit, reference state
 
     def start(self) -> None:
         """This function can be used to do some first steps before the acquisition of a measurement point starts."""
@@ -235,7 +237,25 @@ class Device(EmptyDevice):
         self.port.write(f"sens{self.slot}:chan{self.channel}:pow:atim {averaging_time}")
         self.wait_for_opc()
 
-    def set_automatic_power_ranging(self, enable: bool = True) -> None:
+    def set_power_range(self, power_range: str) -> None:
+        """Enable or disable automatic power ranging.
+
+        Can only be set for both channels at the same time.
+        """
+        if power_range not in self.power_ranges:
+            msg = f"Invalid power range: {power_range}. Must be one of {self.power_ranges}."
+            raise ValueError(msg)
+
+        if power_range.lower() == "auto":
+            self.set_automatic_power_range(True)
+            return
+        else:
+            self.set_automatic_power_range(False)
+
+        self.port.write(f"sens{self.slot}:chan{self.channel}:pow:rang {power_range}")
+        self.wait_for_opc()
+
+    def set_automatic_power_range(self, enable: bool = True) -> None:
         """Enable or disable automatic power ranging.
 
         Can only be set for both channels at the same time.
