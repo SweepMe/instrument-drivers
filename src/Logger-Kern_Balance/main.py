@@ -39,50 +39,6 @@ import time
 
 class Device(EmptyDevice):
 
-    description =   """
-                    <p>
-                      The driver supports all balances, scales, and terminals from
-                      Kern&amp;Sohn that use the KERN communicaton protocol (KCP).
-                    </p>
-                    <p>
-                      <br />
-                      <strong>Models:</strong> KIB-TM, KFB-TM, KFN
-                    </p>
-                    <p>
-                      &nbsp;
-                    </p>
-                    <p>
-                      <strong>Communication:</strong>
-                    </p>
-                    <ul>
-                      <li>Use baudrate 9600, 8 databits, 1 stopbit
-                      </li>
-                      <li>Go to instrument menu "P9 Prt“ -&gt; „oPt“ -&gt; ModE" and
-                      select "KCP"
-                      </li>
-                    </ul>
-                    <p>
-                      &nbsp;
-                    </p>
-                    <p>
-                      <strong>Usage:</strong>
-                    </p>
-                    <ul>
-                      <li>Select the mode to select also the unit.
-                      </li>
-                      <li>The option "Read stabilized" must be checked if the returned
-                      value is always a stabilized value. Otherwise the current value
-                      will be returned.
-                      </li>
-                      <li>The option "Initial tare" triggers the tare function at the
-                      beginning of a run, e.g. to substract a start weight.
-                      </li>
-                      <li>The option "Initial zero" triggers the zero function at the
-                      beginning of a run in order to create a new zero reference level.
-                      </li>
-                    </ul>
-                    """
-
     actions = ["tare", "zero"]
 
     def __init__(self):
@@ -95,7 +51,7 @@ class Device(EmptyDevice):
                                 "EOL": "\r\n",  # terminator is CR/LF
                                 "parity": "N",
                                 "timeout": 0.1,
-                                "Exception": True,
+                                "Exception": True,  # TODO: check whether this is needed
                                 }
                                 
         self.shortname = "Kern Balance"
@@ -110,7 +66,6 @@ class Device(EmptyDevice):
                         "Initial zero": False,
                         " ": None,  # empty line
                         "Flow calculation": False,
-
                         }
                         
         if "Flow calculation" in parameters and parameters["Flow calculation"]:
@@ -143,25 +98,21 @@ class Device(EmptyDevice):
 
     """ here, semantic standard functions start that are called by SweepMe! during a measurement """
 
-    def connect(self):
-    
-    
+    def connect(self) -> None:
+
         # figure out which protocol is used
         try:
-
             self.port.write("I5")  # queries the SW identification number
             answer = self.port.read()
+            # TODO: check whether answer is valid for KCP
             self.protocol = "KCP"  # Kern Communication Protocol
         except:
             self.protocol = "tws"  # t, w, and s are the only three commands that the older protocol supports
-            
             # if it fails to use the first command, we will proceed with tws command set
-            # TODO: replace with self.port commands instead of self.port.port commands in future
-            if self.port.port.is_open == False:
-                self.port.port.open()
+            if not self.port.port_properties["open"]:
+                self.port.open()
 
-
-    def initialize(self):
+    def initialize(self) -> None:
     
         # if self.protocol == "KCP":
             # self.port.write("@") # cancel all operations and reset to state after switching on
@@ -184,7 +135,7 @@ class Device(EmptyDevice):
             answer = self.port.read()
             # print("Unit:    ", answer)
 
-    def configure(self):
+    def configure(self) -> None:
 
         if self.do_initial_tare:
             self.tare()
@@ -193,7 +144,7 @@ class Device(EmptyDevice):
         if self.do_initial_zero:
             if self.protocol == "KCP":
                 self.port.write("Z")
-                answer = self.port.read()
+                self.port.read()
             elif self.protocol == "tws":
             
                 if self.is_read_stabilized:
@@ -205,8 +156,6 @@ class Device(EmptyDevice):
                     self.weight_initial = self.weight_initial_g / 1000.0
                 elif self.mode_str == "g":
                     self.weight_initial = self.weight_initial_g
-                    
-                print(self.weight_initial)
 
         if self.do_flow_calculation:
             self.weight_last_g = self.get_weight_immediately_g()
@@ -219,7 +168,7 @@ class Device(EmptyDevice):
                 self.weight_last = self.weight_last - self.weight_initial
             self.time_last = time.perf_counter()
 
-    def measure(self):
+    def measure(self) -> None:
 
         if self.protocol == "KCP":
             self.port.write("SI")
@@ -227,7 +176,7 @@ class Device(EmptyDevice):
         if self.protocol == "tws":
             self.port.write("w")
 
-    def read_result(self):
+    def read_result(self) -> None:
 
         # default value
         weight = float('nan')
@@ -246,7 +195,7 @@ class Device(EmptyDevice):
                     self.port.write("SI")
                     answer = self.port.read()
                     vals = answer.split()
-                    self.is_stable = (vals[1] == "S")
+                    is_stable = (vals[1] == "S")
 
             if vals[0] != "S":
                 msg = "Queried weight has wrong prefix."
@@ -255,8 +204,6 @@ class Device(EmptyDevice):
             if vals[1] not in ["S", "D"]:
                 msg = "Queried weight has wrong status."
                 raise Exception(msg)
-
-            self.is_stable = (vals[1] == "S")
 
             weight = float(vals[2])
             unit = vals[3]
@@ -273,7 +220,7 @@ class Device(EmptyDevice):
                 while not is_stable and not self.is_run_stopped():
                     self.port.write("w")
                     answer = self.port.read()
-                    self.is_stable = "g" in answer
+                    is_stable = "g" in answer
 
             is_overload = "=Overload=" in answer
 
@@ -281,7 +228,6 @@ class Device(EmptyDevice):
                 weight = float('nan')
             else:
                 try:
-                
                     answer = answer[2:].replace(" ", "").replace("g", "")
                     weight = float(answer)
                     
@@ -321,27 +267,43 @@ class Device(EmptyDevice):
         if self.do_flow_calculation:
             self.results.append(flow)
 
-    def call(self):
+    def call(self) -> None:
         return self.results
 
-    def tare(self):
+    def tare(self) -> None:
+        """Tares the balance (with load)."""
         if self.protocol == "KCP":
             self.port.write("T")
-            answer = self.port.read()
+            self.port.read()
 
         elif self.protocol == "tws":
             self.port.write("t")
 
-    def zero(self):
+    def zero(self) -> None
+        """Sets the balance to zero (without load)."""
         self.port.write("Z")
-        answer = self.port.read()
+        self.port.read()
 
     def get_weight_immediately_g(self):
 
         if self.protocol == "KCP":
             self.port.write("SI")
             answer = self.port.read()
-            return answer
+            vals = answer.split()
+            is_stable = (vals[1] == "S")
+
+            if vals[0] != "S":
+                msg = "Queried weight has wrong prefix."
+                raise Exception(msg)
+
+            if vals[1] not in ["S", "D"]:
+                msg = "Queried weight has wrong status."
+                raise Exception(msg)
+
+            weight = float(vals[2])
+            unit = vals[3]
+
+            return weight
 
         elif self.protocol == "tws":
             self.port.write("w")
@@ -356,6 +318,22 @@ class Device(EmptyDevice):
         if self.protocol == "KCP":
             self.port.write("S")
             answer = self.port.read()
+
+            vals = answer.split()
+            is_stable = (vals[1] == "S")
+
+            if vals[0] != "S":
+                msg = "Queried weight has wrong prefix."
+                raise Exception(msg)
+
+            if vals[1] not in ["S", "D"]:
+                msg = "Queried weight has wrong status."
+                raise Exception(msg)
+
+            weight = float(vals[2])
+            unit = vals[3]
+
+            return weight
             
         elif self.protocol == "tws":
             # to keep timeouts below 1s, we read weight immediately and wait until result is stable
@@ -372,7 +350,3 @@ class Device(EmptyDevice):
             answer = answer[2:].replace(" ", "").replace("g", "")
             weight = float(answer)
             return weight
-
-    def read_weight(self):
-
-        answer = self.port.read()
