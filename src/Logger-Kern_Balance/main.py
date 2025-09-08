@@ -51,7 +51,6 @@ class Device(EmptyDevice):
                                 "EOL": "\r\n",  # terminator is CR/LF
                                 "parity": "N",
                                 "timeout": 0.1,
-                                "Exception": True,  # TODO: check whether this is needed
                                 }
                                 
         self.shortname = "Kern Balance"
