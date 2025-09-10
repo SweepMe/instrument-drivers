@@ -603,7 +603,8 @@ class Device(EmptyDevice):
 
             elif self.current_range == "Auto":
                 # Use the lowest current range for auto-ranging
-                self.set_current_range_limited(self.card_name[-1], self.current_ranges["Limited 1 pA"])
+                # self.set_current_range_limited(self.card_name[-1], self.current_ranges["Limited 1 pA"])
+                self.set_current_range_limited(self.card_name[-1], 0)
 
             else:
                 self.set_current_range(self.card_name[-1], current_range_float, self.protection)
