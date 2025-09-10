@@ -250,7 +250,7 @@ class Device(EmptyDevice):
             now = time.perf_counter()
 
             if (now - self.last_time) > 0.0:
-                flow = (weight - self.weight_last) / (now - self.time_last)
+                flow = (weight - self.weight_last) / (now - self.last_time)
             else:
                 flow = float('nan')
             
