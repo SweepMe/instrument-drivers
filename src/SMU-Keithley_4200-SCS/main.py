@@ -272,9 +272,9 @@ class Device(EmptyDevice):
         }
 
         if parameters.get("Speed", "Slow") == "Custom":
-            new_parameters["Delay factor"] = 0
-            new_parameters["Filter factor"] = 0
-            new_parameters["A/D aperture time"] = 0.01
+            new_parameters["Delay factor"] = "0"
+            new_parameters["Filter factor"] = "0"
+            new_parameters["A/D aperture time"] = "0.01"
 
         return new_parameters
 
@@ -291,7 +291,7 @@ class Device(EmptyDevice):
         self.protection = parameters.get("Compliance", "")
         self.speed = parameters.get("Speed", "")
 
-        self.channel = parameters.get("Channel", "")
+        self.channel = parameters.get("Channel", "SMU1")
         self.handle_card_name()
         self.shortname = "4200-SCS %s" % parameters.get("Channel", "")
 
@@ -350,16 +350,20 @@ class Device(EmptyDevice):
         It means that in case of PMU the pulse channel is additionally added after the card name
         The card name is now always "SMU1", "SMU2", or "PMU1" etc.
         """
-        if "PMU" in self.channel:
-            self.card_name = self.channel.split("-")[0].strip()
-            self.pulse_channel = int(self.channel.split("-")[1][-1])
-        elif "SMU" in self.channel:
-            self.card_name = self.channel
-            self.pulse_channel = None
-        else:
-            # This is a fallback, when channels have been just "1", "2", "3", "4". After adding PMU, it became
-            # necessary to distinguish between SMU and PMU
-            self.card_name = "SMU" + self.channel[-1]
+        try:
+            if "PMU" in self.channel:
+                self.card_name = self.channel.split("-")[0].strip()
+                self.pulse_channel = int(self.channel.split("-")[1][-1])
+            elif "SMU" in self.channel:
+                self.card_name = self.channel
+                self.pulse_channel = None
+            else:
+                # This is a fallback, when channels have been just "1", "2", "3", "4". After adding PMU, it became
+                # necessary to distinguish between SMU and PMU
+                self.card_name = "SMU" + self.channel[-1]
+                self.pulse_channel = None
+        except:
+            self.card_name = "SMU1"
             self.pulse_channel = None
 
     def handle_list_sweep_parameter(self, parameter: dict) -> None:
@@ -603,7 +607,6 @@ class Device(EmptyDevice):
 
             elif self.current_range == "Auto":
                 # Use the lowest current range for auto-ranging
-                # self.set_current_range_limited(self.card_name[-1], self.current_ranges["Limited 1 pA"])
                 self.set_current_range_limited(self.card_name[-1], 0)
 
             else:
