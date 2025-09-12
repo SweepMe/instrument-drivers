@@ -245,6 +245,7 @@ class Device(EmptyDevice):
             "Speed": list(self.speed_dict.keys()),
             "Compliance": 100e-6,
             "Range": list(self.current_ranges.keys()),
+            "Average": "1",
 
             # Pulse Mode Parameters
             "CheckPulse": False,
@@ -290,6 +291,7 @@ class Device(EmptyDevice):
 
         self.protection = parameters.get("Compliance", "")
         self.speed = parameters.get("Speed", "")
+        self.averages = parameters.get("Average", "1")
 
         self.channel = parameters.get("Channel", "SMU1")
         self.handle_card_name()
@@ -563,6 +565,8 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
+
+
         if self.pulse_mode:
             if "Pulse master" not in self.device_communication[self.identifier]:
                 self.pulse_master = True
@@ -579,6 +583,7 @@ class Device(EmptyDevice):
             self.configure_pulse()
 
         elif self.command_set == "LPTlib":
+            # TODO: add check for averaging
             self.configure_lptlib()
 
         elif self.command_set == "US":
@@ -813,8 +818,6 @@ class Device(EmptyDevice):
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables."""
         if self.list_master or self.list_receiver:
             # Read out the registered lists of measured values
-            voltage = self.lpt.read_measurement(self.list_measurement_keys["voltage"])
-            current = self.lpt.read_measurement(self.list_measurement_keys["current"])
             if self.list_master:
                 time_stamps = self.lpt.read_measurement(self.list_measurement_keys["time"])
                 time_stamps_zeroed = [stamp - time_stamps[0] for stamp in time_stamps]  # start at 0
@@ -832,8 +835,18 @@ class Device(EmptyDevice):
                 time.sleep(0.001)
 
             elif self.command_set == "US":
-                self.measured_voltage = self.get_voltage(self.card_name[-1])
-                self.measured_current = self.get_current(self.card_name[-1])
+                averages = int(self.averages)
+                voltages = []
+                currents = []
+
+                for _ in range(averages):
+                    voltages.append(self.get_voltage(self.card_name[-1]))
+
+                for _ in range(averages):
+                    currents.append(self.get_current(self.card_name[-1]))
+
+                self.measured_voltage = np.mean(voltages)
+                self.measured_current = np.mean(currents)
 
             """
             X Y Z +-N.NNNN E+-NN
