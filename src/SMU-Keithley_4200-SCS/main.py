@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2022-2024 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022-2025 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -30,6 +30,7 @@
 # * Instrument: Keithley 4200-SCS
 from __future__ import annotations
 
+import contextlib
 import ctypes as c
 import platform
 import time
@@ -102,6 +103,12 @@ class Device(EmptyDevice):
         </ul>
         <p>Please note that for the KXCI mode, some features like Pulse Mode, List Mode, and fast acquisition are not
         supported yet.</p>
+
+        <h4>Parameters</h4>
+        <ul>
+        <li>Current range: Limited: Sets the lowest current range of the SMU to be used when measuring with auto range
+        to save time. Current range denotes the measurement range. The source range is set to 'auto' by default.</li>
+        </ul>
         """
 
     def __init__(self) -> None:
@@ -158,7 +165,9 @@ class Device(EmptyDevice):
             "Fast": 0.1,
             "Medium": 1.0,
             "Slow": 10.0,
+            "Custom": 10,
         }
+        """Speed names as keys and PLC values as values."""
 
         # Communication Parameter
         self.port_string: str = "192.168.0.1"
@@ -173,8 +182,13 @@ class Device(EmptyDevice):
         self.route_out: str = "Rear"
         self.source: str = "Voltage in V"
         self.protection: float = 100e-6
-        self.speed: str = "Very fast"
         self.channel: str = "SMU1"
+
+        # Speed
+        self.speed: str = "Very fast"
+        self.delay_factor: str = "0"
+        self.filter_factor: str = "0"
+        self.ad_aperture_time: str = "0.01"
 
         self.card_name = "SMU" + self.channel[-1]
         self.pulse_channel = None
@@ -223,15 +237,16 @@ class Device(EmptyDevice):
         """Find available ports."""
         return ["LPTlib"] if RUNNING_ON_4200SCS else ["LPTlib via xxx.xxx.xxx.xxx"]
 
-    def set_GUIparameter(self) -> dict:  # noqa: N802
+    def update_gui_parameters(self, parameters: dict) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
-        return {
+        new_parameters = {
             "SweepMode": ["Voltage in V", "Current in A"],
             "RouteOut": ["Rear"],
             "Channel": ["SMU1", "SMU2", "SMU3", "SMU4", "PMU1 - CH1", "PMU1 - CH2"],
             "Speed": list(self.speed_dict.keys()),
             "Compliance": 100e-6,
             "Range": list(self.current_ranges.keys()),
+            "Average": "1",
 
             # Pulse Mode Parameters
             "CheckPulse": False,
@@ -258,63 +273,61 @@ class Device(EmptyDevice):
             "ListSweepDelaytime": "0.0",
         }
 
-    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
+        if parameters.get("Speed", "Slow") == "Custom":
+            new_parameters["Delay factor"] = "0"
+            new_parameters["Filter factor"] = "0"
+            new_parameters["A/D aperture time"] = "0.01"
+
+        return new_parameters
+
+    def apply_gui_parameters(self, parameters: dict) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.port_string = parameter["Port"]
+        self.port_string = parameters.get("Port", "")
         self.identifier = "Keithley_4200-SCS_" + self.port_string
 
-        self.route_out = parameter["RouteOut"]
-        self.current_range = parameter["Range"]
+        self.route_out = parameters.get("RouteOut", "")
+        self.current_range = parameters.get("Range", "")
 
-        self.source = parameter["SweepMode"]
+        self.source = parameters.get("SweepMode", "")
 
-        self.protection = parameter["Compliance"]
-        self.speed = parameter["Speed"]
+        self.protection = parameters.get("Compliance", "")
+        self.speed = parameters.get("Speed", "")
+        self.averages = parameters.get("Average", "1")
 
-        self.channel = parameter["Channel"]
-
-        # The channel can be either "SMU1", "SMU2", "PMU1 - CH1" or "PMU1 - CH2"
-        # It means that in case of PMU the pulse channel is additionally added after the card name
-        # The card name is now always "SMU1", "SMU2", or "PMU1" etc.
-        if "PMU" in self.channel:
-            self.card_name = self.channel.split("-")[0].strip()
-            self.pulse_channel = int(self.channel.split("-")[1][-1])
-        elif "SMU" in self.channel:
-            self.card_name = self.channel
-            self.pulse_channel = None
-        else:
-            # This is a fallback, when channels have been just "1", "2", "3", "4". After adding PMU, it became
-            # necessary to distinguish between SMU and PMU
-            self.card_name = "SMU" + self.channel[-1]
-            self.pulse_channel = None
-
-        self.shortname = "4200-SCS %s" % parameter["Channel"]
+        self.channel = parameters.get("Channel", "SMU1")
+        self.shortname = "4200-SCS %s" % parameters.get("Channel", "")
 
         self.port_manager = "lptlib" not in self.port_string.lower()
 
+        # Custom speed parameters
+        if self.speed == "Custom":
+            self.delay_factor = parameters.get("Delay factor", "0")
+            self.filter_factor = parameters.get("Filter factor", "0")
+            self.ad_aperture_time = parameters.get("A/D aperture time", "0.01")
+
         # Pulse Mode Parameters
         self.pulse_master = False
-        self.pulse_mode = parameter["CheckPulse"]
+        self.pulse_mode = parameters.get("CheckPulse", "")
         if self.pulse_mode:
             # backward compatibility as new fields have been added that are not
             # present in older SMU module versions
             try:
-                self.pulse_count = parameter["PulseCount"]
-                self.pulse_meas_start = parameter["PulseMeasStart"]
-                self.pulse_meas_duration = parameter["PulseMeasTime"]
-                self.pulse_width = float(parameter["PulseOnTime"])
-                self.pulse_period = float(parameter["PulsePeriod"])
-                self.pulse_delay = float(parameter["PulseDelay"])
-                self.pulse_base_level = parameter["PulseOffLevel"]
-                self.pulse_rise_time = parameter["PulseRiseTime"]
-                self.pulse_fall_time = parameter["PulseFallTime"]
-                self.pulse_impedance = parameter["PulseImpedance"]
+                self.pulse_count = parameters.get("PulseCount", "")
+                self.pulse_meas_start = parameters.get("PulseMeasStart", "")
+                self.pulse_meas_duration = parameters.get("PulseMeasTime", "")
+                self.pulse_width = float(parameters.get("PulseOnTime", ""))
+                self.pulse_period = float(parameters.get("PulsePeriod", ""))
+                self.pulse_delay = float(parameters.get("PulseDelay", ""))
+                self.pulse_base_level = parameters.get("PulseOffLevel", "")
+                self.pulse_rise_time = parameters.get("PulseRiseTime", "")
+                self.pulse_fall_time = parameters.get("PulseFallTime", "")
+                self.pulse_impedance = parameters.get("PulseImpedance", "")
             except KeyError:
                 debug("Please update the SMU module to support all features of the Keithley 4200-SCS instrument driver")
 
         # List Mode Parameters
         try:
-            sweep_value = parameter["SweepValue"]
+            sweep_value = parameters.get("SweepValue", "")
         except KeyError:
             # this might be the case when driver is used with pysweepme
             # then, "SweepValue" is not defined during set_GUIparameter
@@ -323,7 +336,7 @@ class Device(EmptyDevice):
         if sweep_value == "List sweep":
             self.list_master = True
             self.list_receiver = False
-            self.handle_list_sweep_parameter(parameter)
+            self.handle_list_sweep_parameter(parameters)
 
         # The list keys must be updated with the channel name
         self.list_measurement_keys = {
@@ -398,8 +411,32 @@ class Device(EmptyDevice):
         self.plottype.extend([True, True])
         self.savetype.extend([True, True])
 
+    def handle_card_name(self) -> None:
+        """Extract the card name and pulse channel from the selected channel.
+
+        The channel can be either "SMU1", "SMU2", "PMU1 - CH1" or "PMU1 - CH2"
+        It means that in case of PMU the pulse channel is additionally added after the card name
+        The card name is now always "SMU1", "SMU2", or "PMU1" etc.
+        """
+        try:
+            if "PMU" in self.channel:
+                self.card_name = self.channel.split("-")[0].strip()
+                self.pulse_channel = int(self.channel.split("-")[1][-1])
+            elif "SMU" in self.channel:
+                self.card_name = self.channel.strip()
+                self.pulse_channel = None
+            else:
+                # This is a fallback, when channels have been just "1", "2", "3", "4". After adding PMU, it became
+                # necessary to distinguish between SMU and PMU
+                self.card_name = "SMU" + self.channel[-1]
+                self.pulse_channel = None
+        except Exception as e:
+            msg = f"Unknown channel name: {self.channel}. Please use 'SMU1', 'SMU2', 'PMU1 - CH1' or 'PMU1 - CH2'."
+            raise ValueError(msg) from e
+
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
+        self.handle_card_name()
         if self.port_manager:
             self.command_set = "US"  # "US" user mode, "LPTlib", # check manual p. 677/1510
 
@@ -454,11 +491,12 @@ class Device(EmptyDevice):
             if self.command_set == "LPTlib":
                 if self.pulse_mode:
                     self.lpt.dev_abort()  # stops executed pulses
-                self.lpt.tstsel(1)
+                self.lpt.tstsel(1)  # select test station 1 and load instrument configuration. Choose 0 to deselect
                 self.lpt.devint()  # This command resets all active instruments in the system to their default states.
+                # calls devclr, clrcon (only for switching matrix), clrtrg, clrscn, kibdefint
 
             elif self.command_set == "US":
-                self.get_options()
+                self.get_options()  # TODO use
 
                 self.clear_buffer()
                 self.set_to_4200()
@@ -530,6 +568,7 @@ class Device(EmptyDevice):
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         if self.pulse_mode:
+            # Pulse mode is only supported with LPTlib command set
             if "Pulse master" not in self.device_communication[self.identifier]:
                 self.pulse_master = True
                 self.device_communication[self.identifier]["Pulse master"] = self.channel
@@ -545,6 +584,9 @@ class Device(EmptyDevice):
             self.configure_pulse()
 
         elif self.command_set == "LPTlib":
+            if float(self.averages) > 1:
+                msg = "Averaging is not supported yet with LPTlib command set."
+                raise NotImplementedError(msg)
             self.configure_lptlib()
 
         elif self.command_set == "US":
@@ -552,25 +594,47 @@ class Device(EmptyDevice):
             if self.speed == "Very fast":
                 msg = (
                     "Speed of 'Very Fast' is not supported for US command set via GPIB/TCPIP. "
-                    "Use control via 'LPTlib' instead."
+                    "Use control via 'LPTlib' or custom speed instead."
                 )
                 raise ValueError(msg)
-            nplc = 1 if self.speed == "Fast" else 2
-            self.set_integration_time(nplc)
+
+            if self.speed == "Custom":
+                self.set_speed_mode(
+                    self.speed,
+                    float(self.delay_factor),
+                    float(self.filter_factor),
+                    float(self.ad_aperture_time),
+                )
+            else:
+                self.set_speed_mode(self.speed)
 
             # Current Range - the KXCI implementation has not been tested yet
+            current_range_float = self.current_ranges[self.current_range]
             if "Limited" in self.current_range:
-                current_range = self.current_ranges[self.current_range]
-                self.set_current_range_limited(self.card_name[-1], current_range)  # low range current
+                self.set_current_range_limited(self.card_name[-1], current_range_float)
 
-            elif self.current_range != "Auto":
-                current_range = self.current_ranges[self.current_range]
-                self.set_current_range(self.card_name[-1], current_range, self.protection)
+            elif self.current_range == "Auto":
+                # Use the lowest current range for auto-ranging
+                self.set_current_range_limited(self.card_name[-1], 0)
+
+            else:
+                self.set_current_range(self.card_name[-1], current_range_float, self.protection)
 
     def configure_lptlib(self) -> None:
         """Configure the device using lptlib commands."""
         # can be used to change the limit indicator value
         # self.lpt.setmode(self.card_id, self.param.KI_LIM_INDCTR, float(self.protection))
+
+        # After installation of PMU cards or running auto-configuration, the device might respond to applying a
+        # Voltage or current source with "K4200Error('Cannot force when not connected.')"
+        # Currently unclear why, but running the PMU-specific rpm_config seems to solve the issue
+        with contextlib.suppress(Exception):
+            self.lpt.rpm_config(
+                instr_id=self.card_id,
+                chan=self.card_id,
+                modifier=self.param.KI_RPM_PATHWAY,
+                value=self.param.KI_RPM_SMU,
+            )
 
         # return real measured value when in compliance, not indicator value like 7.0e22
         self.lpt.setmode(self.card_id, self.param.KI_LIM_MODE, self.param.KI_VALUE)
@@ -581,20 +645,31 @@ class Device(EmptyDevice):
         elif self.source == "Current in A":
             self.lpt.limitv(self.card_id, float(self.protection))  # compliance/protection
 
-        # Integration/Speed
+        # Integration/Speed for intgX and sintgX commands. Allowed values are from 0.01 to 10
+        if self.speed.lower() == "custom":
+            msg = "Custom speed mode can only be used with US command set via GPIB."
+            raise NotImplementedError(msg)
+
+            # ad factor = KI_INTGPLC (NPLC up to 100)
+            # delay factor = KI_DELAY_FACTOR
+            # filter factor =
+
+        # TODO: lptlib allows for setting NPLC integration to custom values between 0.01 and 10
+        # but we cannot set filter factor (only for CVU cards)
+        # we could set the delay factor, but it does not make much sense because we can also use SweepMes Hold
+
         nplc_value = self.speed_dict[self.speed]
-        self.lpt.setmode(self.card_id, self.param.KI_INTGPLC, nplc_value)  # integration time
+        self.lpt.setmode(self.card_id, self.param.KI_INTGPLC, nplc_value)
 
         # Current Range
+        current_range_value = self.current_ranges[self.current_range]
         if self.current_range == "Auto" or "Limited" in self.current_range:
             self.lpt.rangei(self.card_id, 0)  # auto-ranging
-        else:
-            current_range = self.current_ranges[self.current_range]
-            self.lpt.rangei(self.card_id, current_range)  # fixed range
 
-        if "Limited" in self.current_range:
-            current_range = self.current_ranges[self.current_range]
-            self.lpt.lorangei(self.card_id, current_range)  # low range current
+            if "Limited" in self.current_range:
+                self.lpt.lorangei(self.card_id, current_range_value)  # minimum current range for auto-ranging
+        else:
+            self.lpt.rangei(self.card_id, current_range_value)  # fixed range
 
         # self.lpt.lorangev(self.card_id, 1e-1)  # low range voltage
 
@@ -646,13 +721,15 @@ class Device(EmptyDevice):
                 self.lpt.forcei(self.card_id, self.value)
 
         elif self.command_set == "US":
-            voltage_range = 0  # auto
-            current_range = 0  # auto
+            # These ranges are the source ranges, not the compliance or measurement ranges
+            voltage_source_range = 0  # auto
+            # Currently, the current source range is always set to auto - should issue a warning
+            current_source_range = 0  # auto
 
             if self.source == "Voltage in V":
-                self.set_voltage(self.card_name[-1], voltage_range, self.value, self.protection)
+                self.set_voltage(self.card_name[-1], voltage_source_range, self.value, float(self.protection))
             elif self.source == "Current in A":
-                self.set_current(self.card_name[-1], current_range, self.value, self.protection)
+                self.set_current(self.card_name[-1], current_source_range, self.value, float(self.protection))
 
     def trigger_ready(self) -> None:
         """Start the pulse output if in pulse mode."""
@@ -709,6 +786,10 @@ class Device(EmptyDevice):
                 if len(self.list_delay_list) != len(self.list_sweep_values):
                     msg = (f"The number of delay times ({len(self.list_delay_list)}) must match the number of list "
                            f"values {len(self.list_sweep_values)})")
+                    raise ValueError(msg)
+                # all delays must be floats larger than 0
+                if any((not isinstance(delay, (float, int)) or delay < 0) for delay in self.list_delay_list):
+                    msg = "All delay times must be numbers larger or equal to 0."
                     raise ValueError(msg)
                 self.lpt.adelay(self.list_delay_list)
 
@@ -773,8 +854,18 @@ class Device(EmptyDevice):
                 time.sleep(0.001)
 
             elif self.command_set == "US":
-                self.measured_voltage = self.get_voltage(self.card_name[-1])
-                self.measured_current = self.get_current(self.card_name[-1])
+                averages = int(self.averages)
+                voltages = []
+                currents = []
+
+                for _ in range(averages):
+                    voltages.append(self.get_voltage(self.card_name[-1]))
+
+                for _ in range(averages):
+                    currents.append(self.get_current(self.card_name[-1]))
+
+                self.measured_voltage = np.mean(voltages)
+                self.measured_current = np.mean(currents)
 
             """
             X Y Z +-N.NNNN E+-NN
@@ -890,13 +981,16 @@ class Device(EmptyDevice):
         return self.read_tcpip_port()
 
     def set_current_range(self, channel: str, current_range: float, compliance: float) -> str:
-        """Set the current range of the device."""
+        """Set the current range of the device. Requires to set the compliance as well.
+
+        When the SMU channel is used as a voltage source, the compliance is overwritten when setting the set value.
+        """
         if self.command_set == "US":
             self.port.write(f"RI {channel}, {current_range}, {compliance}")
         return self.read_tcpip_port()
 
     def set_current_range_limited(self, channel: str, current: float) -> str:
-        """Set the current range of the device."""
+        """Set the lowest current range of the SMU to be used when measuring."""
         if self.command_set == "US":
             self.port.write(f"RG {channel}, {current}")
         return self.read_tcpip_port()
@@ -914,7 +1008,9 @@ class Device(EmptyDevice):
 
     def set_to_4200(self) -> str:
         """Set the device to 4200 mode."""
-        self.port.write("EM 1,0")  # set to 4200 mode for this session
+        # First parameter: 0 - 4145 Emulation, 1 - 4200A
+        # Second parameter: 0 - this session only, 1 - permanently (Write to KCON)
+        self.port.write("EM 1,0")
         return self.read_tcpip_port()
 
     def enable_user_mode(self) -> str:
@@ -923,27 +1019,90 @@ class Device(EmptyDevice):
         return self.read_tcpip_port()
 
     def set_data_service(self) -> str:
-        """Set data ready service."""
+        """Set data ready service.
+
+        Use a service request to wait until operations are complete before downloading data.
+        """
         if self.command_set == "US":
             self.port.write("DR0")  # data ready service request
         return self.read_tcpip_port()
 
-    def set_integration_time(self, nplc: int) -> str:
-        """Set the integration time of the device."""
-        if self.command_set == "US":
-            self.port.write("IT" + str(nplc))
+    def set_speed_mode(self, speed: str, delay_factor: float = 1., filter_factor: float = 1., ad_integration_time: float = 1.) -> str:
+        """Set the integration time of the device (KXCI Integration).
+
+        Allowed values for speed are:
+        fast - 0.1 PLC (named short in the manual)
+        medium - 1 PLC
+        slow - 10 PLC (named long in the manual)
+        custom
+        Keep the naming of previous drivers for compatibility (fast + slow) and allow manual naming (short + long).
+
+        Custom (4200A command set only) - command 4: Requires delay factor (0 - 100), filter factor (0 - 100),
+        and A/D integration time (0.01 - 10 NPLC) to be set.
+        """
+        commands = {
+            "fast": "1",  # = short
+            "short": "1",
+            "medium": "2",  # medium
+            "slow": "3",  # = long
+            "long": "3",
+            "custom": "4",
+        }
+        if speed.lower() not in commands:
+            msg = f"Speed must be one of {list(commands.keys())}."
+            raise ValueError(msg)
+
+        if self.command_set != "US":
+            msg = "set_speed_mode can only be set when using US command set via KXCI controls."
+            raise NotImplementedError(msg)
+
+        if speed.lower() == "custom":
+            if delay_factor < 0 or delay_factor > 100:
+                msg = "Delay factor must be between 0 and 100."
+                raise ValueError(msg)
+
+            if filter_factor < 0 or filter_factor > 100:
+                msg = "Filter factor must be between 0 and 100."
+                raise ValueError(msg)
+
+            if ad_integration_time < 0.01 or ad_integration_time > 10:
+                msg = "A/D integration time must be between 0.01 and 10 (NPLC)."
+                raise ValueError(msg)
+
+            self.port.write(f"IT4, {delay_factor}, {filter_factor}, {ad_integration_time}")
+
+        else:
+            self.port.write("IT" + commands[speed.lower()])  # IT1 short, IT2 medium, IT3 long
+
         return self.read_tcpip_port()
 
-    def set_current(self, channel: str, current_range: int, value: float, protection: float) -> str:
-        """Set the current of the given channel."""
+    def set_current(self, channel: str, current_range: int, value: float, voltage_compliance: float) -> str:
+        """Set the current of the given channel.
+
+        Current source ranges:
+        Auto - 0
+        1 nA - 1 (only with preamplifier)
+        10 nA - 2 (only with preamplifier)
+        100 nA - 3
+        1 uA - 4
+        10 uA - 5
+        100 uA - 6
+        1 mA - 7
+        10 mA - 8
+        100 mA - 9
+        1 A - 10 (only with 4210 or 4211-SMU)
+        1 pa - 11 (only with preamplifier)
+        10 pa - 12 (only with preamplifier)
+        100 pa - 13 (only with preamplifier)
+        """
         if self.command_set == "US":
-            self.port.write(f"DI{channel}, {current_range}, {value}, {protection}")
+            self.port.write(f"DI{channel}, {current_range}, {value}, {voltage_compliance}")
         return self.read_tcpip_port()
 
-    def set_voltage(self, channel: str, voltage_range: int, value: float, protection: float) -> str:
+    def set_voltage(self, channel: str, voltage_range: int, value: float, current_compliance: float) -> str:
         """Set the voltage of the given channel."""
         if self.command_set == "US":
-            self.port.write(f"DV{channel}, {voltage_range}, {value}, {protection}")
+            self.port.write(f"DV{channel}, {voltage_range}, {value}, {current_compliance}")
         return self.read_tcpip_port()
 
     def get_voltage(self, channel: str) -> float:
@@ -951,8 +1110,7 @@ class Device(EmptyDevice):
         voltage = float("nan")
         overflow_value = 1e37
         if self.command_set == "US":
-            self.port.write("TV" + str(channel))
-            answer = self.port.read()
+            answer = self.port.query("TV" + str(channel))
             voltage = float(answer[3:])
             if voltage > overflow_value:
                 voltage = float("nan")
@@ -970,8 +1128,7 @@ class Device(EmptyDevice):
         current = float("nan")
         overflow_value = 1e37
         if self.command_set == "US":
-            self.port.write("TI" + str(channel))
-            answer = self.port.read()
+            answer = self.port.query("TI" + str(channel))
             current = float(answer[3:])
             if current > overflow_value:
                 current = float("nan")
