@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2022-2024 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022-2025 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -30,6 +30,7 @@
 # * Instrument: Keithley 4200-SCS
 from __future__ import annotations
 
+import contextlib
 import ctypes as c
 import platform
 import time
@@ -294,7 +295,6 @@ class Device(EmptyDevice):
         self.averages = parameters.get("Average", "1")
 
         self.channel = parameters.get("Channel", "SMU1")
-        self.handle_card_name()
         self.shortname = "4200-SCS %s" % parameters.get("Channel", "")
 
         self.port_manager = "lptlib" not in self.port_string.lower()
@@ -344,29 +344,6 @@ class Device(EmptyDevice):
             "current": f"current_{self.channel}",
             "time": f"time_{self.channel}",
         }
-
-    def handle_card_name(self) -> None:
-        """Extract the card name and pulse channel from the selected channel.
-
-        The channel can be either "SMU1", "SMU2", "PMU1 - CH1" or "PMU1 - CH2"
-        It means that in case of PMU the pulse channel is additionally added after the card name
-        The card name is now always "SMU1", "SMU2", or "PMU1" etc.
-        """
-        try:
-            if "PMU" in self.channel:
-                self.card_name = self.channel.split("-")[0].strip()
-                self.pulse_channel = int(self.channel.split("-")[1][-1])
-            elif "SMU" in self.channel:
-                self.card_name = self.channel
-                self.pulse_channel = None
-            else:
-                # This is a fallback, when channels have been just "1", "2", "3", "4". After adding PMU, it became
-                # necessary to distinguish between SMU and PMU
-                self.card_name = "SMU" + self.channel[-1]
-                self.pulse_channel = None
-        except:
-            self.card_name = "SMU1"
-            self.pulse_channel = None
 
     def handle_list_sweep_parameter(self, parameter: dict) -> None:
         """Read out the list sweep parameters and create self.list_sweep_values."""
@@ -434,8 +411,32 @@ class Device(EmptyDevice):
         self.plottype.extend([True, True])
         self.savetype.extend([True, True])
 
+    def handle_card_name(self) -> None:
+        """Extract the card name and pulse channel from the selected channel.
+
+        The channel can be either "SMU1", "SMU2", "PMU1 - CH1" or "PMU1 - CH2"
+        It means that in case of PMU the pulse channel is additionally added after the card name
+        The card name is now always "SMU1", "SMU2", or "PMU1" etc.
+        """
+        try:
+            if "PMU" in self.channel:
+                self.card_name = self.channel.split("-")[0].strip()
+                self.pulse_channel = int(self.channel.split("-")[1][-1])
+            elif "SMU" in self.channel:
+                self.card_name = self.channel.strip()
+                self.pulse_channel = None
+            else:
+                # This is a fallback, when channels have been just "1", "2", "3", "4". After adding PMU, it became
+                # necessary to distinguish between SMU and PMU
+                self.card_name = "SMU" + self.channel[-1]
+                self.pulse_channel = None
+        except Exception as e:
+            msg = f"Unknown channel name: {self.channel}. Please use 'SMU1', 'SMU2', 'PMU1 - CH1' or 'PMU1 - CH2'."
+            raise ValueError(msg) from e
+
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
+        self.handle_card_name()
         if self.port_manager:
             self.command_set = "US"  # "US" user mode, "LPTlib", # check manual p. 677/1510
 
