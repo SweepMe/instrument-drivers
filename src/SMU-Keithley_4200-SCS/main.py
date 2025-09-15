@@ -106,7 +106,7 @@ class Device(EmptyDevice):
 
         <h4>Parameters</h4>
         <ul>
-        <li>Current range: Limited: Sets the lowest current range of the SMU to be used when measuring with auto range 
+        <li>Current range: Limited: Sets the lowest current range of the SMU to be used when measuring with auto range
         to save time. Current range denotes the measurement range. The source range is set to 'auto' by default.</li>
         </ul>
         """
@@ -507,7 +507,7 @@ class Device(EmptyDevice):
                     )
 
             elif self.command_set == "US":
-                self.get_options()
+                self.get_options()  # TODO use
 
                 self.clear_buffer()
                 self.set_to_4200()
@@ -578,8 +578,6 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-
-
         if self.pulse_mode:
             if "Pulse master" not in self.device_communication[self.identifier]:
                 self.pulse_master = True
@@ -596,7 +594,9 @@ class Device(EmptyDevice):
             self.configure_pulse()
 
         elif self.command_set == "LPTlib":
-            # TODO: add check for averaging
+            if float(self.averages) > 1:
+                msg = "Averaging is not supported yet with LPTlib command set."
+                raise NotImplementedError(msg)
             self.configure_lptlib()
 
         elif self.command_set == "US":
@@ -787,6 +787,10 @@ class Device(EmptyDevice):
                     msg = (f"The number of delay times ({len(self.list_delay_list)}) must match the number of list "
                            f"values {len(self.list_sweep_values)})")
                     raise ValueError(msg)
+                # all delays must be floats larger than 0
+                if any((not isinstance(delay, (float, int)) or delay < 0) for delay in self.list_delay_list):
+                    msg = "All delay times must be numbers larger or equal to 0."
+                    raise ValueError(msg)
                 self.lpt.adelay(self.list_delay_list)
 
             if self.source == "Voltage in V":
@@ -831,6 +835,8 @@ class Device(EmptyDevice):
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables."""
         if self.list_master or self.list_receiver:
             # Read out the registered lists of measured values
+            voltage = self.lpt.read_measurement(self.list_measurement_keys["voltage"])
+            current = self.lpt.read_measurement(self.list_measurement_keys["current"])
             if self.list_master:
                 time_stamps = self.lpt.read_measurement(self.list_measurement_keys["time"])
                 time_stamps_zeroed = [stamp - time_stamps[0] for stamp in time_stamps]  # start at 0
@@ -1013,7 +1019,10 @@ class Device(EmptyDevice):
         return self.read_tcpip_port()
 
     def set_data_service(self) -> str:
-        """Set data ready service."""
+        """Set data ready service.
+
+        Use a service request to wait until operations are complete before downloading data.
+        """
         if self.command_set == "US":
             self.port.write("DR0")  # data ready service request
         return self.read_tcpip_port()
