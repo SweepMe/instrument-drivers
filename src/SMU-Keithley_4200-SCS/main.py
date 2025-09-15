@@ -491,8 +491,20 @@ class Device(EmptyDevice):
             if self.command_set == "LPTlib":
                 if self.pulse_mode:
                     self.lpt.dev_abort()  # stops executed pulses
-                self.lpt.tstsel(1)
+                self.lpt.tstsel(1)  # select test station 1 and load instrument configuration. Choose 0 to deselect
                 self.lpt.devint()  # This command resets all active instruments in the system to their default states.
+                # calls devclr, clrcon (only for switching matrix), clrtrg, clrscn, kibdefint
+
+                # After installation of PMU cards or running auto-configuration, the device might respond to applying a
+                # Voltage or current source with "K4200Error('Cannot force when not connected.')"
+                # Currently unclear why, but running the PMU-specific rpm_config seems to solve the issue
+                with contextlib.suppress(Exception):
+                    self.lpt.rpm_config(
+                        instr_id=self.card_id,
+                        chan=self.card_id,
+                        modifier=self.param.KI_RPM_PATHWAY,
+                        value=self.param.KI_RPM_SMU,
+                    )
 
             elif self.command_set == "US":
                 self.get_options()
