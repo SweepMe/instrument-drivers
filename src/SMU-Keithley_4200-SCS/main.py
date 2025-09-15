@@ -495,17 +495,6 @@ class Device(EmptyDevice):
                 self.lpt.devint()  # This command resets all active instruments in the system to their default states.
                 # calls devclr, clrcon (only for switching matrix), clrtrg, clrscn, kibdefint
 
-                # After installation of PMU cards or running auto-configuration, the device might respond to applying a
-                # Voltage or current source with "K4200Error('Cannot force when not connected.')"
-                # Currently unclear why, but running the PMU-specific rpm_config seems to solve the issue
-                with contextlib.suppress(Exception):
-                    self.lpt.rpm_config(
-                        instr_id=self.card_id,
-                        chan=self.card_id,
-                        modifier=self.param.KI_RPM_PATHWAY,
-                        value=self.param.KI_RPM_SMU,
-                    )
-
             elif self.command_set == "US":
                 self.get_options()  # TODO use
 
@@ -634,6 +623,17 @@ class Device(EmptyDevice):
         """Configure the device using lptlib commands."""
         # can be used to change the limit indicator value
         # self.lpt.setmode(self.card_id, self.param.KI_LIM_INDCTR, float(self.protection))
+
+        # After installation of PMU cards or running auto-configuration, the device might respond to applying a
+        # Voltage or current source with "K4200Error('Cannot force when not connected.')"
+        # Currently unclear why, but running the PMU-specific rpm_config seems to solve the issue
+        with contextlib.suppress(Exception):
+            self.lpt.rpm_config(
+                instr_id=self.card_id,
+                chan=self.card_id,
+                modifier=self.param.KI_RPM_PATHWAY,
+                value=self.param.KI_RPM_SMU,
+            )
 
         # return real measured value when in compliance, not indicator value like 7.0e22
         self.lpt.setmode(self.card_id, self.param.KI_LIM_MODE, self.param.KI_VALUE)
