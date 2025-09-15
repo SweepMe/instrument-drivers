@@ -568,6 +568,7 @@ class Device(EmptyDevice):
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         if self.pulse_mode:
+            # Pulse mode is only supported with LPTlib command set
             if "Pulse master" not in self.device_communication[self.identifier]:
                 self.pulse_master = True
                 self.device_communication[self.identifier]["Pulse master"] = self.channel
@@ -661,15 +662,14 @@ class Device(EmptyDevice):
         self.lpt.setmode(self.card_id, self.param.KI_INTGPLC, nplc_value)
 
         # Current Range
+        current_range_value = self.current_ranges[self.current_range]
         if self.current_range == "Auto" or "Limited" in self.current_range:
             self.lpt.rangei(self.card_id, 0)  # auto-ranging
 
             if "Limited" in self.current_range:
-                current_range = self.current_ranges[self.current_range]
-                self.lpt.lorangei(self.card_id, current_range)  # minimum current range for auto-ranging
+                self.lpt.lorangei(self.card_id, current_range_value)  # minimum current range for auto-ranging
         else:
-            current_range = self.current_ranges[self.current_range]
-            self.lpt.rangei(self.card_id, current_range)  # fixed range
+            self.lpt.rangei(self.card_id, current_range_value)  # fixed range
 
         # self.lpt.lorangev(self.card_id, 1e-1)  # low range voltage
 
@@ -1041,9 +1041,9 @@ class Device(EmptyDevice):
         and A/D integration time (0.01 - 10 NPLC) to be set.
         """
         commands = {
-            "fast" : "1",  # = short
+            "fast": "1",  # = short
             "short": "1",
-            "medium" : "2",  # medium
+            "medium": "2",  # medium
             "slow": "3",  # = long
             "long": "3",
             "custom": "4",
