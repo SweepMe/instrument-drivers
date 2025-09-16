@@ -67,6 +67,12 @@ class Device(EmptyDevice):
         self.channel: int = 1
         self.slot: int = 0
         self.output_path: str = "1"  # 1 = low power/high sens, 2 = high power
+        self.output_paths_dict = {
+            "High Power": "HIGHpower",
+            "Low SSE": "LOWSse",
+            "Both (High Power regulated)": "BHRegulated",
+            "Both (Low SSE regulated)": "BLRegulated",
+        }
 
         # Power
         self.power_level: float = -1
@@ -100,7 +106,7 @@ class Device(EmptyDevice):
         new_parameters =  {
             "SweepMode": ["None", "Wavelength", "Power"],
             "Slot": 0,
-            "Output Path": ["1", "2"],  # 1 = low power/high sens, 2 = high power
+            "Output Path": list(self.output_paths_dict.keys()),
             "Wavelength in nm": 1550.0,
             "Power unit": ["dBm", "W"],
             "Power": 0.0,
@@ -129,7 +135,7 @@ class Device(EmptyDevice):
         self.channel = parameters.get("Channel", 1)
         self.slot = parameters.get("Slot", "")
 
-        self.output_path = parameters.get("Output Path", "")
+        self.output_path = parameters.get("Output Path", "Low SSE")
         self.wavelength = parameters.get("Wavelength in nm", "")
         self.power_level = parameters.get("Power", "")
         self.power_unit = parameters.get("Power unit", "dBm")
@@ -159,7 +165,7 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        self.set_output_path(int(self.output_path))
+        self.set_output_path(self.output_path)
         self.set_power_unit(self.power_unit)
 
         if self.list_mode:
@@ -311,12 +317,12 @@ class Device(EmptyDevice):
             raise ValueError(msg)
         self.port.write(f"SOURce{self.slot}:POWer:UNIT {unit}")
 
-    def set_output_path(self, path: int = 1) -> None:
+    def set_output_path(self, path: str = "Low SSE") -> None:
         """Set the output path of the tunable laser. Options: 1 (low power high sens) or 2 (high power)."""
-        if path not in [1, 2]:
-            msg = f"Invalid output path '{path}'. Use 1 (low power high sens) or 2 (high power)."
+        if path not in self.output_paths_dict:
+            msg = f"Invalid output path '{path}'. Use {self.output_paths_dict.keys()}."
             raise ValueError(msg)
-        self.port.write(f"output{self.slot}:path {path}")
+        self.port.write(f"output{self.slot}:path {self.output_paths_dict[path]}")
 
     def turn_on(self) -> None:
         """Turn laser output ON."""
