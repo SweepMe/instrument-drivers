@@ -87,7 +87,7 @@ class Device(EmptyDevice):
         self.savetype = [True, True, True]  # True to save data, corresponding to self.variables
         
         self.do_flow_calculation = parameter["Flow calculation"]
-        self.time_unit = parameter.get("Time unit", None)
+        self.time_unit = parameter.get("Time unit", "")
         
         if self.do_flow_calculation:
             self.variables.append("Flow")
@@ -249,8 +249,8 @@ class Device(EmptyDevice):
         if self.do_flow_calculation:
             now = time.perf_counter()
 
-            if (now - self.last_time) > 0.0:
-                flow = (weight - self.weight_last) / (now - self.last_time)
+            if (now - self.time_last) > 0.0:
+                flow = (weight - self.weight_last) / (now - self.time_last)
             else:
                 flow = float('nan')
             
