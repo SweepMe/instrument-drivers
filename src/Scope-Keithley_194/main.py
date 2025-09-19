@@ -30,9 +30,10 @@
 # * Instrument: Keithley 194
 
 
-from pysweepme.EmptyDeviceClass import EmptyDevice
-import time
 import numpy as np
+
+from pysweepme.EmptyDeviceClass import EmptyDevice
+
 
 class Device(EmptyDevice):
     description = """<p><strong>Keithley 194/194A High Speed Voltmeter</strong></p>
@@ -106,34 +107,25 @@ class Device(EmptyDevice):
 
     def update_gui_parameters(self, parameters):
         # retrieve currently set "Trigger" setting, default to "Single (int)" if unset
-        self.trigger = parameters.get("TriggerSource", "Single (int)")
+        trigger = parameters.get("TriggerSource", "Single (int)")
+
+        new_parameters = {
+            "SamplingRate": "1E+04",
+            "SamplingRateType": ["Samples per s"],
+            "TimeRange": ["Time range in s"],
+            "TimeRangeValue": "1E-04",
+            "TriggerSource": list(self.triggers.keys()),
+            "Filter": list(self.filters.keys()),
+            "TriggerDelay": 0.000,
+        }
 
         # if the source signal should be used for triggering, setting the trigger level is offered additionally
-        if self.trigger.endswith("slope)"):
-            new_parameters = {
-                "SamplingRate": "1E+04",
-                "SamplingRateType": ["Samples per s"],
-                "TimeRange": ["Time range in s"],
-                "TimeRangeValue": "1E-04",
-                "TriggerSource": list(self.triggers.keys()),
-                "TriggerLevel": 0.000,
-                "Filter": list(self.filters.keys()),
-                "TriggerDelay": 0.000,
-            }
-        else:
-            new_parameters = {
-                "SamplingRate": "1E+04",
-                "SamplingRateType": ["Samples per s"],
-                "TimeRange": ["Time range in s"],
-                "TimeRangeValue": "1E-04",
-                "TriggerSource": list(self.triggers.keys()),
-                "Filter": list(self.filters.keys()),
-                "TriggerDelay": 0.000,
-            }
+        if trigger.endswith("slope)"):
+            new_parameters["TriggerLevel"] = 0.000
 
         # apply channel settings for CH1 and CH2:
         for i in range(1, 3):
-            new_parameters["Channel%i" % i] = True if i == 1 else False
+            new_parameters["Channel%i" % i] = i == 1  # default to channel 1 being selected
             new_parameters["Channel%i_Name" % i] = "CH%i" % i
             new_parameters["Channel%i_Range" % i] = list(self.ranges.keys())
             new_parameters["Channel%i_Coupling" % i] = list(self.couplings.keys())
@@ -162,11 +154,6 @@ class Device(EmptyDevice):
         self.channel_names = {}
         self.channel_ranges = {}
         self.channel_couplings = {}
-
-        # True to plot data
-        self.plottype = [True]
-        # True to save data
-        self.savetype = [True]
 
         for i in range(1, 3):
             if parameters["Channel%i" % i]:
@@ -200,9 +187,9 @@ class Device(EmptyDevice):
     def configure(self):
 
         # Waveform Mode;
-        # IMPORTANT: setting modes on both channels also disarmes the ADC on both
+        # IMPORTANT: setting modes on both channels also disarms the ADC on both
         # This makes sure that the unused channel won't feed results into the output buffer which
-        # accidentially get retrieved instead of the ones from the selected channel
+        # accidentally get retrieved instead of the ones from the selected channel
         self.port.write("C1XF0X")
         self.port.write("C2XF0X")
 
@@ -245,7 +232,7 @@ class Device(EmptyDevice):
 
     def unconfigure(self):
 
-        # sets the trigger back to continous trigger
+        # sets the trigger back to continuous trigger
         self.port.write("T0X")
 
     def measure(self):
