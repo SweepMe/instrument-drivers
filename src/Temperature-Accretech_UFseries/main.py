@@ -92,13 +92,14 @@ class Device(EmptyDevice):
         self.port_str = "undefined_port"
 
         self.verbosemode = True
+        self.idle_temperature: str = ""  # temperature when unconfiguring, empty string means no action
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set initial GUI parameters."""
         return {
             "SweepMode": ["None", "Temperature"],
             "TemperatureUnit": ["°C"],
-            "IdleTemperature": 30,
+            "IdleTemperature": "",
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -134,7 +135,7 @@ class Device(EmptyDevice):
         pass
 
     def unconfigure(self):
-        if self.idle_temperature != "":
+        if self.idle_temperature:
             _, target_temperature = self.prober.request_chuck_temperature()
             if target_temperature != float(self.idle_temperature):
                 self.prober.set_chuck_temperature(float(self.idle_temperature))
