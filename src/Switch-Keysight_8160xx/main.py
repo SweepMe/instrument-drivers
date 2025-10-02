@@ -103,7 +103,7 @@ class Device(EmptyDevice):
 
     def update_gui_parameters(self, parameters: dict) -> dict:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
-        new_parameters =  {
+        new_parameters: dict[str, Any] =  {
             "SweepMode": ["None", "Wavelength", "Power"],
             "Slot": 0,
             "Output Path": list(self.output_paths_dict.keys()),
@@ -141,6 +141,7 @@ class Device(EmptyDevice):
         self.power_unit = parameters.get("Power unit", "dBm")
 
         if parameters.get("Mode", "Single") == "List":
+            # TODO: add exceptions to prevent gui errors while changing
             self.list_mode = True
             self.list_start = float(parameters.get("List Start in nm", "1250"))
             self.list_stop = float(parameters.get("List Stop in nm", "1650"))
@@ -182,8 +183,10 @@ class Device(EmptyDevice):
 
     def configure_list_mode(self) -> None:
         """Configure the device for wavelength sweeps in list mode."""
-        self.port.write("trigger:configuration 1")  #:TRIGger:CONFiguration
-        self.port.write(f"trigger{self.slot}:output stf")  # TLS will send a output trigger when sweep starts (input trigger generated)   #:TRIGger[n][:CHANnel[m]]:OUTPut
+        # activate trigger connectors (1 = DEFault)
+        self.port.write("trigger:configuration 1")
+        # Continuous sweep with lambda logging requires laser output trigger to be set to "Step Finished"
+        self.port.write(f"trigger{self.slot}:output stf")
 
         # Laser Lambda Logging settings
         self.port.write("wavelength:sweep:mode continuous")
@@ -194,6 +197,15 @@ class Device(EmptyDevice):
         self.port.write(f"wavelength:sweep:step:width {self.list_step}nm")
         self.port.write(f"wavelength:sweep:stop {self.list_stop}nm")
         self.port.write("wavelength:sweep:cycles 1") #Set the number of cycles
+
+        # Check if device accepts the settings
+        status = self.port.query("wav:swe:chec?")
+        if "OK" not in status:
+            msg = f"Laser sweep configuration not accepted by the device. Status: {status}"
+            raise ValueError(msg)
+
+        # turn on lambda logging for the laser. Important to allow readout of wavelength data afterwards
+        self.port.write(f"sour{self.slot}:wav:swe:llog ON")
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
@@ -213,7 +225,7 @@ class Device(EmptyDevice):
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
         if self.list_mode:
-            self.port.write(":sour0:wav:swe START")
+            self.port.write(f":sour{self.slot}:wav:swe START")
         else:
             self.measured_wavelength = self.get_wavelength()
             self.measured_power = self.get_power()
@@ -229,7 +241,8 @@ class Device(EmptyDevice):
         """Wait until the sweep is completed, the measurement is aborted, or the timeout is reached."""
         # Calculate expected measurement time
         expected_time = (self.list_stop - self.list_start) / self.scan_speed
-        timeout_s = expected_time * 2
+        # TODO: Check if this is a good formula
+        timeout_s = max(expected_time * 2, 15)
 
         while True:
             # the status is returned with a leading '+'
@@ -243,7 +256,7 @@ class Device(EmptyDevice):
                 break
 
             if timeout_s <= 0:
-                msg = f"Sweep did not finish within the timeout period of {expected_time*2}s."
+                msg = f"Sweep did not finish within the timeout period of {max(expected_time * 2, 15)}s."
                 raise TimeoutError(msg)
 
             time.sleep(0.1)
