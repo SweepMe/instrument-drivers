@@ -179,7 +179,7 @@ class Device(EmptyDevice):
         self.reset()
         self.clear_status()
 
-        self.set_power_units(self.power_unit)
+        self.set_power_unit(self.power_unit)
         self.get_power_range()
         self.get_wavelength_range()
 
@@ -343,8 +343,8 @@ class Device(EmptyDevice):
         self.pow_min = float(self.port.query(":sour0:pow? min"))
         self.pow_max = float(self.port.query(":sour0:pow? max"))
 
-    def set_power_units(self, unit: str = "W") -> None:
-        """Set the power units to W or dBm."""
+    def set_power_unit(self, unit: str = "W") -> None:
+        """Set the power unit to W or dBm."""
         if unit.lower() == "mw":
             unit = "w"  # instrument does not support mW directly, use W instead and calculate the conversion in call()
             self.power_conversion = 1e-3
@@ -353,8 +353,8 @@ class Device(EmptyDevice):
             raise ValueError(msg)
         self.port.write(f":sour0:pow:unit {unit.lower()}")
 
-    def get_power_units(self) -> str:
-        """Get the current power units."""
+    def get_power_unit(self) -> str:
+        """Get the current power unit."""
         return self.port.query(":sour0:pow:unit?")
 
     def set_power(self, power_level: float, unit: str = "W") -> None:
@@ -482,7 +482,7 @@ class Device(EmptyDevice):
             raise ValueError(msg)
         self.port.write(f":sour0:wav:swe:step {step}nm")
 
-    def configure_trigger_output(self, output: str = "DIS") -> None:
+    def configure_trigger_output(self, output: str = "STF") -> None:
         """Specifies when an output trigger is generated and arms the module."""
         supported_modes = [
             "DIS",  # Never output a trigger
