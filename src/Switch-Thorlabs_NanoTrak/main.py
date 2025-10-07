@@ -81,6 +81,7 @@ class Device(EmptyDevice):
                     <li>When using center position, the value must be a string with two values separated by a semicolon,
                      e.g. "5;2" for horizontal and vertical position.</li>
                     <li>When using circle diameter, the value must be a float representing the diameter in NT Units.</li>
+                    <li>Home position: The home position in NT units, e.g. "1.0,1.0". If empty, the home position will not be updated and the device will not move to Home in the configure step.</li>
                     </ul>
                     """
 
@@ -127,17 +128,22 @@ class Device(EmptyDevice):
         # Feedback sources
         nano_trak_feedback_source = GenericNanoTrakCLI.Settings.IOSettingsSettings.FeedbackSources
         self.feedback_sources = {
-            "BNC 10V ": nano_trak_feedback_source.BNC_10V,
-            "BNC 5V": nano_trak_feedback_source.BNC_5V,
-            "BNC 2V": nano_trak_feedback_source.BNC_2V,
-            "BNC 1V": nano_trak_feedback_source.BNC_1V,
+            "10V BNC": nano_trak_feedback_source.BNC_10V,
+            "5V BNC": nano_trak_feedback_source.BNC_5V,
+            "2V BNC": nano_trak_feedback_source.BNC_2V,
+            "1V BNC": nano_trak_feedback_source.BNC_1V,
             "TIA": nano_trak_feedback_source.TIA,
         }
+        self.feedback_source: str = "10V BNC"
 
         # Measurement parameters
         self.sweepmode: str = "Center Position"
         self.tracking_mode: str = "Tracking"  # Can be "Tracking" or "Latch"
         self.reading_mode: str = "Absolute"  # Can be "Absolute", "Relative", or "None"
+        self.home_position_string: str = "1.0,1.0"
+        self.circle_diameter_string: str =  "1"
+        self.tracking_time_string: str = "10"
+        self.debug_while_tracking: bool = False
 
     def find_ports(self) -> list[str]:
         """Returns the serial numbers of all devices connected via Kinesis."""
@@ -179,7 +185,7 @@ class Device(EmptyDevice):
         self.serial_number = parameters.get("Port", "")
         self.home_position_string = parameters.get("Home position", "1.0,1.0")
         self.circle_diameter_string = parameters.get("Circle diameter in NT", "1")
-        self.feedback_source = parameters.get("Feedback Source", "BNC 10V")
+        self.feedback_source = parameters.get("Feedback Source", "10V BNC")
         self.tracking_time_string = parameters.get("Tracking time in s", 10)
         self.debug_while_tracking = parameters.get("Debug while Tracking", False)
 
@@ -285,11 +291,12 @@ class Device(EmptyDevice):
         # Set feedback source depending on the GUI parameter
         self.nanotrak_channel.SetFeedbackSource(self.feedback_sources[self.feedback_source])
 
-        # Home Position
-        home_pos1, home_pos2 = map(float, self.home_position_string.split(","))
-        HVPosition = GenericNanoTrakCLI.HVPosition
-        self.nanotrak_channel.SetCircleHomePosition(HVPosition(home_pos1, home_pos2))
-        self.nanotrak_channel.HomeCircle()
+        # Home Position. If none is given, do not update the home position
+        if self.home_position_string:
+            home_pos1, home_pos2 = map(float, self.home_position_string.split(","))
+            HVPosition = GenericNanoTrakCLI.HVPosition
+            self.nanotrak_channel.SetCircleHomePosition(HVPosition(home_pos1, home_pos2))
+            self.nanotrak_channel.HomeCircle()
 
         # Allow comma separated values for multiple trackings
         diameter_list = self.circle_diameter_string.split(",")

@@ -35,47 +35,48 @@ DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
 
 import Thorlabs.MotionControl.Benchtop.NanoTrakCLI as BenchtopNanoTrakCLI
 benchtop_prefix = BenchtopNanoTrakCLI.BenchtopNanoTrak.DevicePrefix
-print(f"Benchtop NanoTrak Device Prefix: {benchtop_prefix}, {type(benchtop_prefix)}")
+# print(f"Benchtop NanoTrak Device Prefix: {benchtop_prefix}, {type(benchtop_prefix)}")
 
 import Thorlabs.MotionControl.TCube.NanoTrakCLI as TCubeNanoTrakCLI
 tcube_prefix = TCubeNanoTrakCLI.TCubeNanoTrak.DevicePrefix
-print(f"TCube NanoTrak Device Prefix: {tcube_prefix}, {type(tcube_prefix)}")
+# print(f"TCube NanoTrak Device Prefix: {tcube_prefix}, {type(tcube_prefix)}")
 
 import Thorlabs.MotionControl.KCube.NanoTrakCLI as asf
 ckcube_prefix = asf.KCubeNanoTrak.DevicePrefix
-print(f"CKCube NanoTrak Device Prefix: {ckcube_prefix}, {type(ckcube_prefix)}")
+# print(f"CKCube NanoTrak Device Prefix: {ckcube_prefix}, {type(ckcube_prefix)}")
 
 
-# device_list = DeviceManagerCLI.DeviceManagerCLI.GetDeviceList(BenchtopNanoTrakCLI.TCubeNanoTrak.DevicePrefix)
-# print(f"Found devices: {[str(serial_num) for serial_num in device_list]}")
-# port_string = device_list[0]
-# print(f"Found device: {port_string}")
+device_list = DeviceManagerCLI.DeviceManagerCLI.GetDeviceList()
+print(f"Found devices: {[str(serial_num) for serial_num in device_list]}")
+port_string = device_list[0]
+print(f"Found device: {port_string}")
 
-# device = BenchtopNanoTrakCLI.BenchtopNanoTrak.CreateBenchtopNanoTrak(port_string)
-# time.sleep(1)
-# device.Connect(port_string)
-#
-# time.sleep(5)
-#
-# device.StartPolling(250)
-# time.sleep(0.5)
-# device.EnableDevice()
-# time.sleep(0.5)
-#
-# print(device.GetDeviceInfo())
-#
-# device.SetMode(GenericNanoTrakCLI.NanoTrakStatus.OperatingModes.Tracking)
-#
-#
-# x = 5
-# y = 2
-#
-# position = GenericNanoTrakCLI.HVPosition(x, y)
-# device.SetCircleHomePosition(position)
-# device.HomeCircle()
-#
+device = BenchtopNanoTrakCLI.BenchtopNanoTrak.CreateBenchtopNanoTrak(port_string)
+time.sleep(1)
+device.Connect(port_string)
+
+time.sleep(5)
+
+device.StartPolling(250)
+time.sleep(0.5)
+device.EnableDevice()
+time.sleep(0.5)
+
+print(device.GetDeviceInfo())
+
+device.SetMode(GenericNanoTrakCLI.NanoTrakStatus.OperatingModes.Tracking)
+
+
+x = 5
+y = 2
+
+position = GenericNanoTrakCLI.HVPosition(x, y)
+device.SetCircleHomePosition(position)
+device.HomeCircle()
+
 # TIAReading = device.GetReading()
-# print(f"Reading: {TIAReading.HPosition}, {TIAReading.VPosition}")
+Position = device.GetCirclePosition()
+print(f"Position: {Position.HPosition}, {Position.VPosition}")
 
 # kinesis_device = GenericNanoTrakCLI.NanoTrak.CreateDevice(port_string)
 
