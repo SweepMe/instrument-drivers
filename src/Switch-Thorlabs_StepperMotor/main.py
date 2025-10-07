@@ -62,6 +62,7 @@ else:
 
 class Device(EmptyDevice):
     """Driver for the Thorlabs Stepper Motor."""
+    description = "Thorlabs Stepper Motor via Kinesis. Leave acceleration or max velocity empty to use current settings."
 
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
@@ -84,6 +85,9 @@ class Device(EmptyDevice):
         self.channel: int = 1
         self.sweep_mode: str = "Position"
         self.timeout_ms: int = 60000  # Default timeout for operations in milliseconds
+        # TODO: add timeout as GUI parameter
+        self.max_velocity: str = "1.0"
+        self.acceleration: str = "1.0"
 
     def find_ports(self) -> list[str]:
         """Returns the serial numbers of all devices connected via Kinesis."""
@@ -117,13 +121,17 @@ class Device(EmptyDevice):
         del parameters
         return {
             "SweepMode": ["Position"],
-            "Bay": "1",  # maybe just use line edit
+            "Max Velocity in mm/s": "1.0",
+            "Acceleration in mm/s²": "1.0",
+            "Bay": "1",
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.serial_number = parameters.get("Port", "")
         self.sweep_mode = parameters.get("SweepMode", "Position")
+        self.max_velocity = parameters.get("Max Velocity in mm/s", "1.0")
+        self.acceleration = parameters.get("Acceleration in mm/s²", "1.0")
         self.channel = parameters.get("Bay", "1")
 
     def connect(self) -> None:
@@ -191,7 +199,16 @@ class Device(EmptyDevice):
         motorConfiguration = self.stepper_motor.LoadMotorConfiguration(self.stepper.DeviceID)
         currentDeviceSettings = self.stepper_motor.MotorDeviceSettings
 
-        self.stepper.Home(self.timeout_ms)
+        if self.acceleration or self.max_velocity:
+            velocity_parameters = self.stepper_motor.GetVelocityParams()
+            if self.acceleration:
+                velocity_parameters.Acceleration = Decimal(self.acceleration)
+            if self.max_velocity:
+                velocity_parameters.MaxVelocity = Decimal(self.max_velocity)
+            self.stepper_motor.SetVelocityParams(velocity_parameters)
+
+        # homing leads to timeout errors, leave it for now
+        # self.stepper_motor.Home(self.timeout_ms)
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -212,5 +229,5 @@ class Device(EmptyDevice):
 
     def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        return float(str(self.stepper_motor.Position))
+        return float(str(self.stepper_motor.Position).replace(",", "."))
 
