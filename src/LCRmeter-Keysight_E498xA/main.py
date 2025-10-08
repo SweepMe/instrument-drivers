@@ -47,7 +47,7 @@ class Device(EmptyDevice):
         self.port_manager = True
         self.port_types = ["USB", "GPIB", "TCPIP"]
         self.port_properties = {
-            "timeout": 20,
+            "timeout": 200,  # longer timeout when using older devices
         }
 
         # Parameters to restore the users device setting
@@ -113,8 +113,8 @@ class Device(EmptyDevice):
         self.variables: list[str] = []
         self.units: list[str] = []
 
-        self.plottype = [True, True, True, True]  # True to plot data
-        self.savetype = [True, True, True, True]  # True to save data
+        self.plottype = []
+        self.savetype = []
 
         self.value_1: float | list[float] = 0.0
         self.value_2: float | list[float] = 0.0
@@ -127,7 +127,6 @@ class Device(EmptyDevice):
         return {
             "Average": ["1", "2", "4", "8", "16", "32", "64"],
             "SweepMode": list(self.sweepmode_commands),
-            "SweepValue": ["List"],
             "StepMode": list(self.sweepmode_commands),
             "ValueTypeRMS": ["Voltage RMS in V:", "Current RMS in A:"],
             "ValueRMS": 0.02,
@@ -138,8 +137,11 @@ class Device(EmptyDevice):
             "ALC": ["Off", "On"],
             "Integration": ["Short", "Medium", "Long"],
             "Trigger": ["Software", "Internal", "External"],
+
+            # List Mode
             "ListSweepCheck": True,
             "ListSweepType": ["Sweep", "Custom"],
+            "ListSweepCustomValues": "",
             "ListSweepStart": 0.0,
             "ListSweepEnd": 1.0,
             "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
@@ -172,9 +174,15 @@ class Device(EmptyDevice):
         self.trigger_type = parameter["Trigger"]
 
         # List Mode
-        if parameter["SweepValue"] == "List sweep":
+        if parameter.get("SweepValue", "None") == "List sweep":
             self.use_list_sweep = True
             self.handle_list_sweep_parameter(parameter)
+
+            # Add time staps to return values
+            self.variables.append("Time stamp")
+            self.units.append("s")
+            self.plottype.append(True)
+            self.savetype.append(True)
 
     def handle_bias_mode(self) -> None:
         """Choose the bias mode from sweepmode, stepmode, or ValueTypeBias."""
@@ -198,6 +206,8 @@ class Device(EmptyDevice):
 
     def handle_operating_mode(self, mode: str) -> None:
         """Set the return variables and units for the chosen operating mode."""
+        self.plottype = [True, True, True, True]  # True to plot data
+        self.savetype = [True, True, True, True]  # True to save data
         if mode == "R-X":
             self.variables = ["R", "X", "Frequency", self.bias_modes_variables[self.bias_mode]]
             self.units = ["Ohm", "Ohm", "Hz", self.bias_modes_units[self.bias_mode]]
@@ -243,7 +253,13 @@ class Device(EmptyDevice):
 
         elif list_sweep_type == "Custom":
             custom_values = parameter["ListSweepCustomValues"]
-            self.list_sweep_values = [float(value) for value in custom_values.split(",")]
+            if custom_values == "":
+                self.list_sweep_values = np.array([])
+            else:
+                # Remove leading and trailing commas
+                custom_values = custom_values.strip(",")
+
+                self.list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
 
         else:
             msg = f"Unknown list sweep type: {list_sweep_type}"
@@ -263,12 +279,6 @@ class Device(EmptyDevice):
         if 0 < self.list_sweep_delay_time < 100e-6:
             msg = f"Invalid delay time of {self.list_sweep_delay_time}. The delay time must be greater than 100us."
             raise ValueError(msg)
-
-        # Add time staps to return values
-        self.variables.append("Time stamp")
-        self.units.append("s")
-        self.plottype.append(True)
-        self.savetype.append(True)
 
     def initialize(self) -> None:
         """Initialize the device."""
@@ -344,6 +354,15 @@ class Device(EmptyDevice):
         # other option would be: self.port.write("INIT:CONT OFF")
         # in this case one has to use self.port.write("INIT:IMM") before every trigger
         # to set the device into 'wait-for-trigger' state
+
+    def reconfigure(self, parameters={}, keys=[]) -> None:
+        """This function is called if a parameter of GUI changes during the run by using the parameter syntax.
+
+        Currently, supports only list mode changes.
+        """
+        if "ListSweepCustomValues" in keys or "ListSweepDelaytime" in keys:
+            self.handle_list_sweep_parameter(parameters)
+            self.set_step_delay(self.list_sweep_delay_time)
 
     def unconfigure(self) -> None:
         """Turn off bias, amplitude control, and trigger."""
@@ -433,7 +452,6 @@ class Device(EmptyDevice):
             self.port.write(request_command)
         else:
             # Request measured values, frequency, and bias
-            # TODO: Question Axel: Why always bias volt?
             self.port.write(f"FETC?;FREQ?;BIAS:{self.bias_mode}?")
 
     def read_result(self) -> None:
@@ -457,7 +475,9 @@ class Device(EmptyDevice):
                 self.bias = [float(bias) for bias in answer[1].split(",")]
 
                 self.port.write("FREQ?")
-                self.measured_frequency = float(self.port.read())
+                # Frequency must be returned as list to enable post-processing
+                single_frequency = float(self.port.read())
+                self.measured_frequency = [single_frequency] * len(self.value_1)
 
             # Time Stamps
             self.port.write("LIST:SEQ:TST:DATA?")
@@ -576,12 +596,11 @@ class Device(EmptyDevice):
         return self.port.read().split(",")
 
     def set_step_delay(self, time_in_s: float) -> None:
-        """Set the delay time that the device waits after switching before starting the measurement.
+        """Set the delay time that the device waits after switching before starting the measurement. -> this is hold.
 
         Note: The device also enables setting a trigger delay time, which is the time between the trigger and setting of
-        the next value.
+        the next value. -> this is delay
         """
-        if time_in_s < 100e-6:
-            return
-
+        if 0 < time_in_s < 100e-6:
+            time_in_s = 100e-6
         self.port.write(f"TRIG:DEL {time_in_s}")

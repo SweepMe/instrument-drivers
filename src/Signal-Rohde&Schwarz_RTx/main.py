@@ -131,11 +131,6 @@ class Device(EmptyDevice):
         self.port.write("*CLS")
         # do not use "SYST:PRES" as it will destroy all settings which is in conflict with using 'As is'
 
-    def deinitialize(self) -> None:
-        """Deinitialize the device."""
-        self.port.write("SYST:KLOC OFF")  # unlocks the local control during measurement
-        self.read_errors()  # read out the error queue
-
     def configure(self) -> None:
         """Configure the measurement."""
         self.set_impedance(self.impedance)
@@ -151,10 +146,11 @@ class Device(EmptyDevice):
         if self.duty_cycle_pulse_width_mode == "Duty cycle in %":
             self.set_duty_cycle(self.duty_cycle_pulse_width)
 
+    def poweron(self) -> None:
         self.enable_output(True)
 
-    def unconfigure(self) -> None:
-        """Unconfigure the measurement."""
+    def poweroff(self) -> None:
+        """Turn off the output."""
         self.enable_output(False)
 
     def apply(self) -> None:
