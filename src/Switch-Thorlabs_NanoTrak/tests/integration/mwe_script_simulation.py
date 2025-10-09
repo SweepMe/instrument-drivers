@@ -16,27 +16,23 @@ clr.AddReference("Thorlabs.MotionControl.Benchtop.NanoTrakCLI")
 import Thorlabs.MotionControl.Benchtop.NanoTrakCLI as BenchtopNanoTrakCLI
 kinesis_client = BenchtopNanoTrakCLI
 
+# Initialize simulations
+DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
+
 # Build device list
 DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
+device_list = DeviceManagerCLI.DeviceManagerCLI.GetDeviceList()
+print(f"Found devices: {[str(serial_num) for serial_num in device_list]}")
 
 # Replace with your actual NanoTrak module serial number
 serial_number = "22000001"
 
-# # Get device info and create the rack object
-# DeviceFactory = DeviceManagerCLI.DeviceFactory
-# deviceInfo = DeviceFactory.GetDeviceInfo(serialNo)
-# typeID = deviceInfo.GetTypeID()
-# ModularRack = ModularRackCLI.Rack.ModularRack
-# rack = ModularRack.CreateModularRack(typeID, serialNo)
-#
-# # Get the device channel (NanoTrak has 1 channel)
-# device = rack[1]
-
 device = kinesis_client.BenchtopNanoTrak.CreateBenchtopNanoTrak(serial_number)
 
 # Connect to the device
-# device.Connect(serial_number)
+device.Connect(serial_number)
 print(f"Connected to device {serial_number}")
+time.sleep(1)
 
 # Wait for device settings to initialize (timeout 5000 ms)
 if not device.IsSettingsInitialized():
