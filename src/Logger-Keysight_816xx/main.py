@@ -34,6 +34,8 @@ from __future__ import annotations
 import struct
 import time
 
+import numpy as np
+
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -50,6 +52,9 @@ class Device(EmptyDevice):
     <li>Slot: Choose the slot your powermeter is connected to.</li>
     <li>Wavelength: If no wavelength should be set, set to 0.</li>
     <li>List length: might need to add +1.</li>
+    <li>Power unit: Choose between W and dBm. Some devices have a bug and will always return W when using parameter 
+    Logging. Hence, the driver will leave the device in W mode and calculate dBm on its own when using parameter 
+    logging.</li>
     </ul>
     """
 
@@ -69,13 +74,11 @@ class Device(EmptyDevice):
         self.port_string: str = ""
         self.port_manager = True
         self.port_types = ["GPIB"]
-        # self.port_properties = {
-        #     "timeout": 20,
-        #     "baudrate": 9600,
-        #     "stopbits": 1,
-        #     "parity": "N",
-        #     "EOL": "\n",
-        # }
+
+        # If multiple channels of the same device are used in the same branch, only one channel is the primary channel
+        # that configures shared settings and handles parameter logging
+        self.is_primary_channel: bool = True
+        self.identifier: str = ""  # Unique identifier for the device instance, based on port and slot
 
         # Measurement parameters
         self.slot: str = "1"  # Slot number of the power meter
@@ -136,41 +139,21 @@ class Device(EmptyDevice):
 
         self.list_mode = parameters.get("Mode", "Single") == "Parameter Logging"
         if self.list_mode:
-            self.list_length = int(parameters.get("Data points", "10"))
-
-    def initialize(self) -> None:
-        """Write parameters that are shared between channels into devices_communication."""
-        if self.identifier not in self.device_communication:
-            self.device_communication[self.identifier] = {
-                "auto_range": self.power_range == "Auto",
-                "list_length": self.list_length,
-                "averaging": self.averaging_time,
-                "channels": [self.channel],
-            }
-            print(f"Initialized device communication for {self.identifier}: {self.device_communication[self.identifier]}")
+            try:
+                self.list_length = int(parameters.get("Data points", "10"))
+            except ValueError:
+                self.list_length = 1
         else:
-            saved_parameters = self.device_communication[self.identifier]
-            if saved_parameters["auto_range"] != (self.power_range == "Auto"):
-                msg = "All channels in a device must either use all auto range or all fixed range."
-                raise ValueError(msg)
-
-            if saved_parameters["list_length"] != self.list_length or saved_parameters["averaging"] != self.averaging_time:
-                msg = "All channels in a device must use the same Parameter Logging configuration (data points and averaging)."
-                raise ValueError(msg)
-
-            # add channel to list of channels if not already present
-            if self.channel in saved_parameters["channels"]:
-                msg = f"Channel {self.channel} is already in use for device {self.identifier}."
-                raise ValueError(msg)
-
-            self.device_communication[self.identifier]["channels"].append(self.channel)
-            print(f"Updated device communication for {self.identifier}: {self.device_communication[self.identifier]}")
+            # reset list length to avoid conflicts in device_communication when switching back to single mode
+            self.list_length = 1
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
+        # handle multiple instances in the configure step to only compare with other instances in the same branch
+        self.handle_multiple_instances()
         self.is_primary_channel = self.device_communication[self.identifier]["channels"][0] == self.channel
-        print(f"Configuring channel {self.channel} of device {self.identifier}. Primary channel: {self.is_primary_channel}")
 
+        # TODO: dbm not supported in list mode
         self.set_power_unit(self.power_unit)
         self.set_power_range(self.power_range)
         self.set_wavelength(float(self.wavelength))
@@ -179,13 +162,27 @@ class Device(EmptyDevice):
             self.port.write("trigger:configuration 1") # activate trigger input connector page 214
             # list mode uses external trigger
             self.configure_input_trigger_response("sme")
-            # omit channel specification, this command can only be sent to the primary channel
+            if self.list_length <= 0:
+                msg = "List length must be a positive integer."
+                raise ValueError(msg)
             self.port.write(f"sense{self.slot}:function:parameter:logging {self.list_length},{self.averaging_time}")
 
         if not self.list_mode:
             self.set_averaging_time(float(self.averaging_time))
             # Set the software trigger system to non-continuous mode
             self.port.write(f":init{self.slot}:cont OFF")
+
+    def unconfigure(self) -> None:
+        """When leaving the branch, reset the information in device_communication."""
+        if self.identifier in self.device_communication:
+            saved_parameters = self.device_communication[self.identifier]
+            if len(saved_parameters["channels"]) == 1:
+                del self.device_communication[self.identifier]
+            elif self.channel in saved_parameters["channels"]:
+                saved_parameters["channels"].remove(self.channel)
+
+        if self.is_primary_channel:
+            self.configure_input_trigger_response("ign")  # ignore input triggers to display standard measurements on the device GUI
 
     def start(self) -> None:
         """This function can be used to do some first steps before the acquisition of a measurement point starts."""
@@ -209,8 +206,8 @@ class Device(EmptyDevice):
 
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
-        # TODO: As the trigger is run for all channels, implement a device_communication method to trigger only once
-        if not self.list_mode:
+        # As the trigger is run for all channels, only the primary channel should send the trigger command to avoid doubling
+        if self.is_primary_channel and not self.list_mode:
             self.initiate_software_trigger()
 
     def request_result(self) -> None:
@@ -232,7 +229,12 @@ class Device(EmptyDevice):
                     break
 
                 if timeout_s <= 0:
-                    msg = f"Sweep did not finish within the timeout period of {max(expected_time * 2, 15)}s."
+                    # Lambda logging does not work if the averaging time is larger than the time between triggers
+                    # It might be needed to keep the averaging time <50% of the time between triggers
+                    msg = (f"Sweep did not finish within the timeout period of {max(expected_time * 2, 15)}s. Please "
+                           f"make sure that the list length matches the number of triggers and that the averaging time "
+                           f"is smaller than the time between triggers. If needed, the minimum timeout can be increased"
+                           f" in the driver code.")
                     raise TimeoutError(msg)
 
                 time.sleep(0.1)
@@ -245,6 +247,9 @@ class Device(EmptyDevice):
         """
         if self.list_mode:
             self.measured_power = self.get_list_mode_data()
+            if self.units[0].lower() == "dbm":
+                self.measured_power = [self.convert_watt_to_dbm(p) for p in self.measured_power]
+
         else:
             result = self.port.query(f":fetc{self.slot}:chan{self.channel}:scal:pow:dc?")
             try:
@@ -264,6 +269,43 @@ class Device(EmptyDevice):
         if self.list_mode and self.is_primary_channel:
             self.port.write(f"sens{self.slot}:func:state logg,stop")
         return [self.measured_power]
+
+    # Helper Functions
+
+    def handle_multiple_instances(self) -> None:
+        """Handle multiple instances of the device in the sequencer.
+
+        If multiple channels of the same device are used, ensure that shared parameters are consistent. Choose one
+        channel as the primary channel to configure shared settings and handle parameter logging, if applicable.
+        """
+        if self.identifier not in self.device_communication:
+            self.device_communication[self.identifier] = {
+                "auto_range": self.power_range == "Auto",
+                "list_length": self.list_length,
+                "averaging": self.averaging_time,
+                "channels": [self.channel],
+            }
+
+        else:
+            saved_parameters = self.device_communication[self.identifier]
+            if saved_parameters["auto_range"] != (self.power_range == "Auto"):
+                msg = "All channels in a device must either use all auto range or all fixed range."
+                raise ValueError(msg)
+
+            if saved_parameters["list_length"] != self.list_length:
+                msg = "All channels in a device must use the same Parameter Logging configuration (data points and averaging)."
+                raise ValueError(msg)
+
+            if saved_parameters["averaging"] != self.averaging_time:
+                msg = "All channels in a device must use the same averaging time."
+                raise ValueError(msg)
+
+            # add channel to list of channels if not already present
+            if self.channel in saved_parameters["channels"]:
+                msg = f"Channel {self.channel} is already in use for device {self.identifier}."
+                raise ValueError(msg)
+
+            self.device_communication[self.identifier]["channels"].append(self.channel)
 
     def set_averaging_time(self, averaging_time: float) -> None:
         """Set the averaging time for the power measurement."""
@@ -305,6 +347,9 @@ class Device(EmptyDevice):
         if unit.lower() not in ["w", "dbm"]:
             msg = "Unit must be 'W' or 'dBm'."
             raise ValueError(msg)
+
+        if self.list_mode:
+            unit = "W"  # list mode only supports W, convert to dBm in call()
 
         if unit.lower() == "dbm":
             unit = "DBM"
@@ -383,7 +428,6 @@ class Device(EmptyDevice):
         """Get the data from the list mode measurement."""
         self.port.write(f"sens{self.slot}:chan{self.channel}:func:res?")
         binary_data = self.port.port.read_raw()
-        print(f"Raw binary data for channel {self.channel}: {binary_data}")
 
         # Strip SCPI header
         if not binary_data.startswith(b'#'):
@@ -396,7 +440,23 @@ class Device(EmptyDevice):
 
         # Each value is a 4-byte float (little-endian)
         num_values = len(power_data_binary) // 4
-        return list(struct.unpack("<" + "f" * num_values, power_data_binary))
+        power_values = list(struct.unpack("<" + "f" * num_values, power_data_binary))
+        return [self.handle_error_value(p) for p in power_values]
+
+    @staticmethod
+    def handle_error_value(value: float) -> float:
+        """Convert the error value returned by the device to NaN."""
+        error_value = 3.402823E38
+        if value == error_value:
+            return float("nan")
+        return value
+
+    @staticmethod
+    def convert_watt_to_dbm(power_w: float) -> float:
+        """Convert power in Watts to dBm."""
+        if power_w <= 0 or np.isnan(power_w):
+            return float("-inf")
+        return 10 * (np.log10(power_w) + 3)
 
     # Currently unused wrapper functions
 
@@ -413,5 +473,3 @@ class Device(EmptyDevice):
         """Get the current wavelength setting of the power meter."""
         response = self.port.query(f"sens{self.slot}:chan{self.channel}:pow:wav?")
         return float(response.strip())
-
-
