@@ -263,7 +263,7 @@ class Device(EmptyDevice):
             timeout_s -= 0.1
 
     def get_lambda_logging_data(self) -> np.ndarray:
-        """Get the lambda logging data after a sweep in list mode.
+        """Get the lambda logging data in nm after a sweep in list mode.
 
         Data is returned from the device as a binary stream that contains each wavelength step of the lambda logging
         operation
@@ -283,7 +283,7 @@ class Device(EmptyDevice):
 
         # Parse the binary data: each value is an 8-byte little-endian double
         num_values = len(data) // 8
-        return np.array(list(struct.unpack("<" + "d"*num_values, data)))
+        return np.array(list(struct.unpack("<" + "d"*num_values, data))) * 1E9
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
