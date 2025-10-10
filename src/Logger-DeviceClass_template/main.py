@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,22 +25,18 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+### !!! Change the above license to your case and needs. !!!
+### Although the above MIT license states that you have to add it to copies,
+### we do not insist in that. Please feel free to not add the MIT license of this file.
 
 # SweepMe! driver
 # * Module: Logger
 # * Instrument: Template
 
-
-### !!! Change the above license to your case and needs. !!!
-### Although the above MIT license states that you have to add it to copies,
-### we do not insist in that. Please feel free to not add the MIT license of this file.
-
 ### Each device class must have a name like: "<Module>-<Manufacturer>_<Model>".
-
 
 ### New drivers can also be created as a service.
 ### Please write to "contact@sweep-me.net" if you need a new driver of if you need support with creating one.
-
 
 ### import further python module here as usual, many packages come with SweepMe!,
 ### all other have to be shipped with the device class
@@ -54,7 +50,7 @@ from pysweepme.ErrorMessage import debug, error
 ### use the next two lines to add the folder of this device class to the PATH variable
 # from FolderManager import addFolderToPATH
 # addFolderToPATH()
-### if you use 'addFolderToPATH', you can now important packages that are shipped with your device class
+### if you use 'addFolderToPATH', you can now import packages that are shipped with your device class
 
 
 class Device(EmptyDevice):
@@ -95,12 +91,13 @@ class Device(EmptyDevice):
         ### use/uncomment the next lines to change port properties,
         ### you can find all keys here: https://wiki.sweep-me.net/wiki/Port_manager#Port_properties
         # self.port_properties = {
-        #                           "timeout": 1,
-        #                           "baudrate": 9600,
-        #                           "EOL": '\n',
-        #                         }
+        #       "timeout": 1,
+        #       "baudrate": 9600,
+        #       "EOL": '\n',
+        #     }
 
-    def set_GUIparameter(self):
+    def set_GUIparameter(self) -> dict:
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         # add keys and values to generate GUI elements in the Parameters-Box
         # If you use this template to create a driver for modules other than Logger or Switch,
         # you need to use fixed keys that are defined for each module.
@@ -130,7 +127,8 @@ class Device(EmptyDevice):
 
         return GUIparameter
 
-    def get_GUIparameter(self, parameter):
+    def get_GUIparameter(self, parameter: dict) -> None:
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         ### see all available keys you get from the GUI
         # debug(parameter)
 
@@ -189,8 +187,8 @@ class Device(EmptyDevice):
     ### all functions are overridden functions that are called by SweepMe!
     ### remove those function that you do not needed
 
-    def connect(self):
-        ### called only once at the start of the measurement
+    def connect(self) -> None:
+        """Connect to the device. This function is called only once at the start of the measurement."""
         ### this function 'connect' is typically not needed if the port manager is activated
         
         print()
@@ -205,12 +203,12 @@ class Device(EmptyDevice):
         ### just use 'find_Ports' to find all possible ports and then open them here
         ### based on the string 'self.port_string' that is created during 'get_GUIparameter'
 
-    def disconnect(self):
-        # called only once at the end of the measurement
+    def disconnect(self) -> None:
+        """Disconnect from the device. This function is called only once at the end of the measurement."""
         debug("->disconnect")
 
-    def initialize(self):
-        # called only once at the start of the measurement
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
         debug("->initialize")
 
         # debug("-> Tempfolder:", self.get_folder("TEMP"))  # the folder in which all data is saved before saving
@@ -223,29 +221,32 @@ class Device(EmptyDevice):
         # msg = "Value of ... not valid. Please use ..."
         # raise Exception(msg)
 
-    def deinitialize(self):
-        # called only once at the end of the measurement
+    def deinitialize(self) -> None:
+        """Deinitialize the device. This function is called only once at the end of the measurement."""
         debug("->deinitialize")
 
-    def configure(self):
-        # called if the measurement procedure enters a branch of the sequencer
-        # and the module has not been used in the previous branch
+    def configure(self) -> None:
+        """Configure the device.
+
+        This function is called every time the measurement procedure enters a branch of the sequencer and the device has
+        not been used in the previous branch.
+        """
         debug("->  configure")
 
-    def unconfigure(self):
-        # called if the measurement procedure leaves a branch of the sequencer
-        # and the module is not used in the next branch
+    def unconfigure(self) -> None:
+        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer and the
+        device is not used in the next branch."""
         debug("->  unconfigure")
 
-    def signin(self):
-        # called if the variation of the module that is loading this device class starts
+    def signin(self) -> None:
+        """This function is called when this devices' module starts a sweep."""
         debug("->  signin")
 
-    def signout(self):
-        # called if the variation of the module that is loading this device class ends
+    def signout(self) -> None:
+        """This function is called after this devices' module finishes a sweep."""
         debug("->  signout")
         
-    def reconfigure(self, parameters, keys):
+    def reconfigure(self, parameters, keys) -> None:
         """'reconfigure' is called whenever parameters of the GUI change by using the {...}-parameter system."""
         debug("->  reconfigure")
         # debug("->  Parameters:", parameters)
@@ -256,14 +257,12 @@ class Device(EmptyDevice):
         # self.get_GUIparameter(parameters)
         # self.configure()
         
-    def poweron(self):
-        # called if the measurement procedure enters a branch of the sequencer
-        # and the module has not been used in the previous branch
+    def poweron(self) -> None:
+        """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
         debug("->  poweron")
 
-    def poweroff(self):
-        # called if the measurement procedure leaves a branch of the sequencer
-        # and the module is not used in the next branch
+    def poweroff(self) -> None:
+        """Turn off the device when leaving a sequencer branch."""
         debug("->  poweroff")
 
     ###------------------------------------------------------------------
@@ -274,11 +273,11 @@ class Device(EmptyDevice):
     ### each function is called for all devices and then the next function is processed
     ### remove functions that are not needed
 
-    def start(self):
+    def start(self) -> None:
         """'start' can be used to do some first steps before the acquisition of a measurement point starts."""
         debug("->    start")
 
-    def apply(self):
+    def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         # apply is not called in the module 'Logger' as logger cannot apply any value,
         # but it can be used in all other modules that have varying sweep values
@@ -290,41 +289,41 @@ class Device(EmptyDevice):
         # It can be any object. Please make sure to to test the type
         # and change it to the format you need before you send it to a device.
 
-    def reach(self):
+    def reach(self) -> None:
         """'reach' can be added to make sure the latest setvalue applied during 'apply' is reached."""
         # only called if 'apply' has been called beforehand
         debug("->    reach")
 
-    def adapt(self):
+    def adapt(self) -> None:
         """'adapt' can be used to adapt an instrument to a new situation after other instruments got a new setvalue."""
         debug("->    adapt")
 
-    def adapt_ready(self):
+    def adapt_ready(self) -> None:
         """'adapt_ready' can be used to make sure that a procedure started in 'adapt' is finished.
 
         Thus, multiple instrument can start an adapt-procedure simultaneously.
         """
         debug("->    adapt_ready")
 
-    def trigger_ready(self):
+    def trigger_ready(self) -> None:
         debug("->    trigger_ready")
 
-    def measure(self):
+    def measure(self) -> None:
         """'measure' should be used to trigger the acquisition of new data.
 
         If all drivers use this function for this purpose, the data acquisition can start almost simultaneously.
         """
         debug("->    measure")
 
-    def request_result(self):
+    def request_result(self) -> None:
         """'request_result' can be used to ask an instrument to send data."""
         debug("->    request_result")
 
-    def read_result(self):
+    def read_result(self) -> None:
         """'read_result' can be used get the data from a buffer that was requested during 'request_result'."""
         debug("->    read_result")
 
-    def process_data(self):
+    def process_data(self) -> None:
         """'process_data' can be used for some evaluation of the data before it is returned."""
         debug("->    process_data")
 
@@ -344,6 +343,6 @@ class Device(EmptyDevice):
 
         return [value1, value2, value3, value4]
 
-    def finish(self):
+    def finish(self) -> None:
         """'finish' can be used to do some final steps after the acquisition of a measurement point."""
         debug("->    finish")
