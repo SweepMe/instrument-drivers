@@ -25,9 +25,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-### !!! Change the above license to your case and needs. !!!
-### Although the above MIT license states that you have to add it to copies,
-### we do not insist in that. Please feel free to not add the MIT license of this file.
+### Please replace with your own license and modify the file license.txt accordingly.
 
 # SweepMe! driver
 # * Module: Logger
@@ -46,11 +44,6 @@ import random
 ### If you like to see the source code of EmptyDevice, take a look at the pysweepme package that contains this file
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug, error
-
-### use the next two lines to add the folder of this device class to the PATH variable
-# from FolderManager import addFolderToPATH
-# addFolderToPATH()
-### if you use 'addFolderToPATH', you can now import packages that are shipped with your device class
 
 
 class Device(EmptyDevice):
@@ -246,7 +239,7 @@ class Device(EmptyDevice):
         """This function is called after this devices' module finishes a sweep."""
         debug("->  signout")
         
-    def reconfigure(self, parameters, keys) -> None:
+    def reconfigure(self, parameters: dict, keys: list) -> None:
         """'reconfigure' is called whenever parameters of the GUI change by using the {...}-parameter system."""
         debug("->  reconfigure")
         # debug("->  Parameters:", parameters)
@@ -306,6 +299,7 @@ class Device(EmptyDevice):
         debug("->    adapt_ready")
 
     def trigger_ready(self) -> None:
+        """'trigger_ready' can be used to make sure that a trigger procedure started in 'measure' is finished."""
         debug("->    trigger_ready")
 
     def measure(self) -> None:
