@@ -252,7 +252,7 @@ class Device(EmptyDevice):
                 if "DET ERR" in msg.decode(errors="ignore"):
                     raise Exception("No detector connected")
                 elif "PWR ERR" in msg.decode(errors="ignore"):
-                    raise Exception("OPM doesn't get enought power")
+                    raise Exception("OPM doesn't get enough power")
                 
                 return msg.decode(errors="ignore").replace("\r", '').strip()
             sleep(0.01)
