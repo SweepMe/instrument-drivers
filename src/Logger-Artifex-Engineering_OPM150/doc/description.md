@@ -1,5 +1,5 @@
 # Artifex Engineering OPM150
-Artifex Optical Power Meter OPM150 is a low cost, versatile power monitor for use in the lab and for laser servicing as well as for OEM applications. It's design for precise measurement of power, from nW to kW, for use in the lab and for OEM applications.
+Artifex Optical Power Meter OPM150 is a low cost, versatile power monitor for use in the lab and for laser servicing as well as for OEM applications. It's designed for precise measurement of power, from nW to kW, for use in the lab and for OEM applications.
 
 
 ![OPM150 complete set with case](opm150_complete_set_with_case.jpg)
