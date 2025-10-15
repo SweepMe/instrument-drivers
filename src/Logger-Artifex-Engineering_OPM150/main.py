@@ -165,12 +165,9 @@ class Device(EmptyDevice):
             self.sensitivity = self.sensitivity * opm_detector_power_multiplier
         
         self.autogain_gain = int(self.gain_steps[self.opm_get_gain()][1:]) # set current gain value for autogain
-
-        self.configure()
     
     def configure(self) -> None:
-        if not self.opm_set_wavelength(self.wavelength): # set chosen wavelength
-            raise Exception("Error while setting Wavelength!")
+        self.opm_set_wavelength(self.wavelength) # set chosen wavelength
 
         if not self.gain == "auto-gain": # set gain if auto-gain is not chosen
             if not self.opm_set_gain(self.gain):
@@ -181,41 +178,43 @@ class Device(EmptyDevice):
         self.initialize()
     
     def opm_autogain(self, tmp_amplitude: str) -> str:
-        if self.gain == "auto-gain":
-            if self.autogain_gain is None:
-                self.autogain_gain = int(self.gain_steps[self.opm_get_gain()][1:]) # get gain as int if not already set
+        """
+        This function automatically adjusts the gain by checking whether the
+        measured value is too high or too low and then setting a new gain until
+        the measured value is within a valid range.
+        """
+        if self.autogain_gain is None:
+            self.autogain_gain = int(self.gain_steps[self.opm_get_gain()][1:]) # get gain as int if not already set
 
-            amplitude = tmp_amplitude[:-2].replace(",", ".")
-            amplitude = float(amplitude)
+        amplitude = tmp_amplitude[:-2].replace(",", ".")
+        amplitude = float(amplitude)
 
-            level = 0.0
+        level = 0.0
 
-            if self.autogain_gain == 1:
-                level = amplitude / 122.85
-            elif self.autogain_gain == 2:
-                level = amplitude / 12.285
-            elif self.autogain_gain == 3:
-                level = amplitude / 1.2285
-            elif self.autogain_gain == 4:
-                level = amplitude / 122.85
-            elif self.autogain_gain == 5:
-                level = amplitude / 12.285
+        if self.autogain_gain == 1:
+            level = amplitude / 122.85
+        elif self.autogain_gain == 2:
+            level = amplitude / 12.285
+        elif self.autogain_gain == 3:
+            level = amplitude / 1.2285
+        elif self.autogain_gain == 4:
+            level = amplitude / 122.85
+        elif self.autogain_gain == 5:
+            level = amplitude / 12.285
         
-            if self.opm_is_100khz:
-                level *= 3
+        if self.opm_is_100khz:
+            level *= 3
         
-            if level > 90.0 and self.autogain_gain > 1:
-                self.autogain_gain -= 1
-                self.opm_set_gain("V{}".format(self.autogain_gain))
-                return self.opm_autogain(self.opm_get_single_measure())
-            elif level < 8.0 and self.autogain_gain < 5:
-                self.autogain_gain += 1
-                self.opm_set_gain("V{}".format(self.autogain_gain))
-                tmp_amplitude = self.opm_get_single_measure()
-                return self.opm_autogain(self.opm_get_single_measure())
-            else:
-                return tmp_amplitude
-        return tmp_amplitude
+        if level > 90.0 and self.autogain_gain > 1:
+            self.autogain_gain -= 1
+            self.opm_set_gain("V{}".format(self.autogain_gain)) # set new gain
+            return self.opm_autogain(self.opm_get_single_measure()) # return new measurement or re-adjust gain
+        elif level < 8.0 and self.autogain_gain < 5:
+            self.autogain_gain += 1
+            self.opm_set_gain("V{}".format(self.autogain_gain)) # set new gain
+            return self.opm_autogain(self.opm_get_single_measure()) # return new measurement or re-adjust gain
+        else:
+            return tmp_amplitude
             
     def call(self) -> list:
         return [self.opm_get_measuement()]
@@ -282,25 +281,25 @@ class Device(EmptyDevice):
             return False
         return True
     
-    def opm_set_wavelength(self, wavelength: int) -> bool:
-        wavelength_str = str(wavelength)
-        self.wavelength = wavelength_str
+    def opm_set_wavelength(self, wavelength: str) -> None:
+        self.wavelength = wavelength
 
-        if len(wavelength_str) == 3:
-            wavelength_str = "0" + wavelength_str # append 0 at beginning of wavelength if wavelength is not 4 bytes long
+        if len(wavelength) == 3:
+            wavelength = "0" + wavelength # append 0 at beginning of wavelength if wavelength is not 4 bytes long
         self._opm_send("L")
-        for i in wavelength_str:
+        for i in wavelength:
             self._opm_send(i)
         self.sensitivity = float(self._opm_recv().replace(",", ".")[4:]) # retrive correction factor from OPM150
-        return True
 
     def opm_get_single_measure(self) -> str:
+        """ Return an measurement result in the format: I1,0nA or I1,0uA"""
         self._opm_send("$E")
         return self._opm_recv()[1:] # remove 'I' prefix from response
 
     def opm_get_measuement(self) -> float:
         amplitude = self.opm_get_single_measure()
-        amplitude = self.opm_autogain(amplitude)
+        if self.gain == "auto-gain": # adjust gain if auto-gain is chosen
+            amplitude = self.opm_autogain(amplitude)
         unit = amplitude[amplitude.find("A")-1:] # get unit from last two bytes of the response
 
         amplitude = amplitude[:-2].replace(",", ".")
@@ -322,13 +321,10 @@ class Device(EmptyDevice):
         elif self.units[0].startswith("m"):
             amplitude /= 1000000 # nano to milli
         elif self.units[0] == "dBm":
-            pass # no need to convert
+            amplitude = 10 * math.log10(amplitude / 1000000)
         else:
             amplitude /= 1000000000 # for A and W
-
-        if self.units[0] == "dBm":
-            amplitude = 10 * math.log10(amplitude / 1000000)
-        
+            
         if self.units[0] in ["nW/cm²", "µW/cm²", "mW/cm²", "W/cm²"]:
             amplitude = amplitude / (((self.aperture**2) / 400) * math.pi)
 
