@@ -446,8 +446,8 @@ class Device(EmptyDevice):
     @staticmethod
     def handle_error_value(value: float) -> float:
         """Convert the error value returned by the device to NaN."""
-        error_value = 3.402823E38
-        if value == error_value:
+        error_value = 3.4E38
+        if value >= error_value:
             return float("nan")
         return value
 
@@ -455,7 +455,7 @@ class Device(EmptyDevice):
     def convert_watt_to_dbm(power_w: float) -> float:
         """Convert power in Watts to dBm."""
         if power_w <= 0 or np.isnan(power_w):
-            return float("-inf")
+            return float("nan")
         return 10 * (np.log10(power_w) + 3)
 
     # Currently unused wrapper functions
