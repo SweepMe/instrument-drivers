@@ -34,9 +34,9 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    description = """<p><strong>Keithley 194 High Speed Voltmeter</strong></p></p>
-                     <p>4.5/3.5 digit voltmeter with up to 1MS/s sampling rate</p></p>
-                     <p>Waveform capture mode not implemented in this Logger module.</p></p>
+    description = """<p><strong>Keithley 194 High Speed Voltmeter</strong></p>
+                     <p>4.5/3.5 digit voltmeter with up to 1MS/s sampling rate</p>
+                     <p>Waveform capture mode not implemented in this Logger module.</p>
                     """
 
     def __init__(self):
@@ -133,14 +133,14 @@ class Device(EmptyDevice):
         new_parameters = {
             "Function Mode": list(self.modes.keys()),
             "Channel": list(self.channels.keys()),
-            "Sampling Rate (S/s)": "1E+04",
-            "Sampling Time (s)": "1E-03",
+            "Sampling Rate in S/s": "1E+04",
+            "Sampling Time in s": "1E-03",
             "Range": list(self.ranges.keys()),
             "Trigger": list(self.triggers.keys()),
             "Filter": list(self.filters.keys()),
             "Coupling": list(self.couplings.keys()),
             # "Delay Type": list(self.delays.keys()),
-            "Delay (s)": 0.000,
+            "Delay in s": 0.000,
         }
 
         if "slope" in self.trigger:
@@ -152,18 +152,18 @@ class Device(EmptyDevice):
         """Apply the parameters received from the SweepMe GUI or the pysweepme instance to the driver instance."""
         self.trigger = parameters.get("Trigger", "Single (int)")
 
-        self.channel = parameters.get("Channel")
-        self.mode = parameters.get("Function Mode")
-        self.rate = parameters.get("Sampling Rate (S/s)")
-        self.samplingtime = parameters.get("Sampling Time (s)")
-        self.range = parameters.get("Range")
-        self.trigger = parameters.get("Trigger")
+        self.channel = parameters.get("Channel", "Channel 1")
+        self.mode = parameters.get("Function Mode", "Average")
+        self.rate = parameters.get("Sampling Rate in S/s", "1E+04")
+        self.samplingtime = parameters.get("Sampling Time in s", "1E-03")
+        self.range = parameters.get("Range", "Auto")
+        self.trigger = parameters.get("Trigger", "Continuous (int)")
         if "slope" in self.trigger:
-            self.triggerlevel = parameters.get("Trigger Level (V)")
-        self.filter = parameters.get("Filter")
-        self.coupling = parameters.get("Coupling")
-        self.delay = parameters.get("Delay (s)")
-        self.port_string = parameters.get("Port")
+            self.triggerlevel = parameters.get("Trigger Level (V)", 0.000)
+        self.filter = parameters.get("Filter", "Off")
+        self.coupling = parameters.get("Coupling", "DC")
+        self.delay = parameters.get("Delay in s", 0.000)
+        self.port_string = parameters.get("Port", "")
 
         # Set variable name, unit, plottype and savetype depending on mode
         self.variables = [self.mode]
