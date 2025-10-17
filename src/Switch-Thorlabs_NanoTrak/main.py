@@ -142,6 +142,8 @@ class Device(EmptyDevice):
         self.reading_mode: str = "Absolute"  # Can be "Absolute", "Relative", or "None"
         self.home_position_string: str = "1.0,1.0"
         self.circle_diameter_string: str =  "1"
+        self.frequency: str = "100"
+        self.gain: str = "1.0"
         self.tracking_time_string: str = "10"
         self.debug_while_tracking: bool = False
 
@@ -170,6 +172,8 @@ class Device(EmptyDevice):
             "Circle diameter in NT": "1",
             "Tracking time in s": "10",
             "Feedback Source": list(self.feedback_sources.keys()),
+            "Frequency in samples/rev": "100",
+            "Gain": "1.0",
             "Simulation": False,
             "Debug while Tracking": False,
             "Modular Rack": False,
@@ -186,6 +190,8 @@ class Device(EmptyDevice):
         self.home_position_string = parameters.get("Home position", "1.0,1.0")
         self.circle_diameter_string = parameters.get("Circle diameter in NT", "1")
         self.feedback_source = parameters.get("Feedback Source", "10V BNC")
+        self.frequency = parameters.get("Frequency in samples/rev", "100")
+        self.gain = parameters.get("Gain", "1.0")
         self.tracking_time_string = parameters.get("Tracking time in s", 10)
         self.debug_while_tracking = parameters.get("Debug while Tracking", False)
 
@@ -290,6 +296,9 @@ class Device(EmptyDevice):
 
         # Set feedback source depending on the GUI parameter
         self.nanotrak_channel.SetFeedbackSource(self.feedback_sources[self.feedback_source])
+
+        self.set_frequency(float(self.frequency))
+        self.set_gain(float(self.gain))
 
         # Home Position. If none is given, do not update the home position
         if self.home_position_string:
@@ -474,6 +483,16 @@ class Device(EmptyDevice):
         self.nanotrak_channel.SetCircleDiameter(diameter)
         self.debug(f"Set circle diameter to {diameter}")
         time.sleep(0.5)  # Optional: wait for device to update
+
+    def set_frequency(self, frequency: float) -> None:
+        """Set the circle frequency in samples per revolution."""
+        circle_parameter = self.nanotrak_channel.GetCircleParams()
+        circle_parameter.set_SamplesPerRev(frequency)
+        self.nanotrak_channel.SetCircleParams(circle_parameter)
+
+    def set_gain(self, gain: float) -> None:
+        """Set the gain."""
+        self.nanotrak_channel.set_Gain(gain)
 
     def debug(self, message: str) -> None:
         """Print the message if 'debug while tracking' is activated."""

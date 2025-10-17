@@ -27,9 +27,6 @@ clr.AddReference("Thorlabs.MotionControl.KCube.NanoTrakCLI")
 import Thorlabs.MotionControl.DeviceManagerCLI as DeviceManagerCLI
 import Thorlabs.MotionControl.GenericNanoTrakCLI as GenericNanoTrakCLI
 
-
-
-
 DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
 DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
 
@@ -55,7 +52,7 @@ device = BenchtopNanoTrakCLI.BenchtopNanoTrak.CreateBenchtopNanoTrak(port_string
 time.sleep(1)
 device.Connect(port_string)
 
-time.sleep(5)
+time.sleep(2)
 
 device.StartPolling(250)
 time.sleep(0.5)
@@ -77,6 +74,16 @@ device.HomeCircle()
 # TIAReading = device.GetReading()
 Position = device.GetCirclePosition()
 print(f"Position: {Position.HPosition}, {Position.VPosition}")
+
+circle_parameter = device.GetCircleParams()
+circle_parameter.set_SamplesPerRev(100)
+device.SetCircleParams(circle_parameter)
+
+device.SetGain(250)
+print(device.GetGain())
+
+# Gain 250
+# freq 43,75Hz
 
 # kinesis_device = GenericNanoTrakCLI.NanoTrak.CreateDevice(port_string)
 
