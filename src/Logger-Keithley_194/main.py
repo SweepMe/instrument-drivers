@@ -31,7 +31,6 @@
 
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
-import time
 
 
 class Device(EmptyDevice):
@@ -79,7 +78,7 @@ class Device(EmptyDevice):
             "CH1 / CH2": "x",
         }
 
-        # this dictionary connects modes to commands. The modes will be displayed to the user in the field 'Mode'
+        # this dictionary connects channels to commands. The channels will be displayed in the field 'Channel'
         self.channels = {
             "Channel 1": "C1",
             "Channel 2": "C2",
@@ -127,43 +126,30 @@ class Device(EmptyDevice):
         #    "Delay (seconds)": "W1",
         # }
 
-    def update_gui_parameters(self, parameters):
-
+    def update_gui_parameters(self, parameters: dict) -> dict:
+        """Determine the new GUI parameters of the driver depending on the current parameters."""
         # retrieve currently set "Trigger" setting, default to "Single (int)" if unset
         self.trigger = parameters.get("Trigger", "Single (int)")
+        new_parameters = {
+            "Function Mode": list(self.modes.keys()),
+            "Channel": list(self.channels.keys()),
+            "Sampling Rate (S/s)": "1E+04",
+            "Sampling Time (s)": "1E-03",
+            "Range": list(self.ranges.keys()),
+            "Trigger": list(self.triggers.keys()),
+            "Filter": list(self.filters.keys()),
+            "Coupling": list(self.couplings.keys()),
+            # "Delay Type": list(self.delays.keys()),
+            "Delay (s)": 0.000,
+        }
 
-        if self.trigger.endswith("slope)"):
-            new_parameters = {
-                "Function Mode": list(self.modes.keys()),
-                "Channel": list(self.channels.keys()),
-                "Sampling Rate (S/s)": "1E+04",
-                "Sampling Time (s)": "1E-03",
-                "Range": list(self.ranges.keys()),
-                "Trigger": list(self.triggers.keys()),
-                "Trigger Level (V)": 0.000,
-                "Filter": list(self.filters.keys()),
-                "Coupling": list(self.couplings.keys()),
-                # "Delay Type": list(self.delays.keys()),
-                "Delay (s)": 0.000,
-            }
-        else:
-            new_parameters = {
-                "Function Mode": list(self.modes.keys()),
-                "Channel": list(self.channels.keys()),
-                "Sampling Rate (S/s)": "1E+04",
-                "Sampling Time (s)": "1E-03",
-                "Range": list(self.ranges.keys()),
-                "Trigger": list(self.triggers.keys()),
-                "Filter": list(self.filters.keys()),
-                "Coupling": list(self.couplings.keys()),
-                # "Delay Type": list(self.delays.keys()),
-                "Delay (s)": 0.000,
-            }
+        if "slope" in self.trigger:
+            new_parameters["Trigger Level (V)"] = 0.000
 
         return new_parameters
 
-    def apply_gui_parameters(self, parameters):
-
+    def apply_gui_parameters(self, parameters: dict) -> None:
+        """Apply the parameters received from the SweepMe GUI or the pysweepme instance to the driver instance."""
         self.trigger = parameters.get("Trigger", "Single (int)")
 
         self.channel = parameters.get("Channel")
@@ -172,44 +158,35 @@ class Device(EmptyDevice):
         self.samplingtime = parameters.get("Sampling Time (s)")
         self.range = parameters.get("Range")
         self.trigger = parameters.get("Trigger")
-        if self.trigger.endswith("slope)"):
+        if "slope" in self.trigger:
             self.triggerlevel = parameters.get("Trigger Level (V)")
         self.filter = parameters.get("Filter")
         self.coupling = parameters.get("Coupling")
         self.delay = parameters.get("Delay (s)")
         self.port_string = parameters.get("Port")
 
-        # reset of variables required for GUI handling
-        self.variables = []
-        self.units = []
-        self.plottype = []
-        self.savetype = []
-
-        # set variables and units depending on operation mode
+        # Set variable name, unit, plottype and savetype depending on mode
         self.variables = [self.mode]
         self.units = [self.mode_units[self.mode]]
-
-        # True to plot data
         self.plottype = [True]
-        # True to save data
         self.savetype = [True]
 
-    def initialize(self):
-
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
         # K2 is used to enable EOI on GPIB communication and disable the holding of the bus
         self.port.write("K2X")
 
         # Data output format; sets output to ASCII, 1 reading, no prefix, no suffix
         self.port.write("G1X")
 
-    def configure(self):
-
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
         # Channel
 
         if self.channel.endswith("1"):
             # if channel 1 is used, set channel 2 to its external trigger to disable it
             self.port.write("C2T7X")
-        elif channel.endswith("2"):
+        elif self.channel.endswith("2"):
             # if channel 2 is used, set channel 1 to its external trigger to disable it
             self.port.write("C1T7X")
 
@@ -243,22 +220,26 @@ class Device(EmptyDevice):
         # set SRQ for "reading done" state
         # self.port.write("M8X")
 
-    def unconfigure(self):
-
-        # sets the trigger back to continous trigger
+    def unconfigure(self) -> None:
+        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
+        # sets the trigger back to continuous trigger
         self.port.write("T26X")
 
-    def measure(self):
-
-        # Trigger arming for different sources
+    def measure(self) -> None:
+        """Trigger the acquisition of new data."""
         if self.trigger.endswith("(int)") or self.trigger.endswith("(ext)"):
             self.port.write("%sX" % self.triggers[self.trigger])
         elif self.trigger.endswith("slope)"):
             self.port.write("%s,%sX" % (self.triggers[self.trigger], self.triggerlevel))
 
-    def read_result(self):
-        # read the result; in case an external trigger or slope dependend trigger was configured and did not happen yet, the command will wait for the result to appear or run into timeout
+    def read_result(self) -> None:
+        """Read the result
+
+        In case an external trigger or slope-dependent trigger was configured and did not happen yet, the command will
+        wait for the result to appear or run into timeout.
+        """
         self.data = self.port.read()
 
-    def call(self):
+    def call(self) -> list[float]:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
         return [float(self.data)]
