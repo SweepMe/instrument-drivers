@@ -55,6 +55,11 @@ device.SetSettings(currentDeviceSettings, False)
 device.GetSettings(currentDeviceSettings)
 
 # How to set frequency, closed/open loop, loop gain, and channel?
+circle_parameter = device.GetCircleParams()
+circle_parameter.set_SamplesPerRev(100)
+device.SetCircleParams(circle_parameter)
+
+device.SetGain(250)
 
 # Set feedback source to BNC 10V
 NanoTrakStatusBase = GenericNanoTrakCLI.NanoTrakStatusBase
