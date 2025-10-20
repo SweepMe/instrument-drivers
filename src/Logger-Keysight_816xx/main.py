@@ -363,7 +363,6 @@ class Device(EmptyDevice):
 
         Frequent use of this command can conflict with the timing of autoranging in some configurations.
         Auto range can be disabled before and enabled after the command if needed.
-        The changes are applied to all channels
         """
         if wavelength_nm == 0:
             return
@@ -371,7 +370,7 @@ class Device(EmptyDevice):
         if wavelength_nm < 0:
             msg = f"Invalid wavelength: {wavelength_nm}"
             raise ValueError(msg)
-        self.port.write(f"sens{self.slot}:pow:wav {wavelength_nm}nm")
+        self.port.write(f"sens{self.slot}:chan{self.channel}:pow:wav {wavelength_nm}nm")
         self.wait_for_opc()
 
     def wait_for_opc(self, timeout_s: float = 10.0) -> None:
