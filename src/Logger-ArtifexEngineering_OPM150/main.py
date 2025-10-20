@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 Artifex Engineering GmbH & Co KG.
+# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -16,7 +16,7 @@
 #
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -25,8 +25,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# SweepMe! device class
-# Device: Artifex Engineering OPM150
+# Contribution: The initial version of this driver was created by Christian Neumann / Artifex Engineering
+
+
+# SweepMe! driver
+# * Module: Logger
+# * Instrument: Artifex Engineering OPM150
+
 
 from pysweepme import EmptyDevice
 
