@@ -3,7 +3,7 @@ import pytest
 import pysweepme
 
 DRIVER_PATH = r"C:\Code\instrument-drivers\src"
-DRIVER_NAME = "Switch-Thorlabs_NanoTrak"
+DRIVER_NAME = "Robot-Thorlabs_NanoTrak"
 
 
 def test_get_connected_devices() -> None:
