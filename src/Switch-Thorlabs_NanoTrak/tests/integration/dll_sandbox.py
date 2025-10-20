@@ -79,6 +79,18 @@ circle_parameter = device.GetCircleParams()
 circle_parameter.set_SamplesPerRev(100)
 device.SetCircleParams(circle_parameter)
 
+
+
+# Configure NanoTrak
+DeviceSettingsUseOptionType = DeviceManagerCLI.DeviceConfiguration.DeviceSettingsUseOptionType
+nanoTrakConfiguration = device.GetNanoTrakConfiguration(port_string, DeviceSettingsUseOptionType.UseConfiguredSettings)
+currentDeviceSettings = device.NanoTrakDeviceSettings
+settings = device.GetSettings(currentDeviceSettings)
+
+device.NanoTrakDeviceSettings.ControlMode.set_Chan1Enable(True)
+device.NanoTrakDeviceSettings.ControlMode.set_ControlMode(1)  # Open loop, 2 for closed loop
+
+
 device.SetGain(250)
 print(device.GetGain())
 
