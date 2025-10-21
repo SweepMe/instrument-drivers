@@ -106,8 +106,8 @@ class Device(EmptyDevice):
             "Slot": "1",
             "Power unit": self.power_units,
             "Power range": self.power_ranges,
-            "Averaging in s": 0.1,
-            "Wavelength in nm": 1550,  # Default wavelength, can be changed later
+            "Averaging in s": "0.1",
+            "Wavelength in nm": "1550",  # Default wavelength, can be changed later
             # "Reference State": ["Absolute", "Relative"],
             "Mode": ["Single", "Parameter Logging"],
         }
