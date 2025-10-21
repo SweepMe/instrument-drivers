@@ -57,7 +57,7 @@ class Device(EmptyDevice):
         self.device = None
 
         self.gain_steps: dict = {"x1": "V1", "x10": "V2", "x100": "V3", "x1000": "V4", "x10000": "V5", "auto-gain": "auto-gain"}
-        self.gain_step_commands = {"V1": "x1", "V2": "x10", "V3": "x100", "V4": "x1000", "V5": "x10000"}
+        self.gain_step_commands = {v: k for k, v in self.gain_steps.items() if v != "auto-gain"}
         self._units: list = ["Nanoampere (nA)", "Microampere (µA)", "Milliampere (mA)", "Ampere (A)", "Nanowatts (nW)", "Microwatts (µW)", "Milliwatts (mW)", "Watts (W)", "Watts per square centimeter (nW/cm²)", "Watts per square centimeter (µW/cm²)", "Watts per square centimeter (mW/cm²)", "Watts per square centimeter (W/cm²)", "Decibel-milliwatt (dBm)"]
         self.sensitivity: float = 1.0
         self.wavelength:str = "660"
@@ -222,7 +222,7 @@ class Device(EmptyDevice):
             return tmp_amplitude
             
     def call(self) -> list:
-        return [self.opm_get_measuement()]
+        return [self.opm_get_measurement()]
     
     def disconnect(self) -> None:
         if self.instance_key not in self.device_communication:
@@ -301,7 +301,7 @@ class Device(EmptyDevice):
         self._opm_send("$E")
         return self._opm_recv()[1:] # remove 'I' prefix from response
 
-    def opm_get_measuement(self) -> float:
+    def opm_get_measurement(self) -> float:
         amplitude = self.opm_get_single_measure()
         if self.gain == "auto-gain": # adjust gain if auto-gain is chosen
             amplitude = self.opm_autogain(amplitude)
