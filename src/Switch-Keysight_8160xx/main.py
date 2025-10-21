@@ -45,7 +45,9 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
     """Driver for the Keysight 8160xx Laser module."""
 
-    description = """Driver for the Keysight 8160xx Laser module. Very close to the Keysight N777x driver."""
+    description = """Driver for the Keysight 8160xx Laser module. Very close to the Keysight N777x driver.
+    Lambda logging does continuous wavelength sweeps with data acquisition of the wavelength at each step.
+    """
 
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
@@ -64,7 +66,6 @@ class Device(EmptyDevice):
         self.port_types = ["GPIB"]
 
         # Measurement parameters
-        self.channel: int = 1
         self.slot: int = 0
         self.output_path: str = "1"  # 1 = low power/high sens, 2 = high power
         self.output_paths_dict = {
@@ -75,19 +76,21 @@ class Device(EmptyDevice):
         }
 
         # Power
-        self.power_level: float = -1
+        self.power_level: str = ""
         self.power_units = {
             "dBm": 1,  # default
             "W": 1,
             "mW": 1e-3,  # instrument doesnt directly support mW
         }
         self.power_unit: str = ""
+        self.power_min: float = -1  # in current unit
+        self.power_max: float = -1  # in current unit
 
         # Wavelength
-        self.wavelength: float = -1
+        self.wavelength: str = ""
         self.wavelength_unit: str = ""
-        self.wln_max: float = -1
-        self.wln_min: float = -1
+        self.wavelength_max: float = -1  # in nm
+        self.wavelength_min: float = -1  # in nm
 
         # Measurement variables
         self.sweep_mode: str = "None"
@@ -107,9 +110,9 @@ class Device(EmptyDevice):
             "SweepMode": ["None", "Wavelength", "Power"],
             "Slot": 0,
             "Output Path": list(self.output_paths_dict.keys()),
-            "Wavelength in nm": 1550.0,
+            "Wavelength in nm": "1550.0",
             "Power unit": ["dBm", "W"],
-            "Power": 0.0,
+            "Power": "0.0",
             "Mode": ["Single", "List"],
         }
 
@@ -132,7 +135,6 @@ class Device(EmptyDevice):
         self.port_string = parameters.get("Port", "")
         self.sweep_mode = parameters.get("SweepMode", "")
 
-        self.channel = parameters.get("Channel", 1)
         self.slot = parameters.get("Slot", "")
 
         self.output_path = parameters.get("Output Path", "Low SSE")
@@ -193,10 +195,15 @@ class Device(EmptyDevice):
 
         # # only 0.5 5 40 nm/s allowed
         self.port.write(f"wavelength:sweep:speed {self.scan_speed}nm/s")
+        self.get_wavelength_range()  # range might change depending on scan speed
+
+        for wavelength in [self.list_start, self.list_stop]:
+            self.verify_wavelength(wavelength)
+
         self.port.write(f"wavelength:sweep:start {self.list_start}nm")
         self.port.write(f"wavelength:sweep:step:width {self.list_step}nm")
         self.port.write(f"wavelength:sweep:stop {self.list_stop}nm")
-        self.port.write("wavelength:sweep:cycles 1") #Set the number of cycles
+        self.port.write("wavelength:sweep:cycles 1") # Set the number of cycles
 
         # Check if device accepts the settings
         status = self.port.query("wav:swe:chec?")
@@ -292,36 +299,68 @@ class Device(EmptyDevice):
             self.measured_power,
         ]
 
-    # --- Helper functions ---
-
     def get_wavelength(self) -> float:
         """Get the current wavelength in nm."""
         return float(self.port.query(f"SOURce{self.slot}:WAVelength?")) * 1e9
 
+    # --- Helper functions ---
+
     def set_wavelength(self, wavelength_nm: float) -> None:
         """Set the wavelength in nm."""
-        wavelength_m = float(wavelength_nm) * 1e-9
-        if not self.wln_max >= wavelength_m >= self.wln_min:
-            msg = (f"Invalid wavelength {wavelength_m * 1e9:.0f} nm not in instrument range "
-                   f"[{self.wln_min * 1e9:.0f} nm ,{self.wln_max * 1e9:.0f} nm]")
-            raise ValueError(msg)
-
+        self.verify_wavelength(wavelength_nm)
         self.port.write(f"SOURce{self.slot}:WAVelength {wavelength_nm}NM")
 
     def get_wavelength_range(self) -> tuple[float, float]:
-        """Get the allowed laser wavelength range in meters."""
-        self.wln_min = float(self.port.query(f"source{self.slot}:wav? min"))
-        self.wln_max = float(self.port.query(f"source{self.slot}:wav? max"))
+        """Get the allowed laser wavelength range in nm."""
+        self.wavelength_min = float(self.port.query(f"source{self.slot}:wav? min")) * 1e9
+        self.wavelength_max = float(self.port.query(f"source{self.slot}:wav? max")) * 1e9
+        return self.wavelength_min, self.wavelength_max
 
-        return self.wln_min, self.wln_max
+    def verify_wavelength(self, wavelength_nm: float) -> None:
+        """Check if the given wavelength in nm is supported by the device."""
+        if self.wavelength_max <= 0 or self.wavelength_min <= 0:
+            self.get_wavelength_range()
+
+        if not self.wavelength_max >= wavelength_nm >= self.wavelength_min:
+            msg = (f"Invalid wavelength {wavelength_nm} nm not in instrument range "
+                   f"[{round(self.wavelength_min)} nm, {round(self.wavelength_max)} nm]")
+            raise ValueError(msg)
 
     def set_power(self, power: float) -> None:
         """Set the power in dBm or W depending on set_power_unit."""
+        if power <= 0:
+            msg = f"Invalid power {power} {self.power_unit}. The device does not support power levels <= 0."
+            raise ValueError(msg)
+
+        if self.power_max <= 0 or self.power_min <= 0:
+            self.get_power_range()
+
+        if not self.power_max >= power >= self.power_min:
+            msg = f"Invalid power {power} {self.power_unit} not in instrument range [{self.power_min} {self.power_unit}, {self.power_max} {self.power_unit}]"
+            raise ValueError(msg)
+
         self.port.write(f"SOURce{self.slot}:POWer:LEVel:IMMediate:AMPLitude {power}")
+        set_power = self.get_power()
+        if abs(set_power - power) / abs(power) > 0.05:
+            msg = (f"Set power {power} {self.power_unit} differs from readback power {set_power} {self.power_unit} by "
+                   f"more than 5%. Check attenuator settings.")
+            print(msg)
 
     def get_power(self) -> float:
-        """Get the current power in dBm."""
-        return float(self.port.query(f"SOURce{self.slot}:POWer:LEVel:IMMediate:AMPLitude?"))
+        """Get the output power in the current unit.
+
+        The value returned is the actual amplitude that is output, which may be different from the value set for the
+        output. If these two figures are not the same, it is indicated in the :STATus:OPERation register
+        (see manual page 149)
+        """
+        # return float(self.port.query(f"SOURce{self.slot}:POWer:LEVel:IMMediate:AMPLitude?"))
+        return float(self.port.query(f"sour{self.slot}:pow?"))
+
+    def get_power_range(self) -> tuple[float, float]:
+        """Get the allowed laser power range in current unit."""
+        self.power_min = float(self.port.query(f"SOURce{self.slot}:POWer:LEVel:IMMediate:AMPLitude? MIN"))
+        self.power_max = float(self.port.query(f"SOURce{self.slot}:POW? MAX"))
+        return self.power_min, self.power_max
 
     def set_power_unit(self, unit: str = "DBM") -> None:
         """Set the laser power unit. Options: 'DBM' or 'W'."""
@@ -329,6 +368,8 @@ class Device(EmptyDevice):
             msg = f"Invalid power unit '{unit}'. Use 'DBM' or 'W'."
             raise ValueError(msg)
         self.port.write(f"SOURce{self.slot}:POWer:UNIT {unit}")
+        # reset power range
+        self.get_power_range()
 
     def set_output_path(self, path: str = "Low SSE") -> None:
         """Set the output path of the tunable laser. Options: 1 (low power high sens) or 2 (high power)."""
