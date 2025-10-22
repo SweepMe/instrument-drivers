@@ -103,6 +103,7 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
+        self.port_string = parameter["Port"]
         self.route_out = parameter["RouteOut"]
         self.source = parameter["SweepMode"]
         self.current_range = self.current_ranges[parameter["Range"]]
@@ -127,29 +128,25 @@ class Device(EmptyDevice):
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
-        unique_DC_port_string = "Agilent_B1500_" + self.port_string
+        driver_port_string = "Agilent_B1500_" + self.port_string
 
-        # initialize commands only need to be sent once, so we check here whether another instance of the same Device Class AND same port did it already. If not, this instance is the first and has to do it.
-        if not unique_DC_port_string in self.device_communication:
-            # self.port.write("*IDN?") # identification
-            # print(self.port.read())
-
+        # initialize commands only need to be sent once, so we check here whether another instance of the same driver
+        # AND same port did it already. If not, this instance is the first and has to do it.
+        if not driver_port_string in self.device_communication:
             self.port.write("*RST")  # reset to initial settings
-
             self.port.write("BC")  # buffer clear
-
             self.port.write("AZ 0")  # Auto-Zero off for faster measurements
-
             self.port.write("FMT 2")  # use to change the output format
 
-            # if initialize commands have been sent, we can add the the unique_DC_port_string to the dictionary that is seen by all Device Classes
-            self.device_communication[unique_DC_port_string] = True
+            # if initialize commands have been sent, we can add the driver_port_string to the dictionary that is seen by
+            # all drivers
+            self.device_communication[driver_port_string] = True
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        ### The command CN has to be sent at the beginning as it resets certain parameters
-        ### If the command CN would be used later, e.g. durin  "poweron", it would overwrite parameters that are defined during "configure"
-        self.port.write("CN " + self.channel)  # switches the channel on
+        # The command CN has to be sent at the beginning as it resets certain parameters
+        # If the command CN would be used later, e.g. durin  "poweron", it would overwrite parameters that are defined during "configure"
+        self.port.write(f"CN {self.channel}")  # switches the channel on
 
         if self.speed == "Fast":  # 1 Short (0.1 PLC) preconfigured selection Fast
             self.port.write("AIT 0,0,1")
@@ -161,13 +158,11 @@ class Device(EmptyDevice):
             self.port.write("AIT 1,2,10")
             self.port.write("AAD %s,1" % self.channel)
 
-        if self.source == "Voltage [V]":
-            self.port.write(
-                "DV " + self.channel + "," + self.voltage_range + "," + "0.0" + "," + self.protection + ", 0" + "," + self.current_range)
+        if self.source.startswith("Voltage"):
+            self.port.write(f"DV {self.channel},{self.voltage_range},0.0,{self.protection}, 0,{self.current_range}")
 
-        if self.source == "Current [A]":
-            self.port.write(
-                "DI " + self.channel + "," + self.current_range + "," + "0.0" + "," + self.protection + ", 0" + "," + self.voltage_range)
+        if self.source.startswith("Current"):
+            self.port.write(f"DI {self.channel},{self.current_range},0.0,{self.protection}, 0,{self.voltage_range}")
 
         # RI and RV #comments to adjust the range, autorange is default
 
@@ -180,7 +175,7 @@ class Device(EmptyDevice):
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
-        self.port.write("IN" + self.channel)
+        self.port.write(f"IN {self.channel}")
         # resets to zero volt
         # self.port.write("DZ")
 
@@ -211,25 +206,27 @@ class Device(EmptyDevice):
         """
 
     def poweron(self) -> None:
-        """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
+        """In a previous version, the CN command was sent here.
+
+        However, this leads to a reset of all parameters previously changed during 'configure'. Therefore, the CN
+        command should not be used here, but has been moved to the beginning of 'configure'.
+        """
         pass
-        # In a previous version, the CN command was sent here. However, this leads to a reset of all parameters previously changed during "configure"
-        # Therefore, the CN command should not be used here, but has been moved to the beginning of "configure"
 
     def poweroff(self) -> None:
         """Turn off the device when leaving a sequencer branch."""
-        self.port.write("CL " + self.channel)  # switches the channel off
+        self.port.write(f"CL {self.channel}")  # switches the channel off
 
     def apply(self) -> None:
         """This function is called if the set value has changed. Applies the new value available as self.value."""
         self.value = str(self.value)
 
-        if self.source == "Voltage [V]":
-            self.port.write("DV " + self.channel + "," + self.voltage_range + "," + self.value)
+        if self.source.startswith("Voltage"):
+            self.port.write(f"DV {self.channel},{self.voltage_range},{self.value}")
             # self.port.write("DV " + self.channel + "," + self.vrange + "," + self.value + "," + self.protection + ", 0" + "," + self.irange)
 
-        if self.source == "Current [A]":
-            self.port.write("DI " + self.channel + "," + self.current_range + "," + self.value)
+        if self.source.startswith("Current"):
+            self.port.write(f"DI {self.channel},{self.current_range},{self.value}")
             # self.port.write("DI " + self.channel + "," + self.irange + "," + self.value + "," + self.protection + ", 0" + "," + self.vrange)
 
     # def trigger(self):
@@ -239,23 +236,21 @@ class Device(EmptyDevice):
 
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
-        self.port.write("TI" + self.channel + ",0")
-        self.port.write("TV" + self.channel + ",0")
+        self.port.write(f"TI{self.channel},0")
+        self.port.write(f"TV{self.channel},0")
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         answer = self.port.read()
-        # print("Current:", answer)
-
-        # If NAI comes first, we have to strip it. Please toggle the lines, if needed.
-        i = float(answer)
-        # i = float(answer[3:])
+        try:
+            current = float(answer)
+        except ValueError:
+            current = float(answer[3:])  # sometimes NAI comes first, we have to strip it
 
         answer = self.port.read()
-        # print("Voltage:", answer)
+        try:
+            voltage = float(answer)
+        except ValueError:
+            voltage = float(answer[3:])  # sometimes NAI comes first, we have to strip it
 
-        # If NAV comes first, we have to strip it. Please toggle the lines, if needed.
-        v = float(answer)
-        # v = float(answer[3:])
-
-        return [v, i]
+        return [voltage, current]
