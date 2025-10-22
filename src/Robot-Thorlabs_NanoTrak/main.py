@@ -82,6 +82,7 @@ class Device(EmptyDevice):
                      e.g. "5;2" for horizontal and vertical position.</li>
                     <li>When using circle diameter, the value must be a float representing the diameter in NT Units.</li>
                     <li>Home position: The home position in NT units, e.g. "1.0,1.0". If empty, the home position will not be updated and the device will not move to Home in the configure step.</li>
+                    <li>Axes can be used to move NanoTrak after latching.</li>
                     </ul>
                     """
 
@@ -94,10 +95,10 @@ class Device(EmptyDevice):
         self.shortname = "Nanotrak"  # short name will be shown in the sequencer
 
         # Define the variables that can be measured by the device and that are returned by the 'call' function
-        self.variables = ["Horizontal Position", "Vertical Position"]
-        self.units = ["m", "m"]
-        self.plottype = [True, True]
-        self.savetype = [True, True]
+        self.variables = ["Horizontal Position", "Vertical Position", "Reading"]
+        self.units = ["m", "m", ""]
+        self.plottype = [True, True, True]
+        self.savetype = [True, True, True]
 
         # Imported Kinesis .NET dlls
         self.kinesis_client = None
@@ -124,6 +125,15 @@ class Device(EmptyDevice):
         self.nanotrak_type: str = "Unknown"  # Will be set in the connect() function
         self.is_modular_rack: bool = False  # True if the device is a modular rack device
         self.bay: int = 1  # Bay number for modular rack devices, default is 1
+
+        self.axes = {
+            "Horizontal": {
+                "Value": 0.0,
+            },
+            "Vertical": {
+                "Value": 0.0,
+            },
+        }
 
         # Feedback sources
         nano_trak_feedback_source = GenericNanoTrakCLI.Settings.IOSettingsSettings.FeedbackSources
@@ -229,7 +239,7 @@ class Device(EmptyDevice):
         connecting_element = self.nanotrak if not self.is_modular_rack else self.rack
         print("Waiting for device to set IsConnected to True...")
         timeout_s = 10
-        while not connecting_element.IsConnected:
+        while not connecting_element.IsConnected and not self.is_run_stopped():
             try:
                 connecting_element.Connect(str(self.serial_number))
             except DeviceManagerCLI.DeviceNotReadyException:
@@ -297,15 +307,14 @@ class Device(EmptyDevice):
         # Set feedback source depending on the GUI parameter
         self.nanotrak_channel.SetFeedbackSource(self.feedback_sources[self.feedback_source])
 
-        self.set_frequency(float(self.frequency))
-        self.set_gain(float(self.gain))
+        self.set_frequency(int(self.frequency))
+        if self.gain:
+            self.set_gain(float(self.gain))
 
         # Home Position. If none is given, do not update the home position
         if self.home_position_string:
             home_pos1, home_pos2 = map(float, self.home_position_string.split(","))
-            HVPosition = GenericNanoTrakCLI.HVPosition
-            self.nanotrak_channel.SetCircleHomePosition(HVPosition(home_pos1, home_pos2))
-            self.nanotrak_channel.HomeCircle()
+            self.set_home_and_go_home(home_pos1, home_pos2)
 
         # Allow comma separated values for multiple trackings
         diameter_list = self.circle_diameter_string.split(",")
@@ -336,12 +345,29 @@ class Device(EmptyDevice):
 
         print("NanoTrak finished configuration.")
 
+    def apply(self) -> None:
+        """Apply the axis movements after latching."""
+        current_horizontal_position, current_vertical_position = self.get_current_position()
+        print(self.sweepvalues)
+        if "Horizontal" in self.sweepvalues and self.sweepvalues["Horizontal"] is not None:
+            horizontal_value = float(self.sweepvalues["Horizontal"])
+        else:
+            horizontal_value = current_horizontal_position
+
+        if "Vertical" in self.sweepvalues and self.sweepvalues["Vertical"] is not None:
+            vertical_value = float(self.sweepvalues["Vertical"])
+        else:
+            vertical_value = current_vertical_position
+
+        if (horizontal_value != current_horizontal_position) or (vertical_value != current_vertical_position):
+            # TODO: activate tracking before moving?
+            self.set_home_and_go_home(horizontal_value, vertical_value)
+
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         horizontal, vertical = self.get_current_position()
-        return [horizontal, vertical]
-
-    # Utility functions
+        reading = self.get_reading()
+        return [horizontal, vertical, reading]
 
     def list_devices(self, nanotrak_type: str = "") -> list[str]:
         """Lists all devices.
@@ -369,6 +395,8 @@ class Device(EmptyDevice):
             raise ValueError(msg)
 
         return [str(serial_num) for serial_num in device_list]
+
+    # Utility functions
 
     def determine_nanotrak_type(self, serial_number: str) -> str:
         """Determine the device type based on the serial number prefix."""
@@ -436,8 +464,6 @@ class Device(EmptyDevice):
 
         return self.nanotrak
 
-    # Wrapper Functions
-
     @staticmethod
     def set_simulation_mode(state: bool) -> None:
         """Set the simulation mode for the device."""
@@ -446,6 +472,8 @@ class Device(EmptyDevice):
 
         else:
             DeviceManagerCLI.SimulationManager.Instance.UninitializeSimulations()
+
+    # Wrapper Functions
 
     def get_identification(self) -> str:
         """Returns the identification of the device."""
@@ -463,6 +491,12 @@ class Device(EmptyDevice):
 
         position = self.nanotrak_channel.GetCirclePosition()
         return position.HPosition, position.VPosition
+
+    def set_home_and_go_home(self, horizontal: float, vertical: float) -> None:
+        """Set the home position and go there."""
+        position = GenericNanoTrakCLI.HVPosition(horizontal, vertical)
+        self.nanotrak_channel.SetCircleHomePosition(position)
+        self.nanotrak_channel.HomeCircle()
 
     def latch(self) -> None:
         """Set the mode to latch."""
@@ -484,7 +518,7 @@ class Device(EmptyDevice):
         self.debug(f"Set circle diameter to {diameter}")
         time.sleep(0.5)  # Optional: wait for device to update
 
-    def set_frequency(self, frequency: float) -> None:
+    def set_frequency(self, frequency: int) -> None:
         """Set the circle frequency in samples per revolution."""
         circle_parameter = self.nanotrak_channel.GetCircleParams()
         circle_parameter.set_SamplesPerRev(frequency)
@@ -493,6 +527,14 @@ class Device(EmptyDevice):
     def set_gain(self, gain: float) -> None:
         """Set the gain."""
         self.nanotrak_channel.set_Gain(gain)
+
+    def get_reading(self) -> float:
+        """Get the absolute reading from the device.
+
+        Could be extended to return relative reading or UnderOrOverRead.
+        """
+        reading = self.nanotrak_channel.GetReading()
+        return reading.AbsoluteReading
 
     def debug(self, message: str) -> None:
         """Print the message if 'debug while tracking' is activated."""
