@@ -36,28 +36,29 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    multichannel = [" CH1", " CH2", " CH3", " CH4", " CH5", " CH6"]
 
     def __init__(self):
 
         EmptyDevice.__init__(self)
 
-        # remains here for compatibility with v1.5.3        
-        self.multichannel = [" CH1", " CH2", " CH3", " CH4", " CH5", " CH6"]
+        self.channels = ["CH1", "CH2", "CH3", "CH4", "CH5", "CH6"]
 
         self.variables = ["Voltage", "Current"]
         self.units = ["V", "A"]
         self.plottype = [True, True]  # True to plot data
         self.savetype = [True, True]  # True to save data
 
+        # Communication Parameters
         self.port_manager = True
-        self.port_types = ['GPIB', 'USB']
+        self.port_types = ["GPIB", "USB"]
         self.port_properties = {
             "timeout": 5,
             # "delay": 0.1,
         }
-
-        self.port_identifications = ['Agilent Technologies,B1500A']
+        # TODO: can this be omitted?
+        self.port_identifications = ["Agilent Technologies,B1500A"]
+        self.channel: int = 1
+        self.shortname = f"B1500 Ch{self.channel}"
 
         self.current_ranges = OrderedDict([
             ("Auto", "0"),
@@ -75,41 +76,54 @@ class Device(EmptyDevice):
             ("100 mA limited auto", "19"),
             ("1 A limited auto", "20"),
         ])
+        self.current_range: str = "0"
+        self.voltage_range = "0"  # voltage autoranging
+
+        # Measurement parameters
+        self.route_out: str = "Rear"
+        self.source: str = "Voltage in V"
+
+        self.protection: float = 100e-6
+        self.speed: str = "Fast"
+        self.average: int = 1
+
+        # Pulse parameters - not yet implemented in the code
 
     def set_GUIparameter(self) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
-            "SweepMode": ["Voltage [V]", "Current [A]"],
+            "SweepMode": ["Voltage in V", "Current ín A"],
+            "Channel": self.channels,
             "RouteOut": ["Rear"],
             "Speed": ["Fast", "Medium", "Slow"],
             "Range": list(self.current_ranges.keys()),
-            "Compliance": 100e-6,
-            "Average": 1,
+            "Compliance": "100e-6",
+            "Average": "1",
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.device = parameter['Device']
-        self.four_wire = parameter['4wire']
-        self.route_out = parameter['RouteOut']
-        self.source = parameter['SweepMode']
-        self.port_string = parameter['Port']
+        self.route_out = parameter["RouteOut"]
+        self.source = parameter["SweepMode"]
+        self.current_range = self.current_ranges[parameter["Range"]]
+        self.speed = parameter["Speed"]
 
-        self.irange = self.current_ranges[parameter['Range']]
+        try:
+            self.protection = float(parameter["Compliance"])
+        except ValueError:
+            self.protection = -1  # set an invalid value to raise an error later
 
-        self.protection = parameter['Compliance']
-        self.speed = parameter['Speed']
-        self.pulse = parameter['CheckPulse']
-        self.pulse_meas_time = parameter['PulseMeasTime']
+        try:
+            self.average = int(parameter["Average"])
+        except ValueError:
+            self.average = -1  # set an invalid value to raise an error later
 
-        self.average = int(parameter['Average'])
+        try:
+            self.channel = int(parameter["Channel"].strip()[-1])
+        except ValueError:
+            self.channel = -1  # set an invalid value to raise an error later
 
-        self.channel = self.device[-1]
-
-        self.shortname = "B1500 CH%s" % self.channel
-
-        # voltage autoranging 
-        self.vrange = "0"
+        self.shortname = f"B1500 CH{self.channel}"
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -134,7 +148,7 @@ class Device(EmptyDevice):
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         ### The command CN has to be sent at the beginning as it resets certain parameters
-        ### If the command CN would be used later, e.g. durin  'poweron', it would overwrite parameters that are defined during 'configure'
+        ### If the command CN would be used later, e.g. durin  "poweron", it would overwrite parameters that are defined during "configure"
         self.port.write("CN " + self.channel)  # switches the channel on
 
         if self.speed == "Fast":  # 1 Short (0.1 PLC) preconfigured selection Fast
@@ -149,11 +163,11 @@ class Device(EmptyDevice):
 
         if self.source == "Voltage [V]":
             self.port.write(
-                "DV " + self.channel + "," + self.vrange + "," + "0.0" + "," + self.protection + ", 0" + "," + self.irange)
+                "DV " + self.channel + "," + self.voltage_range + "," + "0.0" + "," + self.protection + ", 0" + "," + self.current_range)
 
         if self.source == "Current [A]":
             self.port.write(
-                "DI " + self.channel + "," + self.irange + "," + "0.0" + "," + self.protection + ", 0" + "," + self.vrange)
+                "DI " + self.channel + "," + self.current_range + "," + "0.0" + "," + self.protection + ", 0" + "," + self.voltage_range)
 
         # RI and RV #comments to adjust the range, autorange is default
 
@@ -199,8 +213,8 @@ class Device(EmptyDevice):
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
         pass
-        # In a previous version, the CN command was sent here. However, this leads to a reset of all parameters previously changed during 'configure' 
-        # Therefore, the CN command should not be used here, but has been moved to the beginning of 'configure'
+        # In a previous version, the CN command was sent here. However, this leads to a reset of all parameters previously changed during "configure"
+        # Therefore, the CN command should not be used here, but has been moved to the beginning of "configure"
 
     def poweroff(self) -> None:
         """Turn off the device when leaving a sequencer branch."""
@@ -211,11 +225,11 @@ class Device(EmptyDevice):
         self.value = str(self.value)
 
         if self.source == "Voltage [V]":
-            self.port.write("DV " + self.channel + "," + self.vrange + "," + self.value)
+            self.port.write("DV " + self.channel + "," + self.voltage_range + "," + self.value)
             # self.port.write("DV " + self.channel + "," + self.vrange + "," + self.value + "," + self.protection + ", 0" + "," + self.irange)
 
         if self.source == "Current [A]":
-            self.port.write("DI " + self.channel + "," + self.irange + "," + self.value)
+            self.port.write("DI " + self.channel + "," + self.current_range + "," + self.value)
             # self.port.write("DI " + self.channel + "," + self.irange + "," + self.value + "," + self.protection + ", 0" + "," + self.vrange)
 
     # def trigger(self):
