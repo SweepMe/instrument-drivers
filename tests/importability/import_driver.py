@@ -53,6 +53,7 @@ def is_compatible(driver_name: str) -> bool:
 SKIPPED_DRIVERS = {
     "Logger-MCC_DAQ": "Driver requires installed manufacturer software",
     "Switch-FTDI_FTD2xx": "Driver requires installed manufacturer software",
+    "Logger-ArtifexEngineering_OPM150": "Driver requires installed manufacturer software",
 }
 
 
