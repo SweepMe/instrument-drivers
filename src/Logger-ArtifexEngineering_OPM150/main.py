@@ -141,6 +141,8 @@ class Device(EmptyDevice):
     
     def connect(self) -> None:
         """ Connect to OPM150 """
+        if self.port == "":
+            raise Exception("No port selected.")
         # Set serial number of port as key
         self.port_serial = self.port.split("- ")[1]
         self.instance_key = f"{self.driver_name}_{self.port_serial}"
@@ -160,7 +162,7 @@ class Device(EmptyDevice):
                 self.device.setChars(126, 1, 0, 0)
                 self.device.resetDevice()
                 self.device.purge()
-            except ftd2xx.ftd2xx.DeviceError as e:
+            except ftd2xx.DeviceError as e:
                 msg = f"Cannot open FTD Device with serial number {port_byte}. Available devices: {ftd2xx.listDevices()}"
                 raise Exception(msg) from e
 
@@ -213,7 +215,7 @@ class Device(EmptyDevice):
         self.update_gui_parameters(parameters)
         self.configure()
 
-    def measure(self): -> None:
+    def measure(self) -> None:
         self.result = self.opm_get_measurement()
 
     def call(self) -> list:
@@ -233,6 +235,19 @@ class Device(EmptyDevice):
 
         level = 0.0
 
+        # To calculate if the gain needs to be moved up or down:
+        # The maximum output value in percent of each gain level is represented by the numbers (122.85, 12.285, ...)
+        #
+        # 1. Convert the measure amplitude into percent:
+        #    if gain 1: amplitude / 122.85
+        #    if gain 2: amplitude / 12.285
+        #    if gain 3: amplitude / 1.2285
+        #    if gain 4: amplitude / 122.85
+        #    if gain 5: amplitude / 12.285
+        # 2. If the value in percent is above 90 and the set gain level is greater than 1, set the new gain to gain - 1.
+        #    If the value in percent is below 8 and the set gain level is lower than 5, set new gain to gain + 1
+        # 3. If the OPM150 is a 100 kHz unit, multiply the value in percent by 3
+
         if self.autogain_gain == 1:
             level = amplitude / 122.85
         elif self.autogain_gain == 2:
@@ -240,9 +255,9 @@ class Device(EmptyDevice):
         elif self.autogain_gain == 3:
             level = amplitude / 1.2285
         elif self.autogain_gain == 4:
-            level = amplitude / 122.85
+            level = amplitude / 122.85 # This is not a typo
         elif self.autogain_gain == 5:
-            level = amplitude / 12.285
+            level = amplitude / 12.285 # This is not a typo
 
         if self.opm_is_100khz:
             level *= 3
@@ -276,14 +291,14 @@ class Device(EmptyDevice):
                     msg = msg + self.device.read(self.device.getQueueStatus())
 
                 if "DET ERR" in msg.decode(errors="ignore"):
-                    raise Exception("No detector connected")
+                    raise Exception("No detector connected!")
                 elif "PWR ERR" in msg.decode(errors="ignore"):
-                    raise Exception("OPM doesn't get enough power")
+                    raise Exception("OPM doesn't get enough power!")
                 
                 return msg.decode(errors="ignore").replace("\r", '').strip()
             sleep(0.01)
             i += 1
-        raise TimeoutError("No Valid Data received")
+        raise TimeoutError("No Valid Data received.")
     
     def opm_get_info(self) -> str:
         self._opm_send("$I")
