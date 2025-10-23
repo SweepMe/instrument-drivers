@@ -81,7 +81,7 @@ class Device(EmptyDevice):
         }
 
         # measuring range as dictionary
-        # Setting manual ranges is currently not supported as the 3457A expects a floating point input with function
+# Setting manual ranges is currently not supported as the 3458A expects a floating point input with function
         # dependent maximum values which would require several checks to be implemented to prevent violations
         self.ranges = {
             "Auto": "AUTO",
@@ -155,18 +155,17 @@ class Device(EmptyDevice):
         if self.route_out == "Front":
             self.port.write("TERM 1")  # set to front terminal input
         elif self.route_out == "Rear":
-            self.port.write("TERM 2")  # set to front terminal input
+            self.port.write("TERM 2")  # set to rear terminal input
         self.port.write("MFORMAT ASCII")  # memory format ascii
 
         # Mode and Range
-        self.port.write("%s %s" % (self.modes[self.mode], self.ranges[self.range]))
+        self.port.write(f"{self.modes[self.mode]} {self.ranges[self.range]}")
 
-        # Resolution
-        self.port.write("NDIG %s" % self.resolutions[
-            self.resolution])  # for digits requested to be between 3 and 8, just send the appropriate command
+        # Resolution. for digits requested to be between 3 and 8, just send the appropriate command
+        self.port.write(f"NDIG {self.resolutions[self.resolution]}")
 
         # NPLC Integration
-        self.port.write("NPLC %s" % self.nplc_types[self.nplc])  # apply the set amount of digits
+        self.port.write(f"NPLC {self.nplc_types[self.nplc]}")  # apply the set amount of digits
 
         # Auto-Zero
         if self.autozero == "On":
