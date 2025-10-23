@@ -34,6 +34,9 @@ from collections import OrderedDict
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
+import numpy as np
+import time
+
 
 class Device(EmptyDevice):
 
@@ -87,7 +90,25 @@ class Device(EmptyDevice):
         self.speed: str = "Fast"
         self.average: int = 1
 
+        self.measured_current: float | list[float] = 0.0
+        self.measured_voltage: float | list[float] = 0.0
+
         # Pulse parameters - not yet implemented in the code
+
+        # List sweep parameters
+        self.use_list_mode: bool = False
+        self.list_modes = {
+            "linear": 1,
+            "logarithmic": 2,
+            "linear dual": 3,  # start - stop - start
+            "logarithmic dual": 4,  # start - stop - start
+        }
+        self.list_mode: int = 1  # linear
+        self.list_start: float = 0.0
+        self.list_stop: float = 1.0
+        self.list_steps: int = 10
+        self.list_hold: float = 0.0
+        self.list_delay: float = 0.0
 
     def set_GUIparameter(self) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
@@ -99,6 +120,17 @@ class Device(EmptyDevice):
             "Range": list(self.current_ranges.keys()),
             "Compliance": "100e-6",
             "Average": "1",
+
+            # List Mode Parameters
+            "ListSweepCheck": False,
+            "ListSweepType": ["Sweep"],
+            "ListSweepStart": 0.0,
+            "ListSweepEnd": 1.0,
+            "ListSweepStepPointsType": ["Points (lin.):", "Points (log.):"],
+            "ListSweepStepPointsValue": 0.1,
+            "ListSweepDual": False,
+            "ListSweepHoldtime": "0.0",
+            "ListSweepDelaytime": "0.0",
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:
@@ -126,6 +158,46 @@ class Device(EmptyDevice):
 
         self.shortname = f"B1500 CH{self.channel}"
 
+        # List Mode Parameters
+        try:
+            sweep_value = parameter.get("SweepValue", "")
+        except KeyError:
+            # this might be the case when driver is used with pysweepme
+            # then, "SweepValue" is not defined during set_GUIparameter
+            sweep_value = None
+
+        if sweep_value == "List sweep":
+            self.use_list_mode = True
+            self.handle_list_sweep_parameter(parameter)
+
+    def handle_list_sweep_parameter(self, parameter: dict) -> None:
+        """Read out the list sweep parameters and create self.list_sweep_values."""
+        if parameter["ListSweepType"] != "Sweep":
+            msg = "Only 'Sweep' type is currently supported for Agilent B1500 list sweeps."
+            raise ValueError(msg)
+
+        # TODO: handle exceptions
+        self.list_start = float(parameter["ListSweepStart"])
+        self.list_stop = float(parameter["ListSweepEnd"])
+        self.list_steps = int(parameter["ListSweepStepPointsValue"])
+        self.list_hold = float(parameter["ListSweepHoldtime"])
+        self.list_delay = float(parameter["ListSweepDelaytime"])
+
+        step_type = parameter["ListSweepStepPointsType"]
+        if step_type.startswith("Points (lin.)"):
+            self.list_mode = self.list_modes["linear"] if not parameter["ListSweepDual"] else self.list_modes[
+                "linear dual"]
+
+        elif step_type.startswith("Points (log.)"):
+            self.list_mode = self.list_modes["logarithmic"] if not parameter["ListSweepDual"] else self.list_modes[
+                "logarithmic dual"]
+
+        # # Add time staps to return values
+        # self.variables.extend(["Time stamp", "Time stamp zeroed"])
+        # self.units.extend(["s", "s"])
+        # self.plottype.extend([True, True])
+        # self.savetype.extend([True, True])
+
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
         driver_port_string = "Agilent_B1500_" + self.port_string
@@ -147,16 +219,7 @@ class Device(EmptyDevice):
         # The command CN has to be sent at the beginning as it resets certain parameters
         # If the command CN would be used later, e.g. durin  "poweron", it would overwrite parameters that are defined during "configure"
         self.port.write(f"CN {self.channel}")  # switches the channel on
-
-        if self.speed == "Fast":  # 1 Short (0.1 PLC) preconfigured selection Fast
-            self.port.write("AIT 0,0,1")
-            self.port.write("AAD %s,0" % self.channel)
-        elif self.speed == "Medium":  # 2 Medium (1.0 PLC) preconfigured selection Normal
-            self.port.write("AIT 1,0,1")
-            self.port.write("AAD %s,1" % self.channel)
-        elif self.speed == "Slow":  # 3 Long (10 PLC) preconfigured selection Quiet
-            self.port.write("AIT 1,2,10")
-            self.port.write("AAD %s,1" % self.channel)
+        self.set_speed(self.speed)
 
         if self.source.startswith("Voltage"):
             self.port.write(f"DV {self.channel},{self.voltage_range},0.0,{self.protection}, 0,{self.current_range}")
@@ -165,8 +228,22 @@ class Device(EmptyDevice):
             self.port.write(f"DI {self.channel},{self.current_range},0.0,{self.protection}, 0,{self.voltage_range}")
 
         # RI and RV #comments to adjust the range, autorange is default
+        self.set_average(self.average)
 
-        self.port.write("AV %i" % self.average)
+        if self.use_list_mode:
+            self.configure_list_mode(
+                source=self.source[0],
+                mode=self.list_mode,
+                output_range=0,  # autorange
+                start=self.list_start,
+                stop=self.list_stop,
+                steps=self.list_steps,
+                compliance=self.protection,
+            )
+            self.set_measurement_mode(2, [self.channel])  # staircase sweep mode. Might need to move to poweron
+            self.set_list_timing(self.list_hold, self.list_delay)
+            # Enable automatic abort function (2). Return to start value (1) after abort
+            self.port.write("WM 2, 1")
 
         # *LRN? is a function to ask for current status of certain parameters,
         # 0 = output on or off
@@ -178,32 +255,6 @@ class Device(EmptyDevice):
         self.port.write(f"IN {self.channel}")
         # resets to zero volt
         # self.port.write("DZ")
-
-        """
-        Enables channels CN [chnum ... [,chnum] ... ]
-        Disables channels CL [chnum ... [,chnum] ... ]
-        Sets filter ON/OFF [FL] mode[,chnum ... [,chnum] ... ]
-        Sets series resistor ON/OFF [SSR] chnum,mode
-        Sets integration time
-        (Agilent B1500 can use
-        AAD/AIT instead of AV.)
-        [AV] number[,mode]
-        [AAD] chnum[,type]
-        [AIT] type,mode[,N]
-        Forces constant voltage DV chnum,range,output
-        [,comp[,polarity[,crange]]]
-        Forces constant current DI
-        Sets voltage measurement
-        range
-        [RV] chnum,range
-        Sets current measurement
-        range
-        [RI] chnum,range
-        [RM] chnum,mode[,rate]
-        Sets measurement mode MM 1,chnum[,chnum ... [,chnum] ... ]
-        Sets SMU operation mode [CMM] chnum,mode
-        Executes measurement XE
-        """
 
     def poweron(self) -> None:
         """In a previous version, the CN command was sent here.
@@ -219,38 +270,173 @@ class Device(EmptyDevice):
 
     def apply(self) -> None:
         """This function is called if the set value has changed. Applies the new value available as self.value."""
-        self.value = str(self.value)
+        if self.use_list_mode:
+            return
 
         if self.source.startswith("Voltage"):
             self.port.write(f"DV {self.channel},{self.voltage_range},{self.value}")
-            # self.port.write("DV " + self.channel + "," + self.vrange + "," + self.value + "," + self.protection + ", 0" + "," + self.irange)
 
         if self.source.startswith("Current"):
             self.port.write(f"DI {self.channel},{self.current_range},{self.value}")
-            # self.port.write("DI " + self.channel + "," + self.irange + "," + self.value + "," + self.protection + ", 0" + "," + self.vrange)
-
-    # def trigger(self):
-    # pass
-    # software trigger to start the measurement
-    # self.port.write("XE")
 
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
-        self.port.write(f"TI{self.channel},0")
-        self.port.write(f"TV{self.channel},0")
+        if self.use_list_mode:
+            # TODO: only the list_master channel should execute XE?
+            self.port.write("XE")  # execute measurement
+        else:
+            self.port.write(f"TI{self.channel},0")
+            self.port.write(f"TV{self.channel},0")
+
+    def request_result(self) -> None:
+        """Wait for the list mode to finish and request the measurement results."""
+        if self.use_list_mode:
+            timeout_s = 120
+            start_time = time.perf_counter()
+            self.port.write("*OPC?")
+            # while True:
+            #     if self.is_run_stopped():
+            #         break
+
+                # TODO: maybe we need to use OPC to check for operation complete without writing to the buffer
+                # examples use opc
+
+                # status = self.port.query("*STB?")
+                # if int(status) & 2 != 2:  # if second bit 2**1 is in status byte, the logic sum will be 2
+                #     break
+                #
+                # if (time.perf_counter() - start_time) > timeout_s:
+                #     msg = f"Timeout waiting for list sweep to finish after {timeout_s} seconds."
+                #     raise TimeoutError(msg)
+                # time.sleep(0.1)
+
+    def read_result(self) -> None:
+        """Read the measured data from a buffer that was requested during 'request_result'."""
+        if self.use_list_mode:
+            # TODO: this needs testing, maybe the data is moved automatically to the buffer and NUB does not work?
+            # buffer_length = int(self.port.query("NUB?"))
+            # doc uses ReadListAsStringArray, but it does not explain how to use it via SCPI
+            # This device is comparable to Agilent 415x, but does not need the RMD? command to put measurement data into the buffer
+            # Apparently, you can just read from the buffer?
+
+            # fmt, bc
+            # how do i access the query buffer?
+            # mm, xe, nub for context and links?
+
+
+        else:
+            answer = self.port.read()
+            try:
+                self.measured_current = float(answer)
+            except ValueError:
+                self.measured_current = float(answer[3:])  # sometimes NAI comes first, we have to strip it
+
+            answer = self.port.read()
+            try:
+                self.measured_voltage = float(answer)
+            except ValueError:
+                self.measured_voltage = float(answer[3:])  # sometimes NAI comes first, we have to strip it
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        answer = self.port.read()
-        try:
-            current = float(answer)
-        except ValueError:
-            current = float(answer[3:])  # sometimes NAI comes first, we have to strip it
 
-        answer = self.port.read()
-        try:
-            voltage = float(answer)
-        except ValueError:
-            voltage = float(answer[3:])  # sometimes NAI comes first, we have to strip it
 
-        return [voltage, current]
+
+        return [self.measured_voltage, self.measured_current]
+
+    # Wrapped functions
+
+    """
+    Enables channels CN [chnum ... [,chnum] ... ]
+    Disables channels CL [chnum ... [,chnum] ... ]
+    Sets filter ON/OFF [FL] mode[,chnum ... [,chnum] ... ]
+    Sets series resistor ON/OFF [SSR] chnum,mode
+    Sets integration time
+    (Agilent B1500 can use
+    AAD/AIT instead of AV.)
+    [AV] number[,mode]
+    [AAD] chnum[,type]
+    [AIT] type,mode[,N]
+    Forces constant voltage DV chnum,range,output
+    [,comp[,polarity[,crange]]]
+    Forces constant current DI
+    Sets voltage measurement
+    range
+    [RV] chnum,range
+    Sets current measurement
+    range
+    [RI] chnum,range
+    [RM] chnum,mode[,rate]
+    Sets measurement mode MM 1,chnum[,chnum ... [,chnum] ... ]
+    Sets SMU operation mode [CMM] chnum,mode
+    Executes measurement XE
+    """
+
+    def set_average(self, average: int) -> None:
+        """Set the number of averaging samples of the A/D converter.
+
+        The average number can either be 1-1023 (samples depending on mode) or -1 - -100 (number of PLCs)
+        """
+        if average < -100 or (average > 1023 or average == 0):
+            msg = f"Invalid average value: {average}. Must be 1-1023 (samples) or -1 to -100 (PLCs)."
+            raise ValueError(msg)
+        self.port.write(f"AV {average}")
+
+    def set_measurement_mode(self, mode: int, channels: list[int]) -> None:
+        """Set the measurement mode to one of 18 available modes (see manual table 4-14).
+
+        1 - Spot (DI, DV)
+        2 - Staircase Sweep
+        """
+        self.port.write(f"MM {mode}{','.join(str(ch) for ch in channels)}")
+
+    def set_speed(self, speed: str) -> None:
+        """Set the measurement speed."""
+        speed = speed.strip().lower()
+        if speed == "fast":  # 1 Short (0.1 PLC) preconfigured selection Fast
+            self.port.write("AIT 0,0,1")
+            self.port.write("AAD %s,0" % self.channel)
+        elif speed == "medium":  # 2 Medium (1.0 PLC) preconfigured selection Normal
+            self.port.write("AIT 1,0,1")
+            self.port.write("AAD %s,1" % self.channel)
+        elif speed == "slow":  # 3 Long (10 PLC) preconfigured selection Quiet
+            self.port.write("AIT 1,2,10")
+            self.port.write("AAD %s,1" % self.channel)
+        else:
+            msg = f"Invalid speed setting: {speed}. Use 'Fast', 'Medium', or 'Slow'."
+            raise ValueError(msg)
+
+    # Wrapped functions - list mode
+
+    # WT, WV, WI
+    # TSC enables time stamp output
+
+    def configure_list_mode(self, source: str, mode: int, output_range:int, start:float, stop:float, steps: int, compliance: float) -> None:
+        """Configure a staircase sweep using the list sweep values."""
+        if steps > 1001 or steps < 1:
+            msg = f"Invalid number of list steps: {steps}. Device staircase sweeps support 1-1001 points."
+            raise ValueError(msg)
+
+        if source not in ("V", "I"):
+            msg = f"Invalid source for list sweep: {source}. Use 'V' or 'I'."
+            raise ValueError(msg)
+        # TODO: add compliance, range, and power compliance
+        self.port.write(f"W{source} {self.channel},{mode},{output_range}, {start},{stop},{steps},{compliance}")
+
+    def set_list_timing(self, hold: float, delay: float) -> None:
+        """Set the timing parameters for list sweeps.
+
+        We set the hold time to 0 (time between starting the sweep and forcing the first step).
+        We set the delay time in s (time between forcing and starting a measurement), which corresponds to the SweepMe Hold time.
+        We set the Sdelay time in s (time between starting a measurement and forcing the next step), which corresponds to the SweepMe Delay time.
+        """
+        if hold < 0 or hold > 655.35:
+            msg = f"Invalid hold time: {hold}. Must be between 0 and 655.35 s."
+            raise ValueError(msg)
+
+        if delay < 0 or delay > 655.35:
+            msg = f"Invalid delay time: {delay}. Must be between 0 and 655.35 s."
+            raise ValueError(msg)
+
+        self.port.write(f"WT 0,{hold},{delay}")
+
