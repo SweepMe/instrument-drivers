@@ -148,9 +148,9 @@ class Device(EmptyDevice):
 
         # Measurement parameters
         self.sweepmode: str = "Center Position"
-        self.tracking_mode: str = "Tracking"  # Can be "Tracking" or "Latch"
         self.reading_mode: str = "Absolute"  # Can be "Absolute", "Relative", or "None"
         self.home_position_string: str = "1.0,1.0"
+        self.go_home_at_start: bool = False
         self.circle_diameter_string: str =  "1"
         self.frequency: str = "100"
         self.gain: str = "1.0"
@@ -187,6 +187,7 @@ class Device(EmptyDevice):
             "Simulation": False,
             "Debug while Tracking": False,
             "Modular Rack": False,
+            "GoHomeStart": False,
         }
 
         if parameters.get("Modular Rack", False):
@@ -198,6 +199,7 @@ class Device(EmptyDevice):
         """Apply the parameters received from the SweepMe GUI or the pysweepme instance to the driver instance."""
         self.serial_number = parameters.get("Port", "")
         self.home_position_string = parameters.get("Home position", "1.0,1.0")
+        self.go_home_at_start = parameters.get("GoHomeStart", False)
         self.circle_diameter_string = parameters.get("Circle diameter in NT", "1")
         self.feedback_source = parameters.get("Feedback Source", "10V BNC")
         self.frequency = parameters.get("Frequency in samples/rev", "100")
@@ -233,21 +235,38 @@ class Device(EmptyDevice):
         # Determine device type based on the serial number prefix
         self.nanotrak_type = self.determine_nanotrak_type(self.serial_number)
         self.import_device_dlls(self.nanotrak_type)
-        self.nanotrak = self.create_nanotrak(self.serial_number, self.nanotrak_type)
 
-        # Connect to device / rack
-        connecting_element = self.nanotrak if not self.is_modular_rack else self.rack
-        print("Waiting for device to set IsConnected to True...")
-        timeout_s = 10
+        number_of_retries = 2
+        while number_of_retries > 0:
+            self.nanotrak = self.create_nanotrak(self.serial_number, self.nanotrak_type)
+
+            # Connect to device / rack
+            connecting_element = self.nanotrak if not self.is_modular_rack else self.rack
+            try:
+                # This function seems to work only every other time, so we retry multiple times on timeout
+                self.device_manager_connect(connecting_element, timeout_s=2)
+            except TimeoutError as e:
+                number_of_retries -= 1
+                if number_of_retries == 0:
+                    raise e
+                print(f"TimeoutError: {e}. Retrying connection... ({number_of_retries} retries left)")
+            else:
+                break
+
+    def device_manager_connect(self, connecting_element, timeout_s=10):
+        """Connect to the device manager with a timeout.
+
+        The connecting_element is either the nanotrak or the rack element.
+        """
+        starting_time = time.time()
         while not connecting_element.IsConnected and not self.is_run_stopped():
             try:
                 connecting_element.Connect(str(self.serial_number))
             except DeviceManagerCLI.DeviceNotReadyException:
                 print("DeviceNotReadyException: Device is not ready yet, retrying...")
-                time.sleep(0.2)
-                timeout_s -= 0.2
+                time.sleep(0.5)
 
-            if timeout_s <= 0:
+            if time.time() - starting_time > timeout_s:
                 msg = f"Failed to connect to the device {self.serial_number} within the timeout period."
                 raise TimeoutError(msg)
 
@@ -308,13 +327,17 @@ class Device(EmptyDevice):
         self.nanotrak_channel.SetFeedbackSource(self.feedback_sources[self.feedback_source])
 
         self.set_frequency(int(self.frequency))
+        # If the gain is empty, do not update the gain
         if self.gain:
             self.set_gain(float(self.gain))
 
         # Home Position. If none is given, do not update the home position
-        if self.home_position_string:
-            home_pos1, home_pos2 = map(float, self.home_position_string.split(","))
-            self.set_home_and_go_home(home_pos1, home_pos2)
+        if self.go_home_at_start:
+            if self.home_position_string:
+                home_pos1, home_pos2 = map(float, self.home_position_string.split(","))
+                self.set_home_and_go_home(home_pos1, home_pos2)
+            else:
+                self.go_home()
 
         # Allow comma separated values for multiple trackings
         diameter_list = self.circle_diameter_string.split(",")
@@ -348,7 +371,6 @@ class Device(EmptyDevice):
     def apply(self) -> None:
         """Apply the axis movements after latching."""
         current_horizontal_position, current_vertical_position = self.get_current_position()
-        print(self.sweepvalues)
         if "Horizontal" in self.sweepvalues and self.sweepvalues["Horizontal"] is not None:
             horizontal_value = float(self.sweepvalues["Horizontal"])
         else:
@@ -360,7 +382,6 @@ class Device(EmptyDevice):
             vertical_value = current_vertical_position
 
         if (horizontal_value != current_horizontal_position) or (vertical_value != current_vertical_position):
-            # TODO: activate tracking before moving?
             self.set_home_and_go_home(horizontal_value, vertical_value)
 
     def call(self) -> list[float]:
@@ -437,6 +458,8 @@ class Device(EmptyDevice):
             msg = f"Unknown device type: {nanotrak_type}. Supported prefixes (first two numbers) are: {', '.join(self.device_prefixes.values())}."
             raise ValueError(msg)
 
+        print(type(self.kinesis_client))
+
     def create_nanotrak(self, serial_number: str, nanotrak_type: str) -> GenericNanoTrakCLI.GenericNanoTrak:
         """Create a nanotrak instance based on the serial number and device type."""
         if nanotrak_type == "benchtop":
@@ -492,11 +515,38 @@ class Device(EmptyDevice):
         position = self.nanotrak_channel.GetCirclePosition()
         return position.HPosition, position.VPosition
 
-    def set_home_and_go_home(self, horizontal: float, vertical: float) -> None:
-        """Set the home position and go there."""
+    def set_home(self, horizontal: float, vertical: float) -> None:
+        """Set the home position without moving there."""
         position = GenericNanoTrakCLI.HVPosition(horizontal, vertical)
         self.nanotrak_channel.SetCircleHomePosition(position)
+        time.sleep(0.5)  # Optional: wait for device to update
+
+    def go_home(self) -> None:
+        """Go to the home position. This function enables the 'Go home' button in the GUI.
+
+        HomeCircle() only works in Tracking mode, so if the current mode is Latch, we switch to Tracking first,
+        move to home, and then switch back to Latch.
+        """
+        current_mode = self.nanotrak_channel.GetMode()
+        reset_to_latch = False
+        # TODO: moving should be usable in latch mode as well
+        if current_mode == GenericNanoTrakCLI.NanoTrakStatusBase.OperatingModes.Latch:
+            # print(f"Setting NanoTrak to Tracking mode before moving to home.")
+            self.track()
+            reset_to_latch = True
+
         self.nanotrak_channel.HomeCircle()
+        # Need to wait until the movement is finished
+        time.sleep(1)
+
+        if reset_to_latch:
+            # print("Setting NanoTrak back to Latch mode after moving to home.")
+            self.latch()
+
+    def set_home_and_go_home(self, horizontal: float, vertical: float) -> None:
+        """Set the home position and go there."""
+        self.set_home(horizontal, vertical)
+        self.go_home()
 
     def latch(self) -> None:
         """Set the mode to latch."""
