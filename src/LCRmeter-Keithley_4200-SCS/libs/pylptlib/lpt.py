@@ -18,14 +18,27 @@
 # SOFTWARE.
 
 from __future__ import annotations
+
 import ctypes as c
 
 from .error_codes import ERROR_CODES
 
-_dll_path = r"C:\s4200\sys\bin\lptlib.dll"
+# By standard the lptlib.dll is imported from the default Clarius installation path at C:\s4200\sys\bin\lptlib.dll
+# Alternatively, the lptlib.dll can be copied to the working directory of this script or the directory of the server.exe
+# It is not 100% clear if this is the best way to handle this, but it works for now.
+import os
+current_directory = os.getcwd()
+
+custom_dll_path = os.path.join(current_directory, "lptlib.dll")
+
+if os.path.exists(custom_dll_path):
+    _dll_path = custom_dll_path
+else:
+    _dll_path = r"C:\s4200\sys\bin\lptlib.dll"
+
 _dll = None
 
-DEBUG_MODE = True
+DEBUG_MODE = False
 
 
 # ### UTILITY FUNCTIONS
@@ -109,6 +122,9 @@ def check_error(error_code: c.c_int32, *args):
     if DEBUG_MODE:
         print("error message: ", error_string)
 
+    if DEBUG_MODE and args:
+        print("Error arguments: ", args)
+
     place_holders = error_string.count("%")
     if len(args) == place_holders:
         raise K4200Error(error_string % args)
@@ -125,21 +141,27 @@ def initialize():
 # ### GENERAL FUNCTIONS
 
 
-def tstsel(id_: int):
+def tstsel(id_: int) -> None:
     """Select test station."""
     err = _dll.tstsel(c.c_int32(id_))  # equiv to c_long
     check_error(err)
 
 
-def tstdsl():
+def tstdsl() -> None:
     """Deselect test station."""
     err = _dll.tstdsl()
     check_error(err)
 
 
-def devint():
+def devint() -> None:
     """Reset all active instruments in the system to their default states."""
     err = _dll.devint()
+    check_error(err)
+
+
+def clrscn() -> None:
+    """This command clears the measurement scan tables associated with a sweep."""
+    err = _dll.clrscn()
     check_error(err)
 
 
@@ -154,6 +176,22 @@ def getinstid(id_string: str):
 
 def setmode(instr_id: int, param: int, value):
     err = _dll.setmode(c.c_int32(instr_id), c.c_long(param), c.c_double(value))
+    check_error(err)
+
+
+def rdelay(delay: float) -> None:
+    """Set a user-programmable delay."""
+    c_delay = c.c_double(delay)
+    err = _dll.rdelay(c_delay)
+    check_error(err)
+
+
+def conpin(instr_term_id: int, connect: int) -> None:
+    """Connect the specified instrument to the specified pin(s) on the device.
+
+    connect_n parameter not implemented yet.
+    """
+    err = _dll.conpin(c.c_int32(instr_term_id), c.c_int32(connect), 0)
     check_error(err)
 
 
@@ -480,14 +518,14 @@ def pulse_width(instr_id: int, chan: int, width: float):
 
 
 def seg_arb_define(
-    instr_id: int,
-    chan: int,
-    nsegments: int,
-    startvals: list,
-    stopvals: list,
-    timevals: list,
-    triggervals: list,
-    output_relay_vals: list,
+        instr_id: int,
+        chan: int,
+        nsegments: int,
+        startvals: list,
+        stopvals: list,
+        timevals: list,
+        triggervals: list,
+        output_relay_vals: list,
 ):
     start_values_p = make_double_array_pointer(startvals)
     stop_values_p = make_double_array_pointer(stopvals)
@@ -551,7 +589,7 @@ def pulse_conncomp(instr_id: int, chan: int, type: int, index: int):
     check_error(err)
 
 
-def pulse_exec(mode: bool) -> int:
+def pulse_exec(mode: bool) -> None:
     """Execute a pulse in basic/advanced mode."""
     err = _dll.pulse_exec(c.c_int32(mode))
     check_error(err)
@@ -564,7 +602,7 @@ def pulse_exec_status() -> tuple[int, float]:
     return int(status), float(elapsed_time.value)
 
 
-def pulse_fetch(instr_id: int, chan: int, start_index: int, stop_index: int) -> tuple[dict, float, float, float]:
+def pulse_fetch(instr_id: int, chan: int, start_index: int, stop_index: int) -> tuple[list, list, list, list]:
     """This command retrieves enabled test data and temporarily stores it in the data buffer.
 
     When using pulse_fetch to retrieve data, you need to pause the program to allow time for the
@@ -577,7 +615,7 @@ def pulse_fetch(instr_id: int, chan: int, start_index: int, stop_index: int) -> 
 
     meas_v = make_double_array(buffer_size)
     meas_i = make_double_array(buffer_size)
-    statuses = make_generic_array(buffer_size, data_type=c.c_ulong())
+    statuses = make_generic_array(buffer_size, data_type=c.c_ulong)
     timestamp = make_double_array(buffer_size)
 
     # TODO: check whether statuses needs byref
@@ -625,15 +663,15 @@ def pulse_limits(instr_id: int, chan: int, v_limit: float, i_limit: float, power
 
 
 def pulse_meas_sm(
-    instr_id: int,
-    chan: int,
-    acquire_type: int,
-    acquire_meas_v_ampl: bool,
-    acquire_meas_v_base: bool,
-    acquire_meas_i_ampl: bool,
-    acquire_meas_i_base: bool,
-    acquire_time_stamp: bool,
-    llecomp: bool,
+        instr_id: int,
+        chan: int,
+        acquire_type: int,
+        acquire_meas_v_ampl: bool,
+        acquire_meas_v_base: bool,
+        acquire_meas_i_ampl: bool,
+        acquire_meas_i_base: bool,
+        acquire_time_stamp: bool,
+        llecomp: bool,
 ):
     """Configures spot mean measurement. See lpt docu.
     Params:
@@ -675,13 +713,13 @@ def pulse_meas_timing(instr_id: int, chan: int, start_percent: float, stop_perce
 
 
 def pulse_meas_wfm(
-    instr_id: int,
-    chan: int,
-    acquire_type: bool,
-    acquire_meas_v: bool,
-    acquire_meas_i: bool,
-    acquire_time_stamp: bool,
-    llecomp: bool,
+        instr_id: int,
+        chan: int,
+        acquire_type: bool,
+        acquire_meas_v: bool,
+        acquire_meas_i: bool,
+        acquire_time_stamp: bool,
+        llecomp: bool,
 ):
     """Configures waveform measurements."""
     acquire_type = c.c_int32(acquire_type)
@@ -703,12 +741,12 @@ def pulse_meas_wfm(
 
 
 def pulse_meas_rt(
-    instr_id: int,
-    chan: int,
-    v_meas_col_name: str,
-    i_meas_col_name: str,
-    time_stamp_col_name: str,
-    status_col_name: str,
+        instr_id: int,
+        chan: int,
+        v_meas_col_name: str,
+        i_meas_col_name: str,
+        time_stamp_col_name: str,
+        status_col_name: str,
 ):
     """Configures channel to return pulse source and measure data in pseudo real time.
     As measurements are performed, the data is automatically placed in the Clarius Analyze sheet.
@@ -728,15 +766,41 @@ def pulse_meas_rt(
     )
     check_error(err)
 
+def pulse_measrt(
+        instr_id: int,
+        chan: int,
+        v_meas_col_name: str,
+        i_meas_col_name: str,
+        time_stamp_col_name: str,
+        status_col_name: str,
+):
+    """Configures channel to return pulse source and measure data in pseudo real time.
+    As measurements are performed, the data is automatically placed in the Clarius Analyze sheet.
+    """
+    v_meas_name = make_char_pointer(v_meas_col_name)
+    i_meas_name = make_char_pointer(i_meas_col_name)
+    timestamp_meas_name = make_char_pointer(time_stamp_col_name)
+    status_meas_name = make_char_pointer(status_col_name)
+
+    err = _dll.pulse_measrt(
+        c.c_int32(instr_id),
+        c.c_int32(chan),
+        v_meas_name,
+        i_meas_name,
+        timestamp_meas_name,
+        status_meas_name,
+    )
+    check_error(err)
+
 
 def pulse_ranges(
-    instr_id: int,
-    chan: int,
-    v_src_range: float,
-    v_range_type: int,
-    v_range: float,
-    i_range_type: int,
-    i_range: float,
+        instr_id: int,
+        chan: int,
+        v_src_range: float,
+        v_range_type: int,
+        v_range: float,
+        i_range_type: int,
+        i_range: float,
 ):
     """Set the voltage pulse range and voltage/current measure ranges
     - Range types: Auto 0, Limited auto: 1, Fixed: 2
@@ -824,10 +888,7 @@ def pulse_sweep_linear(instr_id: int, chan: int, sweep_type: int, start: float, 
 
 def pulse_train(instr_id: int, chan: int, v_base: float, v_amplitude: float):
     """ """
-    v_base = c.c_double(v_base) if v_base else None
-    v_amplitude = c.c_double(v_amplitude) if v_amplitude else None
-
-    err = _dll.pulse_train(c.c_int32(instr_id), c.c_int32(chan))
+    err = _dll.pulse_train(c.c_int32(instr_id), c.c_int32(chan), c.c_double(v_base), c.c_double(v_amplitude))
     check_error(err)
 
 
@@ -838,18 +899,18 @@ def rpm_config(instr_id: int, chan: int, modifier: int, value: int):
 
 
 def seg_arb_sequence(
-    instr_id: int,
-    chan: int,
-    seq_num: int,
-    num_segments,
-    start_v: list[float],
-    stop_v: list[float],
-    time: list[float],
-    trig: list[bool],
-    ssr: list[int],
-    meas_type: list[float],
-    meas_start: list[float],
-    meas_stop: list[float],
+        instr_id: int,
+        chan: int,
+        seq_num: int,
+        num_segments,
+        start_v: list[float],
+        stop_v: list[float],
+        time: list[float],
+        trig: list[bool],
+        ssr: list[int],
+        meas_type: list[float],
+        meas_start: list[float],
+        meas_stop: list[float],
 ):
     """Define the parameters for a segment arbitrary waveform pulse-measure sequence
     - sequence_id: unique id to identify sequence
@@ -950,12 +1011,6 @@ def decode_pulse_status(status_bits: int) -> dict:
 
 
 # ### CVU
-def rdelay(delay: float):
-    """Set a user-programmable delay."""
-    c_delay = c.c_double(delay)
-    err = _dll.rdelay(c_delay)
-    check_error(err)
-
 
 def asweepv(instr_id: str, voltages: list[float], delay: float) -> None:
     """Generate a waveform based on user-defined forcing array (logarithmic sweep or other custom forcing commands)."""
@@ -964,17 +1019,36 @@ def asweepv(instr_id: str, voltages: list[float], delay: float) -> None:
     c_voltages = make_double_array_pointer(len(voltages), voltages)
     c_delay = c.c_double(delay)
 
-    err = _dll.asweepv(c_instr_id, c_number_of_points, c_voltages, c_delay)
+    err = _dll.asweepv(c_instr_id, c_number_of_points, c_delay, c_voltages)
+    check_error(err)
+
+
+def asweepi(instr_id: str, currents: list[float], delay: float) -> None:
+    """Generate a waveform based on user-defined forcing array (logarithmic sweep or other custom forcing commands)."""
+    c_instr_id = c.c_int32(instr_id)
+    c_number_of_points = c.c_long(len(currents))
+    c_currents = make_double_array_pointer(len(currents), currents)
+    c_delay = c.c_double(delay)
+
+    err = _dll.asweepi(c_instr_id, c_number_of_points, c_delay, c_currents)
+    check_error(err)
+
+
+def adelay(delays: list[float]) -> None:
+    """Specifies an array of delay points to use with asweepX command calls."""
+    c_number_of_points = c.c_long(len(delays))
+    c_delays = make_double_array_pointer(len(delays), delays)
+    err = _dll.adelay(c_number_of_points, c_delays)
     check_error(err)
 
 
 def bsweepi(
-    instr_id: str,
-    start_current: float,
-    stop_current: float,
-    number_of_points: int,
-    delay: float,
-    result: float,
+        instr_id: str,
+        start_current: float,
+        stop_current: float,
+        number_of_points: int,
+        delay: float,
+        result: float,
 ) -> None:
     """Supplies a series of ascending or descending currents and shuts down when result fits a trigger condition."""
     c_instr_id = c.c_int32(instr_id)
@@ -989,12 +1063,12 @@ def bsweepi(
 
 
 def bsweepv(
-    instr_id: str,
-    start_current: float,
-    stop_current: float,
-    number_of_points: int,
-    delay: float,
-    result: float,
+        instr_id: str,
+        start_current: float,
+        stop_current: float,
+        number_of_points: int,
+        delay: float,
+        result: float,
 ) -> None:
     """Supplies a series of ascending or descending voltage and shuts down when result fits a trigger condition."""
     c_instr_id = c.c_int32(instr_id)
@@ -1024,7 +1098,7 @@ def cvu_custom_cable_comp(instr_id: str):
 
 def devclr() -> None:
     """Set all sources to a zero state."""
-    err = _dll.devlr()
+    err = _dll.devclr()
     check_error(err)
 
 
@@ -1200,6 +1274,17 @@ def smeasvRT(instr_id: int, array_size: int, column_name: str) -> list[float]:
     return c_voltages
 
 
+def smeasi(instr_id: int, array_size: int) -> list[float]:
+    """Allow multiple measurements by a specified instrument during asweepX command."""
+    c_instr_id = c.c_int32(instr_id)
+    c_currents = make_double_array(array_size)
+
+    err = _dll.smeasi(c_instr_id, c.byref(c_currents))
+    check_error(err)
+
+    return c_currents
+
+
 def smeasz(instr_id: int, model: int, speed: int, array_size: int) -> (list[float], list[float]):
     """Perform impedance measurements for a sweep."""
     c_instr_id = c.c_int32(instr_id)
@@ -1217,11 +1302,11 @@ def smeasz(instr_id: int, model: int, speed: int, array_size: int) -> (list[floa
 
 
 def smeaszRT(
-    instr_id: int,
-    model: int,
-    speed: int,
-    number_of_points: int,
-    column_name: str,
+        instr_id: int,
+        model: int,
+        speed: int,
+        number_of_points: int,
+        column_name: str,
 ) -> (list[float], list[float]):
     """Perform impedance measurement in real time for a sweep."""
     c_instr_id = c.c_int32(instr_id)
@@ -1274,3 +1359,40 @@ def sweepv(instr_id: int, start_freq: float, stop_freq: float, number_of_points:
 
     err = _dll.sweepv(c_instr_id, c_start_freq, c_stop_freq, c_number_of_points, c_delay)
     check_error(err)
+
+
+# Some measurement modes do not return the measurement data directly: e.g. list sweeps, where the measurement tables are
+# defined for each channel by using smeasX commands and the actual measurement is started by a sweepX command. In this
+# case, the following functions can be used to save the result arrays in a global dictionary and read them out later.
+
+_measurements: dict = {}
+"""Dictionary to save result arrays for later readout after measurement has been finished."""
+
+
+def reset_measurement_cache():
+    """Reset the _measurements dictionary for a new set of data."""
+    _measurements.clear()
+
+    # Clear the measurement tables of the device
+    clrscn()
+
+
+def prepare_measurement(function_name: str, key: str, *args, **kwargs):
+    """Call a measurement function, but save the array reference to read out the data later."""
+    function = globals().get(function_name)
+    result = function(*args, **kwargs)
+    # save the array reference in a global dictionary
+    _measurements[key] = result
+    return result
+
+
+def read_measurement(key: str):
+    """Read out the data from a previous measurement."""
+    if key not in _measurements:
+        return None
+
+    result = _measurements[key]
+    if isinstance(result, c.Array):
+        pointer = c.cast(result, c.POINTER(c.c_double))
+        result = [pointer[i] for i in range(len(result))]
+    return result

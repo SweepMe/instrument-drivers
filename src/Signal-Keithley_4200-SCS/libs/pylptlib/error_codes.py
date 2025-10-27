@@ -1,6 +1,3 @@
-# error codes adapted from the ATV K4200
-# github repository https://github.com/ATV-GmbH/AtvK4200Lpt/tree/master/source
-
 ERROR_CODES = {
     2802:
     "RPM: Invalid Configuration Requested",
@@ -462,7 +459,7 @@ ERROR_CODES = {
     -840: ("SSR cannot be opened when using RPM ranges. Please change SSR array to enable relay or "
            "select PMU measure range."),
     -841: ("WARNING: SSR is open on segment immediately preceding sequence %d. "
-           "Measurement will be invalid for 25 �s while relay settles."),
+           "Measurement will be invalid for 25us while relay settles."),
     -842:
     "This test has exceeded the system power limit by %g watts.",
     -843:
