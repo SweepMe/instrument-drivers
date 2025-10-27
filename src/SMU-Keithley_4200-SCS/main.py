@@ -305,6 +305,12 @@ class Device(EmptyDevice):
             self.filter_factor = parameters.get("Filter factor", "0")
             self.ad_aperture_time = parameters.get("A/D aperture time", "0.01")
 
+        # Reset returned values and units
+        self.variables = ["Voltage", "Current"]
+        self.units = ["V", "A"]
+        self.plottype = [True, True]
+        self.savetype = [True, True]
+
         # Pulse Mode Parameters
         self.pulse_master = False
         self.pulse_mode = parameters.get("CheckPulse", "")
