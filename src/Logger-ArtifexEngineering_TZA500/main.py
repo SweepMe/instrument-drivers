@@ -181,7 +181,7 @@ class Device(EmptyDevice):
             self._tza_send("$U")
             if self._tza_recv() != "U OK":
                 self.disconnect()
-                raise Exception("Error while cinnection to TZA500!")
+                raise Exception("Error while establishing a connection to TZA500. Please check the device connection and driver installation.")
 
     def disconnect(self) -> None:
         if self.instance_key not in self.device_communication:
