@@ -293,24 +293,28 @@ class Device(EmptyDevice):
         if self.use_list_mode:
             timeout_s = 120
             start_time = time.perf_counter()
-            while True:
-                if self.is_run_stopped():
-                    break
+            self.port.write("*OPC?")
+            # while True:
+            #     if self.is_run_stopped():
+            #         break
 
-                status = self.port.query("*STB?")
-                if int(status) & 2 != 2:  # if second bit 2**1 is in status byte, the logic sum will be 2
-                    break
+                # TODO: maybe we need to use OPC to check for operation complete without writing to the buffer
+                # examples use opc
 
-                if (time.perf_counter() - start_time) > timeout_s:
-                    msg = f"Timeout waiting for list sweep to finish after {timeout_s} seconds."
-                    raise TimeoutError(msg)
-                time.sleep(0.1)
+                # status = self.port.query("*STB?")
+                # if int(status) & 2 != 2:  # if second bit 2**1 is in status byte, the logic sum will be 2
+                #     break
+                #
+                # if (time.perf_counter() - start_time) > timeout_s:
+                #     msg = f"Timeout waiting for list sweep to finish after {timeout_s} seconds."
+                #     raise TimeoutError(msg)
+                # time.sleep(0.1)
 
     def read_result(self) -> None:
         """Read the measured data from a buffer that was requested during 'request_result'."""
         if self.use_list_mode:
             # TODO: this needs testing, maybe the data is moved automatically to the buffer and NUB does not work?
-            buffer_length = int(self.port.query("NUB?"))
+            # buffer_length = int(self.port.query("NUB?"))
             # doc uses ReadListAsStringArray, but it does not explain how to use it via SCPI
             # This device is comparable to Agilent 415x, but does not need the RMD? command to put measurement data into the buffer
             # Apparently, you can just read from the buffer?
