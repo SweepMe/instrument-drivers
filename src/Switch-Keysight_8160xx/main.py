@@ -47,6 +47,9 @@ class Device(EmptyDevice):
 
     description = """Driver for the Keysight 8160xx Laser module. Very close to the Keysight N777x driver.
     Lambda logging does continuous wavelength sweeps with data acquisition of the wavelength at each step.
+    Changing the scan speed may change the allowed wavelength range. Unfortunately, the device does not report if the
+    scan range is invalid after changing the speed. Check the allowed wavelength range after changing the speed on the
+    device screen.
     """
 
     def __init__(self) -> None:
