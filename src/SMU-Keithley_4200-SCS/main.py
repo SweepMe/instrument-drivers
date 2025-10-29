@@ -43,49 +43,15 @@ from pysweepme.ErrorMessage import debug
 
 FolderManager.addFolderToPATH()
 
+# This driver only works with the pylptlib server running on the 4200-SCS device. Get it here: https://sweep-me.net/dashboard
+# Communication with the server is done via the ProxyClass
 
-def running_on_device() -> bool:
-    """Check if the driver is executed directly on the Keithley 4200-SCS hardware by trying to import the lptlib.dll."""
-    dll_path = r"C:\s4200\sys\bin\lptlib.dll"
+import importlib
+import ProxyClass
 
-    # If Clarius is not installed and the dll is not available, the driver is not running on the device
-    if not Path(dll_path).exists():
-        return False
+importlib.reload(ProxyClass)
 
-    # If the dll is available and can be imported, the driver is running on the device
-    try:
-        _dll = c.WinDLL(dll_path)
-    except:
-        # if the dll is available but cannot be imported, check the Python interpreter bitness
-        if platform.architecture()[0] != "32bit":
-            print(
-                "Keithley 4200-SCS: Installation of Clarius detected, but lptlib.dll cannot be loaded. Using remote "
-                "control via LPTlib server instead. If you are trying to run the driver directly on the device, use "
-                "32-Bit version of Python/SweepMe!.",
-            )
-            return False
-
-        return False
-
-    return True
-
-
-RUNNING_ON_4200SCS = running_on_device()
-
-if RUNNING_ON_4200SCS:
-    # import LPT library functions
-    # import LPT library instrument IDs
-    # not available yet -> # from pylptlib import inst
-    # import LPT library parameter constants
-    from pylptlib import lpt, param
-else:
-    import importlib
-
-    import ProxyClass
-
-    importlib.reload(ProxyClass)
-
-    from ProxyClass import Proxy
+from ProxyClass import Proxy
 
 
 class Device(EmptyDevice):
@@ -120,10 +86,9 @@ class Device(EmptyDevice):
         self.plottype = [True, True]  # True to plot data
         self.savetype = [True, True]  # True to save data
 
-        if not RUNNING_ON_4200SCS:
-            self.port_types = ["GPIB", "TCPIP"]
-            # needed to make the code working with pysweepme where port_manager is only used from __init__
-            self.port_manager = True
+        self.port_types = ["GPIB", "TCPIP"]
+        # needed to make the code working with pysweepme where port_manager is only used from __init__
+        self.port_manager = True
 
         self.port_properties = {
             "EOL": "\r\n",
@@ -235,7 +200,10 @@ class Device(EmptyDevice):
     @staticmethod
     def find_ports() -> list[str]:
         """Find available ports."""
-        return ["LPTlib"] if RUNNING_ON_4200SCS else ["LPTlib via xxx.xxx.xxx.xxx"]
+        # If the lptlib.dll exists, the driver is probably running on the device.
+        # Exemption: If Clarius is installed on the PC running SweepMe!, the dll also exists there.
+        dll_path = r"C:\s4200\sys\bin\lptlib.dll"
+        return ["LPTlib via localhost"] if Path(dll_path).exists() else ["LPTlib via xxx.xxx.xxx.xxx"]
 
     def update_gui_parameters(self, parameters: dict) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
@@ -459,23 +427,19 @@ class Device(EmptyDevice):
         else:
             self.command_set = "LPTlib"  # "US" user mode, "LPTlib", # check manual p. 677/1510
 
-            if not RUNNING_ON_4200SCS:
-                # overwriting the communication classes with Proxy classes
+            if "localhost" in self.port_string.lower():
+                tcp_ip = "localhost"
+                tcp_port = 8888
+
+            else:
                 tcp_ip_port = self.port_string[11:].strip()  # removing "LPTlib via "
                 tcp_ip_port_splitted = tcp_ip_port.split(":")  # in case a port is given
 
                 tcp_ip = tcp_ip_port_splitted[0]
                 tcp_port = int(tcp_ip_port_splitted[1]) if len(tcp_ip_port_splitted) == 2 else 8888
 
-                self.lpt = Proxy(tcp_ip, tcp_port, "lpt")
-                # not supported yet with pylptlib -> # self.inst = Proxy(tcp_ip, tcp_port, "inst")
-                self.param = Proxy(tcp_ip, tcp_port, "param")
-
-            else:
-                # we directly use pylptlib
-                self.lpt = lpt
-                # not supported yet with pylptlib -> # self.inst = inst
-                self.param = param
+            self.lpt = Proxy(tcp_ip, tcp_port, "lpt")
+            self.param = Proxy(tcp_ip, tcp_port, "param")
 
             try:
                 self.lpt.initialize()
