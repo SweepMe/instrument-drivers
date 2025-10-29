@@ -100,11 +100,11 @@ class Device(EmptyDevice):
 
         self.tza_comm_max_retries: int = 800
 
-        self.tza_fw: str = None
-        self.tza_serial: str = None
-        self.tza_date_of_manufacturing: str = None
+        self.tza_fw: str = ""
+        self.tza_serial: str = ""
+        self.tza_date_of_manufacturing: str = ""
 
-        self.tza_detector_serial: str = None
+        self.tza_detector_serial: str = ""
     
     @staticmethod
     def find_ports() -> list[str]:
@@ -181,7 +181,7 @@ class Device(EmptyDevice):
             self._tza_send("$U")
             if self._tza_recv() != "U OK":
                 self.disconnect()
-                raise Exception("Error while establishing a connection to TZA500. Please check the device connection and driver installation.")
+                raise Exception("Error while cinnection to TZA500!")
 
     def disconnect(self) -> None:
         if self.instance_key not in self.device_communication:
@@ -224,10 +224,6 @@ class Device(EmptyDevice):
         elif self.initial_auto_zero == "Auto zero reset":
             if not self.tza_set_auto_zero_reset():
                 raise Exception("Error while setting auto zero reset.")
-    
-    def reconfigure(self, parameters={}, keys=[]):
-        self.update_gui_parameters(parameters)
-        self.configure()
 
     def measure(self) -> None:
         self.result = self.tza_get_measurement()
@@ -331,7 +327,8 @@ class Device(EmptyDevice):
             raise Exception("Invalid gain. choose one from the pre-defined gains.")
         self._tza_send(gain)
         recv = self._tza_recv()
-        sleep(0.2)
+        if self.initial_auto_zero == "Auto zero":
+            sleep(0.2)
         if recv != gain + " OK":
             return False
         return True
@@ -363,7 +360,7 @@ class Device(EmptyDevice):
         elif recv == "F1":
             return True
         else:
-            return None
+            raise Exception("Input polarity could not be set.")
         
     def tza_set_polarity(self, inverted: bool) -> bool:
         inverted = bool(inverted)
