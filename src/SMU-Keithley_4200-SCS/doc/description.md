@@ -20,3 +20,4 @@ Please note that for the KXCI mode, some features like Pulse Mode, List Mode, an
 - For fast measurement, use fixed current range
 - It is possible to synchronize multiple SMU channels in list mode. However, currently only one channel can run a list, while the others can only source a single voltage or current.
 - If list mode is activated for one channel, all other channels in the same branch will return list results as well. Only the main channel will return timestamps and zeroes time stamps
+- delay: can either be a single value (The constant delay in seconds between each sourcing step and the measurement of a list sweep) or a list, which has to be the same length as the list sweep to set an individual delay for each step.
