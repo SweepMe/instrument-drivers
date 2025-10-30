@@ -40,6 +40,10 @@ import time
 
 class Device(EmptyDevice):
 
+    description = """<p><strong>Agilent B1500A</strong>
+    Start EasyExpert must run on PC, but IO Control must be minimized and EasyExpert closed
+    </p>
+    """
     def __init__(self):
 
         EmptyDevice.__init__(self)
@@ -55,7 +59,7 @@ class Device(EmptyDevice):
         self.port_manager = True
         self.port_types = ["GPIB", "USB"]
         self.port_properties = {
-            "timeout": 5,
+            "timeout": 20,
             # "delay": 0.1,
         }
         # TODO: can this be omitted?
@@ -127,7 +131,7 @@ class Device(EmptyDevice):
             "ListSweepStart": 0.0,
             "ListSweepEnd": 1.0,
             "ListSweepStepPointsType": ["Points (lin.):", "Points (log.):"],
-            "ListSweepStepPointsValue": 0.1,
+            "ListSweepStepPointsValue": 10,
             "ListSweepDual": False,
             "ListSweepHoldtime": "0.0",
             "ListSweepDelaytime": "0.0",
@@ -200,6 +204,9 @@ class Device(EmptyDevice):
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
+        print("clearing error queue...")
+        self.check_errors()
+        print(self.port.query("*IDN?"))
         driver_port_string = "Agilent_B1500_" + self.port_string
 
         # initialize commands only need to be sent once, so we check here whether another instance of the same driver
@@ -214,23 +221,28 @@ class Device(EmptyDevice):
             # all drivers
             self.device_communication[driver_port_string] = True
 
+        if self.use_list_mode:
+            print("Setting format for list mode...")
+            self.port.write("FMT 2,1")  # overwrite for list mode to return the set values as well. Might need to go for 2,2 when using multiple channels
+
+
+
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         # The command CN has to be sent at the beginning as it resets certain parameters
         # If the command CN would be used later, e.g. durin  "poweron", it would overwrite parameters that are defined during "configure"
         self.port.write(f"CN {self.channel}")  # switches the channel on
         self.set_speed(self.speed)
-
         if self.source.startswith("Voltage"):
             self.port.write(f"DV {self.channel},{self.voltage_range},0.0,{self.protection}, 0,{self.current_range}")
-
         if self.source.startswith("Current"):
             self.port.write(f"DI {self.channel},{self.current_range},0.0,{self.protection}, 0,{self.voltage_range}")
-
         # RI and RV #comments to adjust the range, autorange is default
         self.set_average(self.average)
+        self.check_errors()
 
         if self.use_list_mode:
+            print("Configuring list mode...")
             self.configure_list_mode(
                 source=self.source[0],
                 mode=self.list_mode,
@@ -244,6 +256,7 @@ class Device(EmptyDevice):
             self.set_list_timing(self.list_hold, self.list_delay)
             # Enable automatic abort function (2). Return to start value (1) after abort
             self.port.write("WM 2, 1")
+            self.check_errors()
 
         # *LRN? is a function to ask for current status of certain parameters,
         # 0 = output on or off
@@ -252,7 +265,9 @@ class Device(EmptyDevice):
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
-        self.port.write(f"IN {self.channel}")
+        # This throws an error because IN cannot be used when the channel is off from poweroff
+        # self.port.write(f"IN {self.channel}")
+        # self.check_errors()
         # resets to zero volt
         # self.port.write("DZ")
 
@@ -279,50 +294,65 @@ class Device(EmptyDevice):
         if self.source.startswith("Current"):
             self.port.write(f"DI {self.channel},{self.current_range},{self.value}")
 
+        self.check_errors()
+
+    def check_errors(self) -> None:
+        """Check for errors in the device error queue.
+
+        122 - Number of channels must be corrected.
+Check the MM, FL, CN, CL, IN, DZ, or RZ command, and correct the
+number of channels.
+        """
+        status = self.port.query("ERR?")
+
+        known_errors = {
+            " 100": "Undefined GPIB command.",
+        }
+
+        # if status != "0,0,0,0":
+        print(status)
+
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
         if self.use_list_mode:
             # TODO: only the list_master channel should execute XE?
+            print("Starting list mode measurement...")
+            self.check_errors()
             self.port.write("XE")  # execute measurement
         else:
-            self.port.write(f"TI{self.channel},0")
-            self.port.write(f"TV{self.channel},0")
+            self.port.write(f"TI {self.channel},0")
+            self.port.write(f"TV {self.channel},0")
 
     def request_result(self) -> None:
         """Wait for the list mode to finish and request the measurement results."""
         if self.use_list_mode:
-            timeout_s = 120
+            timeout_s = 10
             start_time = time.perf_counter()
-            self.port.write("*OPC?")
-            # while True:
-            #     if self.is_run_stopped():
-            #         break
 
-                # TODO: maybe we need to use OPC to check for operation complete without writing to the buffer
-                # examples use opc
+            # TODO: allow aborting the wait from outside
+            while True:
+                if self.is_run_stopped():
+                    break
 
-                # status = self.port.query("*STB?")
-                # if int(status) & 2 != 2:  # if second bit 2**1 is in status byte, the logic sum will be 2
-                #     break
-                #
-                # if (time.perf_counter() - start_time) > timeout_s:
-                #     msg = f"Timeout waiting for list sweep to finish after {timeout_s} seconds."
-                #     raise TimeoutError(msg)
-                # time.sleep(0.1)
+                ret = self.port.query("*OPC?")
+                if ret:
+                    break
 
     def read_result(self) -> None:
         """Read the measured data from a buffer that was requested during 'request_result'."""
         if self.use_list_mode:
-            # TODO: this needs testing, maybe the data is moved automatically to the buffer and NUB does not work?
-            # buffer_length = int(self.port.query("NUB?"))
-            # doc uses ReadListAsStringArray, but it does not explain how to use it via SCPI
-            # This device is comparable to Agilent 415x, but does not need the RMD? command to put measurement data into the buffer
-            # Apparently, you can just read from the buffer?
+            print("Reading list mode results.")
+            results = self.port.read()
+            values = [float(part.strip()) for part in results.split(',') if part.strip()]
+            print(values)
 
-            # fmt, bc
-            # how do i access the query buffer?
-            # mm, xe, nub for context and links?
-
+            
+            if self.source.startswith("Voltage"):
+                self.measured_voltage = values[0::2]
+                self.measured_current = values[1::2]
+            else:
+                self.measured_current = values[0::2]
+                self.measured_voltage = values[1::2]
 
         else:
             answer = self.port.read()
@@ -339,9 +369,6 @@ class Device(EmptyDevice):
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-
-
-
         return [self.measured_voltage, self.measured_current]
 
     # Wrapped functions
@@ -388,7 +415,10 @@ class Device(EmptyDevice):
         1 - Spot (DI, DV)
         2 - Staircase Sweep
         """
-        self.port.write(f"MM {mode}{','.join(str(ch) for ch in channels)}")
+        # command =
+        self.port.write(f"MM {mode},{','.join(str(ch) for ch in channels)}")
+        print("Checking errors after setting measurement mode")
+        self.check_errors()
 
     def set_speed(self, speed: str) -> None:
         """Set the measurement speed."""
