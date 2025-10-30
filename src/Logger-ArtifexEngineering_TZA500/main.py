@@ -128,7 +128,7 @@ class Device(EmptyDevice):
         gui_parameters = {
             "Unit": self._units,
             "Gain": list(self.gain_steps.keys()),
-            "Bandwidth in Hz": list(self.bandwidth_steps.keys()),
+            "Bandwidth": list(self.bandwidth_steps.keys()),
             "Initial auto zero": self._initial_auto_zero,
             "Invert input polarity": self.invert_input_polarity,
         }
@@ -143,7 +143,7 @@ class Device(EmptyDevice):
         self.variables = ["Power"]
         self.units = [parameters["Unit"][parameters["Unit"].find('(')+1:parameters["Unit"].find(')')]]  # get only unit between brackets
         self.gain = self.gain_steps[parameters["Gain"]]
-        self.bandwidth = self.bandwidth_steps[parameters["Bandwidth in Hz"]]
+        self.bandwidth = self.bandwidth_steps[parameters["Bandwidth"]]
         self.initial_auto_zero = parameters["Initial auto zero"]
         self.invert_input_polarity = bool(parameters["Invert input polarity"])
         if "Sensitivity" in parameters.keys():
