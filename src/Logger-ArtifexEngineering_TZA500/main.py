@@ -66,13 +66,13 @@ class Device(EmptyDevice):
         }
         self.gain_step_commands = {v: k for k, v in self.gain_steps.items() if v != "auto-gain"}
 
-        self.bandwith_steps: dict = {
+        self.bandwidth_steps: dict = {
             "10 kHz": "B1",
             "1 kHz": "B2",
             "100 Hz": "B3",
             "10 Hz": "B4"
         }
-        self.bandwith_step_commands = {v: k for k, v in self.bandwith_steps.items()}
+        self.bandwidth_step_commands = {v: k for k, v in self.bandwidth_steps.items()}
 
         self._units: list = [
             "Nanoampere (nA)",
@@ -94,7 +94,7 @@ class Device(EmptyDevice):
         self.gain: str = self.gain_steps["x1"]
         self.max_gain: int = 6
 
-        self.bandwith: str = ""
+        self.bandwidth: str = ""
         self.initial_auto_zero: str = ""
         self.invert_input_polarity: bool = False
 
@@ -112,7 +112,7 @@ class Device(EmptyDevice):
         tza500_found = []
 
         if sys.platform != "win32":
-            ftd2xx.setVIDPID(0x0403, 0x9a69) # for linux and macOS
+            ftd2xx.setVIDPID(0x0403, 0x9a69)  # for linux and macOS
 
         numDevs = ftd2xx.createDeviceInfoList()
 
@@ -128,8 +128,8 @@ class Device(EmptyDevice):
         gui_parameters = {
             "Unit": self._units,
             "Gain": list(self.gain_steps.keys()),
-            "Bandwith": list(self.bandwith_steps.keys()),
-            "Initial (auto zero)": self._initial_auto_zero,
+            "Bandwidth in Hz": list(self.bandwidth_steps.keys()),
+            "Initial auto zero": self._initial_auto_zero,
             "Invert input polarity": self.invert_input_polarity,
         }
         if unit in ["Nanowatts (nW)", "Microwatts (µW)", "Milliwatts (mW)", "Watts (W)"]:
@@ -143,8 +143,8 @@ class Device(EmptyDevice):
         self.variables = ["Power"]
         self.units = [parameters["Unit"][parameters["Unit"].find('(')+1:parameters["Unit"].find(')')]]  # get only unit between brackets
         self.gain = self.gain_steps[parameters["Gain"]]
-        self.bandwith = self.bandwith_steps[parameters["Bandwith"]]
-        self.initial_auto_zero = parameters["Initial (auto zero)"]
+        self.bandwidth = self.bandwidth_steps[parameters["Bandwidth in Hz"]]
+        self.initial_auto_zero = parameters["Initial auto zero"]
         self.invert_input_polarity = bool(parameters["Invert input polarity"])
         if "Sensitivity" in parameters.keys():
             self.sensitivity = float(parameters["Sensitivity"])
@@ -181,7 +181,7 @@ class Device(EmptyDevice):
             self._tza_send("$U")
             if self._tza_recv() != "U OK":
                 self.disconnect()
-                raise Exception("Error while cinnection to TZA500!")
+                raise Exception("Error while connecting to TZA500!")
 
     def disconnect(self) -> None:
         if self.instance_key not in self.device_communication:
@@ -211,12 +211,12 @@ class Device(EmptyDevice):
         if not self.tza_set_polarity(self.invert_input_polarity):
             raise Exception("Error while setting polarity.")
 
-        if not self.gain == "auto-gain":  # set gain if auto-gain is not chosen
+        if self.gain != "auto-gain":  # set gain if auto-gain is not chosen
             if not self.tza_set_gain(self.gain):
                 raise Exception("Error while setting Gain!")
         
-        if not self.tza_set_bandwith(self.bandwith):
-            raise Exception("Error while setting bandwith.")
+        if not self.tza_set_bandwidth(self.bandwidth):
+            raise Exception("Error while setting bandwidth.")
         
         if self.initial_auto_zero == "Auto zero":
             if not self.tza_set_auto_zero():
@@ -231,7 +231,7 @@ class Device(EmptyDevice):
     def call(self) -> list:
         return [self.result]
 
-    def tza_autogain(self, tmp_amplitude: str, recursion: int, last_operation = None) -> str:
+    def tza_autogain(self, tmp_amplitude: str, recursion: int, last_operation=None) -> str:
         """
         This function automatically adjusts the gain by checking whether the
         measured value is too high or too low and then setting a new gain until
@@ -268,11 +268,11 @@ class Device(EmptyDevice):
         elif self.autogain_gain == 3:
             level = amplitude / 1.2285
         elif self.autogain_gain == 4:
-            level = amplitude / 122.85 # This is not a typo
+            level = amplitude / 122.85  # This is not a typo
         elif self.autogain_gain == 5:
-            level = amplitude / 12.285 # This is not a typo
+            level = amplitude / 12.285  # This is not a typo
         elif self.autogain_gain == 6:
-            level = amplitude / 1.2285 # This is not a typo
+            level = amplitude / 1.2285  # This is not a typo
 
         if level > 90.0 and self.autogain_gain > 1:
             self.autogain_gain -= 1
@@ -333,21 +333,21 @@ class Device(EmptyDevice):
             return False
         return True
     
-    def tza_get_bandwith(self) -> str:
+    def tza_get_bandwidth(self) -> str:
         self._tza_send("B?")
-        bandwith = self._tza_recv()
+        bandwidth = self._tza_recv()
 
-        if bandwith in self.bandwith_step_commands.keys():
-            return self.bandwith_step_commands[bandwith]
+        if bandwidth in self.bandwidth_step_commands.keys():
+            return self.bandwidth_step_commands[bandwidth]
         return ""
 
-    def tza_set_bandwith(self, bandwith: str) -> bool:
-        bandwith = str(bandwith)
-        if bandwith not in self.bandwith_step_commands.keys():
-            raise Exception("Invalid bandwith. choose one from the pre-defined bandwiths.")
-        self._tza_send(bandwith)
+    def tza_set_bandwidth(self, bandwidth: str) -> bool:
+        bandwidth = str(bandwidth)
+        if bandwidth not in self.bandwidth_step_commands.keys():
+            raise Exception("Invalid bandwidth. choose one from the pre-defined bandwidths.")
+        self._tza_send(bandwidth)
         recv = self._tza_recv()
-        if recv != bandwith + " OK":
+        if recv != bandwidth + " OK":
             return False
         return True
 
@@ -364,7 +364,7 @@ class Device(EmptyDevice):
         
     def tza_set_polarity(self, inverted: bool) -> bool:
         inverted = bool(inverted)
-        polarity_command = "N" if inverted == False else "C"
+        polarity_command = "N" if inverted is False else "C"
 
         self._tza_send("${}".format(polarity_command))
         
@@ -398,7 +398,7 @@ class Device(EmptyDevice):
         return True
 
     def tza_get_single_measure(self) -> str:
-        """ Return an measurement result in the format: I1,0nA or I1,0uA"""
+        """ Return a measurement result in the format: I1,0nA or I1,0uA"""
         self._tza_send("$E")
         return self._tza_recv()[1:].strip()  # remove 'I' prefix from response
 
@@ -423,13 +423,13 @@ class Device(EmptyDevice):
         if self.units[0].startswith("n"):
             amplitude = round(amplitude, 3)
         elif self.units[0].startswith("µ"):
-            amplitude /= 1000 # nano to micro
+            amplitude /= 1000  # nano to micro
             amplitude = round(amplitude, 6)
         elif self.units[0].startswith("m"):
-            amplitude /= 1000000 # nano to milli
+            amplitude /= 1000000  # nano to milli
             amplitude = round(amplitude, 9)
         else:
-            amplitude /= 1000000000 # for A and W
+            amplitude /= 1000000000  # for A and W
             amplitude = round(amplitude, 12)
 
         return amplitude
