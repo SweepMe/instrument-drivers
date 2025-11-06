@@ -164,6 +164,7 @@ class Device(EmptyDevice):
 
     def get_route(self) -> str:
         """Get the current route of the device."""
+        # todo maybe remove channel if it does not work
         return self.port.query(f":ROUT{self.slot}:CHAN{self.channel}?")
 
     def get_available_ports(self) -> tuple[list[str], list[str]]:
