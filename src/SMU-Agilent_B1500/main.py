@@ -39,11 +39,23 @@ import time
 
 
 class Device(EmptyDevice):
+    description = """<div class="device-description">
+        <h3>Agilent B1500A</h3>
+        <p>Start EasyExpert must run on the PC; minimize IO Control and close EasyExpert when running.</p>
 
-    description = """<p><strong>Agilent B1500A</strong>
-    Start EasyExpert must run on PC, but IO Control must be minimized and EasyExpert closed
-    </p>
-    """
+        <h4>List Mode</h4>
+        <p>Notes about list mode:</p>
+        <ul>
+            <li>In list mode the device does not measure the set values; therefore the set values are returned.</li>
+            <li>It is possible to have multiple channels in the same branch. If at least one channel uses list mode, all channels in that branch are considered in list mode.</li>
+            <li>Single-value channels in a list-mode branch will create a list with start = stop = value.</li>
+            <li>When using multiple channels in list mode, the list length, hold time and delay time must be the same for all channels.</li>
+        </ul>
+
+        <h4>Behavior</h4>
+        <p>Use the device in list mode when synchronized multi-channel sweeps are required; otherwise use single measurement mode.</p>
+    </div>"""
+
     def __init__(self):
 
         EmptyDevice.__init__(self)
@@ -62,10 +74,12 @@ class Device(EmptyDevice):
             "timeout": 20,
             # "delay": 0.1,
         }
-        # TODO: can this be omitted?
-        self.port_identifications = ["Agilent Technologies,B1500A"]
+        self.port_string: str = ""
         self.channel: int = 1
         self.shortname = f"B1500 Ch{self.channel}"
+
+        self.driver_port_string: str = ""
+        """A unique identifier for this driver instance and port combination. Used as key in device_communication."""
 
         self.current_ranges = OrderedDict([
             ("Auto", "0"),
@@ -110,7 +124,7 @@ class Device(EmptyDevice):
             "linear dual": 3,  # start - stop - start
             "logarithmic dual": 4,  # start - stop - start
         }
-        self.list_mode: int = 1  # linear
+        self.list_mode: int = -1  # linear
         self.list_start: float = 0.0
         self.list_stop: float = 1.0
         self.list_steps: int = 10
@@ -184,11 +198,14 @@ class Device(EmptyDevice):
             raise ValueError(msg)
 
         # TODO: handle exceptions
-        self.list_start = float(parameter["ListSweepStart"])
-        self.list_stop = float(parameter["ListSweepEnd"])
-        self.list_steps = int(parameter["ListSweepStepPointsValue"])
-        self.list_hold = float(parameter["ListSweepHoldtime"])
-        self.list_delay = float(parameter["ListSweepDelaytime"])
+        try:
+            self.list_start = float(parameter["ListSweepStart"])
+            self.list_stop = float(parameter["ListSweepEnd"])
+            self.list_steps = int(parameter["ListSweepStepPointsValue"])
+            self.list_hold = float(parameter["ListSweepHoldtime"])
+            self.list_delay = float(parameter["ListSweepDelaytime"])
+        except ValueError:
+            pass
 
         step_type = parameter["ListSweepStepPointsType"]
         if step_type.startswith("Points (lin.)"):
@@ -199,31 +216,27 @@ class Device(EmptyDevice):
             self.list_mode = self.list_modes["logarithmic"] if not parameter["ListSweepDual"] else self.list_modes[
                 "logarithmic dual"]
 
-        # # Add time staps to return values
-        # self.variables.extend(["Time stamp", "Time stamp zeroed"])
-        # self.units.extend(["s", "s"])
-        # self.plottype.extend([True, True])
-        # self.savetype.extend([True, True])
+        # Add time stamp variable if list mode is used. Init the lists instead of appending to avoid duplicates when get_GUIparameter is called multiple times.
+        self.variables = ["Voltage", "Current", "Time Stamp"]
+        self.units = ["V", "A", "s"]
+        self.plottype = [True, True, True]
+        self.savetype = [True, True, True]
+
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
-        print("clearing error queue...")
-        self.check_errors()
-        print(self.port.query("*IDN?"))
         self.driver_port_string = "Agilent_B1500_" + self.port_string
 
-        # TODO: move to configure to allow use of list mode and non-list mode in seperate branches
         # initialize commands only need to be sent once, so we check here whether another instance of the same driver
         # AND same port did it already. If not, this instance is the first and has to do it.
         if not self.driver_port_string in self.device_communication:
             self.port.write("*RST")  # reset to initial settings
             self.port.write("BC")  # buffer clear
             self.port.write("AZ 0")  # Auto-Zero off for faster measurements
-            self.port.write("FMT 2")  # use to change the output format
+            self.port.write("FMT 2")  # use to change the output format. This will be overwritten if list mode is used
 
             # if initialize commands have been sent, we can add the driver_port_string to the dictionary that is seen by
             # all drivers
-            # TODO: could add delay and hold to compare settings with other channels
             self.device_communication[self.driver_port_string] = {
                 "is_initialized": True,
                 "channels": [self.channel],
@@ -233,12 +246,6 @@ class Device(EmptyDevice):
                 "list_delay": 0.0,
                 "list_results": {},
             }
-
-        # if self.use_list_mode:
-        #     print("Setting format for list mode...")
-        #     self.port.write("FMT 2,1")  # overwrite for list mode to return the set values as well. Might need to go for 2,2 when using multiple channels
-
-
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -256,7 +263,7 @@ class Device(EmptyDevice):
                 device_info["list_delay"] = self.list_delay
                 self.list_master = True
             else:
-                # another channel is already the list master, this channel becomes a synchronous list slave
+                # another channel is already the list master, this channel becomes a list follower
                 self.list_follower = True
 
                 if self.list_steps != device_info["list_length"]:
@@ -275,20 +282,23 @@ class Device(EmptyDevice):
         # The command CN has to be sent at the beginning as it resets certain parameters
         # If the command CN would be used later, e.g. durin  "poweron", it would overwrite parameters that are defined during "configure"
         self.port.write(f"CN {self.channel}")  # switches the channel on
+
         self.set_speed(self.speed)
+
+        # Initialize the source with 0V / 0A
         if self.source.startswith("Voltage"):
             self.port.write(f"DV {self.channel},{self.voltage_range},0.0,{self.protection}, 0,{self.current_range}")
         if self.source.startswith("Current"):
             self.port.write(f"DI {self.channel},{self.current_range},0.0,{self.protection}, 0,{self.voltage_range}")
+
         # RI and RV #comments to adjust the range, autorange is default
         self.set_average(self.average)
         self.check_errors()
 
         if self.list_master:
             # Only the list master channels uses configure_list_mode, all others use create_synchronous_list afterward
-            print("Configuring master list mode...")
-            self.port.write("FMT 2,1")  # 2: ASCII 12 digits w/o header, 2: source output data for synchronous list mode
             # TODO: we could say no channel returns its source values and we always calculate them
+            self.port.write("FMT 2,1")  # 2: ASCII 12 digits w/o header, 2: source output data for synchronous list mode
             self.configure_list_mode(
                 source=self.source[0],
                 mode=self.list_mode,
@@ -300,18 +310,21 @@ class Device(EmptyDevice):
             )
 
             self.set_list_timing(self.list_hold, self.list_delay)
+            self.enable_time_stamps()
+
             # Enable automatic abort function (2). Return to start value (1) after abort
             self.port.write("WM 2, 1")
             self.check_errors()
 
-        # *LRN? is a function to ask for current status of certain parameters,
-        # 0 = output on or off
-        # self.port.write("*LRN? 0")
-        # print(self.port.read())
-
     def unconfigure(self) -> None:
-        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
-        # remove the channel from the device configuration
+        """Remove the channel from the device configuration when the procedure leaves a branch of the sequencer.
+
+        The 'IN' and 'DZ' commands to switch the channel off cannot be used here, because it throws an error if the
+        channel is already off from a previous 'poweroff' call.
+        """
+        if self.list_master:
+            self.enable_time_stamps(False)
+
         device_info = self.device_communication[self.driver_port_string]
         if self.channel in device_info["channels"]:
             device_info["channels"].remove(self.channel)
@@ -319,27 +332,21 @@ class Device(EmptyDevice):
             device_info["list_master_channel"] = -1
             device_info["list_length"] = 0
 
-        # This throws an error because IN cannot be used when the channel is off from poweroff
-        # self.port.write(f"IN {self.channel}")
-        # self.check_errors()
-        # resets to zero volt
-        # self.port.write("DZ")
-
     def signin(self) -> None:
-        """This function is called after configure."""
-        # list master can only set up measurement mode after all other channels have registered
+        """This function is called after configure.
+
+        After all channels are registered in device communication during 'configure', the list master can set up the
+        list mode. All other channels that are not list masters become list followers here.
+        """
         if self.list_master:
             channel_list = self.device_communication[self.driver_port_string]["channels"]
-            measurement_mode = 2 #if len(channel_list) == 1 else 16  # staircase sweep or multi channel sweep
-            self.set_measurement_mode(measurement_mode, channel_list)  # staircase sweep mode
+            measurement_mode = 2  # staircase sweep mode
+            self.set_measurement_mode(measurement_mode, channel_list)
             self.check_errors()
-
-        # adding secondary list modes must be done after the list master configures the list mode
 
         # here we check if another channel in the same branch is forcing the list mode, even if this channel was set to
         # single measurement
         elif self.device_communication[self.driver_port_string]["list_master_channel"] != -1:
-            print(f"Another channel is list master, this channel {self.channel} becomes list follower.")
             self.list_follower = True
         else:
             self.list_follower = False
@@ -357,7 +364,9 @@ class Device(EmptyDevice):
         self.port.write(f"CL {self.channel}")  # switches the channel off
 
     def start(self) -> None:
-        """In start we set up list followers that have no sweep value."""
+        """Channels that are configured for list mode but are not the list master register their list values after the
+        list master has configured the list mode in 'signin'.
+        """
         if self.list_follower and self.use_list_mode:
             self.create_synchronous_list(self.list_start, self.list_stop)
             self.check_errors()
@@ -370,8 +379,8 @@ class Device(EmptyDevice):
 
         if self.list_follower:
             if self.use_list_mode:
-                # this is never reached bc we do not have a sweep value
-                self.create_synchronous_list(self.list_start, self.list_stop)
+                # this is never reached bc when using list mode as sweep source, the driver does not receive a sweep value
+                pass
             else:
                 # If the channel was set up for single measurement, but another channel is using list mode, we have to
                 # create a synchronous list with start = stop = value
@@ -381,6 +390,7 @@ class Device(EmptyDevice):
             self.check_errors()
             return
 
+        # Single measurement mode
         if self.source.startswith("Voltage"):
             self.port.write(f"DV {self.channel},{self.voltage_range},{self.value}")
 
@@ -394,25 +404,22 @@ class Device(EmptyDevice):
 
         The primary source (list master) must have configured its list mode via WI or WV before calling this function.
         Otherwise, it will be overwritten.
-        """
-        # the source number is a unique identifier. It must be between 2-10. We use the channel number + 1 here.
-        source_number = self.channel + 1
-        mode = 1 if self.source.startswith("Voltage") else 2
-        source_range = 0  # autorange, can be extended later
-        print(f"Creating synchronous list for channel {self.channel}: {start} to {stop}")
-        command = f"WNX {source_number},{self.channel},{mode},{source_range},{start},{stop}, {self.protection}"
-        # print(command)
-        # self.port.write(command)
 
-        # maybe this is the correct command instead of WNX
+        The 'WNX' command is used for synchronous list sources (probably 2D sweeps?).
+        command = f"WNX {source_number},{self.channel},{mode},{source_range},{start},{stop}, {self.protection}"
+        the source number is a unique identifier. It must be between 2-10. We use the channel number + 1 here.
+        mode = 1 if self.source.startswith("Voltage") else 2
+
+        We use the WSI / WSV commands instead, as they seem to be more appropriate for our use case.
+        """
+        source_range = 0  # autorange, can be extended later
         command = f"WS{self.source[0]} {self.channel}, {source_range},{start},{stop}"
-        print(command)
         self.port.write(command)
 
-
-
     def check_errors(self) -> None:
-        """Check for errors in the device error queue.
+        """Check for errors in the device error queue (4 possible errors).
+
+        TODO: can be extended to raise exceptions or print the translated error messages.
 
         122 - Number of channels must be corrected.
             Check the MM, FL, CN, CL, IN, DZ, or RZ command, and correct the
@@ -430,9 +437,8 @@ class Device(EmptyDevice):
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
         if self.list_master:
-            print("Starting list mode measurement...")
             self.check_errors()
-            self.port.write("XE")  # execute measurement
+            self.port.write("XE")  # execute measurement. The device will be in busy state until the list sweep is finished
 
         elif self.list_follower:
             return
@@ -444,28 +450,28 @@ class Device(EmptyDevice):
     def request_result(self) -> None:
         """The master channel waits for the list mode to finish and request the measurement results."""
         if self.list_master:
-            timeout_s = 10
-            start_time = time.perf_counter()
-
-            # TODO: allow aborting the wait from outside
-            # set port timeout to a low value, check with try except until OPC returns 1
             while True:
                 if self.is_run_stopped():
                     break
 
-                ret = self.port.query("*OPC?")
-                if ret:
-                    break
+                # set port timeout to a low value, check with try except until OPC returns 1
+                try:
+                    ret = self.port.query("*OPC?")
+                    if ret:
+                        break
+                except TimeoutError:
+                    time.sleep(0.1)  # short sleep time, the main time is spent in waiting for OPC
+                    continue
+
 
     def read_result(self) -> None:
         """Read the measured data from a buffer that was requested during 'request_result'."""
         if self.list_master:
-            print("Reading list mode results.")
             results = self.port.read()
-            print(results)
+            # use [3:] if the header is present
             values = [float(part.strip()[3:]) for part in results.split(',') if part.strip()]
-            # print(values)
-            print(len(values))
+
+            # TODO: handle time stamps
 
             device_communication = self.device_communication[self.driver_port_string]
             channels = device_communication["channels"]
@@ -475,9 +481,7 @@ class Device(EmptyDevice):
                 measured_values_for_channel = values[n::n_channels + 1]  # skip source values
                 device_communication["list_results"][channel] = measured_values_for_channel
 
-            self.source_values = values[n_channels::n_channels + 1]
-
-            print(device_communication)
+            device_communication["list_results"]["timestamps"] = [1] * len(measured_values_for_channel)  # TODO: read real timestamps
 
         elif self.list_follower:
             # list followers read results from device_communication in call
@@ -496,23 +500,14 @@ class Device(EmptyDevice):
             except ValueError:
                 self.measured_voltage = float(answer[3:])  # sometimes NAI comes first, we have to strip it
 
-    def call(self) -> list[float]:
+    def call(self) -> list[float] | list[list[float]]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         if self.list_follower or self.list_master:
             device_communication = self.device_communication[self.driver_port_string]
             measured_values = device_communication["list_results"][self.channel]
 
             # Create source values list
-            list_length = device_communication["list_length"]
-            if self.use_list_mode:
-                if self.list_master:
-                    source_values = self.source_values
-                    # TODO: handle log sweep
-                else:
-                    source_values = np.linspace(self.list_start, self.list_stop, list_length).tolist()
-
-            else:
-                source_values = [float(self.value)] * list_length
+            source_values = self.get_source_values()
 
             # assign to measured voltage and current based on source type
             if self.source.startswith("Voltage"):
@@ -522,35 +517,13 @@ class Device(EmptyDevice):
                 self.measured_current = source_values
                 self.measured_voltage = measured_values
 
+            timestamps = device_communication["list_results"]["timestamps"]
+
+            return [self.measured_voltage, self.measured_current, timestamps]
+
         return [self.measured_voltage, self.measured_current]
 
     # Wrapped functions
-
-    """
-    Enables channels CN [chnum ... [,chnum] ... ]
-    Disables channels CL [chnum ... [,chnum] ... ]
-    Sets filter ON/OFF [FL] mode[,chnum ... [,chnum] ... ]
-    Sets series resistor ON/OFF [SSR] chnum,mode
-    Sets integration time
-    (Agilent B1500 can use
-    AAD/AIT instead of AV.)
-    [AV] number[,mode]
-    [AAD] chnum[,type]
-    [AIT] type,mode[,N]
-    Forces constant voltage DV chnum,range,output
-    [,comp[,polarity[,crange]]]
-    Forces constant current DI
-    Sets voltage measurement
-    range
-    [RV] chnum,range
-    Sets current measurement
-    range
-    [RI] chnum,range
-    [RM] chnum,mode[,rate]
-    Sets measurement mode MM 1,chnum[,chnum ... [,chnum] ... ]
-    Sets SMU operation mode [CMM] chnum,mode
-    Executes measurement XE
-    """
 
     def set_average(self, average: int) -> None:
         """Set the number of averaging samples of the A/D converter.
@@ -570,7 +543,6 @@ class Device(EmptyDevice):
         """
         # command =
         self.port.write(f"MM {mode},{','.join(str(ch) for ch in channels)}")
-        print(f"Setting up measurement mode {mode} for channels {channels}")
         self.check_errors()
 
     def set_speed(self, speed: str) -> None:
@@ -591,9 +563,6 @@ class Device(EmptyDevice):
 
     # Wrapped functions - list mode
 
-    # WT, WV, WI
-    # TSC enables time stamp output
-
     def configure_list_mode(self, source: str, mode: int, output_range:int, start:float, stop:float, steps: int, compliance: float) -> None:
         """Configure a staircase sweep using the list sweep values."""
         if steps > 1001 or steps < 1:
@@ -603,6 +572,7 @@ class Device(EmptyDevice):
         if source not in ("V", "I"):
             msg = f"Invalid source for list sweep: {source}. Use 'V' or 'I'."
             raise ValueError(msg)
+
         # TODO: add compliance, range, and power compliance
         self.port.write(f"W{source} {self.channel},{mode},{output_range}, {start},{stop},{steps},{compliance}")
 
@@ -623,3 +593,42 @@ class Device(EmptyDevice):
 
         self.port.write(f"WT 0,{hold},{delay}")
 
+    def enable_time_stamps(self, enable: bool = True) -> None:
+        """Enable or disable time stamp output for list sweeps."""
+        if enable:
+            self.port.write("TSC 1")
+        else:
+            self.port.write("TSC 0")
+
+
+    def get_source_values(self) -> list[float]:
+        """Calculate the source values for the list sweep from the list sweep parameters."""
+        source_values = []
+        if not self.use_list_mode:
+            # if a single value channel is used as list follower, we create a list with start = stop = value
+            try:
+                single_value = float(self.value)
+            except ValueError:
+                single_value = float('nan')
+            source_values = [single_value] * self.device_communication[self.driver_port_string]["list_length"]
+
+        elif self.list_mode in (1, 3):  # linear or linear dual
+            source_values = np.linspace(self.list_start, self.list_stop, self.list_steps).tolist()
+
+        elif self.list_mode in (2, 4):  # logarithmic or logarithmic dual
+            if self.list_start <= 0 or self.list_stop <= 0:
+                msg = "Logarithmic list sweeps require positive start and stop values."
+                raise ValueError(msg)
+
+            source_values = np.logspace(np.log10(self.list_start), np.log10(self.list_stop), self.list_steps).tolist()
+
+        if self.list_mode in (3, 4):  # dual sweeps
+            source_values += source_values[::-1]
+
+        return source_values
+
+    # Currently unused wrapped functions
+
+    def get_identification(self) -> str:
+        """Return the device identification string."""
+        return self.port.query("*IDN?")
