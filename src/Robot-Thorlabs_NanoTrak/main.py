@@ -154,6 +154,7 @@ class Device(EmptyDevice):
         self.circle_diameter_string: str =  "1"
         self.frequency: str = "100"
         self.gain: str = "1.0"
+        self.open_loop: bool = True  # True for open loop, False for closed loop
         self.tracking_time_string: str = "10"
         self.debug_while_tracking: bool = False
 
@@ -184,6 +185,7 @@ class Device(EmptyDevice):
             "Feedback Source": list(self.feedback_sources.keys()),
             "Frequency in samples/rev": "100",
             "Gain": "1.0",
+            "Control mode": ["Open Loop", "Closed Loop"],
             "Simulation": False,
             "Debug while Tracking": False,
             "Modular Rack": False,
@@ -204,6 +206,7 @@ class Device(EmptyDevice):
         self.feedback_source = parameters.get("Feedback Source", "10V BNC")
         self.frequency = parameters.get("Frequency in samples/rev", "100")
         self.gain = parameters.get("Gain", "1.0")
+        self.open_loop = "open" in parameters.get("Control mode", "Open Loop").lower()
         self.tracking_time_string = parameters.get("Tracking time in s", 10)
         self.debug_while_tracking = parameters.get("Debug while Tracking", False)
 
@@ -325,6 +328,8 @@ class Device(EmptyDevice):
 
         # Set feedback source depending on the GUI parameter
         self.nanotrak_channel.SetFeedbackSource(self.feedback_sources[self.feedback_source])
+
+        self.set_control_mode(self.open_loop)
 
         self.set_frequency(int(self.frequency))
         # If the gain is empty, do not update the gain
@@ -458,8 +463,6 @@ class Device(EmptyDevice):
             msg = f"Unknown device type: {nanotrak_type}. Supported prefixes (first two numbers) are: {', '.join(self.device_prefixes.values())}."
             raise ValueError(msg)
 
-        print(type(self.kinesis_client))
-
     def create_nanotrak(self, serial_number: str, nanotrak_type: str) -> GenericNanoTrakCLI.GenericNanoTrak:
         """Create a nanotrak instance based on the serial number and device type."""
         if nanotrak_type == "benchtop":
@@ -574,9 +577,15 @@ class Device(EmptyDevice):
         circle_parameter.set_SamplesPerRev(frequency)
         self.nanotrak_channel.SetCircleParams(circle_parameter)
 
+        # alternative way, unsure which one is correct:
+        # self.nanotrak_channel.NanoTrakDeviceSettings.Tracking.set_CircleOscFrequency(frequency)
+
     def set_gain(self, gain: float) -> None:
-        """Set the gain."""
-        self.nanotrak_channel.set_Gain(gain)
+        """Set the gain.
+
+        This works but unsure if it is correct: self.nanotrak_channel.set_Gain(gain)
+        """
+        self.nanotrak_channel.NanoTrakDeviceSettings.Tracking.set_LoopGain(gain)
 
     def get_reading(self) -> float:
         """Get the absolute reading from the device.
@@ -585,6 +594,32 @@ class Device(EmptyDevice):
         """
         reading = self.nanotrak_channel.GetReading()
         return reading.AbsoluteReading
+
+    def enable_channel(self, channel_number: int, enable: bool) -> None:
+        """Enable or disable a channel (1 or 2)."""
+        control_mode = self.nanotrak_channel.NanoTrakDeviceSettings.ControlMode
+        if channel_number == 1:
+            control_mode.set_Chan1Enable(enable)
+        elif channel_number == 2:
+            control_mode.set_Chan2Enable(enable)
+        else:
+            msg = f"Invalid channel number: {channel_number}. Valid channel numbers are 1 and 2."
+            raise ValueError(msg)
+
+        self.nanotrak_channel.SetSettings(self.nanotrak_channel.NanoTrakDeviceSettings, False)
+
+    def set_control_mode(self, open_loop: bool = True) -> None:
+        """Set the control mode (1: Open loop, 2: Closed loop)."""
+        if open_loop:
+            mode = self.nanotrak_channel.NanoTrakDeviceSettings.ControlMode.NanoTrakControlModeTypes.OpenLoop
+        else:
+            mode = self.nanotrak_channel.NanoTrakDeviceSettings.ControlMode.NanoTrakControlModeTypes.CloseLoop
+
+        self.nanotrak_channel.NanoTrakDeviceSettings.ControlMode.set_ControlMode(mode)
+
+        # control_mode = self.nanotrak_channel.NanoTrakDeviceSettings.ControlMode
+        # control_mode.set_ControlMode(mode)
+        # # TODO: does not work yet
 
     def debug(self, message: str) -> None:
         """Print the message if 'debug while tracking' is activated."""
