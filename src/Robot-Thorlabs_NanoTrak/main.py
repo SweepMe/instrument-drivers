@@ -153,7 +153,7 @@ class Device(EmptyDevice):
         self.go_home_at_start: bool = False
         self.circle_diameter_string: str =  "1"
         self.frequency: str = "100"
-        self.gain: str = "1.0"
+        self.gain: str = "1"
         self.open_loop: bool = True  # True for open loop, False for closed loop
         self.tracking_time_string: str = "10"
         self.debug_while_tracking: bool = False
@@ -184,8 +184,8 @@ class Device(EmptyDevice):
             "Tracking time in s": "10",
             "Feedback Source": list(self.feedback_sources.keys()),
             "Channel": ["1", "2", "1,2"],
-            "Frequency in samples/rev": "100",
-            "Gain": "1.0",
+            "Frequency in samples/rev": 100.,
+            "Gain": 1,
             "Control mode": ["Open Loop", "Closed Loop"],
             "Simulation": False,
             "Debug while Tracking": False,
@@ -337,10 +337,16 @@ class Device(EmptyDevice):
             enable = channel in self.channel
             self.enable_channel(int(channel), enable)
 
-        self.set_frequency(int(self.frequency))
+        self.set_frequency(float(self.frequency))
+
         # If the gain is empty, do not update the gain
         if self.gain:
-            self.set_gain(float(self.gain))
+            try:
+                gain = int(self.gain)
+            except ValueError as e:
+                msg = f"Invalid gain: {self.gain}. Expected an integer value."
+                raise ValueError(msg) from e
+            self.set_gain(gain)
 
         # Home Position. If none is given, do not update the home position
         if self.go_home_at_start:
@@ -577,17 +583,18 @@ class Device(EmptyDevice):
         self.debug(f"Set circle diameter to {diameter}")
         time.sleep(0.5)  # Optional: wait for device to update
 
-    def set_frequency(self, frequency: int) -> None:
-        """Set the circle frequency in samples per revolution."""
+    def set_frequency(self, frequency: float) -> None:
+        """Set the circle frequency in samples per revolution.
+
+        Alternative way, but SamplesPerRev might not be the same as CircleOscFrequency:
         circle_parameter = self.nanotrak_channel.GetCircleParams()
         circle_parameter.set_SamplesPerRev(frequency)
         self.nanotrak_channel.SetCircleParams(circle_parameter)
+        """
+        self.nanotrak_channel.NanoTrakDeviceSettings.Tracking.set_CircleOscFrequency(frequency)
 
-        # alternative way, unsure which one is correct:
-        # self.nanotrak_channel.NanoTrakDeviceSettings.Tracking.set_CircleOscFrequency(frequency)
-
-    def set_gain(self, gain: float) -> None:
-        """Set the gain.
+    def set_gain(self, gain: int) -> None:
+        """Set the gain. Only integer values are allowed.
 
         This works but unsure if it is correct: self.nanotrak_channel.set_Gain(gain)
         """
