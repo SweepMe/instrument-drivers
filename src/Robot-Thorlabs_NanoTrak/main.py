@@ -147,7 +147,7 @@ class Device(EmptyDevice):
         self.feedback_source: str = "10V BNC"
 
         # Measurement parameters
-        self.sweepmode: str = "Center Position"
+        self.channel = "1"  # Can be "1", "2", or "1,2"
         self.reading_mode: str = "Absolute"  # Can be "Absolute", "Relative", or "None"
         self.home_position_string: str = "1.0,1.0"
         self.go_home_at_start: bool = False
@@ -183,6 +183,7 @@ class Device(EmptyDevice):
             "Circle diameter in NT": "1",
             "Tracking time in s": "10",
             "Feedback Source": list(self.feedback_sources.keys()),
+            "Channel": ["1", "2", "1,2"],
             "Frequency in samples/rev": "100",
             "Gain": "1.0",
             "Control mode": ["Open Loop", "Closed Loop"],
@@ -204,6 +205,7 @@ class Device(EmptyDevice):
         self.go_home_at_start = parameters.get("GoHomeStart", False)
         self.circle_diameter_string = parameters.get("Circle diameter in NT", "1")
         self.feedback_source = parameters.get("Feedback Source", "10V BNC")
+        self.channel = parameters.get("Channel", "1")
         self.frequency = parameters.get("Frequency in samples/rev", "100")
         self.gain = parameters.get("Gain", "1.0")
         self.open_loop = "open" in parameters.get("Control mode", "Open Loop").lower()
@@ -330,6 +332,10 @@ class Device(EmptyDevice):
         self.nanotrak_channel.SetFeedbackSource(self.feedback_sources[self.feedback_source])
 
         self.set_control_mode(self.open_loop)
+
+        for channel in ["1", "2"]:
+            enable = channel in self.channel
+            self.enable_channel(int(channel), enable)
 
         self.set_frequency(int(self.frequency))
         # If the gain is empty, do not update the gain
