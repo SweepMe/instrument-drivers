@@ -120,19 +120,21 @@ class Device(EmptyDevice):
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         del parameters
         return {
+            "Channel": "1",
             "SweepMode": ["Position"],
             "Max Velocity in mm/s": "1.0",
             "Acceleration in mm/s²": "1.0",
-            "Bay": "1",
+            "Timeout in s": "60",
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.serial_number = parameters.get("Port", "")
+        self.channel = parameters.get("Channel", "1")
         self.sweep_mode = parameters.get("SweepMode", "Position")
         self.max_velocity = parameters.get("Max Velocity in mm/s", "1.0")
         self.acceleration = parameters.get("Acceleration in mm/s²", "1.0")
-        self.channel = parameters.get("Bay", "1")
+        self.timeout_ms = int(float(parameters.get("Timeout in s", "60")) * 1000)
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -202,13 +204,13 @@ class Device(EmptyDevice):
         if self.acceleration or self.max_velocity:
             velocity_parameters = self.stepper_motor.GetVelocityParams()
             if self.acceleration:
-                velocity_parameters.Acceleration = Decimal(self.acceleration)
+                velocity_parameters.Acceleration = Decimal(float(self.acceleration))
             if self.max_velocity:
-                velocity_parameters.MaxVelocity = Decimal(self.max_velocity)
+                velocity_parameters.MaxVelocity = Decimal(float(self.max_velocity))
             self.stepper_motor.SetVelocityParams(velocity_parameters)
 
         # homing leads to timeout errors, leave it for now
-        # self.stepper_motor.Home(self.timeout_ms)
+        self.stepper_motor.Home(self.timeout_ms)
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
