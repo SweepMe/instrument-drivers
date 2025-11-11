@@ -539,24 +539,25 @@ class Device(EmptyDevice):
     def go_home(self) -> None:
         """Go to the home position. This function enables the 'Go home' button in the GUI.
 
-        HomeCircle() only works in Tracking mode, so if the current mode is Latch, we switch to Tracking first,
-        move to home, and then switch back to Latch.
+        With Kinesis Simulator, HomeCircle() only works in Tracking mode.
+        However, moving in Latch mode is also possible according to the manual.
+        For now, do not switch to Tracking mode if already in Latch mode.
         """
-        current_mode = self.nanotrak_channel.GetMode()
-        reset_to_latch = False
-        # TODO: moving should be usable in latch mode as well
-        if current_mode == GenericNanoTrakCLI.NanoTrakStatusBase.OperatingModes.Latch:
-            # print(f"Setting NanoTrak to Tracking mode before moving to home.")
-            self.track()
-            reset_to_latch = True
+        # current_mode = self.nanotrak_channel.GetMode()
+        # reset_to_latch = False
+        # # TODO: moving should be usable in latch mode as well
+        # if current_mode == GenericNanoTrakCLI.NanoTrakStatusBase.OperatingModes.Latch:
+        #     # print(f"Setting NanoTrak to Tracking mode before moving to home.")
+        #     self.track()
+        #     reset_to_latch = True
 
         self.nanotrak_channel.HomeCircle()
         # Need to wait until the movement is finished
         time.sleep(1)
 
-        if reset_to_latch:
-            # print("Setting NanoTrak back to Latch mode after moving to home.")
-            self.latch()
+        # if reset_to_latch:
+        #     # print("Setting NanoTrak back to Latch mode after moving to home.")
+        #     self.latch()
 
     def set_home_and_go_home(self, horizontal: float, vertical: float) -> None:
         """Set the home position and go there."""
