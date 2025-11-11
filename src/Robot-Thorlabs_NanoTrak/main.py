@@ -388,12 +388,12 @@ class Device(EmptyDevice):
     def apply(self) -> None:
         """Apply the axis movements after latching."""
         current_horizontal_position, current_vertical_position = self.get_current_position()
-        if "Horizontal" in self.sweepvalues and self.sweepvalues["Horizontal"] is not None:
+        if "Horizontal" in self.sweepvalues and self.sweepvalues["Horizontal"]:
             horizontal_value = float(self.sweepvalues["Horizontal"])
         else:
             horizontal_value = current_horizontal_position
 
-        if "Vertical" in self.sweepvalues and self.sweepvalues["Vertical"] is not None:
+        if "Vertical" in self.sweepvalues and self.sweepvalues["Vertical"]:
             vertical_value = float(self.sweepvalues["Vertical"])
         else:
             vertical_value = current_vertical_position
