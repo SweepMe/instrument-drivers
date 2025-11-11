@@ -24,7 +24,9 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+from __future__ import annotations
 
+from typing import Any
 
 # SweepMe! driver
 # * Module: Robot
@@ -37,10 +39,7 @@ import dobot_api
 # import importlib 
 # importlib.reload(dobot_api)
 
-import time
 import select
-
-from pysweepme.ErrorMessage import error, debug
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
@@ -113,38 +112,57 @@ class Device(EmptyDevice):
         self.reach_position_timeout = 30.0
 
         self._last_xyzr = (None, None, None, None)
+
+        # Communication Parameters
+        self.port_string: str = ""
+        self.api_dashboard: DobotDashboard
+        self.api_move: DobotMove
+
+        self.length_unit: str = "mm"
+        self.go_home_start: bool = False
+        self.go_home_end: bool = False
+
+        self.payload_weight: float = 0.0
+        self.payload_x_offset: float = 0.0
+        self.payload_y_offset: float = 0.0
+        self.collision_level: str = "5"
+
+        self.acceleration_factor: int = 10
+        self.global_speed_factor: int = 100
+        self.speed_factor: str = "10"
+
+        self.use_jump_mode: bool = False
+        self.movement_height: float = 0.0
             
-    def set_GUIparameter(self):
+    def set_GUIparameter(self) -> dict[str, Any]:
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+        return {
+            "Port": "192.168.1.6",  # Standard IP of first Ethernet port
+            "Unit": ["mm"],
+            # "Reach position": True,
+            "Collision level": ["5", "4", "3", "2", "1", "0"],
+            "Acceleration factor": 10,
+            "Global speed factor": 100,
+            "Speed factor": "10",
+            "": None,  # Empty line
+            "Payload": None,  # Section label
+            "Payload weight in kg": 0.0,
+            # "Payload inertia in kgm²": 0.0,
+            "Payload x offset": 0.0,
+            "Payload y offset": 0.0,
+            # "Payload z offset": 0.0,
+            " ": None,  # Another empty line with a different empty key
+            "Jump": None,  # Section label
+            "Use jump mode": False,
+            "Movement height": 0.0,
+            "  ": None,   # Another empty line with a different empty key
 
-        gui_parameter = {
-                        "Port": "192.168.1.6",  # Standard IP of first Ethernet port
-                        "Unit": ["mm"],
-                        # "Reach position": True,
-                        "Collision level": ["5", "4", "3", "2", "1", "0"],
-                        "Acceleration factor": 10,
-                        "Global speed factor": 100,
-                        "Speed factor": "10",
-                        "": None,  # Empty line
-                        "Payload": None,  # Section label
-                        "Payload weight in kg": 0.0,
-                        # "Payload inertia in kgm²": 0.0,
-                        "Payload x offset": 0.0,
-                        "Payload y offset": 0.0,
-                        # "Payload z offset": 0.0,
-                        " ": None,  # Another empty line with a different empty key
-                        "Jump": None,  # Section label
-                        "Use jump mode": False,
-                        "Movement height": 0.0,
-                        "  ": None,   # Another empty line with a different empty key
+            "GoHomeStart": True,
+            "GoHomeEnd": True,
+        }
 
-                        "GoHomeStart": True,
-                        "GoHomeEnd": True,
-                        }
-        
-        return gui_parameter
-
-    def get_GUIparameter(self, parameter):
-    
+    def get_GUIparameter(self, parameter: dict[str, Any]) -> None:
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.port_string = parameter["Port"]
 
         self.length_unit = parameter["Unit"]
@@ -171,23 +189,23 @@ class Device(EmptyDevice):
         self.plottype = [True] * len(self.variables)
         self.savetype = [True] * len(self.variables)
         
-    def connect(self):
-        
+    def connect(self) -> None:
+        """Connect to the device. This function is called only once at the start of the measurement."""
         port_api_dashboard = 29999
         port_api_move = 30003
         
         self.api_dashboard = DobotDashboard(self.port_string, port_api_dashboard)
         self.api_move = DobotMove(self.port_string, port_api_move)
 
-    def disconnect(self):
-    
+    def disconnect(self) -> None:
+        """Disconnect from the device. This function is called only once at the end of the measurement."""
         if hasattr(self, "api_dashboard"):
             self.api_dashboard.close()
         if hasattr(self, "api_move"):
             self.api_move.close()
         
-    def initialize(self):
-
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
         self.clear_error()
         # self.reset_robot()
 
@@ -204,36 +222,34 @@ class Device(EmptyDevice):
         if self.go_home_start:
             self.go_home()
         
-    def deinitialize(self):
-
+    def deinitialize(self) -> None:
+        """Deinitialize the device. This function is called only once at the end of the measurement."""
         if self.go_home_end:
             self.go_home()
             
         self.disable_robot()
 
-    def configure(self):
-
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
         self.set_acceleration_linear(self.acceleration_factor)  # Linear acceleration factor 1-100
         self.set_speed_global(self.global_speed_factor)  # Global speed factor 1-100
         self.set_speed_linear(self.speed_factor)  # Linear speed factor 1-100
         self._last_xyzr = self.get_position()
 
-    def unconfigure(self):
-
+    def unconfigure(self) -> None:
+        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
         if self.use_jump_mode:
             self.move_linear(self._last_xyzr[0], self._last_xyzr[1], self.movement_height, self._last_xyzr[3])
             self.sync(self.reach_position_timeout)
 
-    def reconfigure(self, parameters, keys):
-
-        # print("reconfigure", parameters)
-
+    def reconfigure(self, parameters, keys) -> None:
+        """'reconfigure' is called whenever parameters of the GUI change by using the {...}-parameter system."""
         if "Speed factor" in keys:
             self.speed_factor = parameters["Speed factor"]
             self.set_speed_linear(self.speed_factor)  # Linear speed factor 1-100
 
-    def apply(self):
-    
+    def apply(self) -> None:
+        """This function is called if the set value has changed. Applies the new value available as self.value."""
         # Position
         if "x" in self.sweepvalues and self.sweepvalues["x"] != "nan":
             x = float(self.sweepvalues["x"])
@@ -274,54 +290,55 @@ class Device(EmptyDevice):
             self.move_linear(x, y, z, r)
             self._last_xyzr = (x, y, z, r)
 
-    def reach(self):
-        # if self.reach_position:
+    def reach(self) -> None:
+        """'reach' can be added to make sure the latest setvalue applied during 'apply' is reached."""
         self.sync(self.reach_position_timeout)  # wait to finish all commands in queue
                     
-    def call(self):
+    def call(self) -> tuple[float]:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
         x, y, z, r = self.get_position()
         return x, y, z, r
 
-    def enable_robot(self, *args):
+    def enable_robot(self, *args) -> None:
         self.api_dashboard.EnableRobot(args)
         
-    def disable_robot(self):
+    def disable_robot(self) -> None:
         self.api_dashboard.DisableRobot()
         
-    def clear_error(self):
+    def clear_error(self) -> None:
         self.api_dashboard.ClearError()
         
-    def reset_robot(self):
+    def reset_robot(self) -> None:
         self.api_dashboard.ResetRobot()
         
-    def set_payload(self, weight, inertia):
+    def set_payload(self, weight, inertia) -> None:
         self.api_dashboard.PayLoad(float(weight), float(inertia))
         
-    def set_collision_level(self, level):
+    def set_collision_level(self, level) -> None:
         self.api_dashboard.SetCollisionLevel(level)
         
-    def set_speed_global(self, factor):
+    def set_speed_global(self, factor) -> None:
         self.api_dashboard.SpeedFactor(int(float(factor)))  # Global speed factor 1-100
         
-    def set_speed_linear(self, speed):
+    def set_speed_linear(self, speed) -> None:
         self.api_dashboard.SpeedL(int(float(speed)))
 
-    def set_acceleration_linear(self, acc):
+    def set_acceleration_linear(self, acc) -> None:
         self.api_dashboard.AccL(int(float(acc)))
 
     def get_robot_mode(self):
         mode = self.api_dashboard.RobotMode()
         return mode
         
-    def move_linear(self, x, y, z, r):
+    def move_linear(self, x, y, z, r) -> None:
         self.api_move.MovL(x, y, z, r)  # linear move to home position
         
-    def go_home(self):
+    def go_home(self) -> None:
         self.move_linear(350.0, 0.0, 0.0, 0.0)  # linear move to home position
         self.sync()
         self._last_xyzr = self.get_position()
                 
-    def sync(self, timeout=10.0):
+    def sync(self, timeout=10.0) -> None:
         self.api_move.Sync(timeout) 
         
     def get_pose(self):
