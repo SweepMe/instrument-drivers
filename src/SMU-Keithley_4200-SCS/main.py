@@ -31,8 +31,6 @@
 from __future__ import annotations
 
 import contextlib
-import ctypes as c
-import platform
 import time
 from pathlib import Path
 
@@ -98,32 +96,18 @@ class Device(EmptyDevice):
         }
 
         # unclear whether all ranges exist as the documentation does not get clear about it
-        self.current_range: str = "Auto"
         self.current_ranges = {
             "Auto": 0,
-            "Fixed 10 mA": 1e-2,
-            "Fixed 1 mA": 1e-3,
-            "Fixed 100 µA": 1e-4,
-            "Fixed 10 µA": 1e-5,
-            "Fixed 1 µA": 1e-6,
-            "Fixed 100 nA": 1e-7,
-            "Fixed 10 nA": 1e-8,
-            "Fixed 1 nA": 1e-9,
-            "Fixed 100 pA": 1e-10,
-            "Fixed 10 pA": 1e-11,
-            "Fixed 1 pA": 1e-12,
-            "Limited 10 mA": 1e-2,
-            "Limited 1 mA": 1e-3,
-            "Limited 100 µA": 1e-4,
-            "Limited 10 µA": 1e-5,
-            "Limited 1 µA": 1e-6,
-            "Limited 100 nA": 1e-7,
-            "Limited 10 nA": 1e-8,
-            "Limited 1 nA": 1e-9,
-            "Limited 100 pA": 1e-10,
-            "Limited 10 pA": 1e-11,
-            "Limited 1 pA": 1e-12,
         }
+        # Add current ranges from 1 pA to 100 mA for limited and fixed mode
+        for mode in ["Fixed", "Limited"]:
+            for prefix in ["m", "µ", "n", "p"]:
+                for number in [100, 10, 1]:
+                    exponent = {"m": -3, "µ": -6, "n": -9, "p": -12}[prefix]
+                    value = number * 10**exponent
+                    key = f"{mode} {number} {prefix}A"
+                    self.current_ranges[key] = value
+        self.current_range: str = "Auto"
 
         self.speed_dict = {
             "Very fast": 0.01,
@@ -140,8 +124,8 @@ class Device(EmptyDevice):
         self.command_set: str = "LPTlib"
         self.card_id: int = 1
 
-        self.lpt: lpt | Proxy | None = None
-        self.param: param | Proxy | None = None
+        self.lpt: Proxy | None = None
+        self.param: Proxy | None = None
 
         # Measurement parameter
         self.route_out: str = "Rear"
@@ -154,6 +138,7 @@ class Device(EmptyDevice):
         self.delay_factor: str = "0"
         self.filter_factor: str = "0"
         self.ad_aperture_time: str = "0.01"
+        self.averages: str = "1"
 
         self.card_name = "SMU" + self.channel[-1]
         self.pulse_channel = None
@@ -580,10 +565,10 @@ class Device(EmptyDevice):
 
             # Current Range - the KXCI implementation has not been tested yet
             current_range_float = self.current_ranges[self.current_range]
-            if "Limited" in self.current_range:
+            if "limited" in self.current_range.lower():
                 self.set_current_range_limited(self.card_name[-1], current_range_float)
 
-            elif self.current_range == "Auto":
+            elif "auto" in self.current_range.lower():
                 # Use the lowest current range for auto-ranging
                 self.set_current_range_limited(self.card_name[-1], 0)
 
@@ -633,10 +618,10 @@ class Device(EmptyDevice):
 
         # Current Range
         current_range_value = self.current_ranges[self.current_range]
-        if self.current_range == "Auto" or "Limited" in self.current_range:
+        if "auto" in self.current_range.lower() or "limited" in self.current_range.lower():
             self.lpt.rangei(self.card_id, 0)  # auto-ranging
 
-            if "Limited" in self.current_range:
+            if "limited" in self.current_range.lower():
                 self.lpt.lorangei(self.card_id, current_range_value)  # minimum current range for auto-ranging
         else:
             self.lpt.rangei(self.card_id, current_range_value)  # fixed range
