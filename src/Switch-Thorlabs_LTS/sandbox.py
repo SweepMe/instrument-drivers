@@ -18,13 +18,13 @@ clr.AddReference("Thorlabs.MotionControl.DeviceManagerCLI")
 clr.AddReference("Thorlabs.MotionControl.GenericMotorCLI")
 clr.AddReference("Thorlabs.MotionControl.IntegratedStepperMotorsCLI")
 
-from Thorlabs.MotionControl.DeviceManagerCLI import DeviceManagerCLI
+import Thorlabs.MotionControl.DeviceManagerCLI as DeviceManagerCLI
 # from Thorlabs.MotionControl.GenericMotorCLI import IGenericAdvancedMotor
 # from Thorlabs.MotionControl.GenericMotorCLI.ControlParameters import VelocityParameters
 from Thorlabs.MotionControl.IntegratedStepperMotorsCLI import LongTravelStage#, ThorlabsIntegratedStepperMotorSettings
 
 # DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
-DeviceManagerCLI.BuildDeviceList()
+DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
 
 device_list = DeviceManagerCLI.DeviceManagerCLI.GetDeviceList()
 print(f"Found devices: {[str(serial_num) for serial_num in device_list]}")
@@ -54,7 +54,13 @@ time.sleep(0.5)
 motor_config = device.LoadMotorConfiguration(port_string)
 current_settings: ThorlabsIntegratedStepperMotorSettings = device.MotorDeviceSettings
 
-position = Decimal(10)
+position = Decimal(60)
 device.MoveTo(position, 60000)
 
+status = device.Status
+# print(status.Position, type(status.Position))
+
+conv = device.AdvancedMotorLimits.UnitConverter
+pos = float(str(conv.DeviceUnitToReal(Decimal(status.Position), conv.UnitType.Length)))
+print(f"Position: {pos} mm")
 

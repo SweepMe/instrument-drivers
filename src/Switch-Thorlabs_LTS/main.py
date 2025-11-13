@@ -135,11 +135,13 @@ class Device(EmptyDevice):
         return {
             "SweepMode": ["Position in mm"],
             # "Channel": [1, 2, 3],
+            "Velocity in mm/s": 10.0,
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.serial_number = parameters.get("Port", "")
+        self.velocity = parameters.get("Velocity in mm/s", 5.0)
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -199,6 +201,8 @@ class Device(EmptyDevice):
         motor_config = self.device.LoadMotorConfiguration(self.serial_number)
         current_settings: ThorlabsIntegratedStepperMotorSettings = self.device.MotorDeviceSettings
 
+        self.set_velocity(float(self.velocity))
+
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
 
@@ -210,7 +214,7 @@ class Device(EmptyDevice):
             msg = f"Invalid position value: {self.value}. Must be a number."
             raise ValueError(msg)
 
-        # todo reach
+        # todo reach. Currently, the command is blocking until the position is reached.
         self.device.MoveTo(new_position, 60000)
 
     def call(self) -> float:
@@ -224,3 +228,10 @@ class Device(EmptyDevice):
         conv = self.device.AdvancedMotorLimits.UnitConverter
         pos = float(str(conv.DeviceUnitToReal(Decimal(status.Position), conv.UnitType.Length)))
         return pos
+
+    def set_velocity(self, velocity: float) -> None:
+        """Set the velocity of the device in mm/s."""
+        velocity_parameters = self.device.GetVelocityParams()
+        velocity_parameters.MaxVelocity = Decimal(velocity)
+        self.device.SetVelocityParams(velocity_parameters)
+
