@@ -113,6 +113,12 @@ class Device(EmptyDevice):
 
         self._last_xyzr = (None, None, None, None)
 
+        # Measurement Parameters
+        self.variables: list[str] = []
+        self.units: list[str] = []
+        self.plottype: list[bool] = []
+        self.savetype: list[bool] = []
+
         # Communication Parameters
         self.port_string: str = ""
         self.api_dashboard: DobotDashboard
@@ -207,13 +213,13 @@ class Device(EmptyDevice):
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
         self.clear_error()
-        # self.reset_robot()
+        self.reset_robot()
 
         self.set_collision_level(self.collision_level)
 
         # first without any parameters. Otherwise, the robot tends to throw error 105 "Servo on failed"
         self.enable_robot()
-        self.enable_robot(self.payload_weight, self.payload_x_offset, self.payload_y_offset, 0.0)
+        # self.enable_robot(self.payload_weight, self.payload_x_offset, self.payload_y_offset, 0.0)
 
         # The line below should be used to set payload properties. However, the command did not work correctly
         # and now payload properties are handed over during self.enable_robot()
@@ -331,6 +337,7 @@ class Device(EmptyDevice):
         return mode
         
     def move_linear(self, x, y, z, r) -> None:
+        print(f"Moving to x={x} y={y} z={z} r={r}")
         self.api_move.MovL(x, y, z, r)  # linear move to home position
         
     def go_home(self) -> None:
@@ -344,6 +351,7 @@ class Device(EmptyDevice):
     def get_pose(self):
         answer = self.api_dashboard.GetPose()  # added function
         x,y,z,r = tuple(map(float, self.get_response_data(answer)[0:4]))
+        print(f"Current position: x={x} y={y} z={z} r={r}")
         return x,y,z,r
       
     def get_position(self):
@@ -373,7 +381,7 @@ class DobotDashboard(dobot_api.DobotApiDashboard):
         return not not ready  # first "not" makes a bool, second "not" negates the bool to what is needed
 
     def send_data(self, string):
-        # self.log(f"Send to 192.168.1.6:{self.port}: {string}")
+        self.log(f"Send: {string}")
         self.socket_dobot.send(str.encode(string, 'utf-8'))
 
     def wait_reply(self, timeout=3.0):
@@ -383,7 +391,7 @@ class DobotDashboard(dobot_api.DobotApiDashboard):
         if self.is_package_ready(timeout=timeout):
             data = self.socket_dobot.recv(1024)
             data_str = str(data, encoding="utf-8")
-            # self.log(f'Receive from 192.168.1.6:{self.port}: {data_str}')
+            self.log(f'Receive: {data_str}')
             return data_str
         else:
             raise Exception("No package returned within timeout.")
@@ -457,7 +465,7 @@ class DobotMove(dobot_api.DobotApiMove):
         return not not ready  # first "not" makes a bool, second "not" negates the bool to what is needed
 
     def send_data(self, string):
-        # self.log(f"Send to 192.168.1.6:{self.port}: {string}")
+        self.log(f"Send move: {string}")
         self.socket_dobot.send(str.encode(string, 'utf-8'))
 
     def wait_reply(self, timeout=3.0):
@@ -467,7 +475,7 @@ class DobotMove(dobot_api.DobotApiMove):
         if self.is_package_ready(timeout=timeout):
             data = self.socket_dobot.recv(1024)
             data_str = str(data, encoding="utf-8")
-            # self.log(f'Receive from 192.168.1.6:{self.port}: {data_str}')
+            self.log(f'Receive move: {data_str}')
             return data_str
         else:
             raise Exception("No package returned within timeout.")
