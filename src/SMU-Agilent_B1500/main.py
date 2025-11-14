@@ -40,20 +40,33 @@ import time
 
 class Device(EmptyDevice):
     description = """<div class="device-description">
-        <h3>Agilent B1500A</h3>
-        <p>Start EasyExpert must run on the PC; minimize IO Control and close EasyExpert when running.</p>
-
-        <h4>List Mode</h4>
-        <p>Notes about list mode:</p>
-        <ul>
-            <li>In list mode the device does not measure the set values; therefore the set values are returned.</li>
-            <li>It is possible to have multiple channels in the same branch. If at least one channel uses list mode, all channels in that branch are considered in list mode.</li>
-            <li>Single-value channels in a list-mode branch will create a list with start = stop = value.</li>
-            <li>When using multiple channels in list mode, the list length, hold time and delay time must be the same for all channels.</li>
-        </ul>
-
-        <h4>Behavior</h4>
-        <p>Use the device in list mode when synchronized multi-channel sweeps are required; otherwise use single measurement mode.</p>
+      <h3>Agilent B1500A - Semiconductor Parameter Analyzer</h3>
+    
+      <p><strong>Overview</strong>: This driver controls the Agilent B1500A for single measurements and synchronized list sweeps. It exposes voltage/current sources, measurement timing and list sweep features used for multi‑channel experiments.</p>
+    
+      <h4>Prerequisites</h4>
+      <ul>
+        <li>The helper application \"Start EasyExpert\" must be running on the PC. Before running sweeps, minimize IO Control and close any active EasyExpert GUI instances to avoid resource conflicts.</li>
+        <li>Ensure the correct GPIB/USB port is selected and the instrument is powered and addressed.</li>
+      </ul>
+    
+      <h4>List Mode (synchronized multi‑channel sweeps)</h4>
+      <ul>
+        <li>When using list mode, the device returns the programmed source values (not measured source values).</li>
+        <li>A branch can contain multiple channels; if any channel in a branch uses list mode, the whole branch is treated as a list sweep.</li>
+        <li>Single‑value channels inside a list branch produce lists where start = stop = value.</li>
+        <li>All channels participating in the same list sweep must share the same list length, hold time and delay time.</li>
+        <li>Timestamps are provided and are normalized relative to the list master channel.</li>
+        <li>For longer measurements the timeout might not be sufficient. Create a custom driver version and increase self.port_properties = {
+            "timeout": 30}.</li>
+      </ul>
+    
+      <h4>Usage guidance</h4>
+      <ul>
+        <li>Use list mode for synchronized, multi‑channel acquisitions (e.g. concurrent source/measure sequences).</li>
+        <li>Use single measurement mode for isolated, on‑demand readings.</li>
+        <li>Check range, compliance and averaging settings before starting a sweep to avoid measurement errors or instrument protection trips.</li>
+      </ul>
     </div>"""
 
     def __init__(self):
@@ -71,7 +84,7 @@ class Device(EmptyDevice):
         self.port_manager = True
         self.port_types = ["GPIB", "USB"]
         self.port_properties = {
-            "timeout": 20,
+            "timeout": 30,
             # "delay": 0.1,
         }
         self.port_string: str = ""
@@ -297,8 +310,8 @@ class Device(EmptyDevice):
 
         if self.list_master:
             # Only the list master channels uses configure_list_mode, all others use create_synchronous_list afterward
-            # TODO: we could say no channel returns its source values and we always calculate them
-            self.port.write("FMT 2,1")  # 2: ASCII 12 digits w/o header, 2: source output data for synchronous list mode
+            # self.port.write("FMT 1,1")  # 2: ASCII 12 digits w/o header, 2: source output data for synchronous list mode
+            self.set_data_output_format(include_header=True, source_output=False)
             self.configure_list_mode(
                 source=self.source[0],
                 mode=self.list_mode,
@@ -463,25 +476,41 @@ class Device(EmptyDevice):
                     time.sleep(0.1)  # short sleep time, the main time is spent in waiting for OPC
                     continue
 
-
     def read_result(self) -> None:
         """Read the measured data from a buffer that was requested during 'request_result'."""
         if self.list_master:
             results = self.port.read()
-            # use [3:] if the header is present
-            values = [float(part.strip()[3:]) for part in results.split(',') if part.strip()]
 
-            # TODO: handle time stamps
+            # Initialize the list results dictionary
+            for channel in self.device_communication[self.driver_port_string]["channels"]:
+                self.device_communication[self.driver_port_string]["list_results"][channel] = {
+                    "measurements": [],
+                    "timestamps": [],
+                }
 
-            device_communication = self.device_communication[self.driver_port_string]
-            channels = device_communication["channels"]
-            n_channels = len(channels)
+            for result in results.split(','):
+                result = result.strip()
+                header = result[:3]
+                status = header[0]  # not used yet, can be used to check for errors
+                channel_id = header[1]  # A-J, a-j for slots 1-10 and subchannel 1/2 (a/A)
+                channel_num = ord(channel_id) - ord('A') + 1
+                data_type = header[2]  # can be I,V,T
+                value = float(result[3:])  # the actual value
 
-            for n, channel in enumerate(channels):
-                measured_values_for_channel = values[n::n_channels + 1]  # skip source values
-                device_communication["list_results"][channel] = measured_values_for_channel
+                # save the value in the device communication dictionary
+                if data_type == "T":
+                    self.device_communication[self.driver_port_string]["list_results"][channel_num]["timestamps"].append(value)
+                else:
+                    self.device_communication[self.driver_port_string]["list_results"][channel_num]["measurements"].append(value)
 
-            device_communication["list_results"]["timestamps"] = [1] * len(measured_values_for_channel)  # TODO: read real timestamps
+            # make timestamps relative to the first timestamp of the list master
+            master_timestamps = self.device_communication[self.driver_port_string]["list_results"][self.channel]["timestamps"]
+            if master_timestamps:
+                t0 = master_timestamps[0]
+                for channel in self.device_communication[self.driver_port_string]["channels"]:
+                    timestamps = self.device_communication[self.driver_port_string]["list_results"][channel]["timestamps"]
+                    relative_timestamps = [t - t0 for t in timestamps]
+                    self.device_communication[self.driver_port_string]["list_results"][channel]["timestamps"] = relative_timestamps
 
         elif self.list_follower:
             # list followers read results from device_communication in call
@@ -504,7 +533,7 @@ class Device(EmptyDevice):
         """Return the measurement results. Must return as many values as defined in self.variables."""
         if self.list_follower or self.list_master:
             device_communication = self.device_communication[self.driver_port_string]
-            measured_values = device_communication["list_results"][self.channel]
+            measured_values = device_communication["list_results"][self.channel]["measurements"]
 
             # Create source values list
             source_values = self.get_source_values()
@@ -517,13 +546,11 @@ class Device(EmptyDevice):
                 self.measured_current = source_values
                 self.measured_voltage = measured_values
 
-            timestamps = device_communication["list_results"]["timestamps"]
-
-            return [self.measured_voltage, self.measured_current, timestamps]
+            if self.use_list_mode:
+                timestamps = device_communication["list_results"][self.channel]["timestamps"]
+                return [self.measured_voltage, self.measured_current, timestamps]
 
         return [self.measured_voltage, self.measured_current]
-
-    # Wrapped functions
 
     def set_average(self, average: int) -> None:
         """Set the number of averaging samples of the A/D converter.
@@ -535,6 +562,8 @@ class Device(EmptyDevice):
             raise ValueError(msg)
         self.port.write(f"AV {average}")
 
+    # Wrapped functions
+
     def set_measurement_mode(self, mode: int, channels: list[int]) -> None:
         """Set the measurement mode to one of 18 available modes (see manual table 4-14).
 
@@ -544,6 +573,17 @@ class Device(EmptyDevice):
         # command =
         self.port.write(f"MM {mode},{','.join(str(ch) for ch in channels)}")
         self.check_errors()
+
+    def set_data_output_format(self, include_header: bool = False, source_output: bool = False) -> None:
+        """Set the data output format.
+
+        include_header: If True, the output data will include a header with NAI codes.
+        source_output: If True, the output data will include source values of the primary list source (for list mode).
+        This function could be extended to include all 12 format options and all 12 modes. See manual table 4-24.
+        """
+        format_code_1 = 1 if include_header else 2
+        format_code_2 = 1 if source_output else 0
+        self.port.write(f"FMT {format_code_1},{format_code_2}")
 
     def set_speed(self, speed: str) -> None:
         """Set the measurement speed."""
@@ -599,7 +639,6 @@ class Device(EmptyDevice):
             self.port.write("TSC 1")
         else:
             self.port.write("TSC 0")
-
 
     def get_source_values(self) -> list[float]:
         """Calculate the source values for the list sweep from the list sweep parameters."""
