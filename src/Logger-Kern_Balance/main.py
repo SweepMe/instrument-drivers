@@ -45,13 +45,13 @@ class Device(EmptyDevice):
         EmptyDevice.__init__(self)
 
         self.port_manager = True
-        self.port_types = ["COM"]
+        self.port_types = ["COM", "Socket"]
         self.port_properties = {
-                                "baudrate": 9600,
-                                "EOL": "\r\n",  # terminator is CR/LF
-                                "parity": "N",
-                                "timeout": 0.1,
-                                }
+            "baudrate": 9600,
+            "EOL": "\r\n",  # terminator is CR/LF
+            "parity": "N",
+            "timeout": 0.1,  # short timeout for quick protocol check in 'connect' method
+        }
                                 
         self.shortname = "Kern Balance"
             
@@ -108,6 +108,8 @@ class Device(EmptyDevice):
         except:  # TODO: catch specific exception
             self.protocol = "tws"  # t, w, and s are the only three commands that the older protocol supports
             # if it fails to use the first command, we will proceed with tws command set
+            # In SweepMe! <1.5.7.6, the port was automatically closed after the exception. Therefore, we open it again.
+            # Although not necessary in the new SweepMe! version, it remains here for backwards compatibility.
             if not self.port.port_properties["open"]:
                 self.port.open()
 
@@ -122,17 +124,17 @@ class Device(EmptyDevice):
             # not used because I0 returns multiple lines
             # self.port.write("I0")
             # answer = self.port.read() # query list of implemented commands, this might be useful later to check whether the balance can be used with this driver.
-            # print("SW identification number:", answer)
+            # print(f"Command: {answer}")
         
         if self.protocol == "KCP":
             self.port.write("I5")
             answer = self.port.read()  # queries the SW identification number
-            # print("SW identification number:", answer)
+            # print(f"SW identification number: {answer}")
 
         if self.protocol == "KCP":
-            self.port.write(f"U {self.unit_str}")
+            self.port.write(f"U {self.mode_str}")
             answer = self.port.read()
-            # print("Unit:    ", answer)
+            print(f"Unit: {answer}")
 
     def configure(self) -> None:
 
@@ -141,23 +143,14 @@ class Device(EmptyDevice):
             time.sleep(0.5)
             
         if self.do_initial_zero:
-            if self.protocol == "KCP":
-                self.port.write("Z")
-                self.port.read()
-            elif self.protocol == "tws":
-            
-                if self.is_read_stabilized:
-                    self.weight_initial_g = self.get_weight_stable_g()
-                else:
-                    self.weight_initial_g = self.get_weight_immediately_g()
-                    
-                if self.mode_str == "kg":
-                    self.weight_initial = self.weight_initial_g / 1000.0
-                elif self.mode_str == "g":
-                    self.weight_initial = self.weight_initial_g
+            self.zero()
+        else:
+            # if there is no zero we will just substract 0.0 all the time during read_result for tws protocol
+            self.weight_initial_g = 0.0
+            self.weight_initial = 0.0
 
         if self.do_flow_calculation:
-            self.weight_last_g = self.get_weight_immediately_g()
+            self.weight_last_g = self.get_weight_g(stable=False)[0]
             if self.mode_str == "kg":
                 self.weight_last = self.weight_last_g / 1000.0
             elif self.mode_str == "g":
@@ -177,82 +170,22 @@ class Device(EmptyDevice):
 
     def read_result(self) -> None:
 
-        # default value
-        weight = float('nan')
+        weight_g, is_stable, is_overload = self.read_weight_g(stable=self.is_read_stabilized)
 
-        answer = self.port.read()
+        # software zeroing for tws protocol
+        if self.protocol == "tws":
+            weight_g = weight_g - self.weight_initial
 
-        if self.protocol == "KCP":
-        
-            is_overload = False  # not supported right now for KCP
-        
-            vals = answer.split()
-            is_stable = (vals[1] == "S")
-        
-            if self.is_read_stabilized:
-                while not is_stable and not self.is_run_stopped():
-                    self.port.write("SI")
-                    answer = self.port.read()
-                    vals = answer.split()
-                    is_stable = (vals[1] == "S")
+        # convert to selected weight unit
+        weight = weight_g / 1000.0 if self.mode_str == "kg" else weight_g
 
-            if vals[0] != "S":
-                msg = "Queried weight has wrong prefix."
-                raise Exception(msg)
+        self.results = [weight, is_stable, is_overload]
 
-            if vals[1] not in ["S", "D"]:
-                msg = "Queried weight has wrong status."
-                raise Exception(msg)
-
-            weight = float(vals[2])
-            unit = vals[3]
-
-            if unit != self.unit_str:
-                msg = "Queried weight has wrong unit."
-                raise Exception(msg)
-
-        elif self.protocol == "tws":
-            
-            is_stable = "g" in answer
-
-            if self.is_read_stabilized:
-                while not is_stable and not self.is_run_stopped():
-                    self.port.write("w")
-                    answer = self.port.read()
-                    is_stable = "g" in answer
-
-            is_overload = "=Overload=" in answer
-
-            if is_overload:
-                weight = float('nan')
-            else:
-                try:
-                    answer = answer[2:].replace(" ", "").replace("g", "")
-                    weight = float(answer)
-                    
-                    if "kg" in answer:
-                        if self.mode_str == "kg":
-                            pass
-                        elif self.mode_str == "g":
-                            weight = weight * 1000.0
-                    else:
-                        if self.mode_str == "kg":
-                            weight = weight / 1000.0
-                        elif self.mode_str == "g":
-                            pass
-                except:
-                    raise ValueError(f"Unable to interprete weight: '{repr(answer)}'")
-                    
-                if self.do_initial_zero:
-                    weight = weight - self.weight_initial
-                    
+        # Flow calculation in the selected weight and time unit
         if self.do_flow_calculation:
             now = time.perf_counter()
 
-            if (now - self.time_last) > 0.0:
-                flow = (weight - self.weight_last) / (now - self.time_last)
-            else:
-                flow = float('nan')
+            flow = (weight - self.weight_last) / (now - self.time_last) if now - self.time_last > 0.0 else float("nan")
             
             if self.time_unit == "s":
                 pass
@@ -263,10 +196,6 @@ class Device(EmptyDevice):
             
             self.weight_last = weight
             self.time_last = time.perf_counter()
-        
-        self.results = [weight, is_stable, is_overload]
-        
-        if self.do_flow_calculation:
             self.results.append(flow)
 
     def call(self) -> None:
@@ -285,72 +214,97 @@ class Device(EmptyDevice):
         """Sets the balance to zero (without load)."""
         if self.protocol == "KCP":
             self.port.write("Z")
+            self.port.read()
         elif self.protocol == "tws":
-            raise NotImplementedError("Zeroing not supported in tws protocol.")
+            # the old protocol has no zero, so we just reset the initial weight
+            self.weight_initial_g = self.get_weight(stable=True)
+            if self.mode_str == "kg":
+                self.weight_initial = self.weight_initial_g / 1000.0
+            elif self.mode_str == "g":
+                self.weight_initial = self.weight_initial_g
 
     def get_weight_immediately_g(self):
 
+        self.request_weight(stable=False)
+        weight, is_stable, is_overload = self.read_weight_g(stable=False)
+        return weight, is_stable, is_overload
+
+    def get_weight_g(self,stable=False):
+
+        self.request_weight()
+        weight, is_stable, is_overload = self.read_weight_g(stable)
+        return weight, is_stable, is_overload
+
+    def request_weight(self):
+
+        # we do not use the stable commands here, as we iterate in read_weight_g until stable
+
         if self.protocol == "KCP":
             self.port.write("SI")
-            answer = self.port.read()
-            vals = answer.split()
-            is_stable = (vals[1] == "S")
-
-            if vals[0] != "S":
-                msg = "Queried weight has wrong prefix."
-                raise Exception(msg)
-
-            if vals[1] not in ["S", "D"]:
-                msg = "Queried weight has wrong status."
-                raise Exception(msg)
-
-            weight = float(vals[2])
-            unit = vals[3]
-
-            return weight
 
         elif self.protocol == "tws":
             self.port.write("w")
-            answer = self.port.read()
-            answer = answer[2:].replace(" ", "").replace("g", "")
-            weight = float(answer)
-        
-            return weight
 
-    def get_weight_stable_g(self):
+    def read_weight_g(self, stable=False):
+
+        answer = self.port.read()
 
         if self.protocol == "KCP":
-            self.port.write("S")
-            answer = self.port.read()
 
+            is_overload = None  # not supported right now for KCP
             vals = answer.split()
             is_stable = (vals[1] == "S")
 
             if vals[0] != "S":
-                msg = "Queried weight has wrong prefix."
+                msg = f"Queried weight has wrong prefix: '{vals[0]}'."
                 raise Exception(msg)
 
             if vals[1] not in ["S", "D"]:
-                msg = "Queried weight has wrong status."
+                msg = f"Queried weight has wrong status: '{vals[1]}'."
                 raise Exception(msg)
+
+            if stable:
+                while not is_stable and not self.is_run_stopped():
+                    self.port.write("SI")
+                    answer = self.port.read()
+                    vals = answer.split()
+                    is_stable = (vals[1] == "S")
 
             weight = float(vals[2])
             unit = vals[3]
 
-            return weight
-            
+            if unit == "kg":
+                weight = weight * 1000.0
+
+            return weight, is_stable, is_overload
+
         elif self.protocol == "tws":
             # to keep timeouts below 1s, we read weight immediately and wait until result is stable
-        
-            self.port.write("w")
-            answer = self.port.read()        
-            is_stable = "g" in answer
 
-            while not is_stable and not self.is_run_stopped():
-                self.port.write("w")
-                answer = self.port.read()
-                is_stable = "g" in answer
-            
-            answer = answer[2:].replace(" ", "").replace("g", "")
-            weight = float(answer)
-            return weight
+            answer = self.port.read()
+            is_stable = "g" in answer
+            is_overload = "=Overload=" in answer
+
+            if stable:
+                while not is_stable and not self.is_run_stopped():
+                    self.port.write("w")
+                    answer = self.port.read()
+                    is_stable = "g" in answer
+                    is_overload = "=Overload=" in answer
+
+            if is_overload:
+                weight = float('nan')
+            else:
+                try:
+                    answer = answer[2:].replace(" ", "").replace("g", "")
+                    weight = float(answer)
+                except:
+                    msg = f"Unable to interprete weight: '{repr(answer)}'"
+                    raise ValueError(msg)
+
+                if "kg" in answer:
+                    weight = weight * 1000.0
+
+            return weight, is_stable, is_overload
+
+        raise ValueError("Unknown protocol.")
