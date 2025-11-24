@@ -1,6 +1,6 @@
 ### KERN Balance driver
 
-The driver supports all balances, scales, and terminals from  KERN&SOHN that use the KERN communication protocol (KCP).
+The driver supports all balances, scales, and terminals from KERN&SOHN that use the KERN communication protocol (KCP).
 As a fallback it also supports older balances that use the communication protocol using the commands t,w, and s (tws).
 
 **Models with KCP:** KIB-TM, KFB-TM, KFN, PCB
@@ -22,7 +22,7 @@ As a fallback it also supports older balances that use the communication protoco
   * Factory default IP address: 192.168.178.150
   * Factory default subnet mask: 255.255.255.0
   * Fixed TCP port: 23
-  * Please note that IP address can be changed.
+  * Please note that the IP address can be changed and could be different.
   * Exemplary port string as used in the Logger module: "192.168.178.150:23" 
 
 Some models require to set the communication protocol to KCP. This can be done in the instrument menu.
