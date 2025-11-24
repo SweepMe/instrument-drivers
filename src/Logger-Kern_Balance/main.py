@@ -207,7 +207,7 @@ class Device(EmptyDevice):
                 flow = flow*3600
             
             self.weight_last = weight
-            self.time_last = time.perf_counter()
+            self.time_last = now
             self.results.append(flow)
 
     def call(self) -> None:
