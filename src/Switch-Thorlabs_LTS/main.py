@@ -81,19 +81,19 @@ class Device(EmptyDevice):
 
         # Communication Parameters
         self.serial_number: str = ""
-        self.is_simulation = False
+        self.use_simulation = False
+
+        # Device Parameters
+        self.stage: LongTravelStage = None  # type: ignore
+        self.velocity: float = 5.0  # in mm/s
 
     def find_ports(self) -> list[str]:
         """Returns the serial numbers of all devices connected via Kinesis."""
         device_list = self.list_devices()
-        self.is_simulation = False
 
-        # Searching for simulated devices if there are no real devices found
-        if not device_list:
-            print("-> No devices found, initializing simulations...")
+        if self.use_simulation:
             self.set_simulation_mode(True)
             device_list = self.list_devices()
-            self.is_simulation = True
             self.set_simulation_mode(False)
 
         if not device_list:
@@ -124,17 +124,14 @@ class Device(EmptyDevice):
         """Set the simulation mode for the device."""
         if state:
             DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
-
         else:
             DeviceManagerCLI.SimulationManager.Instance.UninitializeSimulations()
-
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         del parameters
         return {
             "SweepMode": ["Position in mm"],
-            # "Channel": [1, 2, 3],
             "Velocity in mm/s": 10.0,
         }
 
@@ -154,16 +151,16 @@ class Device(EmptyDevice):
             msg = f"Device with serial number {self.serial_number} not found in the list of available devices: {available_devices}"
             raise ValueError(msg)
 
-        self.device = LongTravelStage.CreateLongTravelStage(self.serial_number)
+        self.stage = LongTravelStage.CreateLongTravelStage(self.serial_number)
         self.device_manager_connect()
 
     def device_manager_connect(self, timeout_s=10):
         """Connect to the device manager with a timeout.
         """
         starting_time = time.time()
-        while not self.device.IsConnected and not self.is_run_stopped():
+        while not self.stage.IsConnected and not self.is_run_stopped():
             try:
-                self.device.Connect(str(self.serial_number))
+                self.stage.Connect(str(self.serial_number))
             except DeviceManagerCLI.DeviceNotReadyException:
                 print("DeviceNotReadyException: Device is not ready yet, retrying...")
                 time.sleep(0.5)
@@ -174,22 +171,22 @@ class Device(EmptyDevice):
 
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
-        self.device.StopPolling()
-        self.device.Disconnect(True)
-        if self.is_simulation:
+        self.stage.StopPolling()
+        self.stage.Disconnect(True)
+        if self.use_simulation:
             self.set_simulation_mode(False)
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
-        if not self.device.IsSettingsInitialized():
+        if not self.stage.IsSettingsInitialized():
             try:
-                self.device.WaitForSettingsInitialized(5000)
+                self.stage.WaitForSettingsInitialized(5000)
             except Exception as e:
                 print(f"Settings failed to initialize: {e}")
 
-        self.device.StartPolling(250)
+        self.stage.StartPolling(250)
         time.sleep(0.5)
-        self.device.EnableDevice()
+        self.stage.EnableDevice()
         time.sleep(0.5)
 
     def deinitialize(self) -> None:
@@ -198,8 +195,8 @@ class Device(EmptyDevice):
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         # Load motor configuration
-        motor_config = self.device.LoadMotorConfiguration(self.serial_number)
-        current_settings: ThorlabsIntegratedStepperMotorSettings = self.device.MotorDeviceSettings
+        motor_config = self.stage.LoadMotorConfiguration(self.serial_number)
+        current_settings: ThorlabsIntegratedStepperMotorSettings = self.stage.MotorDeviceSettings
 
         self.set_velocity(float(self.velocity))
 
@@ -215,7 +212,7 @@ class Device(EmptyDevice):
             raise ValueError(msg)
 
         # todo reach. Currently, the command is blocking until the position is reached.
-        self.device.MoveTo(new_position, 60000)
+        self.stage.MoveTo(new_position, 60000)
 
     def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
@@ -223,15 +220,14 @@ class Device(EmptyDevice):
 
     def get_position_mm(self) -> float:
         """Get the current position in mm."""
-        status = self.device.Status
+        status = self.stage.Status
         # TODO: there might be a more straightforward way to get the position in mm
-        conv = self.device.AdvancedMotorLimits.UnitConverter
+        conv = self.stage.AdvancedMotorLimits.UnitConverter
         pos = float(str(conv.DeviceUnitToReal(Decimal(status.Position), conv.UnitType.Length)))
         return pos
 
     def set_velocity(self, velocity: float) -> None:
         """Set the velocity of the device in mm/s."""
-        velocity_parameters = self.device.GetVelocityParams()
+        velocity_parameters = self.stage.GetVelocityParams()
         velocity_parameters.MaxVelocity = Decimal(velocity)
-        self.device.SetVelocityParams(velocity_parameters)
-
+        self.stage.SetVelocityParams(velocity_parameters)
