@@ -116,16 +116,21 @@ class Device(EmptyDevice):
                 self.port.open()
 
     def initialize(self) -> None:
-    
+
+        # The next two commands remain as comment for later use and optional testing.
+        # In a next revision, they can be moved to own functions wrapping the communication commands
+
         # if self.protocol == "KCP":
             # self.port.write("@") # cancel all operations and reset to state after switching on
             # answer = self.port.read()
             # print("Response on @:", answer)
         
         # if self.protocol == "KCP":
-            # not used because I0 returns multiple lines
+            # query list of implemented commands, this might be useful to check whether the balance supports all
+            # commands used in this driver.
+            # However, command I0 returns multiple lines that need to be correctly processed.
             # self.port.write("I0")
-            # answer = self.port.read() # query list of implemented commands, this might be useful later to check whether the balance can be used with this driver.
+            # answer = self.port.read()
             # print(f"Command: {answer}")
         
         if self.protocol == "KCP":
@@ -147,7 +152,7 @@ class Device(EmptyDevice):
         if self.do_initial_zero:
             self.zero()
         else:
-            # if there is no zero we will just substract 0.0 all the time during read_result for tws protocol
+            # if there is no zero we will just subtract 0.0 all the time during read_result for tws protocol
             self.weight_initial_g = 0.0
             self.weight_initial = 0.0
 
@@ -224,7 +229,7 @@ class Device(EmptyDevice):
             self.port.read()
         elif self.protocol == "tws":
             # the old protocol has no zero, so we just reset the initial weight
-            self.weight_initial_g = self.get_weight(stable=True)
+            self.weight_initial_g = self.get_weight_g(stable=True)
             if self.mode_str == "kg":
                 self.weight_initial = self.weight_initial_g / 1000.0
             elif self.mode_str == "g":
@@ -232,7 +237,7 @@ class Device(EmptyDevice):
 
     def get_weight_immediately_g(self):
 
-        self.request_weight(stable=False)
+        self.request_weight()
         weight, is_stable, is_overload = self.read_weight_g(stable=False)
         return weight, is_stable, is_overload
 
@@ -271,12 +276,10 @@ class Device(EmptyDevice):
 
             if stable:
                 while not is_stable and not self.is_run_stopped():
-                    print(vals, is_stable)
                     self.port.write("SI")
                     answer = self.port.read()
                     vals = answer.split()
                     is_stable = (vals[1] == "S")
-
 
             weight = float(vals[2])
             unit = vals[3]
