@@ -48,6 +48,7 @@ class Device(EmptyDevice):
       <ul>
         <li>The helper application \"Start EasyExpert\" must be running on the PC. Before running sweeps, minimize IO Control and close any active EasyExpert GUI instances to avoid resource conflicts.</li>
         <li>Ensure the correct GPIB/USB port is selected and the instrument is powered and addressed.</li>
+        <li>Installation of Keysight IO Suite. Version 2025 does not work, but the driver has been tested with Keysight IO 2023 Update 1.</li>
       </ul>
     
       <h4>List Mode (synchronized multi‑channel sweeps)</h4>
@@ -210,7 +211,6 @@ class Device(EmptyDevice):
             msg = "Only 'Sweep' type is currently supported for Agilent B1500 list sweeps."
             raise ValueError(msg)
 
-        # TODO: handle exceptions
         try:
             self.list_start = float(parameter["ListSweepStart"])
             self.list_stop = float(parameter["ListSweepEnd"])
@@ -218,6 +218,7 @@ class Device(EmptyDevice):
             self.list_hold = float(parameter["ListSweepHoldtime"])
             self.list_delay = float(parameter["ListSweepDelaytime"])
         except ValueError:
+            # do not raise an exception during get_GUIparameter
             pass
 
         step_type = parameter["ListSweepStepPointsType"]
