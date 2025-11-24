@@ -45,12 +45,14 @@ class Device(EmptyDevice):
         EmptyDevice.__init__(self)
 
         self.port_manager = True
-        self.port_types = ["COM", "Socket"]
+        self.port_types = ["COM", "SOCKET"]
         self.port_properties = {
             "baudrate": 9600,
             "EOL": "\r\n",  # terminator is CR/LF
             "parity": "N",
             "timeout": 0.1,  # short timeout for quick protocol check in 'connect' method
+            "SOCKET_EOLwrite": "\r\n",
+            "SOCKET_EOLread": "\r\n",
         }
                                 
         self.shortname = "Kern Balance"
@@ -134,7 +136,7 @@ class Device(EmptyDevice):
         if self.protocol == "KCP":
             self.port.write(f"U {self.mode_str}")
             answer = self.port.read()
-            print(f"Unit: {answer}")
+            # print(f"Unit: {answer}")
 
     def configure(self) -> None:
 

@@ -18,6 +18,12 @@ As a fallback it also supports older balances that use the communication protoco
   * 8 databits
   * 1 stopbit
   * parity None
+* Ethernet settings:
+  * Factory default IP address: 192.168.178.150
+  * Factory default subnet mask: 255.255.255.0
+  * Fixed TCP port: 23
+  * Please note that IP address can be changed.
+  * Exemplary port string as used in the Logger module: "192.168.178.150:23" 
 
 Some models require to set the communication protocol to KCP. This can be done in the instrument menu.
 For example, go to instrument menu "P9 Prt" -> "oPt" -> "ModE" and  select "KCP".
@@ -33,4 +39,4 @@ driver waits until the balance indicates a stable weight.
 * The option "Initial zero" triggers the zero function at the beginning of a run in order to create a new zero reference level.
 * One can return a flow rate by selecting a time base (e.g. g/s, kg/min, ...) as a convenience function.
 The driver calculates the flow rate from the difference of the last two readings.
-
+* During a run, the tare and zero functions can be triggered via the actions "tare" and "zero".
