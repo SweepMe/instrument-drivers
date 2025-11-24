@@ -162,13 +162,18 @@ class Device(EmptyDevice):
                 self.weight_last = self.weight_last - self.weight_initial
             self.time_last = time.perf_counter()
 
+    def adapt(self) -> None:
+
+        # we use adapt to stabilize the weight before measurement is requested
+        # this way, the time between request and read is minimized and the time stamp of the Time module matches better
+        # This solution is not perfect, as the weight might still change between adapt and measure, and additional
+        # stabilization time be needed during read_result if the weight is not stable yet.
+        if self.is_read_stabilized:
+            self.get_weight_g(stable=True)
+
     def measure(self) -> None:
 
-        if self.protocol == "KCP":
-            self.port.write("SI")
-                
-        if self.protocol == "tws":
-            self.port.write("w")
+        self.request_weight()
 
     def read_result(self) -> None:
 
@@ -240,7 +245,6 @@ class Device(EmptyDevice):
     def request_weight(self):
 
         # we do not use the stable commands here, as we iterate in read_weight_g until stable
-
         if self.protocol == "KCP":
             self.port.write("SI")
 
@@ -267,10 +271,12 @@ class Device(EmptyDevice):
 
             if stable:
                 while not is_stable and not self.is_run_stopped():
+                    print(vals, is_stable)
                     self.port.write("SI")
                     answer = self.port.read()
                     vals = answer.split()
                     is_stable = (vals[1] == "S")
+
 
             weight = float(vals[2])
             unit = vals[3]

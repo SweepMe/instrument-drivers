@@ -1,6 +1,6 @@
-### Kern Balance driver
+### KERN Balance driver
 
-The driver supports all balances, scales, and terminals from  Kern&Sohn that use the KERN communication protocol (KCP).
+The driver supports all balances, scales, and terminals from  KERN&SOHN that use the KERN communication protocol (KCP).
 As a fallback it also supports older balances that use the communication protocol using the commands t,w, and s (tws).
 
 **Models with KCP:** KIB-TM, KFB-TM, KFN, PCB
@@ -33,7 +33,8 @@ This will otherwise interfere with the communication.
 **Handling of the SweepMe! driver:**    
 * Select the weight unit (g, kg). The unit will be also sent to the balance if supported.
 * The option "Read stabilized" must be checked if the returned value should be a stabilized weight. Then the
-driver waits until the balance indicates a stable weight.
+driver waits until the balance indicates a stable weight. In some cases, the timestamp of the Time module might not match
+the exact time of the reading because the balance needs some time to stabilize.
 * The driver returns whether the reading is stable, also in case the weight is immediately returned.
 * The option "Initial tare" triggers the tare function at the beginning of a run to zero the level.
 * The option "Initial zero" triggers the zero function at the beginning of a run in order to create a new zero reference level.
