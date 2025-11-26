@@ -77,6 +77,7 @@ class Device(EmptyDevice):
         self.savetype = [True]
 
         # Communication Parameters
+        self.use_simulation_mode: bool = False
         self.serial_number: str = ""
         self.rack = None
         self.stepper = None
@@ -85,12 +86,14 @@ class Device(EmptyDevice):
         self.channel: int = 1
         self.sweep_mode: str = "Position"
         self.timeout_ms: int = 60000  # Default timeout for operations in milliseconds
-        # TODO: add timeout as GUI parameter
         self.max_velocity: str = "1.0"
         self.acceleration: str = "1.0"
 
     def find_ports(self) -> list[str]:
         """Returns the serial numbers of all devices connected via Kinesis."""
+        if self.use_simulation_mode:
+            self.set_simulation_mode(True)
+
         device_list = self.list_devices()
 
         if not device_list:
@@ -125,6 +128,7 @@ class Device(EmptyDevice):
             "Max Velocity in mm/s": "1.0",
             "Acceleration in mm/s²": "1.0",
             "Timeout in s": "60",
+            "Simulation Mode": False,
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
@@ -135,6 +139,7 @@ class Device(EmptyDevice):
         self.max_velocity = parameters.get("Max Velocity in mm/s", "1.0")
         self.acceleration = parameters.get("Acceleration in mm/s²", "1.0")
         self.timeout_ms = int(float(parameters.get("Timeout in s", "60")) * 1000)
+        self.use_simulation_mode = parameters.get("Simulation Mode", False)
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -143,11 +148,14 @@ class Device(EmptyDevice):
                    "ensure it is closed when running this driver.")
             raise ImportError(msg)
 
-        available_devices = self.list_devices()
         if self.serial_number in ["No devices found!", ""]:
-            msg = "No device connected! Please connect a Thorlabs NanoTrak device."
+            msg = "No device connected! Please connect a Thorlabs StepperMotor device."
             raise ValueError(msg)
 
+        if self.use_simulation_mode:
+            self.set_simulation_mode(True)
+
+        available_devices = self.list_devices()
         if self.serial_number not in available_devices:
             msg = f"Device with serial number {self.serial_number} not found in the list of available devices: {available_devices}"
             raise ValueError(msg)
@@ -158,18 +166,30 @@ class Device(EmptyDevice):
         self.stepper = self.rack[int(self.channel)]
 
         # Connect to the device
-        timeout_s = 10
-        while not self.rack.IsConnected:
+        number_of_retries = 2
+        while number_of_retries > 0:
             try:
-                self.rack.Connect(self.serial_number)
-            except DeviceManagerCLI.DeviceNotReadyException:
-                #print("DeviceNotReadyException: Device is not ready yet, retrying...")
-                time.sleep(0.2)
-                timeout_s -= 0.2
+                self.device_manager_connect(timeout_s=2)
+            except TimeoutError as e:
+                number_of_retries -= 1
+                if number_of_retries == 0:
+                    raise e
+                print(f"Retrying to connect to device {self.serial_number}, {number_of_retries} attempts left...")
+            else:
+                break
 
-            if timeout_s <= 0:
-                #print("Timeout: Device connection failed after 10 seconds.")
-                msg = "Failed to connect to the device within the timeout period."
+    def device_manager_connect(self, timeout_s=10):
+        """Connect to the device manager with a timeout."""
+        starting_time = time.time()
+        while not self.rack.IsConnected and not self.is_run_stopped():
+            try:
+                self.rack.Connect(str(self.serial_number))
+            except DeviceManagerCLI.DeviceNotReadyException:
+                print("DeviceNotReadyException: Device is not ready yet, retrying...")
+                time.sleep(0.5)
+
+            if time.time() - starting_time > timeout_s:
+                msg = f"Failed to connect to the device {self.serial_number} within the timeout period."
                 raise TimeoutError(msg)
 
     def disconnect(self) -> None:
@@ -179,6 +199,9 @@ class Device(EmptyDevice):
 
         self.stepper.StopPolling()
         self.rack.Disconnect(True)
+
+        if self.use_simulation_mode:
+            self.set_simulation_mode(False)
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -233,3 +256,13 @@ class Device(EmptyDevice):
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return float(str(self.stepper_motor.Position).replace(",", "."))
 
+    # Wrapper functions
+
+    @staticmethod
+    def set_simulation_mode(state: bool) -> None:
+        """Set the simulation mode for the device."""
+        if state:
+            DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
+
+        else:
+            DeviceManagerCLI.SimulationManager.Instance.UninitializeSimulations()
