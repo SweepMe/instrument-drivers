@@ -383,40 +383,7 @@ class Device(EmptyDevice):
 
         self.check_errors()
 
-    def create_synchronous_list(self, start: float, stop: float) -> None:
-        """Create a staircase sweep source that will be synchronized with the primary sweep source.
 
-        The primary source (list master) must have configured its list mode via WI or WV before calling this function.
-        Otherwise, it will be overwritten.
-
-        The 'WNX' command is used for synchronous list sources (probably 2D sweeps?).
-        command = f"WNX {source_number},{self.channel},{mode},{source_range},{start},{stop}, {self.protection}"
-        the source number is a unique identifier. It must be between 2-10. We use the channel number + 1 here.
-        mode = 1 if self.source.startswith("Voltage") else 2
-
-        We use the WSI / WSV commands instead, as they seem to be more appropriate for our use case.
-        """
-        source_range = 0  # autorange, can be extended later
-        command = f"WS{self.source[0]} {self.channel}, {source_range},{start},{stop}"
-        self.port.write(command)
-
-    def check_errors(self) -> None:
-        """Check for errors in the device error queue (4 possible errors).
-
-        TODO: can be extended to raise exceptions or print the translated error messages.
-
-        122 - Number of channels must be corrected.
-            Check the MM, FL, CN, CL, IN, DZ, or RZ command, and correct the
-            number of channels.
-        """
-        status = self.port.query("ERR?")
-
-        known_errors = {
-            " 100": "Undefined GPIB command.",
-        }
-
-        if status != "0,0,0,0":
-            print(status)
 
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
@@ -523,6 +490,8 @@ class Device(EmptyDevice):
 
         return [self.measured_voltage, self.measured_current]
 
+    # Wrapped functions
+
     def set_average(self, average: int) -> None:
         """Set the number of averaging samples of the A/D converter.
 
@@ -532,8 +501,6 @@ class Device(EmptyDevice):
             msg = f"Invalid average value: {average}. Must be 1-1023 (samples) or -1 to -100 (PLCs)."
             raise ValueError(msg)
         self.port.write(f"AV {average}")
-
-    # Wrapped functions
 
     def set_measurement_mode(self, mode: int, channels: list[int]) -> None:
         """Set the measurement mode to one of 18 available modes (see manual table 4-14).
@@ -586,6 +553,41 @@ class Device(EmptyDevice):
 
         # TODO: add compliance, range, and power compliance
         self.port.write(f"W{source} {self.channel},{mode},{output_range}, {start},{stop},{steps},{compliance}")
+
+    def create_synchronous_list(self, start: float, stop: float) -> None:
+        """Create a staircase sweep source that will be synchronized with the primary sweep source.
+
+        The primary source (list master) must have configured its list mode via WI or WV before calling this function.
+        Otherwise, it will be overwritten.
+
+        The 'WNX' command is used for synchronous list sources (probably 2D sweeps?).
+        command = f"WNX {source_number},{self.channel},{mode},{source_range},{start},{stop}, {self.protection}"
+        the source number is a unique identifier. It must be between 2-10. We use the channel number + 1 here.
+        mode = 1 if self.source.startswith("Voltage") else 2
+
+        We use the WSI / WSV commands instead, as they seem to be more appropriate for our use case.
+        """
+        source_range = 0  # autorange, can be extended later
+        command = f"WS{self.source[0]} {self.channel}, {source_range},{start},{stop}"
+        self.port.write(command)
+
+    def check_errors(self) -> None:
+        """Check for errors in the device error queue (4 possible errors).
+
+        TODO: can be extended to raise exceptions or print the translated error messages.
+
+        122 - Number of channels must be corrected.
+            Check the MM, FL, CN, CL, IN, DZ, or RZ command, and correct the
+            number of channels.
+        """
+        status = self.port.query("ERR?")
+
+        known_errors = {
+            " 100": "Undefined GPIB command.",
+        }
+
+        if status != "0,0,0,0":
+            print(status)
 
     def set_list_timing(self, hold: float, delay: float) -> None:
         """Set the timing parameters for list sweeps.
