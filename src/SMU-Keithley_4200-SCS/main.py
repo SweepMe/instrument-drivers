@@ -338,7 +338,7 @@ class Device(EmptyDevice):
                 list_sweep_values = np.array([])
             else:
                 # Remove leading and trailing quotes and commas
-                custom_values = custom_values.strip('"').strip("'").strip(",")
+                custom_values = custom_values.strip('"').strip("',")
                 list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
 
         else:
