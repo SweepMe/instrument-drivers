@@ -3,9 +3,10 @@
 ## Setup
 
 This driver can be used in three different ways:
-- Using the KXCI software running on the device and a GPIB connection.
-- Using the LPTlib server application running on the device and a TCP/IP connection. Download from https://sweep-me.net/dashboard (SweepMe account required). Setup as described in the LPTlib manual.
-- Running SweepMe! directly on the device. This requires the lptlib server to be running, but we can use localhost as the ip address. Set IP = localhost in 4200-Server.ini.
+- With KXCI: Start KXCI on the 4200 and connect via GPIB.
+- With the LPTlib server: Run the server on the device and connect via ethernet. The LPTlib server application and the corresponding manual can be found here: https://sweep-me.net/dashboard (SweepMe! account required).
+- Running SweepMe! directly on the device: This requires the LPTlib server as well, but we can use localhost as the ip address. Set IP = localhost in 4200-Server.ini.
+
 Please note that for the KXCI mode, some features like Pulse Mode, List Mode, and fast acquisition are not supported yet.
 
 ## Parameters
