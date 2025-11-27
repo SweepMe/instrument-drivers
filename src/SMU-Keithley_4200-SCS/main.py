@@ -28,6 +28,7 @@
 # SweepMe! driver
 # * Module: SMU
 # * Instrument: Keithley 4200-SCS
+
 from __future__ import annotations
 
 import contextlib
@@ -104,7 +105,7 @@ class Device(EmptyDevice):
             for prefix in ["m", "µ", "n", "p"]:
                 for number in [100, 10, 1]:
                     exponent = {"m": -3, "µ": -6, "n": -9, "p": -12}[prefix]
-                    value = number * 10**exponent
+                    value = number * 10 ** exponent
                     key = f"{mode} {number} {prefix}A"
                     self.current_ranges[key] = value
         self.current_range: str = "Auto"
@@ -336,9 +337,8 @@ class Device(EmptyDevice):
             if custom_values == "":
                 list_sweep_values = np.array([])
             else:
-                # Remove leading and trailing commas
-                custom_values = custom_values.strip(",")
-
+                # Remove leading and trailing quotes and commas
+                custom_values = custom_values.strip('"').strip("'").strip(",")
                 list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
 
         else:
@@ -411,31 +411,7 @@ class Device(EmptyDevice):
                 raise Exception(msg)
         else:
             self.command_set = "LPTlib"  # "US" user mode, "LPTlib", # check manual p. 677/1510
-
-            if "localhost" in self.port_string.lower():
-                tcp_ip = "localhost"
-                tcp_port = 8888
-
-            else:
-                tcp_ip_port = self.port_string[11:].strip()  # removing "LPTlib via "
-                tcp_ip_port_splitted = tcp_ip_port.split(":")  # in case a port is given
-
-                tcp_ip = tcp_ip_port_splitted[0]
-                tcp_port = int(tcp_ip_port_splitted[1]) if len(tcp_ip_port_splitted) == 2 else 8888
-
-            self.lpt = Proxy(tcp_ip, tcp_port, "lpt")
-            self.param = Proxy(tcp_ip, tcp_port, "param")
-
-            try:
-                self.lpt.initialize()
-            except ConnectionRefusedError as e:
-                msg = ("Unable to connect to a lptlib server application running on the 4200-SCS. Please check your"
-                       "network settings and make sure the server application is running.")
-                raise ConnectionRefusedError(msg) from e
-            except Exception as e:
-                msg = "Error during lpt.initialize"
-                raise Exception(msg) from e
-
+            self.connect_to_lptlib_server()
             self.card_id = self.lpt.getinstid(self.card_name)
 
     def initialize(self) -> None:
@@ -833,6 +809,33 @@ class Device(EmptyDevice):
         return [self.measured_voltage, self.measured_current]
 
     """ here, convenience functions start """
+
+    def connect_to_lptlib_server(self) -> None:
+        """Connect to the LPTlib server running on the 4200-SCS device."""
+        if "localhost" in self.port_string.lower():
+            # SweepMe! is running on the 4200-SCS device
+            tcp_ip = "localhost"
+            tcp_port = 8888
+
+        else:
+            tcp_ip_port = self.port_string[11:].strip()  # removing "LPTlib via "
+            tcp_ip_port_split = tcp_ip_port.split(":")  # in case a port is given
+
+            tcp_ip = tcp_ip_port_split[0]
+            tcp_port = int(tcp_ip_port_split[1]) if len(tcp_ip_port_split) == 2 else 8888
+
+        self.lpt = Proxy(tcp_ip, tcp_port, "lpt")
+        self.param = Proxy(tcp_ip, tcp_port, "param")
+
+        try:
+            self.lpt.initialize()
+        except ConnectionRefusedError as e:
+            msg = ("Unable to connect to a lptlib server application running on the 4200-SCS. Please check your"
+                   "network settings and make sure the server application is running.")
+            raise ConnectionRefusedError(msg) from e
+        except Exception as e:
+            msg = "Error during lpt.initialize"
+            raise Exception(msg) from e
 
     def configure_pulse(self) -> None:
         """Configure pulses for pulse mode."""
