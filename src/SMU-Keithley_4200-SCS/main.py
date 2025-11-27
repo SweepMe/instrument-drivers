@@ -28,11 +28,10 @@
 # SweepMe! driver
 # * Module: SMU
 # * Instrument: Keithley 4200-SCS
+
 from __future__ import annotations
 
 import contextlib
-import ctypes as c
-import platform
 import time
 from pathlib import Path
 
@@ -43,49 +42,15 @@ from pysweepme.ErrorMessage import debug
 
 FolderManager.addFolderToPATH()
 
+# This driver only works with the pylptlib server running on the 4200-SCS device. Get it here: https://sweep-me.net/dashboard
+# Communication with the server is done via the ProxyClass
 
-def running_on_device() -> bool:
-    """Check if the driver is executed directly on the Keithley 4200-SCS hardware by trying to import the lptlib.dll."""
-    dll_path = r"C:\s4200\sys\bin\lptlib.dll"
+import importlib
+import ProxyClass
 
-    # If Clarius is not installed and the dll is not available, the driver is not running on the device
-    if not Path(dll_path).exists():
-        return False
+importlib.reload(ProxyClass)
 
-    # If the dll is available and can be imported, the driver is running on the device
-    try:
-        _dll = c.WinDLL(dll_path)
-    except:
-        # if the dll is available but cannot be imported, check the Python interpreter bitness
-        if platform.architecture()[0] != "32bit":
-            print(
-                "Keithley 4200-SCS: Installation of Clarius detected, but lptlib.dll cannot be loaded. Using remote "
-                "control via LPTlib server instead. If you are trying to run the driver directly on the device, use "
-                "32-Bit version of Python/SweepMe!.",
-            )
-            return False
-
-        return False
-
-    return True
-
-
-RUNNING_ON_4200SCS = running_on_device()
-
-if RUNNING_ON_4200SCS:
-    # import LPT library functions
-    # import LPT library instrument IDs
-    # not available yet -> # from pylptlib import inst
-    # import LPT library parameter constants
-    from pylptlib import lpt, param
-else:
-    import importlib
-
-    import ProxyClass
-
-    importlib.reload(ProxyClass)
-
-    from ProxyClass import Proxy
+from ProxyClass import Proxy
 
 
 class Device(EmptyDevice):
@@ -120,10 +85,9 @@ class Device(EmptyDevice):
         self.plottype = [True, True]  # True to plot data
         self.savetype = [True, True]  # True to save data
 
-        if not RUNNING_ON_4200SCS:
-            self.port_types = ["GPIB", "TCPIP"]
-            # needed to make the code working with pysweepme where port_manager is only used from __init__
-            self.port_manager = True
+        self.port_types = ["GPIB", "TCPIP"]
+        # needed to make the code working with pysweepme where port_manager is only used from __init__
+        self.port_manager = True
 
         self.port_properties = {
             "EOL": "\r\n",
@@ -133,32 +97,18 @@ class Device(EmptyDevice):
         }
 
         # unclear whether all ranges exist as the documentation does not get clear about it
-        self.current_range: str = "Auto"
         self.current_ranges = {
             "Auto": 0,
-            "Fixed 10 mA": 1e-2,
-            "Fixed 1 mA": 1e-3,
-            "Fixed 100 µA": 1e-4,
-            "Fixed 10 µA": 1e-5,
-            "Fixed 1 µA": 1e-6,
-            "Fixed 100 nA": 1e-7,
-            "Fixed 10 nA": 1e-8,
-            "Fixed 1 nA": 1e-9,
-            "Fixed 100 pA": 1e-10,
-            "Fixed 10 pA": 1e-11,
-            "Fixed 1 pA": 1e-12,
-            "Limited 10 mA": 1e-2,
-            "Limited 1 mA": 1e-3,
-            "Limited 100 µA": 1e-4,
-            "Limited 10 µA": 1e-5,
-            "Limited 1 µA": 1e-6,
-            "Limited 100 nA": 1e-7,
-            "Limited 10 nA": 1e-8,
-            "Limited 1 nA": 1e-9,
-            "Limited 100 pA": 1e-10,
-            "Limited 10 pA": 1e-11,
-            "Limited 1 pA": 1e-12,
         }
+        # Add current ranges from 1 pA to 100 mA for limited and fixed mode
+        for mode in ["Fixed", "Limited"]:
+            for prefix in ["m", "µ", "n", "p"]:
+                for number in [100, 10, 1]:
+                    exponent = {"m": -3, "µ": -6, "n": -9, "p": -12}[prefix]
+                    value = number * 10 ** exponent
+                    key = f"{mode} {number} {prefix}A"
+                    self.current_ranges[key] = value
+        self.current_range: str = "Auto"
 
         self.speed_dict = {
             "Very fast": 0.01,
@@ -175,8 +125,8 @@ class Device(EmptyDevice):
         self.command_set: str = "LPTlib"
         self.card_id: int = 1
 
-        self.lpt: lpt | Proxy | None = None
-        self.param: param | Proxy | None = None
+        self.lpt: Proxy | None = None
+        self.param: Proxy | None = None
 
         # Measurement parameter
         self.route_out: str = "Rear"
@@ -189,6 +139,7 @@ class Device(EmptyDevice):
         self.delay_factor: str = "0"
         self.filter_factor: str = "0"
         self.ad_aperture_time: str = "0.01"
+        self.averages: str = "1"
 
         self.card_name = "SMU" + self.channel[-1]
         self.pulse_channel = None
@@ -235,7 +186,10 @@ class Device(EmptyDevice):
     @staticmethod
     def find_ports() -> list[str]:
         """Find available ports."""
-        return ["LPTlib"] if RUNNING_ON_4200SCS else ["LPTlib via xxx.xxx.xxx.xxx"]
+        # If the lptlib.dll exists, the driver is probably running on the device.
+        # Exemption: If Clarius is installed on the PC running SweepMe!, the dll also exists there.
+        dll_path = r"C:\s4200\sys\bin\lptlib.dll"
+        return ["LPTlib via localhost"] if Path(dll_path).exists() else ["LPTlib via xxx.xxx.xxx.xxx"]
 
     def update_gui_parameters(self, parameters: dict) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
@@ -304,6 +258,12 @@ class Device(EmptyDevice):
             self.delay_factor = parameters.get("Delay factor", "0")
             self.filter_factor = parameters.get("Filter factor", "0")
             self.ad_aperture_time = parameters.get("A/D aperture time", "0.01")
+
+        # Reset returned values and units
+        self.variables = ["Voltage", "Current"]
+        self.units = ["V", "A"]
+        self.plottype = [True, True]
+        self.savetype = [True, True]
 
         # Pulse Mode Parameters
         self.pulse_master = False
@@ -377,9 +337,8 @@ class Device(EmptyDevice):
             if custom_values == "":
                 list_sweep_values = np.array([])
             else:
-                # Remove leading and trailing commas
-                custom_values = custom_values.strip(",")
-
+                # Remove leading and trailing quotes and commas
+                custom_values = custom_values.strip('"').strip("',")
                 list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
 
         else:
@@ -452,35 +411,7 @@ class Device(EmptyDevice):
                 raise Exception(msg)
         else:
             self.command_set = "LPTlib"  # "US" user mode, "LPTlib", # check manual p. 677/1510
-
-            if not RUNNING_ON_4200SCS:
-                # overwriting the communication classes with Proxy classes
-                tcp_ip_port = self.port_string[11:].strip()  # removing "LPTlib via "
-                tcp_ip_port_splitted = tcp_ip_port.split(":")  # in case a port is given
-
-                tcp_ip = tcp_ip_port_splitted[0]
-                tcp_port = int(tcp_ip_port_splitted[1]) if len(tcp_ip_port_splitted) == 2 else 8888
-
-                self.lpt = Proxy(tcp_ip, tcp_port, "lpt")
-                # not supported yet with pylptlib -> # self.inst = Proxy(tcp_ip, tcp_port, "inst")
-                self.param = Proxy(tcp_ip, tcp_port, "param")
-
-            else:
-                # we directly use pylptlib
-                self.lpt = lpt
-                # not supported yet with pylptlib -> # self.inst = inst
-                self.param = param
-
-            try:
-                self.lpt.initialize()
-            except ConnectionRefusedError as e:
-                msg = ("Unable to connect to a lptlib server application running on the 4200-SCS. Please check your"
-                       "network settings and make sure the server application is running.")
-                raise ConnectionRefusedError(msg) from e
-            except Exception as e:
-                msg = "Error during lpt.initialize"
-                raise Exception(msg) from e
-
+            self.connect_to_lptlib_server()
             self.card_id = self.lpt.getinstid(self.card_name)
 
     def initialize(self) -> None:
@@ -610,10 +541,10 @@ class Device(EmptyDevice):
 
             # Current Range - the KXCI implementation has not been tested yet
             current_range_float = self.current_ranges[self.current_range]
-            if "Limited" in self.current_range:
+            if "limited" in self.current_range.lower():
                 self.set_current_range_limited(self.card_name[-1], current_range_float)
 
-            elif self.current_range == "Auto":
+            elif "auto" in self.current_range.lower():
                 # Use the lowest current range for auto-ranging
                 self.set_current_range_limited(self.card_name[-1], 0)
 
@@ -663,10 +594,10 @@ class Device(EmptyDevice):
 
         # Current Range
         current_range_value = self.current_ranges[self.current_range]
-        if self.current_range == "Auto" or "Limited" in self.current_range:
+        if "auto" in self.current_range.lower() or "limited" in self.current_range.lower():
             self.lpt.rangei(self.card_id, 0)  # auto-ranging
 
-            if "Limited" in self.current_range:
+            if "limited" in self.current_range.lower():
                 self.lpt.lorangei(self.card_id, current_range_value)  # minimum current range for auto-ranging
         else:
             self.lpt.rangei(self.card_id, current_range_value)  # fixed range
@@ -878,6 +809,33 @@ class Device(EmptyDevice):
         return [self.measured_voltage, self.measured_current]
 
     """ here, convenience functions start """
+
+    def connect_to_lptlib_server(self) -> None:
+        """Connect to the LPTlib server running on the 4200-SCS device."""
+        if "localhost" in self.port_string.lower():
+            # SweepMe! is running on the 4200-SCS device
+            tcp_ip = "localhost"
+            tcp_port = 8888
+
+        else:
+            tcp_ip_port = self.port_string[11:].strip()  # removing "LPTlib via "
+            tcp_ip_port_split = tcp_ip_port.split(":")  # in case a port is given
+
+            tcp_ip = tcp_ip_port_split[0]
+            tcp_port = int(tcp_ip_port_split[1]) if len(tcp_ip_port_split) == 2 else 8888
+
+        self.lpt = Proxy(tcp_ip, tcp_port, "lpt")
+        self.param = Proxy(tcp_ip, tcp_port, "param")
+
+        try:
+            self.lpt.initialize()
+        except ConnectionRefusedError as e:
+            msg = ("Unable to connect to a lptlib server application running on the 4200-SCS. Please check your"
+                   "network settings and make sure the server application is running.")
+            raise ConnectionRefusedError(msg) from e
+        except Exception as e:
+            msg = "Error during lpt.initialize"
+            raise Exception(msg) from e
 
     def configure_pulse(self) -> None:
         """Configure pulses for pulse mode."""
