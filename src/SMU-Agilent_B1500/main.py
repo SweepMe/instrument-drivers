@@ -39,36 +39,6 @@ import time
 
 
 class Device(EmptyDevice):
-    description = """<div class="device-description">
-      <h3>Agilent B1500A - Semiconductor Parameter Analyzer</h3>
-    
-      <p><strong>Overview</strong>: This driver controls the Agilent B1500A for single measurements and synchronized list sweeps. It exposes voltage/current sources, measurement timing and list sweep features used for multi‑channel experiments.</p>
-    
-      <h4>Prerequisites</h4>
-      <ul>
-        <li>The helper application \"Start EasyExpert\" must be running on the PC. Before running sweeps, minimize IO Control and close any active EasyExpert GUI instances to avoid resource conflicts.</li>
-        <li>Ensure the correct GPIB/USB port is selected and the instrument is powered and addressed.</li>
-        <li>Installation of Keysight IO Suite. Version 2025 does not work, but the driver has been tested with Keysight IO 2023 Update 1.</li>
-      </ul>
-    
-      <h4>List Mode (synchronized multi‑channel sweeps)</h4>
-      <ul>
-        <li>When using list mode, the device returns the programmed source values (not measured source values).</li>
-        <li>A branch can contain multiple channels; if any channel in a branch uses list mode, the whole branch is treated as a list sweep.</li>
-        <li>Single‑value channels inside a list branch produce lists where start = stop = value.</li>
-        <li>All channels participating in the same list sweep must share the same list length, hold time and delay time.</li>
-        <li>Timestamps are provided and are normalized relative to the list master channel.</li>
-        <li>For longer measurements the timeout might not be sufficient. Create a custom driver version and increase self.port_properties = {
-            "timeout": 30}.</li>
-      </ul>
-    
-      <h4>Usage guidance</h4>
-      <ul>
-        <li>Use list mode for synchronized, multi‑channel acquisitions (e.g. concurrent source/measure sequences).</li>
-        <li>Use single measurement mode for isolated, on‑demand readings.</li>
-        <li>Check range, compliance and averaging settings before starting a sweep to avoid measurement errors or instrument protection trips.</li>
-      </ul>
-    </div>"""
 
     def __init__(self):
 
