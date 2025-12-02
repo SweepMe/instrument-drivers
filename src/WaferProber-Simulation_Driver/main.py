@@ -167,11 +167,11 @@ class Device(EmptyDevice):
         """Return the measurement results. Must return as many values as defined in self.variables."""
         # Split die coordinate string into x- and y-integers to allow for a simple heatmap
         try:
-            x_str, y_str = self.current_die.split(',')
+            x_str, y_str = self.current_die.split(",")
             self.current_die_x = int(x_str)
             self.current_die_y = int(y_str)
         except ValueError:
-            raise ValueError(f"Die-Koordinaten '{self.current_die}' konnten nicht geparst werden. Erwartetes Format 'x,y' mit Ganzzahlen.")
+            raise ValueError("Die coordinates of the die need to be integers in the format 'x,y'.")
 
         return (self.current_wafer,
                 self.current_die,
