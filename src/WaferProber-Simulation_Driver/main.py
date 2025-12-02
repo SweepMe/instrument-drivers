@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -42,10 +42,11 @@ class Device(EmptyDevice):
         EmptyDevice.__init__(self)
 
         self.shortname = "Simulation"  # short name will be shown in the sequencer
-        self.variables = ["Wafer", "Die", "Subsite", "skip"]  # The variables that can be measured by the device
-        self.units = ["", "", "", ""]
-        self.plottype = [True, True, True, True]
-        self.savetype = [True, True, True, True]
+        # The variables that can be measured by the device:
+        self.variables = ["Wafer", "Die", "Die_x", "Die_y", "Subsite", "skip"]
+        self.units = ["", "", "", "", "", ""]
+        self.plottype = [True, True, True, True, True, True]
+        self.savetype = [True, True, True, True, True, True]
 
         # use/uncomment the next line to use the port manager
         # self.port_manager = True
@@ -56,6 +57,8 @@ class Device(EmptyDevice):
 
         self.current_wafer: str = ""
         self.current_die: str = ""
+        self.current_die_x: int = 0
+        self.current_die_y: int = 0
         self.current_subsite: str = ""
 
     def find_ports(self) -> list[str]:
@@ -160,6 +163,19 @@ class Device(EmptyDevice):
     def reach(self) -> None:
         """'reach' can be added to make sure the latest setvalue applied during 'apply' is reached."""
 
-    def call(self) -> tuple[str, str, str, bool]:
+    def call(self) -> tuple[str, str, int, int, str, bool]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        return self.current_wafer, self.current_die, self.current_subsite, self.skip
+        # Split die coordinate string into x- and y-integers to allow for a simple heatmap
+        try:
+            x_str, y_str = self.current_die.split(",")
+            self.current_die_x = int(x_str)
+            self.current_die_y = int(y_str)
+        except ValueError:
+            raise ValueError("Die coordinates of the die need to be integers in the format 'x,y'.")
+
+        return (self.current_wafer,
+                self.current_die,
+                self.current_die_x,
+                self.current_die_y,
+                self.current_subsite,
+                self.skip)
