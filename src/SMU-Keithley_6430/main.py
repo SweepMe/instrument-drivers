@@ -71,7 +71,14 @@ class Device(EmptyDevice):
         self.channel: int = 1
         self.sweep_mode: str = "None"
         self.compliance: float = 0.0
+        self.speeds: dict[str, float] = {
+            "Fast": 0.01,
+            "Medium": 0.1,
+            "Slow": 1.0,
+            "Very Slow": 10.0,
+        }
         self.speed: float = 1.0  # NPLC
+        self.averages: int = 1
         self.measured_current: float = 0.0
         self.measured_voltage: float = 0.0
 
@@ -105,7 +112,8 @@ class Device(EmptyDevice):
             "Compliance": 0.0,
             "Range": list(self.current_measurement_ranges.keys()),
             "RangeVoltage": list(self.voltage_measurement_ranges.keys()),
-            "Speed": 1.0,
+            "Speed": list(self.speeds.keys()),
+            "Average": 1,
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
@@ -118,8 +126,14 @@ class Device(EmptyDevice):
 
         # TODO: Allow other values
         self.current_measurement_range = self.current_measurement_ranges[parameters.get("Range", "Auto")]
-        self.voltage_measurement_ranges = self.voltage_measurement_ranges[parameters.get("RangeVoltage", "Auto")]
-        self.speed = float(parameters.get("Speed", 1.0))
+        self.voltage_measurement_range = self.voltage_measurement_ranges[parameters.get("RangeVoltage", "Auto")]
+
+        try:
+            self.speed = self.speeds[parameters.get("Speed", "Medium")]
+        except KeyError:
+            self.speed = float(parameters.get("Speed", 1.0))
+
+        self.averages = int(float(parameters.get("Average", 1)))
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -144,6 +158,8 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
+        self.port.write("SYSTem:BEEPer:STATe OFF")  # turn off beeper
+
         # set compliance, range and speed
         if self.sweep_mode.startswith("Voltage"):
             self.set_compliance_current(self.compliance)
@@ -159,7 +175,21 @@ class Device(EmptyDevice):
 
             self.port.write("SOURce:CURRent:MODE FIXed")  # Alternative: list, sweep
 
+        self.port.write("SENSe:FUNCtion:OFF:ALL")  # reset measurement functions
         self.set_measurement_functions(["VOLT", "CURR"])
+
+        self.port.query(":SENSe:FUNCtion:ON?")
+
+        if self.averages < 1 or self.averages > 100:
+            msg = f"Invalid average: {self.averages}. Averages must be between 1 and 100"
+            raise ValueError(msg)
+        if self.averages > 1:
+            # Moving filter average
+            self.port.write(f":SENSe:AVERage:COUNt {self.averages}")
+            self.port.write(":SENSe:AVERage:STATe ON")
+        else:
+            self.port.write(":SENSe:AVERage:STATe OFF")
+
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
@@ -171,20 +201,47 @@ class Device(EmptyDevice):
         elif self.sweep_mode.startswith("Current"):
             self.set_current(self.value)
 
+    def reach(self) -> None:
+        """'reach' is used to wait until the setvalue is reached. For most instruments, this is not needed."""
+        self.wait_for_complete()
+
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
-        self.port.write("TRIGger:IMMediate")
+        # self.port.write("TRIGger:INITiate:IMMediate")
+        self.port.write("INIT")
 
     def request_result(self) -> None:
         """Write command to ask the instrument to send measured data."""
         self.port.write("FETCh?")
+        # self.port.write("READ?")
 
     def read_result(self) -> None:
         """Read the measured data from a buffer that was requested during 'request_result'."""
+        # When using FETCh?, the response is a comma-separated list of values:
+        # voltage, current, resistance, time_stamp, status code
         results = self.port.read()
         values = results.split(",")
         self.measured_voltage = float(values[0])
         self.measured_current = float(values[1])
+
+        if self.measured_voltage >= 9.9E37:
+            self.measured_voltage = float("nan")
+        if self.measured_current >= 9.9E37:
+            self.measured_current = float("nan")
+
+        status_int = int(float(values[4]))
+        # Extract 24 bits
+        bits = [(status_int >> i) & 1 for i in range(24)]
+        status_bits = {
+            0: "Over range",
+            # 1: "Filter enabled",  # no error
+            3: "In compliance",  # 2 is not used
+            4: "Over voltage protection reached",
+            16: "In range compliance"
+        }
+        for bit_index, description in status_bits.items():
+            if bits[bit_index]:
+                print(f"Measurement status: {description}")
 
     def call(self) -> list:
         """Return the measurement results. Must return as many values as defined in self.variables."""
@@ -286,3 +343,7 @@ class Device(EmptyDevice):
                 continue
         # couldn't parse numeric value; raise error
         raise RuntimeError(f"Could not parse numeric measurement from response: '{raw}'")
+
+    def wait_for_complete(self) -> None:
+        """Waits for the operation queue to be completed."""
+        self.port.query("*OPC?")
