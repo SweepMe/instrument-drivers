@@ -33,14 +33,17 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
+    """Device class to implement functionalities of a Siglent SDG Series Function/Arbitrary Waveform Generator."""
 
-    def __init__(self):
-
-        EmptyDevice.__init__(self)
+    def __init__(self) -> None:
+        """Initialize the device class and the instrument parameters."""
+        super().__init__()
 
         self.port_manager = True
         self.port_types = ["USB", "TCPIP"]
@@ -62,7 +65,39 @@ class Device(EmptyDevice):
         self.plottype = [True]  # True to plot data
         self.savetype = [True]  # True to save data
 
-    def set_GUIparameter(self) -> dict:
+        # Sweep Parameters
+        self.channel: str = "C1"
+        self.sweep_mode: str = "None"
+
+        # Measurement Parameters
+        self.waveform: str = "Sine"
+
+        # Frequency / Period
+        self.period_or_frequency_mode: str = "Frequency in Hz"
+        self.period_or_frequency_value: float = 1000.0
+        self.frequency: float = 1000.0
+
+        # Amplitude / High-Low / Offset
+        self.amplitude_or_high_level_mode: str = "Amplitude in V"
+        self.amplitude_or_high_level_value: float = 1.0
+        self.amplitude: float = 1.0
+        self.offset_or_low_level_mode: str = "Offset in V"
+        self.offset_or_low_level_value: float = 0.0
+        self.offset: float = 0.0
+
+        # Noise specific
+        self.mean: float = 0.0
+        self.stdev: float = 0.1
+
+        self.duty_cycle_or_pulse_width_mode: str = "Duty cycle in %"
+        self.duty_cycle_or_pulse_width_value: float = 50.0
+        self.delay_or_phase_mode: str = "Delay in s"
+        self.delay_or_phase_value: float = 0.0
+        self.phase: float = 0.0
+
+        self.impedance: str = "High-Z"
+
+    def set_GUIparameter(self) -> dict[str, Any]:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
             "Channel": ["CH1", "CH2"],
@@ -96,23 +131,24 @@ class Device(EmptyDevice):
             # "Trigger": ["Not supported yet"]
         }
 
-    def get_GUIparameter(self, parameter={}):
+    def get_GUIparameter(self, parameter: dict[str, Any]) -> None:
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         # Channel Names have to be {C1, C2}
         self.channel = "C" + parameter['Channel'][-1]
         self.sweep_mode = parameter['SweepMode']
         self.waveform = parameter['Waveform']
-        self.periodfrequency = parameter['PeriodFrequency']
-        self.periodfrequencyvalue = float(parameter['PeriodFrequencyValue'])
-        self.amplitudehilevel = parameter['AmplitudeHiLevel']
-        self.amplitudehilevelvalue = float(parameter['AmplitudeHiLevelValue'])
-        self.offsetlolevel = parameter['OffsetLoLevel']
-        self.offsetlolevelvalue = float(parameter['OffsetLoLevelValue'])
+        self.period_or_frequency_mode = parameter['PeriodFrequency']
+        self.period_or_frequency_value = float(parameter['PeriodFrequencyValue'])
+        self.amplitude_or_high_level_mode = parameter['AmplitudeHiLevel']
+        self.amplitude_or_high_level_value = float(parameter['AmplitudeHiLevelValue'])
+        self.offset_or_low_level_mode = parameter['OffsetLoLevel']
+        self.offset_or_low_level_value = float(parameter['OffsetLoLevelValue'])
         # TODO pulsewidth in ms or µs
-        self.dutycyclepulsewidth = parameter['DutyCyclePulseWidth']
-        self.dutycyclepulsewidthvalue = float(parameter['DutyCyclePulseWidthValue'])
+        self.duty_cycle_or_pulse_width_mode = parameter['DutyCyclePulseWidth']
+        self.duty_cycle_or_pulse_width_value = float(parameter['DutyCyclePulseWidthValue'])
         # TODO delay in ms or µs
-        self.delayphase = parameter['DelayPhase']
-        self.delayphasevalue = float(parameter['DelayPhaseValue'])
+        self.delay_or_phase_mode = parameter['DelayPhase']
+        self.delay_or_phase_value = float(parameter['DelayPhaseValue'])
         self.impedance = parameter['Impedance']
 
         self.shortname = 'SDG 2000X ' + self.channel
@@ -134,172 +170,183 @@ class Device(EmptyDevice):
             else:
                 self.units = ['V']
 
-    def initialize(self):
+    def update_generated_signal(self) -> None:
+        """Update the generated signal according to the current settings."""
+        self.calculate_frequency()
+        self.calculate_amplitude_and_offset()
+        self.calculate_phase()
 
-        pass
-        # self.port.write("*IDN?")
-        # print(self.port.read())
+        # Set waveform with standard parameters
+        if self.waveform not in ["Noise", "DC"]:
+            self.set_frequency(self.frequency)
 
-    def configure(self):
+            if self.waveform not in ["Pulse"]:
+                self.set_phase(self.phase)
 
-        # Setting the impedance / load of the channel
-        if self.impedance == "High-Z":
-            self.port.write(f"{self.channel}:OUTP LOAD,HZ")
-        if self.impedance == "50 Ohm":
-            self.port.write(f"{self.channel}:OUTP LOAD,50")
+        self.set_amplitude(self.amplitude)
+        self.set_offset(self.offset)
+        self.set_waveform(self.waveform)
 
-        # Handling alternative menu options
-
-        if self.periodfrequency == "Period in s":
-            self.frequency = 1.0 / self.periodfrequencyvalue
-        else:
-            self.frequency = self.periodfrequencyvalue
-
-        if self.amplitudehilevel == "Amplitude in V":
-            self.amplitude = self.amplitudehilevelvalue
-
-            if self.offsetlolevel == "Offset in V":
-                self.offset = self.offsetlolevelvalue
-            else:
-                self.offset = (self.amplitudehilevelvalue / 2.0 + self.offsetlolevelvalue)
-
-        else:
-            if self.offsetlolevel == "Offset in V":
-                self.amplitude = (self.amplitudehilevelvalue - self.offsetlolevelvalue) * 2.0
-                self.offset = self.offsetlolevelvalue
-            else:
-                self.amplitude = self.amplitudehilevelvalue - self.offsetlolevelvalue
-                self.offset = (self.amplitudehilevelvalue - self.offsetlolevelvalue) / 2.0
-
-        # mean level and standard deviation are used for noise signals
-        # TODO error handling if mean and stdev is used for uncompatible wavetypes
-        if self.amplitudehilevel == "Mean in V":
-            self.mean = self.amplitudehilevelvalue
-        if self.offsetlolevel == "Standard deviation in V":
-            self.stdev = self.offsetlolevelvalue
-
-        # Set waveform with standard parameters        
-        waveform_type = self.commands[self.waveform]
-        self.port.write(f"{self.channel}:BSWV "
-                        f"WVTP,{waveform_type},"
-                        f"FRQ,{self.frequency},"
-                        f"AMP,{self.amplitude},"
-                        f"OFST,{self.offset}")
-
-        # handling parameters only compatible with specific wavetypes
-        # TODO maybe error message if incompatible settings are chosen, however the device is very forgiving
+        # handling parameters only compatible with specific wave types
         if self.waveform == "Noise":
-            if not hasattr(self, 'mean') or not hasattr(self, 'stdev'):
-                raise Exception(f"Noise requires setting a Mean level in V and a Standard deviation in V!")
-
+            if self.amplitude_or_high_level_mode != "Mean in V" or self.offset_or_low_level_mode != "Standard deviation in V":
+                raise Exception("Mean and Standard Deviation have to be selected for Noise waveform.")
             self.port.write(f"{self.channel}:BSWV MEAN,{self.mean},STDEV,{self.stdev}")
 
         elif self.waveform == "Pulse":
-            if self.dutycyclepulsewidth == "Pulse width in s":
-                self.port.write(f"{self.channel}:BSWV WIDTH,{self.dutycyclepulsewidthvalue}")
-            elif self.dutycyclepulsewidth == "Duty cycle in %":
-                self.port.write(f"{self.channel}:BSWV DUTY,{self.dutycyclepulsewidthvalue}")
+            if self.duty_cycle_or_pulse_width_mode == "Pulse width in s":
+                self.set_pulse_width(self.duty_cycle_or_pulse_width_value)
+            elif self.duty_cycle_or_pulse_width_mode == "Duty cycle in %":
+                self.set_duty_cycle(self.duty_cycle_or_pulse_width_value)
 
         elif self.waveform == "Square":
-            if self.dutycyclepulsewidth == "Duty cycle in %":
-                self.port.write(f"{self.channel}:BSWV DUTY,{self.dutycyclepulsewidthvalue}")
+            if self.duty_cycle_or_pulse_width_mode == "Duty cycle in %":
+                self.set_duty_cycle(self.duty_cycle_or_pulse_width_value)
 
-        if self.delayphase == "Delay in s":
-            self.phase = self.delayphasevalue * self.frequency * 360.0
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
+        self.set_impedance(self.impedance)
+        self.update_generated_signal()
 
-        elif self.delayphase == "Phase in deg":
-            self.phase = self.delayphasevalue
-
-        if waveform_type != "DC":
-            self.port.write(f"{self.channel}:BSWV PHSE,{self.phase}")
-
-    def deinitialize(self):
-        pass
-
-    def poweron(self):
+    def poweron(self) -> None:
+        """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
         self.port.write(f"{self.channel}:OUTP ON")
 
-    def poweroff(self):
+    def poweroff(self) -> None:
+        """Turn off the device when leaving a sequencer branch."""
         self.port.write(f"{self.channel}:OUTP OFF")
 
-    def apply(self):
+    def apply(self) -> None:
+        """Update the generated signal according to the current sweep value."""
+        if self.sweep_mode == "None":
+            return
 
-        if self.sweep_mode != 'None':
+        self.update_signal_parameters_with_sweep_value()
+        self.update_generated_signal()
 
-            # updating values from sweep table 
-            if self.sweep_mode == "Frequency in Hz":
-                self.periodfrequency = "Frequency in Hz"
-                self.periodfrequencyvalue = self.value
+    def update_signal_parameters_with_sweep_value(self) -> None:
+        """Update the signal parameters according to the current sweep mode and value."""
+        if self.sweep_mode == "Frequency in Hz":
+            self.period_or_frequency_mode = "Frequency in Hz"
+            self.period_or_frequency_value = self.value
 
-            elif self.sweep_mode == "Period in s":
-                self.periodfrequency = "Frequency in Hz"
-                self.periodfrequencyvalue = 1.0 / self.value
+        elif self.sweep_mode == "Period in s":
+            self.period_or_frequency_mode = "Frequency in Hz"
+            self.period_or_frequency_value = 1.0 / self.value
 
-            elif self.sweep_mode == "Amplitude in V":
-                self.amplitudehilevel = "Amplitude in V"
-                self.amplitudehilevelvalue = self.value
+        elif self.sweep_mode == "Amplitude in V":
+            self.amplitude_or_high_level_mode = "Amplitude in V"
+            self.amplitude_or_high_level_value = self.value
 
-            elif self.sweep_mode == "High level in V":
-                self.amplitudehilevel = "High Level in V"
-                self.amplitudehilevelvalue = self.value
+        elif self.sweep_mode == "High level in V":
+            self.amplitude_or_high_level_mode = "High Level in V"
+            self.amplitude_or_high_level_value = self.value
 
-            elif self.sweep_mode == "Offset in V":
-                self.offsetlolevel = "Offset in V"
-                self.offsetlolevelvalue = self.value
+        elif self.sweep_mode == "Offset in V":
+            self.offset_or_low_level_mode = "Offset in V"
+            self.offset_or_low_level_value = self.value
 
-            elif self.sweep_mode == "Low level V":
-                self.offsetlolevel = "Low level in V"
-                self.offsetlolevelvalue = self.value
+        elif self.sweep_mode == "Low level V":
+            self.offset_or_low_level_mode = "Low level in V"
+            self.offset_or_low_level_value = self.value
 
-            if self.periodfrequency == "Period in s":
-                self.frequency = 1.0 / self.periodfrequencyvalue
-            else:
-                self.frequency = self.periodfrequencyvalue
+        elif self.sweep_mode == "Pulse width in s":
+            self.duty_cycle_or_pulse_width_value = self.value
 
-            # Recalculating amplitudes and offset
-            if self.amplitudehilevel == "Amplitude in V":
-                self.amplitude = self.amplitudehilevelvalue
+        elif self.sweep_mode == "Duty cycle in %":
+            self.duty_cycle_or_pulse_width_value = self.value
 
-                if self.offsetlolevel == "Offset in V":
-                    self.offset = self.offsetlolevelvalue
-                else:
-                    self.offset = (self.amplitudehilevelvalue / 2.0 + self.offsetlolevelvalue)
-            else:
-                if self.offsetlolevel == "Offset in V":
-                    self.amplitude = (self.amplitudehilevelvalue - self.offsetlolevelvalue) * 2.0
-                    self.offset = self.offsetlolevelvalue
-                else:
-                    self.amplitude = self.amplitudehilevelvalue - self.offsetlolevelvalue
-                    self.offset = (self.amplitudehilevelvalue + self.offsetlolevelvalue) / 2.0
-
-            self.port.write(f"{self.channel}:BSWV FRQ,{self.frequency},AMP,{self.amplitude},OFST,{self.offset}")
-
-            if self.sweep_mode == "Pulse width in s":
-                self.dutycyclepulsewidthvalue = self.value
-
-            elif self.sweep_mode == "Duty cycle in %":
-                self.dutycyclepulsewidthvalue = self.value
-
-            # Handling parameters compatible only with specific wavetypes
-
-            if self.waveform == "Pulse":
-                if self.dutycyclepulsewidth == "Pulse width in s":
-                    self.port.write(f"{self.channel}:BSWV WIDTH,{self.dutycyclepulsewidthvalue}")
-                if self.dutycyclepulsewidth == "Duty cycle in %":
-                    self.port.write(f"{self.channel}:BSWV DUTY,{self.dutycyclepulsewidthvalue}")
-
-            elif self.waveform == "Square":
-                if self.dutycyclepulsewidth == "Duty cycle in %":
-                    self.port.write(f"{self.channel}:BSWV DUTY,{self.dutycyclepulsewidthvalue}")
-
-            if self.sweep_mode == "Delay in s":
-                self.phase = self.value * self.frequency * 360.0
-                self.port.write(f"{self.channel}:BSWV PHSE,{self.phase}")
-
-            elif self.sweep_mode == "Phase in deg":
-                self.phase = self.value
-                self.port.write(f"{self.channel}:BSWV PHSE,{self.phase}")
-
-    def call(self):
+    def call(self) -> float | None:
         if self.sweep_mode != 'None':
             return float(self.value)
+        return None
+
+    # Convenience Functions
+
+    def calculate_frequency(self) -> None:
+        """Handle frequency and period settings."""
+        if self.period_or_frequency_mode == "Period in s":
+            self.frequency = 1.0 / self.period_or_frequency_value
+        else:
+            self.frequency = self.period_or_frequency_value
+
+    def calculate_amplitude_and_offset(self) -> None:
+        """Handle amplitude/high level and offset/low level settings."""
+        if self.amplitude_or_high_level_mode == "Amplitude in V":
+            self.amplitude = self.amplitude_or_high_level_value
+
+            if self.offset_or_low_level_mode == "Offset in V":
+                self.offset = self.offset_or_low_level_value
+            else:
+                self.offset = (self.amplitude_or_high_level_value / 2.0 + self.offset_or_low_level_value)
+
+        elif self.amplitude_or_high_level_mode == "High level in V":
+            if self.offset_or_low_level_mode == "Offset in V":
+                self.amplitude = (self.amplitude_or_high_level_value - self.offset_or_low_level_value) * 2.0
+                self.offset = self.offset_or_low_level_value
+            else:
+                self.amplitude = self.amplitude_or_high_level_value - self.offset_or_low_level_value
+                self.offset = (self.amplitude_or_high_level_value - self.offset_or_low_level_value) / 2.0
+
+        elif self.amplitude_or_high_level_mode == "Mean in V":
+            self.mean = self.amplitude_or_high_level_value
+            if self.offset_or_low_level_mode == "Standard deviation in V":
+                self.stdev = self.offset_or_low_level_value
+
+    def calculate_phase(self) -> None:
+        """Calculate phase from delay or vice versa."""
+        if self.delay_or_phase_mode == "Delay in s":
+            self.phase = self.delay_or_phase_value * self.frequency * 360.0
+
+        elif self.delay_or_phase_mode == "Phase in deg":
+            self.phase = self.delay_or_phase_value
+
+    # Wrapped Functions
+
+    def get_identification(self) -> str:
+        """Get the identification string of the instrument."""
+        return self.port.query("*IDN?")
+
+    def set_impedance(self, impedance: str) -> None:
+        """Set the output impedance of the selected channel."""
+        if impedance.lower().startswith("high"):
+            self.port.write(f"{self.channel}:OUTP LOAD,HZ")
+        elif impedance.lower().startswith("50"):
+            self.port.write(f"{self.channel}:OUTP LOAD,50")
+
+    def set_phase(self, phase: float) -> None:
+        """Set the phase in degrees of the selected channel."""
+        if self.waveform in ["DC", "Noise", "Pulse"]:
+            raise Exception("Phase cannot be set for DC, Pulse, or Noise waveforms.")
+        self.port.write(f"{self.channel}:BSWV PHSE,{phase}")
+
+    def set_pulse_width(self, pulse_width: float) -> None:
+        """Set the pulse width in s of the selected channel."""
+        if self.waveform != "Pulse":
+            raise Exception("Pulse width can only be set for Pulse waveforms.")
+        self.port.write(f"{self.channel}:BSWV WIDTH,{pulse_width}")
+
+    def set_duty_cycle(self, duty_cycle: float) -> None:
+        """Set the duty cycle in % of the selected channel."""
+        if self.waveform != "Pulse" and self.waveform != "Square":
+            raise Exception("Duty cycle can only be set for Pulse or Square waveforms.")
+        if duty_cycle < 0.0 or duty_cycle > 100.0:
+            raise Exception("Duty cycle must be between 0 and 100 %.")
+        self.port.write(f"{self.channel}:BSWV DUTY,{duty_cycle}")
+
+    def set_frequency(self, frequency: float) -> None:
+        """Set the frequency in Hz of the selected channel."""
+        self.port.write(f"{self.channel}:BSWV FREQ,{frequency}")
+
+    def set_amplitude(self, amplitude: float) -> None:
+        """Set the amplitude in V of the selected channel."""
+        self.port.write(f"{self.channel}:BSWV AMP,{amplitude}")
+
+    def set_offset(self, offset: float) -> None:
+        """Set the offset in V of the selected channel."""
+        self.port.write(f"{self.channel}:BSWV OFST,{offset}")
+
+    def set_waveform(self, waveform: str) -> None:
+        """Set the waveform type of the selected channel."""
+        waveform_type = self.commands[waveform]
+        self.port.write(f"{self.channel}:BSWV WVTP,{waveform_type}")
