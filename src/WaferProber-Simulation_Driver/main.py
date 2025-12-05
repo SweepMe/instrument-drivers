@@ -43,7 +43,7 @@ class Device(EmptyDevice):
 
         self.shortname = "Simulation"  # short name will be shown in the sequencer
         # The variables that can be measured by the device:
-        self.variables = ["Wafer", "Die", "Die_x", "Die_y", "Subsite", "skip"]
+        self.variables = ["Wafer", "Die", "Die X", "Die Y", "Subsite", "Skip"]
         self.units = ["", "", "", "", "", ""]
         self.plottype = [True, True, True, True, True, True]
         self.savetype = [True, True, True, True, True, True]
