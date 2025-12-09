@@ -33,46 +33,61 @@
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
-
-    ## here you can add html formatted description to your device class that is shown by modules like 'Logger' or 'Switch' that have a description field.
-    description =   """
-    <p><strong>VM-10 module of LakeShore M81:</strong></p>
-    <ul>
-    <li>Log voltage using the VM-10 module of the LakeShore M81 Synchronous Source Measurement System.</li>
-    <li>Three physical measurement channels are available at the M81. Connect your VM-10 module to one of them.</li>
-    <li>Select the corresponding channel number in SweepMe!</li> 
-    </ul>"""
-
     def __init__(self):
         EmptyDevice.__init__(self)
-        
-        self.port_manager = True 
+
+        self.port_manager = True
            
         self.port_types = ["COM", "GPIB", "TCPIP"]
         
         self.port_properties = {
                                 "baudrate": 921600,
                                 "EOL": "\n",
-                                "timeout": 1,
+                                "timeout": 15,
                                 }
-            
+
+        self.modes = {  # Possible measurement modes
+            "DC": "DC"
+            ,"AC": "RMS"
+            #,"Lockin": "LIA"  Not yet implemented by SweepMe!
+        }
+
+        self.range_limits = {  # Voltage range limits in V
+            "10 mV (7.07 mV RMS)" : 0.01,
+            "100 mV (70.7 mV RMS)": 0.1,
+            "1 V (707 mV RMS)": 1,
+            "10 V (7.07 V RMS)": 10
+        }
+
+        self.input_configurations = {  # Possible input configurations
+            "A-B": "AB",
+            "A": "A",
+            "Ground": "GROund"
+        }
+
+        # Measurement Parameters
+        self.slot: str = "M0"
+        self.port_string: str = ""
+        self.nplc: float = 0.1  # Averaging time in Number of Power-Line-Cycles (i.e. 1/50 s)
+        self.mode_set: str = ""  # Direct or alternating current setting
+        self.mode_read: str = ""  # Read command depending on mode_set
+        self.range_mode: str = ""  # Automatic or manual setting of the range
+        self.limit: float = 10  # Manual range limit setting
+        self.input_config: str = "AB"  # Relation of the two inputs. See touch panel for explanation.
+        self.voltage: float = float('nan')  # Measured datapoints
             
     def update_gui_parameters(self, parameters):
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         gui_parameters = {"Channel": ["M1", "M2", "M3"],  # physical channels of the M81 System
-                        "Mode": ["DC", "AC"],  # Direct or alternating current
-                        "Range": ["Auto", "Manual"],  # Automatically set the range?
+                        "Mode": list(self.modes.keys()),
+                        "Range Mode": ["Auto", "Manual"],  # Automatically set the range?
         }
-        meas_range = parameters.get("Range")
-        if meas_range:  # Saveguard to avoid KeyError during startup, when gui parameters are being loaded
-            if meas_range == "Manual":  # Ask for manual range, only if not "Manual" is selected
-                gui_parameters["Manual range setting"] = [  # Settings for manual range, if not Auto
-                    "10 mV (7.07 mV RMS)",
-                    "100 mV (70.7 mV RMS)",
-                    "1 V (707 mV RMS)",
-                    "10 V (7.07 V RMS)"]
-        gui_parameters["Averaging Time (NPLC)"] = []  # Averaging time in Number of Power-Line-Cycles (i.e. 1/50 s)
-        gui_parameters["Input Configuration"] = ["A-B", "A", "Ground"]  # See touch panel for explanation
+        meas_range = parameters.get("Range Mode")
+        if meas_range:  # Safeguard to avoid KeyError during startup, when gui parameters are being loaded
+            if meas_range == "Manual":  # Ask for manual range, only if "Manual" is selected
+                gui_parameters["Manual range limit"] = list(self.range_limits.keys())  # Selection for manual range
+        gui_parameters["Averaging Time (NPLC)"] = 0.1
+        gui_parameters["Input Configuration"] = list(self.input_configurations.keys())
         return gui_parameters
 
 
@@ -80,55 +95,89 @@ class Device(EmptyDevice):
         self.slot = parameter["Channel"]
 
         self.port_string = parameter["Port"] # use this string to open the right port object later during 'connect'
-        self.mode = parameter["Mode"]
+        self.mode_set = parameter["Mode"]
+        self.mode_read = self.modes[self.mode_set]
+        self.range_mode = parameter["Range Mode"]
+        if parameter.get("Manual range limit"):
+            self.limit = self.range_limits[parameter["Manual range limit"]]
+
+        self.input_config = self.input_configurations[parameter["Input Configuration"]]
+
+        try:
+            self.nplc = float(parameter["Averaging Time (NPLC)"])
+        except ValueError:  # Catch case where parameter is not yet loaded
+            self.nplc = 0.1
 
         self.shortname = "VM-10 @ " + self.slot  # short name will be shown in the sequencer
 
-        self.variables = ["Voltage " + self.mode] # define as many variables you need
+        self.variables = ["Voltage " + self.mode_read] # Voltage DC or Voltage RMS, depending on mode
         self.units = ["V"] # make sure that you have as many units as you have variables
         self.plottype = [True]   # True to plot data, corresponding to self.variables
         self.savetype = [True]   # True to save data, corresponding to self.variables
 
-
-    def reconfigure(self, parameters={}, keys=[]):
-        if self.get_GUIparameter(self, "Range") == "Auto":
-            parameters = self.set_GUIparameter()
-            del parameters['Manual range setting']
-            self.update_gui_parameters(self, parameters)
-
-  
     """ here, semantic standard functions start that are called by SweepMe! during a measurement """
         
     def connect(self):
-        
-        self.port.write("*IDN?")
-        res = self.port.read()
-            
+        pass
 
     def disconnect(self):
         pass
-        
 
     def initialize(self):
-        pass
-        
-    
+        self.check_device()
+        self.port.write(f'SENSe{self.slot[1]}:PRESet')  # Load power-on defaults
+
     def deinitialize(self):
         # called only once at the end of the measurement
-        print("deinitialize")
-        
-        
+        pass
+
+    """ the following functions are called if a new branch is entered
+     and the module was not part of the previous branch """
+
+    def configure(self):
+        self.set_mode(self.mode_set)
+        self.set_range(self.limit)
+        self.set_nplc(self.nplc)
+        self.set_input_config(self.input_config)
+
     """ the following functions are called for each measurement point """
 
     def measure(self):
-        self.port.write(f"READ:SENS{self.slot[1]}:{self.mode}?")
+        self.port.write(f"READ:SENS{self.slot[1]}:{self.mode_read}?")
         
     def read_result(self):
         
         res = self.port.read()
-        self.current = float(res)
-        
+        self.voltage = float(res)
 
     def call(self):
-        return [self.current]
-        
+        return [self.voltage]
+
+    def set_mode(self, mode):
+        self.port.write(f'SENSe{self.slot[1]}:MODE {mode}')
+
+    def set_range(self, limit):
+        # Set range during initialize
+        if self.range_mode == "Manual":
+            self.port.write(f'SENSe{self.slot[1]}:VOLTage:RANGe:AUTO 0')  # Manual ranging
+            self.port.write(f'SENSe{self.slot[1]}:VOLTage:RANGe {limit}')
+        else:
+            self.port.write(f'SENSe{self.slot[1]}:VOLTage:RANGe:AUTO 1')  # Auto ranging
+
+    def set_nplc(self, nplc):
+        #Set averaging time during initialize
+        if not (600 >= nplc >= 0.01):
+            raise ValueError("NPLC must be between 0.01 and 600.00.")
+        self.port.write(f'SENSe{self.slot[1]}:NPLCycles {nplc}')
+
+    def set_input_config(self, input_config):       # Set input configuration during initialize
+        self.port.write(f'SENSe{self.slot[1]}:CONFiguration {input_config}')
+
+    def check_device(self):
+        # Check, if connected device is actually a VM-10 module:
+        model = self.port.query(f'SENSe{self.slot[1]}:MODel?')
+        if not model == '"VM-10"':
+            raise ValueError(
+                f"Device connected on channel {self.slot} does not match this driver. "
+                f"Found: '{model}'")
+
