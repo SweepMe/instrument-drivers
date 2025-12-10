@@ -29,93 +29,318 @@
 # * Module: Logger
 # * Instrument: LakeShore M81 CM-10
 
-
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from typing import Optional
 
 class Device(EmptyDevice):
-
-    ## here you can add html formatted description to your device class that is shown by modules like 'Logger' or 'Switch' that have a description field.
-    description =   """
-                    
-                    """
-
     def __init__(self):
         EmptyDevice.__init__(self)
-        
-        self.port_manager = True 
-           
-        self.port_types = ["COM", "GPIB", "TCPIP"]
-        
+
+        self.port_manager = True
+        self.port_types = ["COM", "GPIB", "TCPIP", "SOCKET"]
+
         self.port_properties = {
-                                "baudrate": 921600,
-                                "EOL": "\n",
-                                "timeout": 1,
-                                }
-            
-            
-    def set_GUIparameter(self):
-    
-        
-        GUIparameter = {
-                        "Channel": ["M1", "M2", "M3"],
-                        "Mode": ["DC", "AC"],
-                        }
+            "baudrate": 921600,
+            "EOL": "\n",
+            "timeout": 15,
+            "TCPIP_EOLwrite": "\n",
+            "TCPIP_EOLread": "\n",
+            "SOCKET_EOLwrite": "\n",
+            "SOCKET_EOLread": "\n",
+        }
 
-        
-        return GUIparameter
+        # Possible measurement modes
+        self.modes = {
+            "DC": "DC",
+            "AC": "RMS",
+            "Lock-In": "LIA",
+        }
 
-    def get_GUIparameter(self, parameter):
+        # Current range limits for the CM-10 in A
+        self.range_limits = {
+            "100 mA": 100e-3,
+            "10 mA": 10e-3,
+            "1 mA": 1e-3,
+            "100 µA": 100e-6,
+            "10 µA": 10e-6,
+            "1 µA": 1e-6,
+            "100 nA": 100e-9,
+            "10 nA": 10e-9,
+            "1 nA": 1e-9,
+        }
 
+        # Low pass corner frequency options for the CM-10 in Hz
+        self.cornerf_options = {
+            "None": "NONE",
+            "10 Hz": "F10",
+            "30 Hz": "F30",
+            "100 Hz": "F100",
+            "300 Hz": "F300",
+            "1 kHz": "F1000",
+            "3 kHz": "F3000",
+            "10 kHz": "F10000",
+        }
+
+        # Filter optimization modes for the CM-10
+        self.filter_types = {
+            "Lowest noise": "NOISe",
+            "Highest reserve": "REServe",
+        }
+
+        # Measurement Parameters
+        self.slot: str = "M0"
+        self.port_string: str = ""
+        self.nplc: float = 0.1
+        self.mode_set: str = ""
+        self.mode_read: str = ""
+        self.range_mode: str = ""
+        self.limit: float = 1e-9
+        self.use_bias: bool = False
+        self.bias_voltage: float = 0.0
+        self.current: float = float('nan')
+        self.lia_ref: str = "S0"
+        self.lia_harm: int = 1
+        self.lia_tc: float = 0.1
+        self.lia_rolloff: int = 6
+        #Todo self.lia_avg_filters
+        #ToDo self.lia_ref_phase_shift
+        self.advanced: bool = False
+        self.filter_on: bool = False
+        self.filter_type: str = "NOISe"
+        self.filter_cornerf: str = "NONE"
+        self.filter_rolloff: int = 6
+        self.darkmode: bool = False
+
+    def update_gui_parameters(self, parameters):
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+        gui_parameters = {
+            "Channel": ["M1", "M2", "M3"],
+            "Mode": list(self.modes.keys()),
+        }
+
+        mode = parameters.get("Mode")
+        if mode == "Lock-In":
+            gui_parameters["Lock-In Reference Source"] = ["S1", "S2", "S3"]
+            gui_parameters["Lock-In Harmonic"] = 1
+            gui_parameters["Lock-In Time Constant (s)"] = 0.1
+            gui_parameters["Lock-In Low-pass Rolloff"] = ["6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct"]
+            gui_parameters[""] = None  # Empty line 0
+
+        gui_parameters["Range Mode"] = ["Auto", "Manual"]
+        meas_range = parameters.get("Range Mode")
+        if meas_range == "Manual":
+            gui_parameters["Manual range limit"] = list(self.range_limits.keys())
+
+        if not mode == "Lock-In":
+            gui_parameters[" "] = None  # Empty line 1
+            gui_parameters["Averaging Time (NPLC)"] = 0.1
+        gui_parameters["  "] = None  # Empty line 2
+        gui_parameters["Enable Bias Voltage"] = False
+        if parameters.get("Enable Bias Voltage"):
+            gui_parameters["Bias Voltage (V)"] = 0.0
+        gui_parameters["   "] = None  # Empty line 3
+        gui_parameters["Advanced Settings"] = False
+        if parameters.get("Advanced Settings"):
+            gui_parameters["Analog input filter"] = False
+            if parameters.get("Analog input filter"):
+                gui_parameters["Filter optimization"] = list(self.filter_types.keys())
+                gui_parameters["Low pass corner frequency"] = list(self.cornerf_options.keys())
+                gui_parameters["Low pass rolloff"] = ["6 dB/oct", "12 dB/oct"]
+                gui_parameters["    "] = None  # Empty line 4
+            gui_parameters["Turn off LED"] = False
+        return gui_parameters
+
+    def apply_gui_parameters(self, parameter):
         self.slot = parameter["Channel"]
-        self.slot_number_str = self.slot[1]
-        
-        self.port_string = parameter["Port"] # use this string to open the right port object later during 'connect'
-        self.mode = parameter["Mode"]
 
-        self.shortname = "CM-10 @ " + self.slot  # short name will be shown in the sequencer
-        
-        if self.mode == "DC":
-            self.variables = ["Current " + self.mode] # define as many variables you need
-            self.units = ["A"] # make sure that you have as many units as you have variables
-            self.plottype = [True]   # True to plot data, corresponding to self.variables
-            self.savetype = [True]   # True to save data, corresponding to self.variables
-        
+        self.port_string = parameter["Port"]
+        self.mode_set = parameter["Mode"]
+        self.mode_read = self.modes[self.mode_set]
+        self.range_mode = parameter["Range Mode"]
+        self.advanced = parameter["Advanced Settings"]
+        if parameter.get("Manual range limit"):
+            self.limit = self.range_limits[parameter["Manual range limit"]]
 
-  
+        try:
+            self.nplc = float(parameter["Averaging Time (NPLC)"])
+        except ValueError:  # Do not fail, if parameter is not yet loaded or empty
+            self.nplc = 0.1
+
+        if self.mode_set == "Lock-In":
+            try:
+                self.lia_ref = parameter["Lock-In Reference Source"]
+            except KeyError:
+                self.lia_ref = "S0"
+            try:
+                self.lia_rolloff = int(parameter["Lock-In Low-pass Rolloff"].split(" ")[0])
+            except KeyError:
+                self.lia_rolloff = 0
+            try:
+                self.lia_harm = int(parameter["Lock-In Harmonic"])
+            except (KeyError, ValueError):  # Do not fail, if parameter is not yet loaded or empty
+                self.lia_harm = 0
+            try:
+                self.lia_tc = float(parameter["Lock-In Time Constant (s)"])
+            except (KeyError, ValueError):  # Do not fail, if parameter is not yet loaded or empty
+                self.lia_tc = 0.0
+
+        if self.advanced:
+            try:
+                self.filter_on = parameter["Analog input filter"]
+            except KeyError:
+                self.filter_on = False
+            try:
+                self.darkmode = parameter["Turn off LED"]
+            except KeyError:
+                self.darkmode = False
+
+            if self.filter_on:
+                try:
+                    self.filter_type = self.filter_types[parameter["Filter optimization"]]
+                except KeyError:
+                    self.filter_type = ""
+                try:
+                    self.filter_cornerf = self.cornerf_options[parameter["Low pass corner frequency"]]
+                except KeyError:
+                    self.filter_cornerf = ""
+                try:
+                    self.filter_rolloff = int(parameter["Low pass rolloff"].split(" ")[0])
+                except KeyError:
+                    self.filter_rolloff = 0
+
+        self.use_bias = bool(parameter["Enable Bias Voltage"])
+        if self.use_bias:
+            try:
+                self.bias_voltage = float(parameter["Bias Voltage (V)"])
+            except (KeyError, ValueError):
+                self.bias_voltage = -1.0
+
+        self.shortname = "CM-10 @ " + self.slot
+
+        if self.mode_set == "Lock-In":
+            self.variables = ["X", "Y"]
+            self.units = ["A", "A"]
+            self.plottype = [True, True]
+            self.savetype = [True, True]
+        else:
+            self.variables = ["Current " + self.mode_read]
+            self.units = ["A"]
+            self.plottype = [True]
+            self.savetype = [True]
+
     """ here, semantic standard functions start that are called by SweepMe! during a measurement """
-        
+
     def connect(self):
-        
-        self.port.write("*IDN?")
-        res = self.port.read()
-        print(res)
-            
+        pass
 
     def disconnect(self):
         pass
-        
 
     def initialize(self):
-        pass
-        
-    
+        self.check_device()
+        self.port.write(f'SENSe{self.slot[1]}:PRESet')
+
     def deinitialize(self):
-        # called only once at the end of the measurement
-        print("deinitialize")
-        
-        
+        pass
+
+    """ the following functions are called if a new branch is entered
+     and the module was not part of the previous branch """
+
+    def configure(self):
+        self.set_mode(self.mode_set)
+        self.set_range(self.limit)
+        self.set_nplc(self.nplc)
+        if self.mode_set == "Lock-In":
+            self.set_lockin_settings()
+        if self.advanced:
+            self.set_advanced_settings()
+        # Bias voltage must be set after filter settings or a warning will appear on the touch panel.
+        self.set_bias(self.use_bias, self.bias_voltage)
+
     """ the following functions are called for each measurement point """
 
     def measure(self):
-        
-        self.port.write("FETC:SENS%s:DC?" % self.slot_number_str)
-        
+        self.port.write(f"READ:SENS{self.slot[1]}:{self.mode_read}?")
+
     def read_result(self):
-        
         res = self.port.read()
-        self.current = float(res)
-        
+
+        if self.mode_set == "Lock-In":
+            x, y = res.split(",")
+            self.current = (float(x), float(y))  # store tuple
+            # ToDo: Read Lock-In frequency and DC current
+        else:
+            self.current = float(res)
 
     def call(self):
-        return [self.current]
-        
+        if self.mode_set == "Lock-In":
+            return [self.current[0], self.current[1]]
+        else:
+            return [self.current]
+
+    """ wrapped functions """
+
+    def set_mode(self, mode):
+        if mode == "Lock-In":
+            mode = "LIA"
+        self.port.write(f'SENSe{self.slot[1]}:MODE {mode}')
+
+    def set_range(self, limit):
+        if self.range_mode == "Manual":
+#            if self.filter_enabled and self.filter_optimization == "Highest":
+#                if self.limit == 0.1:
+#                    raise ValueError("100 mA range cannot be used with filter enabled + highest reserve.")
+            self.port.write(f'SENSe{self.slot[1]}:CURRent:RANGe:AUTO 0')
+            self.port.write(f'SENSe{self.slot[1]}:CURRent:RANGe {limit}')
+        else:
+            self.port.write(f'SENSe{self.slot[1]}:CURRent:RANGe:AUTO 1')
+
+    def set_nplc(self, nplc):
+        if not (600 >= nplc >= 0.01):
+            raise ValueError("NPLC must be between 0.01 and 600.00.")
+        self.port.write(f'SENSe{self.slot[1]}:NPLCycles {nplc}')
+
+    def set_bias(self, enabled, voltage):
+        self.port.write(f'SENSe{self.slot[1]}:BIAS:STATe {"1" if enabled else "0"}')
+        if enabled:
+            if voltage > 0:
+                if self.filter_on and self.filter_type == "NOISe":
+                    raise ValueError("Bias voltage > 0 cannot be used with 'Lowest noise' filter optimization.")
+                self.port.write(f'SENSe{self.slot[1]}:BIAS:VOLTage {voltage}')
+            elif voltage == 0:
+                self.port.write(f'SENSe{self.slot[1]}:BIAS:VOLTage 0')
+            else:
+                raise ValueError("Bias voltage is enabled, but no value has been given. "
+                                 "Set a value in Volts or disable bias voltage.")
+
+    def check_device(self):
+        model = self.port.query(f'SENSe{self.slot[1]}:MODel?')
+        if not model == '"CM-10"':
+            raise ValueError(
+                f"Device connected on channel {self.slot} does not match this driver. "
+                f"Found: '{model}'"
+            )
+
+    def set_lockin_settings(self):
+        if self.lia_harm < 1:
+            raise ValueError("Lock-In harmonic must be >= 1")
+        if not (10000 >= self.lia_tc >= 0.0001):
+            raise ValueError("Lock-In time constant must be >= 0.0001 s and <= 10,000 s.")
+        self.port.write(f"SENSe{self.slot[1]}:LIA:RSOurce {self.lia_ref}")
+        self.port.write(f"SENSe{self.slot[1]}:LIA:DHARmonic {self.lia_harm}")
+        self.port.write(f"SENSe{self.slot[1]}:LIA:TIMEconstant {self.lia_tc}")
+        self.port.write(f"SENSe{self.slot[1]}:LIA:ROLLoff R{self.lia_rolloff}")
+
+    def set_advanced_settings(self):
+        if self.filter_on:
+            self.set_lowpass()
+        else:
+            self.port.write(f'SENSe{self.slot[1]}:FILTer:STATe 0')
+        # Dark mode:
+        self.port.write(f'SENSe{self.slot[1]}:DMODe {"1" if self.darkmode else "0"}')
+
+    def set_lowpass(self):
+        self.port.write(f'SENSe{self.slot[1]}:FILTer:STATe 1')
+        self.port.write(f'SENSe{self.slot[1]}:FILTer:OPTimization {self.filter_type}')
+        self.port.write(f'SENSe{self.slot[1]}:FILTer:LPASs:FREQuency {self.filter_cornerf}')
+        self.port.write(f'SENSe{self.slot[1]}:FILTer:LPASs:ATTenuation R{self.filter_rolloff}')

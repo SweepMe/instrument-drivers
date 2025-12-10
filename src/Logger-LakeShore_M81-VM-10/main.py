@@ -38,18 +38,22 @@ class Device(EmptyDevice):
 
         self.port_manager = True
            
-        self.port_types = ["COM", "GPIB", "TCPIP"]
+        self.port_types = ["COM", "GPIB", "TCPIP", "SOCKET"]
         
         self.port_properties = {
                                 "baudrate": 921600,
                                 "EOL": "\n",
                                 "timeout": 15,
+                                "TCPIP_EOLwrite": "\n",
+                                "TCPIP_EOLread": "\n",
+                                "SOCKET_EOLwrite": "\n",
+                                "SOCKET_EOLread": "\n",
                                 }
 
         self.modes = {  # Possible measurement modes
-            "DC": "DC"
-            ,"AC": "RMS"
-            #,"Lockin": "LIA"  Not yet implemented by SweepMe!
+            "DC": "DC",
+            "AC": "RMS",
+            #,"Lock-In": "LIA"  Not yet implemented by SweepMe!
         }
 
         self.range_limits = {  # Voltage range limits in V
@@ -65,14 +69,14 @@ class Device(EmptyDevice):
             "Ground": "GROund"
         }
 
-        # Measurement Parameters
+        # Measurement Parameters with default values
         self.slot: str = "M0"
         self.port_string: str = ""
-        self.nplc: float = 0.1  # Averaging time in Number of Power-Line-Cycles (i.e. 1/50 s)
-        self.mode_set: str = ""  # Direct or alternating current setting
-        self.mode_read: str = ""  # Read command depending on mode_set
-        self.range_mode: str = ""  # Automatic or manual setting of the range
-        self.limit: float = 10  # Manual range limit setting
+        self.nplc: float = 3  # Averaging time in Number of Power-Line-Cycles (i.e. 1/50 s)
+        self.mode_set: str = "DC"  # Direct or alternating current setting
+        self.mode_read: str = "DC"  # Read command depending on mode_set
+        self.range_mode: str = "Auto"  # Automatic or manual setting of the range
+        self.limit: float = 0.1  # Manual range limit setting
         self.input_config: str = "AB"  # Relation of the two inputs. See touch panel for explanation.
         self.voltage: float = float('nan')  # Measured datapoints
             
@@ -99,13 +103,16 @@ class Device(EmptyDevice):
         self.mode_read = self.modes[self.mode_set]
         self.range_mode = parameter["Range Mode"]
         if parameter.get("Manual range limit"):
-            self.limit = self.range_limits[parameter["Manual range limit"]]
+            try:
+                self.limit = self.range_limits[parameter["Manual range limit"]]
+            except KeyError:
+                self.limit = 0.1
 
         self.input_config = self.input_configurations[parameter["Input Configuration"]]
 
         try:
             self.nplc = float(parameter["Averaging Time (NPLC)"])
-        except ValueError:  # Catch case where parameter is not yet loaded
+        except ValueError:  # Do not fail, if parameter is not yet loaded or empty
             self.nplc = 0.1
 
         self.shortname = "VM-10 @ " + self.slot  # short name will be shown in the sequencer
@@ -153,6 +160,8 @@ class Device(EmptyDevice):
     def call(self):
         return [self.voltage]
 
+    """ wrapped functions """
+
     def set_mode(self, mode):
         self.port.write(f'SENSe{self.slot[1]}:MODE {mode}')
 
@@ -170,7 +179,7 @@ class Device(EmptyDevice):
             raise ValueError("NPLC must be between 0.01 and 600.00.")
         self.port.write(f'SENSe{self.slot[1]}:NPLCycles {nplc}')
 
-    def set_input_config(self, input_config):       # Set input configuration during initialize
+    def set_input_config(self, input_config):  # Set input configuration during initialize
         self.port.write(f'SENSe{self.slot[1]}:CONFiguration {input_config}')
 
     def check_device(self):
