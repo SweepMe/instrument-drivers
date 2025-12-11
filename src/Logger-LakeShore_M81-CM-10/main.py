@@ -42,7 +42,7 @@ class Device(EmptyDevice):
         self.port_properties = {
             "baudrate": 921600,
             "EOL": "\n",
-            "timeout": 15,
+            "timeout": 45,
             "TCPIP_EOLwrite": "\n",
             "TCPIP_EOLread": "\n",
             "SOCKET_EOLwrite": "\n",
@@ -99,11 +99,14 @@ class Device(EmptyDevice):
         self.bias_voltage: float = 0.0
         self.current: float = float('nan')
         self.lia_ref: str = "S0"
+        self.lia_lowpass: bool = False
         self.lia_harm: int = 1
         self.lia_tc: float = 0.1
         self.lia_rolloff: int = 6
-        #Todo self.lia_avg_filters
-        #ToDo self.lia_ref_phase_shift
+        self.lia_avg_filters: bool = False
+        self.lia_avg_ref_cycles: int = 0
+        self.lia_auto_phase: bool = True
+        self.lia_ref_phase_shift: float = 0.0
         self.advanced: bool = False
         self.filter_on: bool = False
         self.filter_type: str = "NOISe"
@@ -121,9 +124,17 @@ class Device(EmptyDevice):
         mode = parameters.get("Mode")
         if mode == "Lock-In":
             gui_parameters["Lock-In Reference Source"] = ["S1", "S2", "S3"]
+            gui_parameters["Lock-In Averaging Filter"] = False
+            if parameters.get("Lock-In Averaging Filter"):
+                gui_parameters["Averaging Reference Cycles"] = 1
+            gui_parameters["Lock-In Low-pass Filter"] = False
+            if parameters.get("Lock-In Low-pass Filter"):
+                gui_parameters["Low-pass Time Constant (s)"] = 0.1
+                gui_parameters["Low-pass Rolloff"] = ["6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct"]
             gui_parameters["Lock-In Harmonic"] = 1
-            gui_parameters["Lock-In Time Constant (s)"] = 0.1
-            gui_parameters["Lock-In Low-pass Rolloff"] = ["6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct"]
+            gui_parameters["Auto Ref Phase Shift"] = True
+            if not parameters.get("Auto Ref Phase Shift"):
+                gui_parameters["Reference Phase Shift (deg)"] = 0.0
             gui_parameters[""] = None  # Empty line 0
 
         gui_parameters["Range Mode"] = ["Auto", "Manual"]
@@ -169,50 +180,73 @@ class Device(EmptyDevice):
         if self.mode_set == "Lock-In":
             try:
                 self.lia_ref = parameter["Lock-In Reference Source"]
-            except KeyError:
+            except KeyError:  # Do not fail, if parameter is not yet loaded
                 self.lia_ref = "S0"
             try:
-                self.lia_rolloff = int(parameter["Lock-In Low-pass Rolloff"].split(" ")[0])
-            except KeyError:
-                self.lia_rolloff = 0
+                self.lia_avg_filters = parameter["Lock-In Averaging Filter"]
+            except KeyError:  # Do not fail, if parameter is not yet loaded
+                self.lia_avg_filters = False
+            if self.lia_avg_filters:
+                try:
+                    self.lia_avg_ref_cycles = int(parameter["Averaging Reference Cycles"])
+                except (KeyError, ValueError):  # Do not fail, if parameter is not yet loaded or empty
+                    self.lia_avg_ref_cycles = 0
+            try:
+                self.lia_lowpass = parameter["Lock-In Low-pass Filter"]
+            except KeyError:  # Do not fail, if parameter is not yet loaded
+                self.lia_lowpass = False
+            if self.lia_lowpass:
+                try:
+                    self.lia_rolloff = int(parameter["Low-pass Rolloff"].split(" ")[0])
+                except KeyError:  # Do not fail, if parameter is not yet loaded
+                    self.lia_rolloff = 0
+                try:
+                    self.lia_tc = float(parameter["Low-pass Time Constant (s)"])
+                except (KeyError, ValueError):  # Do not fail, if parameter is not yet loaded or empty
+                    self.lia_tc = 0.0
             try:
                 self.lia_harm = int(parameter["Lock-In Harmonic"])
             except (KeyError, ValueError):  # Do not fail, if parameter is not yet loaded or empty
                 self.lia_harm = 0
             try:
-                self.lia_tc = float(parameter["Lock-In Time Constant (s)"])
-            except (KeyError, ValueError):  # Do not fail, if parameter is not yet loaded or empty
-                self.lia_tc = 0.0
+                self.lia_auto_phase = parameter["Auto Ref Phase Shift"]
+            except KeyError:  # Do not fail, if parameter is not yet loaded
+                self.lia_auto_phase = True
+            if not self.lia_auto_phase:
+                try:
+                    self.lia_ref_phase_shift = float(parameter["Reference Phase Shift (deg)"])
+                except (KeyError, ValueError):  # Do not fail, if parameter is not yet loaded or empty
+                    self.lia_ref_phase_shift = 400  # Out of bound value to throw error during configure
 
         if self.advanced:
             try:
                 self.filter_on = parameter["Analog input filter"]
-            except KeyError:
+            except KeyError:  # Do not fail, if parameter is not yet loaded
                 self.filter_on = False
             try:
                 self.darkmode = parameter["Turn off LED"]
-            except KeyError:
+            except KeyError:  # Do not fail, if parameter is not yet loaded
                 self.darkmode = False
 
             if self.filter_on:
                 try:
                     self.filter_type = self.filter_types[parameter["Filter optimization"]]
-                except KeyError:
+                except KeyError:  # Do not fail, if parameter is not yet loaded
                     self.filter_type = ""
                 try:
                     self.filter_cornerf = self.cornerf_options[parameter["Low pass corner frequency"]]
-                except KeyError:
+                except KeyError:  # Do not fail, if parameter is not yet loaded
                     self.filter_cornerf = ""
                 try:
                     self.filter_rolloff = int(parameter["Low pass rolloff"].split(" ")[0])
-                except KeyError:
+                except KeyError:  # Do not fail, if parameter is not yet loaded
                     self.filter_rolloff = 0
 
         self.use_bias = bool(parameter["Enable Bias Voltage"])
         if self.use_bias:
             try:
                 self.bias_voltage = float(parameter["Bias Voltage (V)"])
-            except (KeyError, ValueError):
+            except (KeyError, ValueError):  # Do not fail, if parameter is not yet loaded or empty
                 self.bias_voltage = -1.0
 
         self.shortname = "CM-10 @ " + self.slot
@@ -260,7 +294,7 @@ class Device(EmptyDevice):
     """ the following functions are called for each measurement point """
 
     def measure(self):
-        self.port.write(f"READ:SENS{self.slot[1]}:{self.mode_read}?")
+        self.port.write(f"READ:SENS{self.slot[1]}:{self.mode_read}?")  # ToDo: Timeout when mode_read = "LIA"
 
     def read_result(self):
         res = self.port.read()
@@ -324,12 +358,25 @@ class Device(EmptyDevice):
     def set_lockin_settings(self):
         if self.lia_harm < 1:
             raise ValueError("Lock-In harmonic must be >= 1")
-        if not (10000 >= self.lia_tc >= 0.0001):
-            raise ValueError("Lock-In time constant must be >= 0.0001 s and <= 10,000 s.")
         self.port.write(f"SENSe{self.slot[1]}:LIA:RSOurce {self.lia_ref}")
+        self.port.write(f'SENSe{self.slot[1]}:LIA:AVERage {"1" if self.lia_avg_filters else "0"}')
         self.port.write(f"SENSe{self.slot[1]}:LIA:DHARmonic {self.lia_harm}")
-        self.port.write(f"SENSe{self.slot[1]}:LIA:TIMEconstant {self.lia_tc}")
-        self.port.write(f"SENSe{self.slot[1]}:LIA:ROLLoff R{self.lia_rolloff}")
+        self.port.write(f'SENSe{self.slot[1]}:LIA:LPASs {"1" if self.lia_lowpass else "0"}')
+        if self.lia_avg_filters:
+            if not (1000000 >= self.lia_avg_ref_cycles >= 1):
+                raise ValueError("Number of reference cycles must be >= 1 and <= 1,000,000.")
+            self.port.write(f"SENSe{self.slot[1]}:LIA:REFerence:CYCLes {self.lia_avg_ref_cycles}")
+        if self.lia_lowpass:
+            if not (10000 >= self.lia_tc >= 0.0001):
+                raise ValueError("Lock-In time constant must be >= 0.0001 s and <= 10,000 s.")
+            self.port.write(f"SENSe{self.slot[1]}:LIA:TIMEconstant {self.lia_tc}")
+            self.port.write(f"SENSe{self.slot[1]}:LIA:ROLLoff R{self.lia_rolloff}")
+        if self.lia_auto_phase:
+            self.port.write(f"SENSe{self.slot[1]}:LIA:DPHase:AUTO")
+        else:
+            if not (360 >= self.lia_ref_phase_shift >= -360):
+                raise ValueError("Phase shift must be between -360 and +360 degrees.")
+            self.port.write(f"SENSe{self.slot[1]}:LIA:DPHase {self.lia_ref_phase_shift}")
 
     def set_advanced_settings(self):
         if self.filter_on:

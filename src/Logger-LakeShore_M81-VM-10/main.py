@@ -100,15 +100,20 @@ class Device(EmptyDevice):
 
         self.port_string = parameter["Port"] # use this string to open the right port object later during 'connect'
         self.mode_set = parameter["Mode"]
-        self.mode_read = self.modes[self.mode_set]
+        try:
+            self.mode_read = self.modes[self.mode_set]
+        except KeyError:  # Do not fail, if parameter is not yet loaded
+            self.mode_read = ""
         self.range_mode = parameter["Range Mode"]
         if parameter.get("Manual range limit"):
             try:
                 self.limit = self.range_limits[parameter["Manual range limit"]]
-            except KeyError:
-                self.limit = 0.1
-
-        self.input_config = self.input_configurations[parameter["Input Configuration"]]
+            except KeyError:  # Do not fail, if parameter is not yet loaded
+                self.limit = 0.0
+        try:
+            self.input_config = self.input_configurations[parameter["Input Configuration"]]
+        except KeyError:  # Do not fail, if parameter is not yet loaded
+            self.input_config = ""
 
         try:
             self.nplc = float(parameter["Averaging Time (NPLC)"])
