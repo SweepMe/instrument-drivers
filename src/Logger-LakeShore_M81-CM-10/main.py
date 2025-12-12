@@ -30,7 +30,6 @@
 # * Instrument: LakeShore M81 CM-10
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
-from typing import Optional
 
 class Device(EmptyDevice):
     def __init__(self):
@@ -379,7 +378,7 @@ class Device(EmptyDevice):
 
     def check_device(self):
         model = self.port.query(f'SENSe{self.slot[1]}:MODel?')
-        if not model == '"CM-10"':
+        if not "CM-10" in model:
             raise ValueError(
                 f"Device connected on channel {self.slot} does not match this driver. "
                 f"Found: '{model}'"
