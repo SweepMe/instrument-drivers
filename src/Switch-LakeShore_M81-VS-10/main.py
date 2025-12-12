@@ -49,13 +49,8 @@ class Device(EmptyDevice):
             "SOCKET_EOLread": "\n",
         }
 
-        # Source shapes
-        self.shapes = {
-            "DC": "DC",
-            "Sine": "SINusoid",
-            "Triangle": "TRIangle",
-            "Square": "SQUAre",
-        }
+        # Source shapes (fill later)
+        self.shapes = {}
 
         # Voltage ranges (V)
         self.range_limits = {
@@ -68,11 +63,12 @@ class Device(EmptyDevice):
         # Default GUI / internal parameters
         self.slot: str = "S0"             # Source slot naming, use e.g. "S1","S2","S3" in GUI
         self.port_string: str = ""
+        self.sweepmode: str = "Amplitude (V)"  # SweepMode selection
         self.amplitude: float = 0.0       # source amplitude
         self.offset: float = 0.0          # DC offset (valid for all shapes)
         self.applied_voltage: float = float('nan')
-        self.shape_set: str = "DC"        # User-readable shape string
-        self.shape_scpi: str = "DC"       # SCPI token (SINusoid, TRIangle, SQUAre, DC)
+        self.shape_set: str = ""        # User-readable shape string
+        self.shape_scpi: str = ""       # SCPI token (SINusoid, TRIangle, SQUAre, DC)
         self.freq: float = 11.0           # Frequency in Hz (default per manual)
         self.duty: float = 0.5            # Duty (0.0 - 1.0) for square & triangle (0.001-0.999 valid)
         self.range_mode: str = "Auto"     # "Auto" or "Manual"
@@ -95,22 +91,30 @@ class Device(EmptyDevice):
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         gui_parameters = {
             "Channel": ["S1", "S2", "S3"],
-            "Amplitude (V)" : 0.0,
-            "Shape": list(self.shapes.keys()),
-            "Range Mode": ["Auto", "Manual"],
-        }
+            "SweepMode": ["Amplitude (V)", "Offset (V)", "Frequency (Hz)"]}
+        self.sweepmode = parameters.get("SweepMode")
+        if self.sweepmode != "Amplitude (V)":
+            gui_parameters["Amplitude (V)"] = 0.0
+
+        # Source shapes
+        if self.sweepmode == "Amplitude (V)":
+            self.shapes["DC"] = "DC"  # DC mode is not meaningful for offset- or frequency-sweeps.
+        self.shapes["Sine"] = "SINusoid"
+        self.shapes["Triangle"] = "TRIangle"
+        self.shapes["Square"] = "SQUAre"
+
+        gui_parameters["Shape"] = list(self.shapes.keys())
+        gui_parameters["Range Mode"] = ["Auto", "Manual"]
 
         # shape-dependent fields
         shape = parameters.get("Shape")
         if shape and shape != "DC":
-            gui_parameters["Offset (V)"] = 0.0
-            gui_parameters["Frequency (Hz)"] = 11.0
+            if self.sweepmode != "Offset (V)":
+                gui_parameters["Offset (V)"] = 0.0
+            if self.sweepmode != "Frequency (Hz)":
+                gui_parameters["Frequency (Hz)"] = 11.0
             if shape in ["Square", "Triangle"]:
                 gui_parameters["Duty"] = 0.5  # 0.0 - 1.0 (0.001 - 0.999 recommended)
-            gui_parameters["Sync"] = False
-            if parameters.get("Sync"):
-                gui_parameters["Sync Source"] = ["S1", "S2", "S3"]
-                gui_parameters["Sync Phase (deg)"] = 0.0
 
         meas_range = parameters.get("Range Mode")
         if meas_range == "Manual":
@@ -120,11 +124,16 @@ class Device(EmptyDevice):
                 gui_parameters["Manual AC range limit"] = list(self.range_limits.keys())
 
         gui_parameters["Current protection (mA)"] = 100
-        gui_parameters["High voltage output limit (V)"] = 10.0
-        gui_parameters["Low voltage output limit (V)"] = -10.0
 
+        gui_parameters[" "] = None  # Empty line 1
         gui_parameters["Advanced Settings"] = False
         if parameters.get("Advanced Settings"):
+            gui_parameters["High voltage output limit (V)"] = 10.0
+            gui_parameters["Low voltage output limit (V)"] = -10.0
+            gui_parameters["Sync"] = False
+            if parameters.get("Sync"):
+                gui_parameters["Sync Source"] = ["S1", "S2", "S3"]
+                gui_parameters["Sync Phase (deg)"] = 0.0
             gui_parameters["Turn off LED"] = False
 
         return gui_parameters
@@ -133,12 +142,14 @@ class Device(EmptyDevice):
         # Basic parameters
         self.slot = parameter["Channel"]
         self.port_string = parameter["Port"]
-
-        self.amplitude = float(parameter["Amplitude (V)"])
+        if self.sweepmode != "Amplitude (V)":
+            self.amplitude = float(parameter["Amplitude (V)"])
 
         self.shape_set = parameter["Shape"]
-        self.shape_scpi = self.shapes[self.shape_set]
-
+        try:
+            self.shape_scpi = self.shapes[self.shape_set]
+        except KeyError:
+            self.shape_scpi = ""
         self.range_mode = parameter["Range Mode"]
         if parameter.get("Manual DC range limit"):
             self.dc_range_limit = self.range_limits[parameter["Manual DC range limit"]]
@@ -241,28 +252,30 @@ class Device(EmptyDevice):
 
     def configure(self):
         # Ranging: AC and DC ranges (Auto vs Manual)
-        self.set_ranging(self.range_mode, self.dc_range_limit, self.ac_range_limit)
+        self.set_ranging(self.range_mode, self.dc_range_limit, self.ac_range_limit)  # ToDo: Check that ranges are set correctly.
 
-        # Frequency / Duty
-        if self.shape_set != "DC":
-            self.set_frequency(self.freq)
-            if self.shape_set in ["Square", "Triangle"]:
-                self.set_duty(self.duty)
+        # Voltage shape
+        self.set_shape(self.shape_scpi)
+
+        # Duty
+        if self.shape_set in ["Square", "Triangle"]:
+            self.set_duty(self.duty)
 
         # Advanced settings
         if self.advanced:
             self.set_advanced_settings()
+            self.set_voltage_limits(self.vlim_low, self.vlim_high)  #ToDo: Check if voltage limits are advanced settings.
 
         # Current protection and voltage limits (must be set after shape/amplitude so they apply to configured values)
         self.set_current_protection(self.current_protect)
-        self.set_voltage_limits(self.vlim_low, self.vlim_high)
 
     """ the following functions are called for each measurement point """
 
     def start(self):
-        # Amplitude, Shape and Offsett
-        self.set_shape(self.shape_scpi)
+        # Amplitude, Frequency and Offset
         self.set_amplitude(self.amplitude)
+        if self.shape_set != "DC":
+            self.set_frequency(self.freq)
         self.set_offset(self.offset)
         self.port.write(f"SOURce{self.slot[1]}:STATe 1")
 
@@ -322,7 +335,10 @@ class Device(EmptyDevice):
 
     def set_shape(self, scpi_shape: str):
         """Set the source shape (DC, SINusoid, TRIangle, SQUAre)."""
-        self.port.write(f"SOURce{self.slot[1]}:FUNCtion:SHAPe {scpi_shape}")
+        if scpi_shape:
+            self.port.write(f"SOURce{self.slot[1]}:FUNCtion:SHAPe {scpi_shape}")
+        else:
+            raise ValueError("Shape may not be empty.")
 
     def set_frequency(self, frequency: float):
         """Set excitation frequency (for non-DC shapes)."""
@@ -332,7 +348,6 @@ class Device(EmptyDevice):
         else:
             if not (0.0001 <= frequency <= 100000):
                 raise ValueError("Frequency must be between 0.1 mHz and 100 kHz for sine waves.")
-        # Frequency bounds are module/range dependent (manual notes), we do not hard-cap here.
         self.freq = frequency
         self.port.write(f"SOURce{self.slot[1]}:FREQuency:FIXed {frequency}")
 
@@ -340,9 +355,7 @@ class Device(EmptyDevice):
         """Set duty cycle for Triangle and Square shapes. Allowed 0.0-1.0; M81 supports 0.001-0.999 increments."""
         if not (0.0 <= duty <= 1.0):
             raise ValueError("Duty must be between 0.0 and 1.0.")
-        # M81 supports 0.001..0.999 but allows 0 and 1 (become DC). Enforce 0.0-1.0 and let device handle extremes.
-        self.duty = duty
-        # SCPI: SOURce#:DCYCle <value>
+        # M81 supports 0.001..0.999 but allows 0 and 1 (become DC).
         self.port.write(f"SOURce{self.slot[1]}:DCYCle {duty}")
 
     def set_ranging(self, mode: str, dc_limit: Optional[float], ac_limit: Optional[float]):
@@ -354,10 +367,6 @@ class Device(EmptyDevice):
         if mode == "Manual":
             # Disable auto
             self.port.write(f"SOURce{self.slot[1]}:VOLTage:RANGe:AUTO 0")
-            # require provided numeric limits
-            if dc_limit is None:
-                raise ValueError("Manual DC range limit not provided.")
-            # Write DC range
             self.port.write(f"SOURce{self.slot[1]}:VOLTage:RANGe:DC {dc_limit}")
             # For AC, only set if shape is not DC
             if self.shape_set != "DC":
