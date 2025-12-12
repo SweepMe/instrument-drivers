@@ -42,7 +42,7 @@ class Device(EmptyDevice):
         self.port_properties = {
             "baudrate": 921600,
             "EOL": "\n",
-            "timeout": 45,
+            "timeout": 15,
             "TCPIP_EOLwrite": "\n",
             "TCPIP_EOLread": "\n",
             "SOCKET_EOLwrite": "\n",
@@ -110,8 +110,12 @@ class Device(EmptyDevice):
         self.advanced: bool = False
         self.filter_on: bool = False
         self.filter_type: str = "NOISe"
-        self.filter_cornerf: str = "NONE"
-        self.filter_rolloff: int = 6
+        self.low_filter_cornerf: str = "NONE"
+        self.low_filter_rolloff: int = 6
+        self.high_filter_cornerf: str = "NONE"
+        self.high_filter_rolloff: int = 6
+        self.high_digital_filter: bool = True
+        self.freq_range_threshold: float = 0.1
         self.darkmode: bool = False
 
     def update_gui_parameters(self, parameters):
@@ -120,7 +124,6 @@ class Device(EmptyDevice):
             "Channel": ["M1", "M2", "M3"],
             "Mode": list(self.modes.keys()),
         }
-
         mode = parameters.get("Mode")
         if mode == "Lock-In":
             gui_parameters["Lock-In Reference Source"] = ["S1", "S2", "S3"]
@@ -147,23 +150,32 @@ class Device(EmptyDevice):
             gui_parameters["Averaging Time (NPLC)"] = 0.1
         gui_parameters["  "] = None  # Empty line 2
         gui_parameters["Enable Bias Voltage"] = False
+
         if parameters.get("Enable Bias Voltage"):
             gui_parameters["Bias Voltage (V)"] = 0.0
+
         gui_parameters["   "] = None  # Empty line 3
         gui_parameters["Advanced Settings"] = False
         if parameters.get("Advanced Settings"):
             gui_parameters["Analog input filter"] = False
             if parameters.get("Analog input filter"):
                 gui_parameters["Filter optimization"] = list(self.filter_types.keys())
+                if mode == "Lock-In":
+                    gui_parameters["High pass corner frequency"] = list(self.cornerf_options.keys())
+                    gui_parameters["High pass rolloff"] = ["6 dB/oct", "12 dB/oct"]
                 gui_parameters["Low pass corner frequency"] = list(self.cornerf_options.keys())
                 gui_parameters["Low pass rolloff"] = ["6 dB/oct", "12 dB/oct"]
                 gui_parameters["    "] = None  # Empty line 4
+            if mode == "Lock-In":
+                gui_parameters["High-pass digital filter"] = True
+                gui_parameters["Frequency range threshold"] = 0.1
+                gui_parameters["     "] = None  # Empty line 5
             gui_parameters["Turn off LED"] = False
+
         return gui_parameters
 
     def apply_gui_parameters(self, parameter):
         self.slot = parameter["Channel"]
-
         self.port_string = parameter["Port"]
         self.mode_set = parameter["Mode"]
         self.mode_read = self.modes[self.mode_set]
@@ -227,6 +239,15 @@ class Device(EmptyDevice):
                 self.darkmode = parameter["Turn off LED"]
             except KeyError:  # Do not fail, if parameter is not yet loaded
                 self.darkmode = False
+            if self.mode_set == "Lock-In":
+                try:
+                    self.high_digital_filter = parameter["High-pass digital filter"]
+                except KeyError:  # Do not fail, if parameter is not yet loaded
+                    self.high_digital_filter = True
+                try:
+                    self.freq_range_threshold = parameter["Frequency range threshold"]
+                except (KeyError, ValueError):  # Do not fail, if parameter is not yet loaded or empty
+                    self.freq_range_threshold = 0.1
 
             if self.filter_on:
                 try:
@@ -234,13 +255,22 @@ class Device(EmptyDevice):
                 except KeyError:  # Do not fail, if parameter is not yet loaded
                     self.filter_type = ""
                 try:
-                    self.filter_cornerf = self.cornerf_options[parameter["Low pass corner frequency"]]
+                    self.low_filter_cornerf = self.cornerf_options[parameter["Low pass corner frequency"]]
                 except KeyError:  # Do not fail, if parameter is not yet loaded
-                    self.filter_cornerf = ""
+                    self.low_filter_cornerf = ""
                 try:
-                    self.filter_rolloff = int(parameter["Low pass rolloff"].split(" ")[0])
+                    self.low_filter_rolloff = int(parameter["Low pass rolloff"].split(" ")[0])
                 except KeyError:  # Do not fail, if parameter is not yet loaded
-                    self.filter_rolloff = 0
+                    self.low_filter_rolloff = 0
+                if self.mode_set == "Lock-In":
+                    try:
+                        self.high_filter_cornerf = self.cornerf_options[parameter["High pass corner frequency"]]
+                    except KeyError:  # Do not fail, if parameter is not yet loaded
+                        self.high_filter_cornerf = ""
+                    try:
+                        self.high_filter_rolloff = int(parameter["High pass rolloff"].split(" ")[0])
+                    except KeyError:  # Do not fail, if parameter is not yet loaded
+                        self.high_filter_rolloff = 0
 
         self.use_bias = bool(parameter["Enable Bias Voltage"])
         if self.use_bias:
@@ -252,10 +282,10 @@ class Device(EmptyDevice):
         self.shortname = "CM-10 @ " + self.slot
 
         if self.mode_set == "Lock-In":
-            self.variables = ["X", "Y"]
-            self.units = ["A", "A"]
-            self.plottype = [True, True]
-            self.savetype = [True, True]
+            self.variables = ["X", "Y", "Frequency", "Lock-In DC"]
+            self.units = ["A", "A", "Hz", "A"]
+            self.plottype = [True, True, True, True]
+            self.savetype = [True, True, True, True]
         else:
             self.variables = ["Current " + self.mode_read]
             self.units = ["A"]
@@ -294,21 +324,21 @@ class Device(EmptyDevice):
     """ the following functions are called for each measurement point """
 
     def measure(self):
-        self.port.write(f"READ:SENS{self.slot[1]}:{self.mode_read}?")  # ToDo: Timeout when mode_read = "LIA"
+        # For Lock-In mode do not start a READ:SENSE read (which waits NPLC).
+        # Instead fetch the latest settled LIA values in read_result() using FETCh queries.
+        if not self.mode_set == "Lock-In":
+            self.port.write(f"READ:SENS{self.slot[1]}:{self.mode_read}?")
 
     def read_result(self):
-        res = self.port.read()
-
         if self.mode_set == "Lock-In":
-            x, y = res.split(",")
-            self.current = (float(x), float(y))  # store tuple
-            # ToDo: Read Lock-In frequency and DC current
+            self.current = self.read_lia()
         else:
+            res = self.port.read()  # returns one-dimensional current value
             self.current = float(res)
 
     def call(self):
         if self.mode_set == "Lock-In":
-            return [self.current[0], self.current[1]]
+            return [self.current[0], self.current[1], self.current[2], self.current[3]]
         else:
             return [self.current]
 
@@ -321,9 +351,9 @@ class Device(EmptyDevice):
 
     def set_range(self, limit):
         if self.range_mode == "Manual":
-#            if self.filter_enabled and self.filter_optimization == "Highest":
-#                if self.limit == 0.1:
-#                    raise ValueError("100 mA range cannot be used with filter enabled + highest reserve.")
+            if self.filter_on and self.filter_type == "REServe":
+                if self.limit == 0.1:  # CM-10 does not allow this combination. It would quietly reduce the range.
+                    raise ValueError("100 mA range cannot be used with filter optimization 'highest reserve'.")
             self.port.write(f'SENSe{self.slot[1]}:CURRent:RANGe:AUTO 0')
             self.port.write(f'SENSe{self.slot[1]}:CURRent:RANGe {limit}')
         else:
@@ -380,14 +410,55 @@ class Device(EmptyDevice):
 
     def set_advanced_settings(self):
         if self.filter_on:
-            self.set_lowpass()
+            self.set_filters()
         else:
             self.port.write(f'SENSe{self.slot[1]}:FILTer:STATe 0')
-        # Dark mode:
         self.port.write(f'SENSe{self.slot[1]}:DMODe {"1" if self.darkmode else "0"}')
+        if self.mode_set == "Lock-In":
+            self.port.write(f'SENSe{self.slot[1]}:DIGital:FILTer:HPASs {"1" if self.high_digital_filter else "0"}')
+            self.port.write(f'SENSe{self.slot[1]}:FRTHreshold {self.freq_range_threshold}')
 
-    def set_lowpass(self):
+    def set_filters(self):
         self.port.write(f'SENSe{self.slot[1]}:FILTer:STATe 1')
         self.port.write(f'SENSe{self.slot[1]}:FILTer:OPTimization {self.filter_type}')
-        self.port.write(f'SENSe{self.slot[1]}:FILTer:LPASs:FREQuency {self.filter_cornerf}')
-        self.port.write(f'SENSe{self.slot[1]}:FILTer:LPASs:ATTenuation R{self.filter_rolloff}')
+        self.port.write(f'SENSe{self.slot[1]}:FILTer:LPASs:FREQuency {self.low_filter_cornerf}')
+        self.port.write(f'SENSe{self.slot[1]}:FILTer:LPASs:ATTenuation R{self.low_filter_rolloff}')
+        if self.mode_set == "Lock-In":
+            self.port.write(f'SENSe{self.slot[1]}:FILTer:HPASs:FREQuency {self.high_filter_cornerf}')
+            self.port.write(f'SENSe{self.slot[1]}:FILTer:HPASs:ATTenuation R{self.high_filter_rolloff}')
+
+    def read_lia(self):
+        # Use Fetch to get X and Y (latest settled values).
+        self.port.write(f"FETCh:MULTiple? MX,{self.slot[1]},MY,{self.slot[1]}")
+        resp = self.port.read().split(",")
+        x_lia = self.lia_convert(resp[0])
+        y_lia = self.lia_convert(resp[1])
+
+        # Fetch frequency separately, because it doesn't support FETCh:MULTIple
+        self.port.write(f"FETCh:SENSe{self.slot[1]}:LIA:FREQuency?")
+        freq = self.lia_convert(self.port.read())
+
+        # Fetch DC separately, because it doesn't support FETCh:MULTIple
+        self.port.write(f"FETCh:SENSe{self.slot[1]}:LIA:DC?")
+        dc = self.lia_convert(self.port.read())
+
+        return x_lia, y_lia, freq, dc
+
+    @staticmethod
+    def lia_convert(value_str: str) -> float:
+        """Convert M81 LIA sentinel values into Python float equivalents."""
+        try:
+            val = float(value_str)
+        except ValueError:
+            return float('nan')
+
+        # Special value M81: Overload → +inf
+        if abs(val - 9.90e37) < 1e33:
+            return float('inf')
+
+        # Special value M81: PLL unlocked → NaN
+        if abs(val - 9.91e37) < 1e33:
+            return float('nan')
+
+        return val
+
