@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2023-2024 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2023-2025 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,17 +25,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# SweepMe! driver
+# * Module: Signal
+# * Instrument: Keithley 4200-SCS
 
-# SweepMe! device class
-# Type: SMU
-# Device: Keithley 4200-SCS
-# Author: Axel Fischer (axel.fischer@sweep-me.net), Shayan Miri (shayan.miri@sweep-me.net)
-
-from pysweepme.ErrorMessage import error, debug
+from __future__ import annotations
 from pysweepme.EmptyDeviceClass import EmptyDevice
-import numpy as np
-import time
-import os
 
 from pysweepme import FolderManager
 FolderManager.addFolderToPATH()
@@ -47,25 +42,7 @@ importlib.reload(ProxyClass)
 from ProxyClass import Proxy
 
 
-# standard path for LPTlib.dll
-# If it exists, SweepMe! is running on the instruments PC
-RUNNING_ON_4200SCS = os.path.exists(r"C:\s4200\sys\bin\lptlib.dll")
-
-if RUNNING_ON_4200SCS:
-    # import LPT library functions
-    from pylptlib import lpt
-    # import LPT library instrument IDs
-    # not available yet -> # from pylptlib import inst
-    # import LPT library parameter constants
-    from pylptlib import param
-
-
 class Device(EmptyDevice):
-
-    description = """
-    This driver only supports creating pulses in continuous mode
-    Communication only via lptlib.dll or lptlib server.
-    """
 
     def __init__(self):
     
@@ -81,6 +58,7 @@ class Device(EmptyDevice):
         #     self.port_types = ['GPIB', 'TCPIP']
             # needed to make the code working with pysweepme where port_manager is only used from __init__
             # self.port_manager = True
+        self.port_manager = False
 
         # self.port_properties = {
         #     "EOL": "\r\n",
@@ -95,18 +73,17 @@ class Device(EmptyDevice):
             "Trigger burst": 2,
         }
 
-    def find_ports(self):
+    @staticmethod
+    def find_ports() -> list[str]:
+        """Find available ports."""
+        # If the lptlib.dll exists, the driver is probably running on the device.
+        # Exemption: If Clarius is installed on the PC running SweepMe!, the dll also exists there.
+        dll_path = r"C:\s4200\sys\bin\lptlib.dll"
+        return ["LPTlib via localhost"] if Path(dll_path).exists() else ["LPTlib via xxx.xxx.xxx.xxx"]
 
-        if RUNNING_ON_4200SCS:
-            ports = ["LPTlib"]
-        else:
-            ports = ["LPTlib via xxx.xxx.xxx.xxx"]
-
-        return ports
-        
-    def set_GUIparameter(self):
-        
-        GUIparameter = {
+    def set_GUIparameter(self) -> dict:
+        """Set initial GUI parameter in SweepMe!."""
+        return {
             "SweepMode": [None],
             "Channel": ["PMU1 - CH1", "PMU1 - CH2"],
 
@@ -129,11 +106,9 @@ class Device(EmptyDevice):
 
             # "OperationMode": ["Range 20 V (slow)", "Range 5 V (fast)"]
         }
-
-        return GUIparameter
         
-    def get_GUIparameter(self, parameter={}):
-
+    def get_GUIparameter(self, parameter: dict) -> None:
+        """Update parameter from SweepMe! GUI."""
         self.port_string = parameter['Port']
         self.identifier = "Keithley_4200-SCS_" + self.port_string
 
@@ -160,13 +135,8 @@ class Device(EmptyDevice):
 
         self.shortname = "4200-SCS %s" % parameter["Channel"]
 
-        if "lptlib" in self.port_string.lower():
-            self.port_manager = False
-        else:
-            self.port_manager = True
-
-    def connect(self):
-
+    def connect(self) -> None:
+        """Connect to the Keithley 4200-SCS Signal Generator."""
         if self.port_manager:
             self.command_set = 'US'  # "US" user mode, "LPTlib", # check manual p. 677/1510
 
@@ -175,39 +145,11 @@ class Device(EmptyDevice):
 
         else:
             self.command_set = "LPTlib"  # "US" user mode, "LPTlib", # check manual p. 677/1510
-
-            if not RUNNING_ON_4200SCS:
-                # overwriting the communication classes with Proxy classes
-
-                tcp_ip_port = self.port_string[11:].strip()  # removing "LPTlib via "
-                tcp_ip_port_splitted = tcp_ip_port.split(":")  # in case a port is given
-                tcp_ip = tcp_ip_port_splitted[0]
-                if len(tcp_ip_port_splitted) == 2:
-                    tcp_port = int(tcp_ip_port_splitted[1])
-                else:
-                    tcp_port = 8888  # default
-
-                self.lpt = Proxy(tcp_ip, tcp_port, "lpt")
-                # not supported yet with pylptlib -> # self.inst = Proxy(tcp_ip, tcp_port, "inst")
-                self.param = Proxy(tcp_ip, tcp_port, "param")
-
-            else:
-                # we directly use pylptlib
-                self.lpt = lpt
-                # not supported yet with pylptlib -> # self.inst = inst
-                self.param = param
-
-            try:
-                ret = self.lpt.initialize()
-            except ConnectionRefusedError as e:
-                debug("Unable to connect to a lptlib server application running on the 4200-SCS. Please check your "
-                      "network settings and make sure the server application is running.")
-                raise
-            
+            self.connect_to_lptlib_server()
             self.card_id = self.lpt.getinstid(self.card_name)
 
-    def initialize(self):
-
+    def initialize(self) -> None:
+        """Initialize the Keithley 4200-SCS Signal Generator."""
         if self.identifier not in self.device_communication:
                  
             if self.command_set == "LPTlib":
@@ -232,8 +174,8 @@ class Device(EmptyDevice):
 
             self.device_communication[self.identifier] = {}  # dictionary that can be filled with further information
 
-    def deinitialize(self):
-
+    def deinitialize(self) -> None:
+        """Reset device and close connection."""
         if self.identifier in self.device_communication:
 
             if self.command_set == "LPTlib":
@@ -323,8 +265,44 @@ class Device(EmptyDevice):
 
     # """ here, convenience functions start """
 
+    def connect_to_lptlib_server(self) -> None:
+        """Connect to the LPTlib server running on the 4200-SCS device."""
+        if "localhost" in self.port_string.lower():
+            # SweepMe! is running on the 4200-SCS device
+            tcp_ip = "localhost"
+            tcp_port = 8888
 
-    """ here wrapped functions start """
+        else:
+            tcp_ip_port = self.port_string[11:].strip()  # removing "LPTlib via "
+            tcp_ip_port_split = tcp_ip_port.split(":")  # in case a port is given
+
+            tcp_ip = tcp_ip_port_split[0]
+            tcp_port = int(tcp_ip_port_split[1]) if len(tcp_ip_port_split) == 2 else 8888
+
+        self.lpt = Proxy(tcp_ip, tcp_port, "lpt")
+        self.param = Proxy(tcp_ip, tcp_port, "param")
+
+        try:
+            self.lpt.initialize()
+        except ConnectionRefusedError as e:
+            msg = ("Unable to connect to a lptlib server application running on the 4200-SCS. Please check your"
+                   "network settings and make sure the server application is running.")
+            raise ConnectionRefusedError(msg) from e
+        except Exception as e:
+            msg = "Error during lpt.initialize"
+            raise Exception(msg) from e
+
+
+    # Wrapped Functions - Most are for US command set
+
+    def _tcpip_read(self) -> str | None:
+        """Return port.read() when using TCPIP, otherwise None."""
+        if getattr(self, "port_string", "").startswith("TCPIP"):
+            try:
+                return self.port.read()
+            except Exception:
+                return None
+        return None
 
     def set_command_mode(self, mode):
         """
@@ -335,9 +313,7 @@ class Device(EmptyDevice):
 
         self.port.write(f"{mode}")
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
+        return self._tcpip_read()
 
     def get_identifier(self):
         self.port.write("*IDN?")
@@ -350,87 +326,56 @@ class Device(EmptyDevice):
     def set_resolution(self, resolution):
         if self.command_set == 'US':
             self.port.write(f"RS {int(resolution)}")
-
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
+        return self._tcpip_read()
         
     def set_current_range(self, channel, current_range, compliance):
         if self.command_set == 'US':
             self.port.write(f"RI {channel}, {current_range}, {compliance}")
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def set_current_range_limited(self, channel, current):
+    def set_current_range_limited(self, channel, current) -> str | None:
         if self.command_set == 'US':
             self.port.write(f"RG {channel}, {current}")
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def switch_off(self, channel):
+    def switch_off(self, channel) -> str | None:
         if self.command_set == 'US':
             self.port.write(f"DV{channel}")
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def clear_buffer(self):
+    def clear_buffer(self) -> str | None:
         self.port.write("BC")
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def set_to_4200(self):
+    def set_to_4200(self) -> str | None:
         self.port.write("EM 1,0")  # set to 4200 mode for this session
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def enable_user_mode(self):
+    def enable_user_mode(self) -> str | None:
         self.port.write("US")  # user mode
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def set_data_service(self):
+    def set_data_service(self) -> str | None:
         if self.command_set == 'US':
             self.port.write("DR0")  # data ready service request
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def set_integration_time(self, nplc):
+    def set_integration_time(self, nplc) -> str | None:
         if self.command_set == 'US':
             self.port.write("IT" + str(nplc))
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def set_current(self, channel, current_range, value, protection):
+    def set_current(self, channel, current_range, value, protection) -> str | None:
         if self.command_set == 'US':
             self.port.write(f"DI{channel}, {current_range}, {value}, {protection}")
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
+        return self._tcpip_read()
 
-    def set_voltage(self, channel, voltage_range, value, protection):
+    def set_voltage(self, channel, voltage_range, value, protection) -> str | None:
         if self.command_set == 'US':
             self.port.write(f"DV{channel}, {voltage_range}, {value}, {protection}")
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
+        return self._tcpip_read()
 
     def get_voltage(self, channel):
         if self.command_set == 'US':
@@ -457,7 +402,7 @@ class Device(EmptyDevice):
                 current = float('nan')
             return current
 
-    def set_pulse_impedance(self, channel, impedance):
+    def set_pulse_impedance(self, channel, impedance) -> str | None:
     
         impedance = float(impedance)
         if impedance < 1.0:
@@ -466,10 +411,7 @@ class Device(EmptyDevice):
             raise ValueError(f"Impedance of {impedance} too high. Must be between 1.0 and 1e6.")
     
         self.port.write(f"PD {channel}, {impedance}")
-
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
+        return self._tcpip_read()
 
     def set_pulse_trigger_mode(self, channel, mode, count):
         """
@@ -485,73 +427,49 @@ class Device(EmptyDevice):
         """
     
         self.port.write(f"PG {channel}, {mode}, {count}")
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def set_pulse_stop(self, channel):
+    def set_pulse_stop(self, channel) -> str | None:
     
         self.port.write(f"PH {channel}")
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def set_pulse_output(self, channel, output):
+    def set_pulse_output(self, channel, output) -> str | None:
         
         self.port.write(f"PO {channel}, {output}")
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def set_pulse_reset(self, channel):
+    def set_pulse_reset(self, channel) -> str | None:
     
         self.port.write(f"PS {channel}")
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def set_pulse_timing(self, channel, period, width, rise_time, fall_time):
+    def set_pulse_timing(self, channel, period, width, rise_time, fall_time) -> str | None:
         
         self.port.write(f"PT {channel}, {period}, {width}, {rise_time}, {fall_time}")
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def set_pulse_levels(self, pulse_high, pulse_low, range, current_limit):
+    def set_pulse_levels(self, channel, pulse_high, pulse_low, range, current_limit) -> str | None:
         """
         This command sets pulse high, pulse low, range, and current limit independently for each channel of the selected
         pulse card.
         """
         self.port.write(f"PV {channel}, {pulse_high}, {pulse_low}, {range}, {current_limit}")
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def set_pulse_output_parameters(self, channel, pulse_delay, trigger_polarity):
+    def set_pulse_output_parameters(self, channel, pulse_delay, trigger_polarity) -> str | None:
         """
         This command sets the trigger output parameters for pulse delay and trigger polarity.
         """
         self.port.write(f"TO {channel}, {pulse_delay}, {trigger_polarity}")
+        return self._tcpip_read()
 
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
-
-    def set_pulse_source(self, channel, trigger_source):
+    def set_pulse_source(self, channel, trigger_source) -> str | None:
         """
         This command sets the trigger source that is used to trigger the pulse card to start its output.
         """
         self.port.write(f"TS {channel}, {trigger_source}")
-
-        if self.port_string.startswith("TCPIP"):
-            answer = self.port.read()
-            return answer
+        return self._tcpip_read()
 
     def kult_get_module_description(self, library, module):
 
@@ -559,7 +477,6 @@ class Device(EmptyDevice):
 
         Attention: only works after EX command has been used before
         """
-
         self.port.write(f"GD {library} {module}")
         return self.port.read()
 
@@ -572,7 +489,6 @@ class Device(EmptyDevice):
             answer = self.port.read()
             print("EX TCPIP read:", answer)
             # return answer
-
         return self.port.read()
 
     def kult_abort(self):
