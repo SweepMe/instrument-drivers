@@ -47,7 +47,7 @@ class Device(EmptyDevice):
         self.savetype = [True, True]  # True to save data
 
         self.port_manager = True
-        self.port_types = ["USB", "GPIB"]
+        self.port_types = ["USB", "GPIB", "TCPIP"]
         self.port_properties = {"timeout": 10}
         self.port_identifications = ["KEITHLEY INSTRUMENTS,MODEL 2450,"]
 
