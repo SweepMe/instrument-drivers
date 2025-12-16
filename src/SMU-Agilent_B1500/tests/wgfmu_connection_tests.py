@@ -15,7 +15,7 @@ DRIVER_PATH = r"C:\~\instrument-drivers\src"  # Needs to be adjusted
 DRIVER_NAME = "Logger-PREVAC_TMC13"
 
 ADDRESS = "GPIB0::16::INSTR"
-CHANNEL = wgfmu.create_channel_id(1, 1)
+CHANNEL = 101  # wgfmu.create_channel_id(1, 1)
 
 
 class ConnectionTest(unittest.TestCase):
@@ -90,12 +90,18 @@ class ConnectionTest(unittest.TestCase):
         wgfmu.add_vector(pattern_name, 0.0001, 0)
         wgfmu.add_vector(pattern_name, 0.0004, 0)
 
-        # Repeat 10 times
-        wgfmu.add_sequence(CHANNEL, pattern_name, 10)
-
         wgfmu.set_measure_event(
             pattern_name,
-            "event",
+            "evt",
+            0,
+            1000,
+            0.000001,
+            0,
+            "average"
+        )
+        wgfmu.set_measure_event(
+            pattern_name,
+            "evt",
             0,
             100,
             0.00001,
@@ -103,23 +109,30 @@ class ConnectionTest(unittest.TestCase):
             "average"
         )
 
+        # Repeat 10 times
+        wgfmu.add_sequence(CHANNEL, pattern_name, 10)
+
         # Online - open session is done in setUp
         wgfmu.initialize()
         wgfmu.set_operation_mode(CHANNEL, wgfmu.OperationMode.FASTIV)
         wgfmu.connect(CHANNEL)
         status = wgfmu.get_channel_status(CHANNEL)
         print(status)
+
+        assert wgfmu.is_measure_enabled(CHANNEL), "Measurement should be enabled."
+
         wgfmu.execute()
 
         # for _ in range(10):
         #     status = wgfmu.get_channel_status(CHANNEL)
         #     print(status)
         #     time.sleep(0.01)
-
+        time.sleep(5)
         wgfmu.wait_until_completed()
 
         completed_points, total_points = wgfmu.get_measure_value_size(CHANNEL)
         print(f"Completed points: {completed_points}, Total points: {total_points}")
+        assert completed_points > 0, "No measurement points were completed."
 
         wgfmu.initialize()
-        wgfmu.disconnect(CHANNEL)
+        # wgfmu.disconnect(CHANNEL)
