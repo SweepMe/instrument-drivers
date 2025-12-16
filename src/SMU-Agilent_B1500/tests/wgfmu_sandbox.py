@@ -273,6 +273,17 @@ def get_channel_status(channel: int) -> tuple[ChannelStatus, int, int]:
     return status, int(c_elapsed_time.value), int(c_estimated_total_time.value)
 
 
+def is_measure_enabled(channel: int) -> bool:
+    """Check if measurement is enabled for the specified channel."""
+    c_enabled = ctypes.c_int32()
+    _dll.WGFMU_isMeasureEnabled(
+        ctypes.c_int32(channel),
+        ctypes.byref(c_enabled),
+    )
+    status = int(c_enabled.value)
+    return status == 7001  # 7000 = disabled, 7001 = enabled
+
+
 def get_measure_value_size(channel: int) -> tuple[int, int]:
     """Get number of completed measurement points and total number of measurement points."""
     c_completed_points = ctypes.c_int32()
@@ -346,6 +357,7 @@ if __name__ == "__main__":
     add_vector(my_pattern, 0.001, 0)  # 2 ms, 0 V
     add_vector_array(my_pattern, [0.001, 0.001, 0.001], [1, 0, 1])  # 3 ms, 1 V; 4 ms, 0 V; 5 ms, 1 V
     ret = get_pattern_force_value_size(my_pattern)
+    print(f"Pattern size: {ret}")
 
     # Online commands
     open_session("GPIB0::16::INSTR")
