@@ -126,7 +126,6 @@ class Device(EmptyDevice):
         return {
             "Average": ["1", "2", "4", "8", "16", "32", "64"],
             "SweepMode": list(self.sweepmode_commands),
-            "SweepValue": ["List"],
             "StepMode":  list(self.sweepmode_commands),
             "ValueTypeRMS": ["Voltage RMS in V:", "Current RMS in A:"],
             "ValueRMS": 0.02,
