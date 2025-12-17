@@ -170,8 +170,8 @@ class Device(EmptyDevice):
         self.trigger_type = parameter["Trigger"]
 
         # List Mode
-        if parameter["SweepValue"] == "List sweep":
-            self.use_list_sweep = True
+        self.use_list_sweep = parameter.get("SweepValue", "") == "List sweep"
+        if self.use_list_sweep:
             self.handle_list_sweep_parameter(parameter)
 
     def handle_bias_mode(self) -> None:
