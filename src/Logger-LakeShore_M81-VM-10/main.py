@@ -70,7 +70,7 @@ class Device(EmptyDevice):
         }
 
         # Measurement Parameters with default values
-        self.slot: str = "M0"
+        self.slot: str = ""
         self.port_string: str = ""
         self.nplc: float = 3  # Averaging time in Number of Power-Line-Cycles (i.e. 1/50 s)
         self.mode_set: str = "DC"  # Direct or alternating current setting
@@ -96,31 +96,25 @@ class Device(EmptyDevice):
 
 
     def apply_gui_parameters(self, parameter):
-        self.slot = parameter["Channel"]
+        channel = parameter["Channel"]
+        if len(channel) == 2:
+            self.slot = channel[1] 
 
         self.port_string = parameter["Port"] # use this string to open the right port object later during 'connect'
         self.mode_set = parameter["Mode"]
-        try:
-            self.mode_read = self.modes[self.mode_set]
-        except KeyError:  # Do not fail, if parameter is not yet loaded
-            self.mode_read = ""
+        self.mode_read = self.modes.get(self.mode_set, "")
         self.range_mode = parameter["Range mode"]
         if parameter.get("Manual range limit"):
-            try:
-                self.limit = self.range_limits[parameter["Manual range limit"]]
-            except KeyError:  # Do not fail, if parameter is not yet loaded
-                self.limit = 0.0
-        try:
-            self.input_config = self.input_configurations[parameter["Input configuration"]]
-        except KeyError:  # Do not fail, if parameter is not yet loaded
-            self.input_config = ""
+            self.limit = self.range_limits.get(parameter["Manual range limit"], 0.0)
+        self.input_config = self.input_configurations.get(parameter["Input configuration"], "")
+
 
         try:
             self.nplc = float(parameter["Averaging time (NPLC)"])
         except ValueError:  # Do not fail, if parameter is not yet loaded or empty
             self.nplc = 0.1
 
-        self.shortname = "VM-10 @ " + self.slot  # short name will be shown in the sequencer
+        self.shortname = "VM-10 @ M" + self.slot  # short name will be shown in the sequencer
 
         self.variables = ["Voltage " + self.mode_read] # Voltage DC or Voltage RMS, depending on mode
         self.units = ["V"] # make sure that you have as many units as you have variables
@@ -137,8 +131,8 @@ class Device(EmptyDevice):
 
     def initialize(self):
         self.check_device()
-        self.port.write(f'SENSe{self.slot[1]}:PRESet')  # Load power-on defaults
-
+        self.port.write(f'SENSe{self.slot}:PRESet')  # Load power-on defaults
+    
     def deinitialize(self):
         # called only once at the end of the measurement
         pass
@@ -155,7 +149,7 @@ class Device(EmptyDevice):
     """ the following functions are called for each measurement point """
 
     def measure(self):
-        self.port.write(f"READ:SENS{self.slot[1]}:{self.mode_read}?")
+        self.port.write(f"READ:SENS{self.slot}:{self.mode_read}?")
         
     def read_result(self):
         
@@ -168,30 +162,30 @@ class Device(EmptyDevice):
     """ wrapped functions """
 
     def set_mode(self, mode):
-        self.port.write(f'SENSe{self.slot[1]}:MODE {mode}')
+        self.port.write(f'SENSe{self.slot}:MODE {mode}')
 
     def set_range(self, limit):
         # Set range during initialize
         if self.range_mode == "Manual":
-            self.port.write(f'SENSe{self.slot[1]}:VOLTage:RANGe:AUTO 0')  # Manual ranging
-            self.port.write(f'SENSe{self.slot[1]}:VOLTage:RANGe {limit}')
+            self.port.write(f'SENSe{self.slot}:VOLTage:RANGe:AUTO 0')  # Manual ranging
+            self.port.write(f'SENSe{self.slot}:VOLTage:RANGe {limit}')
         else:
-            self.port.write(f'SENSe{self.slot[1]}:VOLTage:RANGe:AUTO 1')  # Auto ranging
+            self.port.write(f'SENSe{self.slot}:VOLTage:RANGe:AUTO 1')  # Auto ranging
 
     def set_nplc(self, nplc):
         #Set averaging time during initialize
         if not (600 >= nplc >= 0.01):
             raise ValueError("NPLC must be between 0.01 and 600.00.")
-        self.port.write(f'SENSe{self.slot[1]}:NPLCycles {nplc}')
+        self.port.write(f'SENSe{self.slot}:NPLCycles {nplc}')
 
     def set_input_config(self, input_config):  # Set input configuration during initialize
-        self.port.write(f'SENSe{self.slot[1]}:CONFiguration {input_config}')
+        self.port.write(f'SENSe{self.slot}:CONFiguration {input_config}')
 
     def check_device(self):
         # Check, if connected device is actually a VM-10 module:
-        model = self.port.query(f'SENSe{self.slot[1]}:MODel?')
+        model = self.port.query(f'SENSe{self.slot}:MODel?')
         if 'VM-10' not in model:
             raise ValueError(
-                f"Device connected on channel {self.slot} does not match this driver. "
+                f"Device connected on channel M{self.slot} does not match this driver. "
                 f"Found: '{model}'")
 

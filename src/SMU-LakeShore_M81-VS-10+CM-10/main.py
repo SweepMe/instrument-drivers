@@ -78,8 +78,8 @@ class Device(EmptyDevice):
 
         # Common parameters
         # Source slot
-        self.sslot: str = "S0"
-        self.mslot: str = "M0"
+        self.sslot: str = ""
+        self.mslot: str = ""
         self.port_string: str = ""
         self.dark: bool = False
 
@@ -103,8 +103,9 @@ class Device(EmptyDevice):
     def update_gui_parameters(self, parameters):
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         gui_parameters = {
-            "Source channel": ["S1", "S2", "S3"],
-            "Measure channel": ["M1", "M2", "M3"],
+            "Channel": ["S1 + M1","S1 + M2","S1 + M3",
+                        "S2 + M1","S2 + M2","S2 + M3",
+                        "S3 + M1","S3 + M2","S3 + M3",],
             "SweepMode": ["Voltage (V)"],
             "Compliance": 0.1,  # Compliance called "Current protection" in VS-10
             "Speed": list(self.speed_nplcs.keys()),
@@ -120,8 +121,10 @@ class Device(EmptyDevice):
 
     def apply_gui_parameters(self, parameter):
         # Source / measure channel mapping
-        self.sslot = parameter["Source channel"]  # e.g. "S1"
-        self.mslot = parameter["Measure channel"]  # e.g. "M1"
+        channel = parameter.get("Channel")
+        if len(channel) == 7:
+            self.sslot = channel[1]  # e.g. "1 for "S1 + M3"
+            self.mslot = channel[-1]  # e.g. "3 for "S1 + M3"
         self.port_string = parameter["Port"]
         self.range_source = self.source_range_limits[parameter["RangeVoltage"]]
         self.range_current = self.current_range_limits[parameter["Range"]]
@@ -145,7 +148,7 @@ class Device(EmptyDevice):
         self.dark = parameter.get("Turn off LEDs", False)
 
         # Short name and GUI variables
-        self.shortname = f"SMU VS-10 S{self.sslot[1]} / CM-10 M{self.mslot[1]}"
+        self.shortname = f"SMU VS-10 S{self.sslot} / CM-10 M{self.mslot}"
         self.variables = ["Voltage", "Current"]
         self.units = ["V", "A"]
         self.plottype = [True, True]
@@ -162,8 +165,8 @@ class Device(EmptyDevice):
         # Check that both modules are present
         self.check_device()
         # Reset both source and measure modules
-        self.port.write(f"SOURce{self.sslot[1]}:PRESet")
-        self.port.write(f"SENSe{self.mslot[1]}:PRESet")
+        self.port.write(f"SOURce{self.sslot}:PRESet")
+        self.port.write(f"SENSe{self.mslot}:PRESet")
 
     def deinitialize(self):
         pass
@@ -191,7 +194,7 @@ class Device(EmptyDevice):
 
     def read_result(self):
         # trigger read of measure module (READ for DC)
-        self.port.write(f"READ:SENS{self.mslot[1]}:DC?")
+        self.port.write(f"READ:SENS{self.mslot}:DC?")
         try:
             res = self.port.read()
             self.current = float(res)
@@ -199,7 +202,7 @@ class Device(EmptyDevice):
             self.current = float('nan')
 
         # read applied voltage
-        self.port.write(f"SOURce{self.sslot[1]}:VOLTage:LEVel:AMPLitude:PEAK?")
+        self.port.write(f"SOURce{self.sslot}:VOLTage:LEVel:AMPLitude:PEAK?")
         try:
             self.volt_read = float(self.port.read())
         except (KeyError, TypeError):
@@ -220,55 +223,55 @@ class Device(EmptyDevice):
         # check voltage limits
         if not (self.vlim_low <= amplitude <= self.vlim_high):
             raise ValueError("Voltage must be within the limits you set.")
-        self.port.write(f"SOURce{self.sslot[1]}:VOLTage:LEVel:AMPLitude:PEAK {amplitude}")
+        self.port.write(f"SOURce{self.sslot}:VOLTage:LEVel:AMPLitude:PEAK {amplitude}")
 
     def set_ranging_source(self, range_set: float):
         """Set range mode and manual limits for the source."""
         if range_set == 0:  # 0 means Auto-range
-            self.port.write(f"SOURce{self.sslot[1]}:VOLTage:RANGe:AUTO 1")
+            self.port.write(f"SOURce{self.sslot}:VOLTage:RANGe:AUTO 1")
         else:
-            self.port.write(f"SOURce{self.sslot[1]}:VOLTage:RANGe:AUTO 0")
-            self.port.write(f"SOURce{self.sslot[1]}:VOLTage:RANGe:DC {range_set}")
+            self.port.write(f"SOURce{self.sslot}:VOLTage:RANGe:AUTO 0")
+            self.port.write(f"SOURce{self.sslot}:VOLTage:RANGe:DC {range_set}")
 
     def set_dark_mode(self):
-        self.port.write(f"SOURce{self.sslot[1]}:DMODe {'1' if self.dark else '0'}")
+        self.port.write(f"SOURce{self.sslot}:DMODe {'1' if self.dark else '0'}")
 
     def set_current_protection(self, level: float):
         """Set DC current protection level (SOURce#:CURRent:PROTection)."""
         if level <= 0:
             raise ValueError("Current protection level must be positive (in A).")
         self.current_protect = level
-        self.port.write(f"SOURce{self.sslot[1]}:CURRent:PROTection {level}")
+        self.port.write(f"SOURce{self.sslot}:CURRent:PROTection {level}")
 
     def set_voltage_limits(self, low: float, high: float):
         """Set software high/low voltage output limits."""
         if not (-10.0 <= low < high <= 10.0):
             raise ValueError("Voltage limits must not exceed +-10 V "
                              "and the low limit needs be smaller than the high one.")
-        self.port.write(f"SOURce{self.sslot[1]}:VOLTage:LIMit:LOW {self.vlim_low}")
-        self.port.write(f"SOURce{self.sslot[1]}:VOLTage:LIMit:HIGH {self.vlim_high}")
+        self.port.write(f"SOURce{self.sslot}:VOLTage:LIMit:LOW {self.vlim_low}")
+        self.port.write(f"SOURce{self.sslot}:VOLTage:LIMit:HIGH {self.vlim_high}")
 
     def set_output(self, enabled: bool):
         """Enable or disable the source output (SOURce#:STATe)."""
-        self.port.write(f"SOURce{self.sslot[1]}:STATe {'1' if enabled else '0'}")
+        self.port.write(f"SOURce{self.sslot}:STATe {'1' if enabled else '0'}")
 
     # ---------------- Measure (CM-10) wrapper functions ----------------
     def set_range_measure(self, range_set):
         # measure_limit is in A
         if range_set == 0:
-            self.port.write(f"SENSe{self.mslot[1]}:CURRent:RANGe:AUTO 1")
+            self.port.write(f"SENSe{self.mslot}:CURRent:RANGe:AUTO 1")
         else:
-            self.port.write(f"SENSe{self.mslot[1]}:CURRent:RANGe:AUTO 0")
-            self.port.write(f"SENSe{self.mslot[1]}:CURRent:RANGe {range_set}")
+            self.port.write(f"SENSe{self.mslot}:CURRent:RANGe:AUTO 0")
+            self.port.write(f"SENSe{self.mslot}:CURRent:RANGe {range_set}")
 
     def set_nplc(self):
-        self.port.write(f"SENSe{self.mslot[1]}:NPLCycles {self.nplc}")
+        self.port.write(f"SENSe{self.mslot}:NPLCycles {self.nplc}")
 
     def check_device(self):
         # Verify both modules are present and of the expected type
-        model_s = self.port.query(f"SOURce{self.sslot[1]}:MODel?")
-        model_m = self.port.query(f"SENSe{self.mslot[1]}:MODel?")
+        model_s = self.port.query(f"SOURce{self.sslot}:MODel?")
+        model_m = self.port.query(f"SENSe{self.mslot}:MODel?")
         if "VS-10" not in model_s:
-            raise ValueError(f"Source on channel {self.sslot} is not a VS-10. Found: '{model_s}'")
+            raise ValueError(f"Source on channel S{self.sslot} is not a VS-10. Found: '{model_s}'")
         if '"CM-10"' not in model_m and "CM-10" not in model_m:
-            raise ValueError(f"Measure on channel {self.mslot} is not a CM-10. Found: '{model_m}'")
+            raise ValueError(f"Measure on channel M{self.mslot} is not a CM-10. Found: '{model_m}'")
