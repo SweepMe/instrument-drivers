@@ -72,8 +72,8 @@ class Device(EmptyDevice):
         }
 
         # Measurement Parameters
-        self.src_slot: str = "S3"     # VS-10 source slot  ToDo: Revert hard-coding when parameter can be set manually.
-        self.meas_slot: str = "M3"    # CM-10 measurement slot  ToDo: Revert hard-coding when parameter can be set manually.
+        self.src_slot: str = ""     # VS-10 source slot
+        self.meas_slot: str = ""    # CM-10 measurement slot
 
         self.amplitude: float = 0.01  # sine amplitude (peak, V)
         self.frequency: float = 1000.0
@@ -101,8 +101,9 @@ class Device(EmptyDevice):
     def update_gui_parameters(self, parameters):
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         gui_parameters = {
-            "Source channel (VS-10)": ["S1", "S2", "S3"],  # This requires a paramter box in the LCRmeter device class
-            "Measure channel (CM-10)": ["M1", "M2", "M3"],  # This requires a paramter box in the LCRmeter device class
+            "Channel": ["S1 + M1","S1 + M2","S1 + M3",
+                        "S2 + M1","S2 + M2","S2 + M3",
+                        "S3 + M1","S3 + M2","S3 + M3",],
             "SweepMode": ["None", "Frequency in Hz", "Voltage bias in V", "AC Voltage level in V"],
             "StepMode": ["None", "Frequency in Hz", "Voltage bias in V",  "AC Voltage level in V"],
             "ValueTypeRMS": ["Voltage RMS in V"],
@@ -119,17 +120,21 @@ class Device(EmptyDevice):
 
     def apply_gui_parameters(self, parameter):
         """Update parameter from SweepMe! GUI."""
+        channel = parameter.get("Channel")
+        if len(channel) == 7:
+            self.src_slot = channel[1]  # e.g. "1 for "S1 + M3"
+            self.meas_slot = channel[-1]  # e.g. "3 for "S1 + M3"
         self.sweepmode = parameter["SweepMode"]
         self.stepmode = parameter["StepMode"]
 
         self.amplitude = float(parameter["ValueRMS"])
         self.offset = float(parameter["ValueBias"])
         self.frequency = float(parameter["Frequency"])
-        self.nplc = self.speed_nplcs[parameter["Integration"]]
-        self.measure_range = self.measurement_ranges[parameter["Range"]]
+        self.nplc = self.speed_nplcs.get(parameter["Integration"], 1.0)
+        self.measure_range = self.measurement_ranges.get(parameter["Range"],0.0)
         self.number_of_cycles = int(parameter["Average"])
 
-        self.shortname = f"LCR @ {self.meas_slot} + {self.src_slot}"
+        self.shortname = f"LCR @ S{self.src_slot} + M{self.meas_slot}"
 
     def connect(self) -> None:
         pass
@@ -139,12 +144,12 @@ class Device(EmptyDevice):
 
     def initialize(self):
         # Reset source and measurement modules
-        self.port.write(f"SOURce{self.src_slot[1]}:PRESet")
-        self.port.write(f"SENSe{self.meas_slot[1]}:PRESet")
+        self.port.write(f"SOURce{self.src_slot}:PRESet")
+        self.port.write(f"SENSe{self.meas_slot}:PRESet")
 
     def configure(self) -> None:
         # --- VS-10: sine excitation ---------------------------------------
-        self.port.write(f"SOURce{self.src_slot[1]}:FUNCtion:SHAPe SINusoid")  # Shape is always Sine for LCRmeter
+        self.port.write(f"SOURce{self.src_slot}:FUNCtion:SHAPe SINusoid")  # Shape is always Sine for LCRmeter
         # Amplitude, Frequency and Offset
         if self.sweepmode.startswith("AC Voltage") or self.stepmode.startswith("AC Voltage"):
             self.set_amplitude(0)  # Safe starting condition, sweep-value will be set in apply
@@ -158,9 +163,9 @@ class Device(EmptyDevice):
             self.set_frequency(self.frequency)
 
         # --- CM-10: Lock-In configuration ---------------------------------
-        self.port.write(f"SENSe{self.meas_slot[1]}:MODE LIA")  # Mode is always LockIn for LCRmeter
-        self.port.write(f"SENSe{self.meas_slot[1]}:LIA:RSOurce {self.src_slot}")  # Source slot is always reference for LCRmeter
-        self.port.write(f"SENSe{self.meas_slot[1]}:LIA:DPHase:AUTO")
+        self.port.write(f"SENSe{self.meas_slot}:MODE LIA")  # Mode is always LockIn for LCRmeter
+        self.port.write(f"SENSe{self.meas_slot}:LIA:RSOurce S{self.src_slot}")  # Source slot is always reference for LCRmeter
+        self.port.write(f"SENSe{self.meas_slot}:LIA:DPHase:AUTO")
         self.set_nplc(self.nplc)
         self.set_range(self.measure_range)
         self.set_average(self.number_of_cycles)
@@ -170,7 +175,7 @@ class Device(EmptyDevice):
 
     def poweron(self):
         # Turn on output
-        self.port.write(f"SOURce{self.src_slot[1]}:STATe 1")
+        self.port.write(f"SOURce{self.src_slot}:STATe 1")
 
     def apply(self) -> None:
         """Apply values."""
@@ -181,7 +186,11 @@ class Device(EmptyDevice):
         if self.stepmode != "None":
             step_value = float(self.stepvalue)
             self.handle_set_value(self.stepmode, step_value)
-        time.sleep(2)  # Give LockIn time to settle Todo: Improve this.
+
+        # Wait for settling to 0.1% (same as auto-settle in LockIn module)
+        self.port.write(f"SENSe{self.meas_slot}:LIA:STIMe?")
+        settling_time = self.port.read()
+        time.sleep(float(settling_time))
 
     def measure(self):
         # Lock-In runs continuously; nothing to trigger
@@ -189,14 +198,14 @@ class Device(EmptyDevice):
 
     def read_result(self):
         # Fetch X and Y
-        self.port.write(f"FETCh:MULTiple? MX,{self.meas_slot[1]},MY,{self.meas_slot[1]}")
+        self.port.write(f"FETCh:MULTiple? MX,{self.meas_slot},MY,{self.meas_slot}")
         resp = self.port.read().split(",")
 
         self.x = float(resp[0])
         self.y = float(resp[1])
 
         # Fetch lock-in frequency
-        self.port.write(f"FETCh:SENSe{self.meas_slot[1]}:LIA:FREQuency?")
+        self.port.write(f"FETCh:SENSe{self.meas_slot}:LIA:FREQuency?")
         self.freq_read = float(self.port.read())
 
         # Compute complex impedance
@@ -219,7 +228,7 @@ class Device(EmptyDevice):
 
     def poweroff(self):
         # Turn off output
-        self.port.write(f"SOURce{self.src_slot[1]}:STATe 0")
+        self.port.write(f"SOURce{self.src_slot}:STATe 0")
 
     """ here wrapped functions start """
 
@@ -240,41 +249,44 @@ class Device(EmptyDevice):
 
     def set_amplitude(self, amplitude: float):
         """Set source amplitude (peak)."""
-        self.port.write(f"SOURce{self.src_slot[1]}:VOLTage:LEVel:AMPLitude:RMS {amplitude}")
+        self.port.write(f"SOURce{self.src_slot}:VOLTage:LEVel:AMPLitude:RMS {amplitude}")
 
     def set_offset(self, offset: float):
         """Set voltage offset."""
-        self.port.write(f"SOURce{self.src_slot[1]}:VOLTage:LEVel:OFFSet {offset}")
+        self.port.write(f"SOURce{self.src_slot}:VOLTage:LEVel:OFFSet {offset}")
 
     def set_frequency(self, frequency: float) -> None:
         """Set the frequency in Hz."""
         if not (0.0001 <= frequency <= 100000):
             raise ValueError("Frequency must be between 0.1 mHz and 100 kHz for sine waves.")
-        self.port.write(f"SOURce{self.src_slot[1]}:FREQuency:FIXed {frequency}")
+        self.port.write(f"SOURce{self.src_slot}:FREQuency:FIXed {frequency}")
 
     def set_range(self, limit):
         if limit == 0:
-            self.port.write(f'SENSe{self.meas_slot[1]}:CURRent:RANGe:AUTO 1')
+            self.port.write(f'SENSe{self.meas_slot}:CURRent:RANGe:AUTO 1')
         else:
-            self.port.write(f'SENSe{self.meas_slot[1]}:CURRent:RANGe {limit}')
+            self.port.write(f'SENSe{self.meas_slot}:CURRent:RANGe {limit}')
 
     def set_nplc(self, nplc):
         if not (600 >= nplc >= 0.01):
             raise ValueError("NPLC must be between 0.01 and 600.00.")
-        self.port.write(f'SENSe{self.meas_slot[1]}:NPLCycles {nplc}')
+        self.port.write(f'SENSe{self.meas_slot}:NPLCycles {nplc}')
 
     def set_average(self, number):
         if not (1000000 >= number >= 1):
             raise ValueError("Number of reference cycles must be >= 1 and <= 1,000,000.")
-        self.port.write(f"SENSe{self.meas_slot[1]}:LIA:REFerence:CYCLes {number}")
+        self.port.write(f"SENSe{self.meas_slot}:LIA:REFerence:CYCLes {number}")
 
     def handle_set_value(self, mode: str, value: float) -> None:
         """Depending on the mode, set the value."""
         if mode == "Voltage bias in V":
+            self.offset = value
             self.set_offset(value)
 
         elif mode == "AC Voltage level in V":
+            self.amplitude = value
             self.set_amplitude(value)
 
         elif mode == "Frequency in Hz":
+            self.frequency = value
             self.set_frequency(value)
