@@ -63,7 +63,7 @@ class Device(EmptyDevice):
         # Default GUI / internal parameters
         self.slot: str = "S0"             # Source slot naming, use e.g. "S1","S2","S3" in GUI
         self.port_string: str = ""
-        self.sweepmode: str = "Amplitude (V)"  # SweepMode selection
+        self.sweepmode: str = "Amplitude in V"  # SweepMode selection
         self.amplitude: float = 0.0       # source amplitude
         self.offset: float = 0.0          # DC offset (valid for all shapes)
         self.applied_voltage: float = float('nan')
@@ -74,11 +74,10 @@ class Device(EmptyDevice):
         self.range_mode: str = "Auto"     # "Auto" or "Manual"
         self.dc_range_limit: float = 0.01 # default DC range (V) when manual selected
         self.ac_range_limit: float = 0.01 # default AC range (V) when manual selected
-        self.advanced: bool = False
         self.sync_enabled: bool = False
         self.sync_source: str = "S1"
         self.sync_phase: float = 0.0
-        self.current_protect: float = 100  # Current protection level in mA (DC limit), default 100 mA
+        self.current_protect: float = None  # Current protection level in mA (DC limit), None: Not in use
         self.vlim_high: float = 10.0
         self.vlim_low: float = -10.0
         self.dark: bool = False
@@ -91,49 +90,50 @@ class Device(EmptyDevice):
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         gui_parameters = {
             "Channel": ["S1", "S2", "S3"],
-            "SweepMode": ["Amplitude (V)", "Offset (V)", "Frequency (Hz)"]}
+            "SweepMode": ["Amplitude in V", "Offset in V", "Frequency in Hz"]}
         self.sweepmode = parameters.get("SweepMode")
-        if self.sweepmode != "Amplitude (V)":
-            gui_parameters["Amplitude (V)"] = 0.0
+        if self.sweepmode != "Amplitude in V":
+            gui_parameters["Amplitude in V"] = 0.0
 
         # Source shapes
-        if self.sweepmode == "Amplitude (V)":
+        self.shapes = {
+            "Sine": "SINusoid",
+            "Triangle": "TRIangle",
+            "Square": "SQUAre",
+        }
+        if self.sweepmode == "Amplitude in V":
             self.shapes["DC"] = "DC"  # DC mode is not meaningful for offset- or frequency-sweeps.
-        self.shapes["Sine"] = "SINusoid"
-        self.shapes["Triangle"] = "TRIangle"
-        self.shapes["Square"] = "SQUAre"
 
         gui_parameters["Shape"] = list(self.shapes.keys())
-        gui_parameters["Range Mode"] = ["Auto", "Manual"]
+        gui_parameters["Range mode"] = ["Auto", "Manual"]
 
         # shape-dependent fields
         shape = parameters.get("Shape")
         if shape and shape != "DC":
-            if self.sweepmode != "Offset (V)":
-                gui_parameters["Offset (V)"] = 0.0
-            if self.sweepmode != "Frequency (Hz)" and not self.sync_enabled:
-                gui_parameters["Frequency (Hz)"] = 11.0
+            if self.sweepmode != "Offset in V":
+                gui_parameters["Offset in V"] = 0.0
+            if self.sweepmode != "Frequency in Hz" and not self.sync_enabled:
+                gui_parameters["Frequency in Hz"] = 11.0
             if shape in ["Square", "Triangle"]:
                 gui_parameters["Duty"] = 0.5  # 0.0 - 1.0 (0.001 - 0.999 recommended)
 
-        meas_range = parameters.get("Range Mode")
+        meas_range = parameters.get("Range mode")
         if meas_range == "Manual":
             # allow user to set DC and AC ranges independently
             gui_parameters["Manual DC range limit"] = list(self.range_limits.keys())
             if parameters.get("Shape") != "DC":
                 gui_parameters["Manual AC range limit"] = list(self.range_limits.keys())
         gui_parameters[" "] = None  # Empty line 1
-        gui_parameters["Advanced Settings"] = False
-        if parameters.get("Advanced Settings"):
-            gui_parameters["Current protection (mA)"] = 100.0
-            gui_parameters["High voltage output limit (V)"] = 10.0
-            gui_parameters["Low voltage output limit (V)"] = -10.0
-            if shape != "DC":
-                gui_parameters["Sync"] = False
-                if parameters.get("Sync"):
-                    gui_parameters["Sync Source"] = ["S1", "S2", "S3"]
-                    gui_parameters["Sync Phase (deg)"] = 0.0
-            gui_parameters["Turn off LED"] = False
+        gui_parameters["Optional advanced settings"] = None
+        gui_parameters["Current protection in mA"] = 100.0
+        gui_parameters["High output limit in V"] = 10.0
+        gui_parameters["Low output limit in V"] = -10.0
+        if shape != "DC":
+            gui_parameters["Sync"] = False
+            if parameters.get("Sync"):
+                gui_parameters["Sync source"] = ["S1", "S2", "S3"]
+                gui_parameters["Sync phase in degree"] = 0.0
+        gui_parameters["Turn off LED"] = False
 
         return gui_parameters
 
@@ -141,15 +141,15 @@ class Device(EmptyDevice):
         # Basic parameters
         self.slot = parameter["Channel"]
         self.port_string = parameter["Port"]
-        if self.sweepmode != "Amplitude (V)":
-            self.amplitude = float(parameter["Amplitude (V)"])
+        if self.sweepmode != "Amplitude in V":
+            self.amplitude = float(parameter["Amplitude in V"])
 
         self.shape_set = parameter["Shape"]
         try:
             self.shape_scpi = self.shapes[self.shape_set]
         except KeyError:
-            self.shape_scpi = ""
-        self.range_mode = parameter["Range Mode"]
+            self.shape_scpi = "DC"
+        self.range_mode = parameter["Range mode"]
         if parameter.get("Manual DC range limit"):
             self.dc_range_limit = self.range_limits[parameter["Manual DC range limit"]]
         if parameter.get("Manual AC range limit"):
@@ -158,11 +158,11 @@ class Device(EmptyDevice):
         # Frequency and duty (only valid for non-DC shapes)
         if self.shape_set != "DC":
             try:
-                self.freq = float(parameter["Frequency (Hz)"])
+                self.freq = float(parameter["Frequency in Hz"])
             except (KeyError, ValueError):
                 self.freq = 0
             try:
-                self.offset = float(parameter["Offset (V)"])
+                self.offset = float(parameter["Offset in V"])
             except (KeyError, ValueError):
                 self.offset = 0.0
             if self.shape_set in ["Square", "Triangle"]:
@@ -172,40 +172,31 @@ class Device(EmptyDevice):
                     self.duty = 0.5
 
         # Advanced
-        self.advanced = parameter["Advanced Settings"]
-        if self.advanced:
-            try:
-                self.current_protect = float(parameter["Current protection (mA)"])
-            except (KeyError, ValueError):
-                self.current_protect = 0.000001
-            try:
-                self.vlim_high = float(parameter["High voltage output limit (V)"])
-                self.vlim_low = float(parameter["Low voltage output limit (V)"])
-            except (KeyError, ValueError):
-                self.vlim_high = 0
-                self.vlim_low = 0
-
-            # Sync
-            if self.shape_set != "DC":
+        self.current_protect = parameter.get("Current protection in mA", None)
+        self.vlim_high = parameter.get("High output limit in V", None)
+        if self.vlim_high:
+            self.vlim_high = float(self.vlim_high)
+        self.vlim_low = parameter.get("Low output limit in V", None)
+        if self.vlim_low:
+            self.vlim_low = float(self.vlim_low)
+        # Sync
+        if self.shape_set != "DC":
+            self.sync_enabled = parameter.get("Sync", False)
+            if self.sync_enabled:
                 try:
-                    self.sync_enabled = parameter.get("Sync", False)
+                    self.sync_source = parameter["Sync source"]
                 except KeyError:
-                    self.sync_enabled = False
-                if self.sync_enabled:
-                    try:
-                        self.sync_source = parameter["Sync Source"]
-                    except KeyError:
-                        self.sync_source = "S0"
-                    try:
-                        self.sync_phase = float(parameter["Sync Phase (deg)"])
-                    except (KeyError, ValueError):
-                        self.sync_phase = 0.0
-            else:
-                # force sync off for DC shape
-                self.sync_enabled = False
+                    self.sync_source = "S0"
+                try:
+                    self.sync_phase = float(parameter["Sync phase in degree"])
+                except (KeyError, ValueError):
+                    self.sync_phase = 0.0
+        else:
+            # force sync off for DC shape
+            self.sync_enabled = False
 
-            # Dark mode
-            self.dark = parameter.get("Turn off LED", False)
+        # Dark mode
+        self.dark = parameter.get("Turn off LED", False)
 
         self.shortname = "VS-10 @ " + self.slot
 
@@ -213,18 +204,14 @@ class Device(EmptyDevice):
         if self.shape_set == "DC":
             self.variables = ["Voltage"]
             self.units = ["V"]
-            self.plottype = [True]
-            self.savetype = [True]
         elif self.shape_set == "Sine":
             self.variables = ["Voltage RMS", "Voltage Peak", "Frequency", "Offset"]
             self.units = ["V", "V", "Hz", "V"]
-            self.plottype = [True, True, True, True]
-            self.savetype = [True, True, True, True]
         else:
             self.variables = ["Voltage Peak", "Frequency", "Offset"]
             self.units = ["V", "Hz", "V"]
-            self.plottype = [True, True, True]
-            self.savetype = [True, True, True]
+        self.plottype = [True] * len(self.variables)
+        self.savetype = [True] * len(self.variables)
 
     """ here, semantic standard functions start that are called by SweepMe! during a measurement """
 
@@ -258,31 +245,39 @@ class Device(EmptyDevice):
             self.set_duty(self.duty)
 
         # Advanced settings
-        if self.advanced:
-            self.set_advanced_settings()
-            # Current protection and voltage limits (must be set after shape/amplitude so they apply to configured values)
-            self.set_voltage_limits(self.vlim_low, self.vlim_high)
-            self.set_current_protection(self.current_protect)
+        # Sync
+        self.set_sync()
+        # Current protection and voltage limits (must be set after shape/amplitude so they apply to configured values)
+        self.set_voltage_limits(self.vlim_low, self.vlim_high)
+        self.set_current_protection(self.current_protect)
+        # Dark mode setting
+        self.set_dark()
+
+        # Amplitude, Frequency and Offset
+        if self.sweepmode.startswith("Amplitude"):
+            self.set_amplitude(0)  # Safe starting condition, sweep-value will be set in apply
+        else:
+            self.set_amplitude(self.amplitude)
+        if self.sweepmode.startswith("Offset"):
+            self.set_offset(0)  # Safe starting condition, sweep-value will be set in apply
+        else:
+            self.set_offset(self.offset)
+        if self.sweepmode != "Frequency in Hz" and self.shape_set != "DC" and not self.sync_enabled:
+            self.set_frequency(self.freq)
+
+    def poweron(self):
+        # Turn on output
+        self.port.write(f"SOURce{self.slot[1]}:STATe 1")
 
     """ the following functions are called for each measurement point """
 
-    def start(self):
-        # Amplitude, Frequency and Offset
-        if self.sweepmode != "Amplitude (V)":
-            self.set_amplitude(self.amplitude)
-        if self.sweepmode != "Frequency (Hz)" and self.shape_set != "DC" and not self.sync_enabled:
-            self.set_frequency(self.freq)
-        if self.sweepmode != "Offset (V)":
-            self.set_offset(self.offset)
-        self.port.write(f"SOURce{self.slot[1]}:STATe 1")
-
     def apply(self):
         """Only called if the sweep value changes: Sets a new value to the device."""
-        if self.sweepmode == "Amplitude (V)":
+        if self.sweepmode.startswith("Amplitude"):
             self.set_amplitude(float(self.value))
-        elif self.sweepmode == "Frequency (Hz)":
+        elif self.sweepmode.startswith("Frequency"):
             self.set_frequency(float(self.value))
-        elif self.sweepmode == "Offset (V)":
+        elif self.sweepmode.startswith("Offset"):
             self.set_offset(float(self.value))
 
     def read_result(self):
@@ -323,15 +318,19 @@ class Device(EmptyDevice):
             return [self.peak_read, self.freq_read, self.offset_read]
 
     def poweroff(self):
+        # Turn off output
         self.port.write(f"SOURce{self.slot[1]}:STATe 0")
 
     """ wrapped functions """
 
     def set_amplitude(self, amplitude: float):
         """Set source amplitude (peak)."""
-        if (self.vlim_low > (-abs(amplitude) + self.offset)) or (self.vlim_high < (abs(amplitude) + self.offset)):
-            raise ValueError("Output (= Amplitude + Offset) must be within the limits you set.")
-        self.amplitude = amplitude
+        if self.vlim_low:
+            if self.vlim_low > (-abs(amplitude) + self.offset):
+                raise ValueError("Output (= Amplitude + Offset) must be within the limits you set.")
+        if self.vlim_high:
+            if self.vlim_high < (abs(amplitude) + self.offset):
+                raise ValueError("Output (= Amplitude + Offset) must be within the limits you set.")
         self.port.write(f"SOURce{self.slot[1]}:VOLTage:LEVel:AMPLitude:PEAK {amplitude}")
 
     def set_offset(self, offset: float):
@@ -354,7 +353,7 @@ class Device(EmptyDevice):
             if not (0.0001 <= frequency <= 100000):
                 raise ValueError("Frequency must be between 0.1 mHz and 100 kHz for sine waves.")
         if not self.sync_enabled:  # Sync gets the frequency from another source.
-            self.port.write(f"SOURce{self.slot[1]}:FREQuency:FIXed {self.freq}")
+            self.port.write(f"SOURce{self.slot[1]}:FREQuency:FIXed {frequency}")
 
     def set_duty(self, duty: float):
         """Set duty cycle for Triangle and Square shapes. Allowed 0.0-1.0; M81 supports 0.001-0.999 increments."""
@@ -382,13 +381,12 @@ class Device(EmptyDevice):
             # Auto ranges
             self.port.write(f"SOURce{self.slot[1]}:VOLTage:RANGe:AUTO 1")
 
-    def set_advanced_settings(self):
-        """Advanced settings: Sync, dark mode, etc."""
+    def set_sync(self):
         # Sync only valid for non-DC shapes (per manual)
         if self.shape_set != "DC":
             self.port.write(f"SOURce{self.slot[1]}:SYNChronize:STATe {'1' if self.sync_enabled else '0'}")
             if self.sync_enabled:
-                if self.sweepmode == "Frequency (Hz)":
+                if self.sweepmode == "Frequency in Hz":
                     raise ValueError("Frequency sweep is not possible while device is in sync mode.")
                 if self.sync_source == self.slot:
                     raise ValueError("Source can not be synced to itself.")
@@ -402,27 +400,36 @@ class Device(EmptyDevice):
             # ensure sync disabled for DC
             self.port.write(f"SOURce{self.slot[1]}:SYNChronize:STATe 0")
 
-        # Dark mode setting if provided via GUI Advanced Settings
-        self.port.write(f"SOURce{self.slot[1]}:DMODe {'1' if self.dark else '0'}")
-
-    def set_current_protection(self, level: float):
+    def set_current_protection(self, current_protection: float):
         """Set DC current protection level (SOURce#:CURRent:PROTection)."""
-        level = level/1000  # Level is set in the GUI in mA, convert to A
-        if not (0 <= level <= 100):
-            raise ValueError("Current protection level must be between 0 and 100 mA.")
-        self.port.write(f"SOURce{self.slot[1]}:CURRent:PROTection {level}")
+        if current_protection:  # If field is empty, level is NoneType and nothing is set.
+            level = float(current_protection)
+            if not (0 <= level <= 100):
+                raise ValueError("Current protection level must be between 0 and 100 mA.")
+            level = level / 1000  # Level is set in the GUI in mA, convert to A
+            self.port.write(f"SOURce{self.slot[1]}:CURRent:PROTection {level}")
 
     def set_voltage_limits(self, low: float, high: float):
         """Set software high/low voltage output limits:
            SOURce#:VOLTage:LIMit:LOW
            SOURce#:VOLTage:LIMit:HIGH
         """
-        if not (-10.0 <= low < high <= 10.0):
-            raise ValueError("Voltage limits must not exceed +-10 V "
-                             "and the low limit needs be smaller than the high one.")
+        if low:
+            if low < -10.0:
+                raise ValueError("Lower voltage limit must not exceed -10 V.")
+        if high:
+            if high > 10.0:
+                raise ValueError("Higher voltage limit must not exceed 10 V.")
+        if high and low:
+            if high <= low:
+                raise ValueError("Higher voltage limit must be above lower limit.")
+        if low:  # If field is empty, level is NoneType and nothing is set. (Preset: -10 V)
+            self.port.write(f"SOURce{self.slot[1]}:VOLTage:LIMit:LOW {low}")
+        if high:  # If field is empty, level is NoneType and nothing is set. (Preset: +10 V)
+            self.port.write(f"SOURce{self.slot[1]}:VOLTage:LIMit:HIGH {high}")
 
-        self.port.write(f"SOURce{self.slot[1]}:VOLTage:LIMit:LOW {low}")
-        self.port.write(f"SOURce{self.slot[1]}:VOLTage:LIMit:HIGH {high}")
+    def set_dark(self):
+        self.port.write(f"SOURce{self.slot[1]}:DMODe {'1' if self.dark else '0'}")
 
     def check_device(self):
         """Check connected device is a VS-10 module."""
