@@ -68,7 +68,6 @@ class Device(EmptyDevice):
         """Return a dictionary with GUI parameters."""
         return {
             "SweepMode": ["Frequency in Hz", "Voltage bias in V"],
-            # "SweepValue": ["List"],
             "StepMode": ["None"],
             "Frequency": 1000,
             "OperatingMode": ["R-X"],

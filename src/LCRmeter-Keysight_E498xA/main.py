@@ -174,8 +174,8 @@ class Device(EmptyDevice):
         self.trigger_type = parameter["Trigger"]
 
         # List Mode
-        if parameter.get("SweepValue", "None") == "List sweep":
-            self.use_list_sweep = True
+        self.use_list_sweep = parameter.get("SweepValue", "None") == "List sweep"
+        if self.use_list_sweep:
             self.handle_list_sweep_parameter(parameter)
 
             # Add time staps to return values

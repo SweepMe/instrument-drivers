@@ -126,7 +126,6 @@ class Device(EmptyDevice):
         return {
             "Average": ["1", "2", "4", "8", "16", "32", "64"],
             "SweepMode": list(self.sweepmode_commands),
-            "SweepValue": ["List"],
             "StepMode":  list(self.sweepmode_commands),
             "ValueTypeRMS": ["Voltage RMS in V:", "Current RMS in A:"],
             "ValueRMS": 0.02,
@@ -171,8 +170,8 @@ class Device(EmptyDevice):
         self.trigger_type = parameter["Trigger"]
 
         # List Mode
-        if parameter["SweepValue"] == "List sweep":
-            self.use_list_sweep = True
+        self.use_list_sweep = parameter.get("SweepValue", "") == "List sweep"
+        if self.use_list_sweep:
             self.handle_list_sweep_parameter(parameter)
 
     def handle_bias_mode(self) -> None:
