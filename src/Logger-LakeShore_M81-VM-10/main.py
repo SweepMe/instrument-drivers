@@ -84,14 +84,14 @@ class Device(EmptyDevice):
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         gui_parameters = {"Channel": ["M1", "M2", "M3"],  # physical channels of the M81 System
                         "Mode": list(self.modes.keys()),
-                        "Range Mode": ["Auto", "Manual"],  # Automatically set the range?
+                        "Range mode": ["Auto", "Manual"],  # Automatically set the range?
         }
-        meas_range = parameters.get("Range Mode")
+        meas_range = parameters.get("Range mode")
         if meas_range:  # Safeguard to avoid KeyError during startup, when gui parameters are being loaded
             if meas_range == "Manual":  # Ask for manual range, only if "Manual" is selected
                 gui_parameters["Manual range limit"] = list(self.range_limits.keys())  # Selection for manual range
-        gui_parameters["Averaging Time (NPLC)"] = 0.1
-        gui_parameters["Input Configuration"] = list(self.input_configurations.keys())
+        gui_parameters["Averaging time (NPLC)"] = 0.1
+        gui_parameters["Input configuration"] = list(self.input_configurations.keys())
         return gui_parameters
 
 
@@ -104,19 +104,19 @@ class Device(EmptyDevice):
             self.mode_read = self.modes[self.mode_set]
         except KeyError:  # Do not fail, if parameter is not yet loaded
             self.mode_read = ""
-        self.range_mode = parameter["Range Mode"]
+        self.range_mode = parameter["Range mode"]
         if parameter.get("Manual range limit"):
             try:
                 self.limit = self.range_limits[parameter["Manual range limit"]]
             except KeyError:  # Do not fail, if parameter is not yet loaded
                 self.limit = 0.0
         try:
-            self.input_config = self.input_configurations[parameter["Input Configuration"]]
+            self.input_config = self.input_configurations[parameter["Input configuration"]]
         except KeyError:  # Do not fail, if parameter is not yet loaded
             self.input_config = ""
 
         try:
-            self.nplc = float(parameter["Averaging Time (NPLC)"])
+            self.nplc = float(parameter["Averaging time (NPLC)"])
         except ValueError:  # Do not fail, if parameter is not yet loaded or empty
             self.nplc = 0.1
 
@@ -190,7 +190,7 @@ class Device(EmptyDevice):
     def check_device(self):
         # Check, if connected device is actually a VM-10 module:
         model = self.port.query(f'SENSe{self.slot[1]}:MODel?')
-        if not model == '"VM-10"':
+        if 'VM-10' not in model:
             raise ValueError(
                 f"Device connected on channel {self.slot} does not match this driver. "
                 f"Found: '{model}'")
