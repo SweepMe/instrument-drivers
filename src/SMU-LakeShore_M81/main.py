@@ -27,7 +27,7 @@
 
 # SweepMe! driver
 # * Module: SMU
-# * Instrument: LakeShore M81 VS-10 + CM-10
+# * Instrument: LakeShore M81
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 

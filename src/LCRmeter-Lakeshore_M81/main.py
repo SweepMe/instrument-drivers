@@ -27,7 +27,7 @@
 
 # SweepMe! driver
 # * Module: LCRmeter
-# * Instrument: Lakeshore M81 (VS-10 + CM-10)
+# * Instrument: Lakeshore M81
 
 import time
 import math
@@ -85,7 +85,7 @@ class Device(EmptyDevice):
             "Slow (10.0 NPLC)": 10.0,
         }
         self.nplc: float = 1.0
-        self.number_of_cycles: int = 1
+        self.number_of_cycles: int = 10  # Healthy default of 10 for averaging cycles
         self.x: float = float("nan")
         self.y: float = float("nan")
         self.freq_read: float = float("nan")
