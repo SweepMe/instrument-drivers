@@ -67,7 +67,7 @@ class Device(EmptyDevice):
         # Filter positions
         self.positions = ["1", "2", "3", "4", "5", "6"]
         # loads further filter options from Switch-Acton_FA-448.ini that is expected in public folder "CustomFiles"
-        self.positions_to_add = list(self.getConfigOptions("Filter").values())  
+        self.positions_to_add = list(self.get_configoptions("Filter").values())
 
         self.port_manager = True
         self.port_types = ["GPIB", "COM"]
