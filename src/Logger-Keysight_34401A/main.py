@@ -52,7 +52,7 @@ class Device(EmptyDevice):
         self.shortname = "Keysight34401A"
 
         self.port_manager = True
-        self.port_types = ["COM", "GPIB"]
+        self.port_types = ["COM", "GPIB", "USB"]
 
         self.port_properties = {
             "timeout": 10,  # needed for 100 NPLC setting as it needs ~5s to compute
