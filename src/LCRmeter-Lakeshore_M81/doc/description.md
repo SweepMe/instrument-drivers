@@ -30,5 +30,6 @@ Where:
 - **X** is the in-phase current component
 - **Y** is the quadrature current component
 
-All equivalent-circuit modeling (series/parallel R, C, L) is intentionally **not done in this driver**.
+All equivalent-circuit modeling (series/parallel R, C, L) is intentionally **not done in this driver**,
+since the LCRmeter module of SweepMe! provides this functionality.
 

@@ -121,9 +121,13 @@ class Device(EmptyDevice):
     def apply_gui_parameters(self, parameter):
         """Update parameter from SweepMe! GUI."""
         channel = parameter.get("Channel")
-        if len(channel) == 7:
-            self.src_slot = channel[1]  # e.g. "1 for "S1 + M3"
-            self.meas_slot = channel[-1]  # e.g. "3 for "S1 + M3"
+        # Extract source and measurement slot numbers robustly
+        parts = [p.strip() for p in channel.split('+')]
+        if len(parts) == 2 and parts[0].startswith('S') and parts[1].startswith('M'):
+            self.src_slot = parts[0][1]
+            self.meas_slot = parts[1][1]
+        else:
+            raise ValueError(f"Invalid channel format: '{channel}'. Expected format 'S# + M#'.")
         self.sweepmode = parameter["SweepMode"]
         self.stepmode = parameter["StepMode"]
 
@@ -187,6 +191,7 @@ class Device(EmptyDevice):
             step_value = float(self.stepvalue)
             self.handle_set_value(self.stepmode, step_value)
 
+    def adapt(self) -> None:
         # Wait for settling to 0.1% (same as auto-settle in LockIn module)
         self.port.write(f"SENSe{self.meas_slot}:LIA:STIMe?")
         settling_time = self.port.read()

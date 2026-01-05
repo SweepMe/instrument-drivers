@@ -249,31 +249,30 @@ class Device(EmptyDevice):
                         )
 
     def read_result(self):
-        t_start = time.monotonic()
-        resp = self.port.read().split(",")
-        if len(resp) == 6:  # Catch cases where results of both queries get mixed up.
-            if not bool(int(resp[5])):  # If settling ist not True, the result is settled
-                self.x_lia = self.lia_convert(resp[0])  # X
-                self.y_lia = self.lia_convert(resp[1])  # Y
-                self.r_lia = self.lia_convert(resp[2])  # Magnitude
-                self.th_lia = self.lia_convert(resp[3])  # Phase
-                self.freq_lia = self.lia_convert(resp[4])  # Frequency
-
-                # Fetch DC separately, because it doesn't support FETCh:MULTIple
-                self.port.write(f"FETCh:SENSe{self.slot}:LIA:DC?")
-                dc_resp = self.port.read().split(",")
-                if len(dc_resp) == 1:  # Catch cases where results of both queries get mixed up.
-                    self.dc = self.lia_convert(dc_resp[0])
-                else:
-                    self.dc = float("nan")
-            else:
+        t_start = time.time()
+        while True:
+            if time.time() - t_start > self.port_properties.get("timeout"):
+                raise RuntimeError(
+                    f'Lock-in did not settle within timeout of {self.port_properties.get("timeout")} seconds.')
+            resp = self.port.read().split(",")
+            if len(resp) == 6:  # Catch cases where results of both queries get mixed up.
+                if not bool(int(resp[5])):  # If settling is not True, the result is settled
+                    # Fetch DC separately, because it doesn't support FETCh:MULTIple
+                    self.port.write(f"FETCh:SENSe{self.slot}:LIA:DC?")
+                    dc_resp = self.port.read().split(",")
+                    if len(dc_resp) == 1:  # Catch cases where results of both queries get mixed up.
+                        self.dc = self.lia_convert(dc_resp[0])
+                    else:
+                        self.dc = float("nan")
+                    break
+                # Result not settled, measure again
                 time.sleep(0.05)
                 self.measure()
-        else:
-            self.read_result()
-        if time.monotonic() - t_start > self.port_properties.get("timeout"):
-            raise RuntimeError(f'Lock-in did not settle within timeout of {self.port_properties.get("timeout")} seconds.')
-
+        self.x_lia = self.lia_convert(resp[0])  # X
+        self.y_lia = self.lia_convert(resp[1])  # Y
+        self.r_lia = self.lia_convert(resp[2])  # Magnitude
+        self.th_lia = self.lia_convert(resp[3])  # Phase
+        self.freq_lia = self.lia_convert(resp[4])  # Frequency
 
     def call(self):
         return [self.x_lia, self.y_lia, self.r_lia, self.th_lia, self.freq_lia, self.dc]
@@ -348,7 +347,7 @@ class Device(EmptyDevice):
         else:
             if not (1000000 >= self.lia_avg_ref_cycles >= 1):
                 raise ValueError("Number of reference cycles must be >= 1 and <= 1,000,000.")
-            self.port.write(f'SENSe{self.slot}:LIA:AVERage 1')  # Disable averaging filter
+            self.port.write(f'SENSe{self.slot}:LIA:AVERage 1')  # Enable averaging filter
             self.port.write(f"SENSe{self.slot}:LIA:REFerence:CYCLes {self.lia_avg_ref_cycles}")
 
         # Time constant and rolloff for traditional lowpass filter

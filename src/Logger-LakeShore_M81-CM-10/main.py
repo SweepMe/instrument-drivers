@@ -131,7 +131,7 @@ class Device(EmptyDevice):
 
     def apply_gui_parameters(self, parameter):
         channel = parameter.get("Channel")
-        if channel.strip().lower() in  ["m1", "m2", "m3"]:
+        if channel.strip().lower() in ["m1", "m2", "m3"]:
             self.slot = channel[1]  # e.g. "1 for "M1"
         else:
             self.slot = ""  # default

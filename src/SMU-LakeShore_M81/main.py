@@ -122,9 +122,11 @@ class Device(EmptyDevice):
     def apply_gui_parameters(self, parameter):
         # Source / measure channel mapping
         channel = parameter.get("Channel")
-        if len(channel) == 7:
-            self.sslot = channel[1]  # e.g. "1 for "S1 + M3"
-            self.mslot = channel[-1]  # e.g. "3 for "S1 + M3"
+        # Extract source and measurement slot numbers robustly
+        parts = [p.strip() for p in channel.split('+')]
+        if len(parts) == 2 and parts[0].startswith('S') and parts[1].startswith('M'):
+            self.src_slot = parts[0][1]
+            self.meas_slot = parts[1][1]
         self.port_string = parameter["Port"]
         self.range_source = self.source_range_limits[parameter["RangeVoltage"]]
         self.range_current = self.current_range_limits[parameter["Range"]]
@@ -182,7 +184,7 @@ class Device(EmptyDevice):
         self.set_current_protection(self.current_protect)
         # Configure measure module
         self.set_range_measure(self.range_current)
-        self.set_nplc()
+        self.set_nplc(self.nplc)
 
     def poweron(self):
         # Start / enable source output
@@ -264,8 +266,8 @@ class Device(EmptyDevice):
             self.port.write(f"SENSe{self.mslot}:CURRent:RANGe:AUTO 0")
             self.port.write(f"SENSe{self.mslot}:CURRent:RANGe {range_set}")
 
-    def set_nplc(self):
-        self.port.write(f"SENSe{self.mslot}:NPLCycles {self.nplc}")
+    def set_nplc(self, nplc):
+        self.port.write(f"SENSe{self.mslot}:NPLCycles {nplc}")
 
     def check_device(self):
         # Verify both modules are present and of the expected type
