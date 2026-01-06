@@ -32,20 +32,19 @@
 from __future__ import annotations
 
 import contextlib
-
 import sys
 import time
 from typing import Any
 
 import clr
-from pysweepme.EmptyDeviceClass import EmptyDevice
 from System import Decimal, Int32
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 # Import Kinesis dll
 kinesis_imported = False
 
-bitness = 64 if sys.maxsize > 2**32 else 32
-kinesis_path = "C:\\Program Files\\Thorlabs\\Kinesis" # if bitness == 64 else "C:\\Program Files (x86)\\Thorlabs\\Kinesis"
+bitness = 64 if sys.maxsize > 2 ** 32 else 32
+kinesis_path = "C:\\Program Files\\Thorlabs\\Kinesis"  # if bitness == 64 else "C:\\Program Files (x86)\\Thorlabs\\Kinesis"
 try:
     if kinesis_path not in sys.path:
         sys.path.insert(0, kinesis_path)
@@ -88,9 +87,11 @@ class Device(EmptyDevice):
         self.timeout_ms: int = 60000  # Default timeout for operations in milliseconds
         self.max_velocity: str = "1.0"
         self.acceleration: str = "1.0"
+        self.home_at_start: bool = False
 
     def find_ports(self) -> list[str]:
         """Returns the serial numbers of all devices connected via Kinesis."""
+
         if self.use_simulation_mode:
             self.set_simulation_mode(True)
 
@@ -124,11 +125,12 @@ class Device(EmptyDevice):
         del parameters
         return {
             "Channel": "1",
-            "SweepMode": ["Position"],
+            "SweepMode": ["Position", "Relative Position", "None"],
             "Max Velocity in mm/s": "1.0",
             "Acceleration in mm/s²": "1.0",
             "Timeout in s": "60",
             "Simulation Mode": False,
+            "Home at start": False,
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
@@ -140,6 +142,7 @@ class Device(EmptyDevice):
         self.acceleration = parameters.get("Acceleration in mm/s²", "1.0")
         self.timeout_ms = int(float(parameters.get("Timeout in s", "60")) * 1000)
         self.use_simulation_mode = parameters.get("Simulation Mode", False)
+        self.home_at_start = parameters.get("Home at start", False)
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -218,6 +221,8 @@ class Device(EmptyDevice):
         self.stepper.EnableDevice()
         time.sleep(0.5)
 
+        print(self.rack.BayDeviceType(int(self.channel)))
+
         # continue with stepper_motor object - unclear why
         self.stepper_motor = self.rack.GetStepperChannel(int(self.channel))
         # Why?
@@ -232,8 +237,11 @@ class Device(EmptyDevice):
                 velocity_parameters.MaxVelocity = Decimal(float(self.max_velocity))
             self.stepper_motor.SetVelocityParams(velocity_parameters)
 
-        # homing leads to timeout errors, leave it for now
-        self.stepper_motor.Home(self.timeout_ms)
+        # homing leads to timeout errors if the device is too far from home, leave it for now
+        # TODO: add increased homing speed
+        if self.home_at_start:
+            print("Homing at start")
+            self.stepper_motor.Home(self.timeout_ms)
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -243,13 +251,22 @@ class Device(EmptyDevice):
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-        if self.sweep_mode == "Position":
-            try:
-                position = Decimal(self.value)
-            except ValueError as e:
-                msg = f"Invalid position format. Expected a integer, got '{self.value}'."
-                raise ValueError(msg) from e
+        if self.sweep_mode == "None":
+            return
 
+        try:
+            position = Decimal(float(self.value))
+        except ValueError as e:
+            msg = f"Invalid position format. Expected a integer, got '{self.value}'."
+            raise ValueError(msg) from e
+
+        if self.sweep_mode.startswith("Relative"):
+            direction = GenericMotorCLI.MotorDirection.Forward if float(
+                self.value) > 0 else GenericMotorCLI.MotorDirection.Backward
+            self.value = abs(float(self.value))
+            self.stepper_motor.MoveRelative(direction, Decimal(self.value), Int32(self.timeout_ms))
+
+        elif self.sweep_mode == "Position":
             self.stepper_motor.MoveTo(position, Int32(self.timeout_ms))
 
     def call(self) -> float:
