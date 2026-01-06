@@ -54,8 +54,6 @@ currentDeviceSettings = device.NanoTrakDeviceSettings
 device.SetSettings(currentDeviceSettings, False)
 device.GetSettings(currentDeviceSettings)
 
-# How to set frequency, closed/open loop, loop gain, and channel?
-
 # Set feedback source to BNC 10V
 NanoTrakStatusBase = GenericNanoTrakCLI.NanoTrakStatusBase
 device.SetMode(NanoTrakStatusBase.OperatingModes.Tracking)
@@ -63,6 +61,13 @@ device.SetMode(NanoTrakStatusBase.OperatingModes.Tracking)
 # Set to Tracking mode
 NanoTrakFeedbackSource = GenericNanoTrakCLI.Settings.IOSettingsSettings.FeedbackSources
 device.SetFeedbackSource(NanoTrakFeedbackSource.BNC_10V)
+
+# Set open loop
+mode = device.NanoTrakDeviceSettings.ControlMode.NanoTrakControlModeTypes.OpenLoop
+device.NanoTrakDeviceSettings.ControlMode.set_ControlMode(mode)
+
+# Enable Channel 2
+device.NanoTrakDeviceSettings.ControlMode.set_Chan2Enable(True)  # Enable Channel 2
 
 # Set Home Position and Home the circle
 HVPosition = GenericNanoTrakCLI.HVPosition
@@ -90,3 +95,29 @@ print("UnderOrOverRead:", reading.UnderOrOverRead)
 # Stop polling and disconnect
 device.StopPolling()
 device.DisableDevice()
+device.Disconnect(True)
+
+# Our application logic requires us to connect/disconnect multiple times, but trying to reconnect raises an exception
+# Starting the device again to demonstrate reconnect logic
+print("Connecting again to the device...")
+device = BenchtopNanoTrakCLI.BenchtopNanoTrak.CreateBenchtopNanoTrak(serial_number)
+device.Connect(serial_number)  # -> raises DeviceManagerCLI.DeviceNotReadyException
+
+# Wait for device settings to initialize (timeout 5000 ms)
+if not device.IsSettingsInitialized():
+    try:
+        device.WaitForSettingsInitialized(5000)
+        print("Settings initialized.")
+    except Exception as e:
+        print("Settings failed to initialize:", e)
+
+# Start polling
+device.StartPolling(250)
+time.sleep(0.5)  # Wait for polling to start
+
+# Enable the device
+device.EnableDevice()
+time.sleep(0.5)  # Wait for device to be enabled
+
+print("Device is initialized, polling, and enabled.")
+print("Reconnected to the device.")
