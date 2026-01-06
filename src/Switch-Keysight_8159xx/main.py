@@ -48,6 +48,8 @@ class Device(EmptyDevice):
     Select the channel of your module in case its a dual device.
     Set the left and right port as colon separated string, e.g. "A:1" for port A and port 1. Use semicolon to set
     multiple routes, e.g. "A:1;B:2" for port A and port 1 and port B and port 2.
+    If you want to set the route before the measurement starts (e.g. in configure), use the "Route" GUI parameter.
+    Using the "Route" sweep mode, the route will be set in "apply" according to the sweep value.
     """
 
     def __init__(self) -> None:
@@ -73,6 +75,7 @@ class Device(EmptyDevice):
         self.sweep_mode: str = "None"
         self.available_left_ports: list[str] = []
         self.available_right_ports: list[str] = []
+        self.route: str = ""  # Initial route to set in configure
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
@@ -81,6 +84,7 @@ class Device(EmptyDevice):
             "Channel": "1",
             "Slot": "1",
             "SweepMode": ["Route", "None"],
+            "Route": "A:1",
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
@@ -89,6 +93,7 @@ class Device(EmptyDevice):
         self.channel = parameters.get("Channel", "")
         self.slot = parameters.get("Slot", "")
         self.sweep_mode = parameters.get("SweepMode", "None")
+        self.route = parameters.get("Route", "")
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -96,33 +101,44 @@ class Device(EmptyDevice):
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         self.available_left_ports, self.available_right_ports = self.get_available_ports()
+        # Apply initial route if set in GUI
+        if self.route:
+            self.apply_route_string(self.route)
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         if self.sweep_mode == "Route":
-            routes = self.value.split(";")
-            for route in routes:
-                left_port, right_port = route.split(":")
-                if left_port not in self.available_left_ports:
-                    msg = f"Left port '{left_port}' is not available. Available ports: {self.available_left_ports}"
-                    raise ValueError(msg)
-
-                if right_port not in self.available_right_ports:
-                    msg = f"Right port '{right_port}' is not available. Available ports: {self.available_right_ports}"
-                    raise ValueError(msg)
-
-                self.set_route(left_port, right_port)
-                self.wait_for_completion()
+            self.apply_route_string(self.value)
 
     def call(self) -> str:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return self.get_route()
 
-    # Wrapper Functions
-
     def get_identification(self) -> str:
         """Return the identification string of the device."""
         return self.port.query("*IDN?")
+
+    # Wrapper Functions
+
+    def apply_route_string(self, route_string: str) -> None:
+        """Apply a route string to the device.
+
+        Args:
+            route_string (str): The route string to apply, e.g. "A:1;B:2".
+        """
+        routes = route_string.split(";")
+        for route in routes:
+            left_port, right_port = route.split(":")
+            if left_port not in self.available_left_ports:
+                msg = f"Left port '{left_port}' is not available. Available ports: {self.available_left_ports}"
+                raise ValueError(msg)
+
+            if right_port not in self.available_right_ports:
+                msg = f"Right port '{right_port}' is not available. Available ports: {self.available_right_ports}"
+                raise ValueError(msg)
+
+            self.set_route(left_port, right_port)
+            self.wait_for_completion()
 
     def wait_for_completion(self) -> None:
         """Wait for the device to complete the current operation."""
