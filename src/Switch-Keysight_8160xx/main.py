@@ -109,7 +109,7 @@ class Device(EmptyDevice):
 
     def update_gui_parameters(self, parameters: dict) -> dict:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
-        new_parameters: dict[str, Any] =  {
+        new_parameters: dict[str, Any] = {
             "SweepMode": ["None", "Wavelength", "Power"],
             "Slot": 0,
             "Output Path": list(self.output_paths_dict.keys()),
@@ -159,7 +159,12 @@ class Device(EmptyDevice):
         self.port.write("*CLS")
         self.port.write(":SYSTem:PRESet")
 
-        self.get_wavelength_range()
+        # Sometimes the device does not respond correctly after reset, so we try twice
+        # TODO: find better solution
+        try:
+            self.get_wavelength_range()
+        except:
+            self.get_wavelength_range()
 
     def poweron(self) -> None:
         """Turn on the power."""
@@ -206,7 +211,7 @@ class Device(EmptyDevice):
         self.port.write(f"wavelength:sweep:start {self.list_start}nm")
         self.port.write(f"wavelength:sweep:step:width {self.list_step}nm")
         self.port.write(f"wavelength:sweep:stop {self.list_stop}nm")
-        self.port.write("wavelength:sweep:cycles 1") # Set the number of cycles
+        self.port.write("wavelength:sweep:cycles 1")  # Set the number of cycles
 
         # Check if device accepts the settings
         status = self.port.query("wav:swe:chec?")
@@ -285,15 +290,15 @@ class Device(EmptyDevice):
         # Strip header if any (IEEE 488.2 format block: starts with '#' and size header)
         if raw_data[0:1] == b"#":
             header_len = int(raw_data[1:2])
-            num_bytes = int(raw_data[2:2+header_len])
-            data = raw_data[2+header_len:2+header_len+num_bytes]
+            num_bytes = int(raw_data[2:2 + header_len])
+            data = raw_data[2 + header_len:2 + header_len + num_bytes]
         else:
             msg = "Lambda logging data does not start with a header. This is unexpected."
             raise ValueError(msg)
 
         # Parse the binary data: each value is an 8-byte little-endian double
         num_values = len(data) // 8
-        return np.array(list(struct.unpack("<" + "d"*num_values, data))) * 1E9
+        return np.array(list(struct.unpack("<" + "d" * num_values, data))) * 1E9
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
@@ -331,10 +336,6 @@ class Device(EmptyDevice):
 
     def set_power(self, power: float) -> None:
         """Set the power in dBm or W depending on set_power_unit."""
-        if power <= 0:
-            msg = f"Invalid power {power} {self.power_unit}. The device does not support power levels <= 0."
-            raise ValueError(msg)
-
         if self.power_max <= 0 or self.power_min <= 0:
             self.get_power_range()
 
