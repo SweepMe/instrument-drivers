@@ -88,6 +88,7 @@ class Device(EmptyDevice):
         self.max_velocity: str = "1.0"
         self.acceleration: str = "1.0"
         self.home_at_start: bool = False
+        self.home_velocity: str = "1.0"
 
     def find_ports(self) -> list[str]:
         """Returns the serial numbers of all devices connected via Kinesis."""
@@ -122,8 +123,7 @@ class Device(EmptyDevice):
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
-        del parameters
-        return {
+        new_parameters = {
             "Channel": "1",
             "SweepMode": ["Position", "Relative Position", "None"],
             "Max Velocity in mm/s": "1.0",
@@ -132,6 +132,10 @@ class Device(EmptyDevice):
             "Simulation Mode": False,
             "Home at start": False,
         }
+        if parameters.get("Home at start", False):
+            new_parameters["Home velocity"] = "1.0"
+
+        return new_parameters
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
@@ -143,6 +147,7 @@ class Device(EmptyDevice):
         self.timeout_ms = int(float(parameters.get("Timeout in s", "60")) * 1000)
         self.use_simulation_mode = parameters.get("Simulation Mode", False)
         self.home_at_start = parameters.get("Home at start", False)
+        self.home_velocity = parameters.get("Home velocity", "1.0")
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -197,11 +202,9 @@ class Device(EmptyDevice):
 
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
-        if not self.stepper:
-            return
-
         self.stepper.StopPolling()
         self.rack.Disconnect(True)
+        self.stepper.Disconnect(True)
 
         if self.use_simulation_mode:
             self.set_simulation_mode(False)
@@ -241,6 +244,7 @@ class Device(EmptyDevice):
         # TODO: add increased homing speed
         if self.home_at_start:
             print("Homing at start")
+            self.stepper_motor.MotorDeviceSettings.Home.set_HomeVel(Decimal(float(self.home_velocity)))
             self.stepper_motor.Home(self.timeout_ms)
 
     def configure(self) -> None:
