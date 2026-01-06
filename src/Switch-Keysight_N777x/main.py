@@ -32,11 +32,10 @@
 from __future__ import annotations
 
 import contextlib
-
-import numpy as np
 import struct
 import time
 
+import numpy as np
 from pysweepme import debug
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
@@ -116,7 +115,7 @@ class Device(EmptyDevice):
         # Measurement variables
         self.sweepmode: str = "None"
         self.measured_power: float = -1
-        self.measured_wavelength: float | np.array = -1
+        self.measured_wavelength: float | np.ndarray = -1
 
         # List mode
         self.list_mode: bool = False
@@ -124,6 +123,7 @@ class Device(EmptyDevice):
         self.list_stop: float = 0.0  # Stop of the list in nm
         self.list_step: float = 10  # step size in nm
         self.scan_speed: float = 10.0  # Scan speed in nm/s
+        self.previous_trigger_config: str = "2"  # to restore after list mode, default is 2 (passthrough)
 
         self.debug_mode: bool = False  # Debug errors and warnings
 
@@ -207,12 +207,20 @@ class Device(EmptyDevice):
         if self.sweepmode != "Wavelength" and not self.list_mode:
             self.set_wavelength(wavelength_m=self.wavelength * self.wavelength_conversion)
 
+    def unconfigure(self) -> None:
+        if self.list_mode:
+            # Restore previous trigger configuration, e.g. 2 for passthrough
+            self.port.write(f":TRIGger:CONFiguration {self.previous_trigger_config}")
+
     def configure_list_mode(self) -> None:
         """Configure the device for wavelength sweeps in list mode."""
         # Configure trigger: The Input Trigger Connector is activated, the incoming trigger response for each slot.
         self.configure_trigger_output("STF")  # Trigger when a sweep step finishes
 
         # Configure list parameters
+        # Save the previous trigger configuration to restore it later
+        self.previous_trigger_config = self.port.query(":TRIGger:CONFiguration?")
+        self.port.write(":TRIGger:CONFiguration 1")  # default
         self.port.write(":sour0:wav:swe:mode CONT")  # Set sweep mode to continuous
         self.set_sweep_cycles(1)
         self.set_sweep_speed(self.scan_speed)
@@ -282,7 +290,7 @@ class Device(EmptyDevice):
                 break
 
             if timeout_s <= 0:
-                msg = f"Sweep did not finish within the timeout period of {expected_time*2}s."
+                msg = f"Sweep did not finish within the timeout period of {expected_time * 2}s."
                 raise TimeoutError(msg)
 
             time.sleep(0.1)
@@ -301,15 +309,15 @@ class Device(EmptyDevice):
         # Strip header if any (IEEE 488.2 format block: starts with '#' and size header)
         if raw_data[0:1] == b"#":
             header_len = int(raw_data[1:2])
-            num_bytes = int(raw_data[2:2+header_len])
-            data = raw_data[2+header_len:2+header_len+num_bytes]
+            num_bytes = int(raw_data[2:2 + header_len])
+            data = raw_data[2 + header_len:2 + header_len + num_bytes]
         else:
             msg = "Lambda logging data does not start with a header. This is unexpected."
             raise ValueError(msg)
 
         # Parse the binary data: each value is an 8-byte little-endian double
         num_values = len(data) // 8
-        return np.array(list(struct.unpack("<" + "d"*num_values, data)))
+        return np.array(list(struct.unpack("<" + "d" * num_values, data)))
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
@@ -328,7 +336,7 @@ class Device(EmptyDevice):
         """Reset the instrument to its default state."""
         self.port.write("*RST")
 
-    def clear_status(self)-> None:
+    def clear_status(self) -> None:
         """Clear the instrument status and error queue."""
         self.port.write("*CLS")
 
@@ -488,7 +496,7 @@ class Device(EmptyDevice):
             "DIS",  # Never output a trigger
             "STF",  # Trigger when a sweep step finishes
             "SWF",  # Trigger when sweep cycle finishes
-            "SWST",  #  Trigger when a sweep cycle starts
+            "SWST",  # Trigger when a sweep cycle starts
         ]
         if output.upper() not in supported_modes:
             msg = f"Invalid output trigger mode {output}. Choose from {supported_modes}."
