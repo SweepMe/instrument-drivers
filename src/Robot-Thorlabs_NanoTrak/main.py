@@ -285,6 +285,8 @@ class Device(EmptyDevice):
         # self.nanotrak.DisableDevice()
         if self.is_modular_rack:
             self.rack.Disconnect(True)
+        else:
+            self.nanotrak.Disconnect(True)
 
         if self.is_simulation:
             self.set_simulation_mode(False)
