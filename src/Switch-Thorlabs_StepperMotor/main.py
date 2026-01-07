@@ -51,8 +51,9 @@ try:
 
     clr.AddReference("Thorlabs.MotionControl.DeviceManagerCLI")
     clr.AddReference("Thorlabs.MotionControl.ModularRackCLI")
+    clr.AddReference("Thorlabs.MotionControl.GenericMotorCLI")
 
-    from Thorlabs.MotionControl import DeviceManagerCLI, ModularRackCLI
+    from Thorlabs.MotionControl import DeviceManagerCLI, ModularRackCLI, GenericMotorCLI
 except:
     pass
 else:
@@ -204,7 +205,8 @@ class Device(EmptyDevice):
         """Disconnect from the device. This function is called only once at the end of the measurement."""
         self.stepper.StopPolling()
         self.rack.Disconnect(True)
-        self.stepper.Disconnect(True)
+        # self.stepper.Disconnect(True)  # attribute error
+        self.stepper_motor.Disconnect(True)
 
         if self.use_simulation_mode:
             self.set_simulation_mode(False)
@@ -244,7 +246,7 @@ class Device(EmptyDevice):
         # TODO: add increased homing speed
         if self.home_at_start:
             print("Homing at start")
-            self.stepper_motor.MotorDeviceSettings.Home.set_HomeVel(Decimal(float(self.home_velocity)))
+            self.set_homing_velocity(float(self.home_velocity))
             self.stepper_motor.Home(self.timeout_ms)
 
     def configure(self) -> None:
@@ -287,3 +289,9 @@ class Device(EmptyDevice):
 
         else:
             DeviceManagerCLI.SimulationManager.Instance.UninitializeSimulations()
+
+    def set_homing_velocity(self, velocity: float) -> None:
+        """Set the homing velocity of the motor."""
+        motor_device_settings = self.stepper_motor.MotorDeviceSettings
+        motor_device_settings.Home.set_HomeVel(Decimal(velocity))
+        self.stepper_motor.SetSettings(motor_device_settings, False)
