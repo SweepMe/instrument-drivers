@@ -9,7 +9,9 @@ if kinesis_path not in sys.path:
 
 clr.AddReference("Thorlabs.MotionControl.DeviceManagerCLI")
 clr.AddReference("Thorlabs.MotionControl.ModularRackCLI")
-from Thorlabs.MotionControl import DeviceManagerCLI, ModularRackCLI
+clr.AddReference("Thorlabs.MotionControl.GenericMotorCLI")
+
+from Thorlabs.MotionControl import DeviceManagerCLI, ModularRackCLI, GenericMotorCLI
 
 DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
 device_list = DeviceManagerCLI.DeviceManagerCLI.GetDeviceList()
@@ -33,6 +35,7 @@ time.sleep(0.5)
 
 # continue with stepper_motor object - unclear why it works better than using stepper directly
 stepper_motor = rack.GetStepperChannel(1)
+motorConfiguration = stepper_motor.LoadMotorConfiguration(stepper.DeviceID)
 
 new_position = 5
 print(f"Moving to position {new_position}")
@@ -42,3 +45,7 @@ print(f"Current position: {stepper_motor.Position}")
 
 stepper.StopPolling()
 rack.Disconnect(True)
+
+# Try to reconnect to verify that the rack can be reconnected after disconnect
+time.sleep(5)
+rack.Connect(serial_number)  # --> this raises an exception
