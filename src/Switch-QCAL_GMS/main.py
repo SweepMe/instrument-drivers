@@ -158,7 +158,12 @@ class Device(EmptyDevice):
 
     def update_setpoints(self) -> None:
         """Update the setpoints based on the current concentrations and total flow."""
-        if self.total_flow <= 0:
+        # Ensure correct types
+        self.concentration_2 = float(self.concentration_2)
+        self.concentration_3 = float(self.concentration_3)
+        self.total_flow = float(self.total_flow)
+
+        if self.total_flow < 0:
             msg = f"Invalid total flow value: {self.total_flow}. It must be non-negative."
             raise ValueError(msg)
 
