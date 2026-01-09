@@ -32,7 +32,7 @@ from typing import Any
 # * Module: Robot
 # * Instrument: Dobot MG400
 
-from FolderManager import addFolderToPATH
+from pysweepme.FolderManager import addFolderToPATH
 addFolderToPATH()
 
 import dobot_api
@@ -146,7 +146,7 @@ class Device(EmptyDevice):
             "Port": "192.168.1.6",  # Standard IP of first Ethernet port
             "Unit": ["mm"],
             # "Reach position": True,
-            "Collision level": ["5", "4", "3", "2", "1", "0"],
+            "Collision level": ["5", "4", "3", "2", "1", "0"],  # TODO: turn
             "Acceleration factor": 10,
             "Global speed factor": 100,
             "Speed factor": "10",
@@ -219,7 +219,7 @@ class Device(EmptyDevice):
 
         # first without any parameters. Otherwise, the robot tends to throw error 105 "Servo on failed"
         self.enable_robot()
-        # self.enable_robot(self.payload_weight, self.payload_x_offset, self.payload_y_offset, 0.0)
+        self.enable_robot(self.payload_weight, self.payload_x_offset, self.payload_y_offset, 0.0)
 
         # The line below should be used to set payload properties. However, the command did not work correctly
         # and now payload properties are handed over during self.enable_robot()
@@ -306,8 +306,13 @@ class Device(EmptyDevice):
         return x, y, z, r
 
     def enable_robot(self, *args) -> None:
-        self.api_dashboard.EnableRobot(args)
-        
+        response = self.api_dashboard.EnableRobot(args)
+        status = response.split(",")[0]
+        if status == "-1":
+            msg = (f"EnableRobot() failed. Check if 'Remote Control - Mode' was set to 'TCP/IP "
+                   f"Secondary Development' in DobotStudioPro.")
+            raise Exception(msg)
+
     def disable_robot(self) -> None:
         self.api_dashboard.DisableRobot()
         
