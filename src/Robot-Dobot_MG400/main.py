@@ -24,6 +24,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+
 from __future__ import annotations
 
 from typing import Any
@@ -45,45 +46,7 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-
-    description = """
-        <p>This driver can be used to control x, y, z and r (rotation) of a Dobot MG400 tabletop robot.</p>
-        <p>&nbsp;</p>
-        <p><strong>Requirements</strong>:</p>
-        <ul>
-        <li>To use this driver, you need to update the robot firmware to 1.5.4 or higher. The driver has been tested with firmware version 1.5.6.</li>
-        <li>The MG400 has two Ethernet ports. The first one uses fixed IP address being 192.168.1.6 and the second one has a variable IP address that is 192.168.2.6 as factory default.<br />To connect with the robot your computer needs a static IP address that can be set via Windows network connetions. Right click on your Ethernet network adapter -&gt; 'Properties' -&gt; Tab 'Network' -&gt; 'Internet protocol version 4 (TCP/IPv4) -&gt; button 'Properties'. Select static IP address and 255.255.255.0 as subnet mask. Use an address that is different from the one of the robot but in the same sub net mask, e.g. "192.168.1.5" if you use the first ethernet port.<br /><br /></li>
-        </ul>
-        <p><strong>Usage:</strong></p>
-        <ul>
-        <li>Insert numbers into the Axes fields x, y, z, r. For more complex procedures, use the parameter syntax {...} to handover values from other fields.</li>
-        <li>If the object attached to robot is heavy, one should set the payload mass and eventually the eccentric distance of the object.</li>
-        <li>The Robot module works best in combination with add-on modules such as "ReadValues" or "TableValues" where you create a list of x, y, z, r values that you handover to the Robot module using the parameter syntax {...}</li>
-        <li>Home position is fixed at x = 350 mm, y = 0 mm, z = 0 mm, r = 0 mm</li>
-        <li>Jump mode: When activated the robot will make all lateral and rotational movements at the given movement height.<br />&nbsp;</li>
-        </ul>
-        <p><strong>Coordinates:</strong></p>
-        <ul>
-        <li>Home position: x = 350.0 mm, y = 0.0 mm, z = 0.0 mm, r = 0&deg;</li>
-        <li>x: horizontal direction of the robot arm in the home position</li>
-        <li>y: horizontal direction perpendicular to y</li>
-        <li>z: vertical direction perpendicular to x and y&nbsp;</li>
-        <li>r: Rotation angle in &deg; (0.0 to 720.0)</li>
-        </ul>
-        <p>&nbsp;</p>
-        <p><strong>Parameters:</strong></p>
-        <ul>
-        <li>'Go home at start' moves the robot at the beginning of a run to the fixed home position.</li>
-        <li>'Go hame at end' move the robot at the end of a run to the fixed home position.</li>
-        <li>Global speed factor affects all moves: 1-100</li>
-        <li>Acceleration factor: 1-100<br />&nbsp;</li>
-        <li>Speed factor is the speed of a linear move in the range 1-100. It can be changed at each step using the parameter syntax.</li>
-        </ul>
-        <p><strong>Caution:</strong></p>
-        <ul>
-        <li>The home position is fixed and independent from an individual position set in Dobot Studio Pro, so please check whether Go home before or after the run works for you.</li>
-        </ul>
-    """
+    """Driver to control a Dobot MG400 robotic arm."""
 
     # needs to be defined for Robot drivers to define the variables and default values for the axes section
     axes = {
