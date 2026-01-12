@@ -25,11 +25,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# SweepMe! device class
-# Device: Keithley 4200-SCS
+# SweepMe! driver
+# * Module: LCRmeter
+# * Instrument: Keithley 4200-SCS
+
 from __future__ import annotations
 
-import os
+from pathlib import Path
 
 from pysweepme import FolderManager
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -37,21 +39,11 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 FolderManager.addFolderToPATH()
 
 import importlib
-
 import ProxyClass
 
 importlib.reload(ProxyClass)
 
-# standard path for LPTlib.dll
-# If it exists, SweepMe! is running on the instruments PC
-RUNNING_ON_4200SCS = os.path.exists(r"C:\s4200\sys\bin\lptlib.dll")
-
-if RUNNING_ON_4200SCS:
-    # import LPT library functions
-    # import LPT library instrument IDs
-    # not available yet -> # from pylptlib import inst
-    # import LPT library parameter constants
-    from pylptlib import lpt, param
+from ProxyClass import Proxy
 
 
 class Device(EmptyDevice):
@@ -67,23 +59,14 @@ class Device(EmptyDevice):
         self.units = ["Ohm", "Ohm", "Hz", "V"]
         self.plottype = [True, True, True, True]
         self.savetype = [True, True, True, True]
-        self.identifier: str = ""
-        self.port_string: str = ""
 
-        # block below is needed if KXCI handling will be implemented in future
-        # where commands can be sent via GPIB or TCPIP
-        # if not RUNNING_ON_4200SCS:
+        # Communication Parameter
+        self.port_string: str = "192.168.0.1"
+        self.identifier: str = "Keithley_4200-SCS_" + self.port_string
+        self.command_set: str = "LPTlib"
 
-        # self.port_types = ["GPIB", "TCPIP"]
-        # needed to make the code working with pysweepme where port_manager is only used from __init__
-        # self.port_manager = True
-
-        # self.port_properties = {
-        #     "EOL": "\r\n",
-        #     "timeout": 10.0,
-        #     "TCPIP_EOLwrite": "\x00",
-        #     "TCPIP_EOLread": "\x00",
-        # }
+        self.lpt: Proxy | None = None
+        self.param: Proxy | None = None
 
         # Currently, only auto range is used
         self.measure_range: str = ""
@@ -123,25 +106,23 @@ class Device(EmptyDevice):
         self.reactance: float = 0.0
 
         self.bias_mode: str = ""
-        self.value_level_rms = None
-        self.value_bias = None
-        self.trigger_type = None
+        self.value_level_rms: float = 0.0
+        self.value_bias: float = 0.0
+        self.trigger_type: str = "Internal"
 
         self.trigger_delay: float = 0.0
-        self.integration = None
-        self.stepmode = None
-        self.sweepmode = None
+        self.integration: int = 0  # fast
+        self.stepmode: str = "None"
+        self.sweepmode: str = "None"
         self.shortname = "Keithley 4200-SCS"
 
     @staticmethod
-    def find_ports() -> list:
-        """Finds the available ports for the Keithley 4200-SCS LCRmeter."""
-        ports = ["LPTlib via xxx.xxx.xxx.xxx"]
-
-        if RUNNING_ON_4200SCS:
-            ports.insert(0, "LPTlib control - no port required")
-
-        return ports
+    def find_ports() -> list[str]:
+        """Find available ports."""
+        # If the lptlib.dll exists, the driver is probably running on the device.
+        # Exemption: If Clarius is installed on the PC running SweepMe!, the dll also exists there.
+        dll_path = r"C:\s4200\sys\bin\lptlib.dll"
+        return ["LPTlib via localhost"] if Path(dll_path).exists() else ["LPTlib via xxx.xxx.xxx.xxx"]
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set initial GUI parameter in SweepMe!."""
@@ -187,27 +168,7 @@ class Device(EmptyDevice):
 
         else:
             self.command_set = "LPTlib"  # "US" user mode, "LPTlib", # check manual p. 677/1510
-
-            if not RUNNING_ON_4200SCS:
-                # overwriting the communication classes with Proxy classes
-                tcp_ip_port = self.port_string[11:].strip()  # removing "LPTlib via "
-                tcp_ip_port_splitted = tcp_ip_port.split(":")  # in case a port is given
-                tcp_ip = tcp_ip_port_splitted[0]
-
-                tcp_port = int(tcp_ip_port_splitted[1]) if len(tcp_ip_port_splitted) == 2 else 8888
-
-                self.lpt = ProxyClass.Proxy(tcp_ip, tcp_port, "lpt")
-                # not supported yet with pylptlib -> # self.inst = Proxy(tcp_ip, tcp_port, "inst")
-                self.param = ProxyClass.Proxy(tcp_ip, tcp_port, "param")
-
-            else:
-                # we directly use pylptlib
-                self.lpt = lpt
-                # not supported yet with pylptlib -> # self.inst = inst
-                self.param = param
-
-            self.lpt.initialize()
-
+            self.connect_to_lptlib_server()
             self.card_id = self.lpt.getinstid(self.card_name)
 
     def initialize(self) -> None:
@@ -284,6 +245,33 @@ class Device(EmptyDevice):
         return [self.resistance, self.reactance, self.measured_frequency, self.measured_dc_bias]
 
     """ here, convenience functions start """
+
+    def connect_to_lptlib_server(self) -> None:
+        """Connect to the LPTlib server running on the 4200-SCS device."""
+        if "localhost" in self.port_string.lower():
+            # SweepMe! is running on the 4200-SCS device
+            tcp_ip = "localhost"
+            tcp_port = 8888
+
+        else:
+            tcp_ip_port = self.port_string[11:].strip()  # removing "LPTlib via "
+            tcp_ip_port_split = tcp_ip_port.split(":")  # in case a port is given
+
+            tcp_ip = tcp_ip_port_split[0]
+            tcp_port = int(tcp_ip_port_split[1]) if len(tcp_ip_port_split) == 2 else 8888
+
+        self.lpt = Proxy(tcp_ip, tcp_port, "lpt")
+        self.param = Proxy(tcp_ip, tcp_port, "param")
+
+        try:
+            self.lpt.initialize()
+        except ConnectionRefusedError as e:
+            msg = ("Unable to connect to a lptlib server application running on the 4200-SCS. Please check your"
+                   "network settings and make sure the server application is running.")
+            raise ConnectionRefusedError(msg) from e
+        except Exception as e:
+            msg = "Error during lpt.initialize"
+            raise Exception(msg) from e
 
     def handle_set_value(self, mode: str, value: float) -> None:
         """Set value for sweep or step mode."""
