@@ -45,6 +45,9 @@ import select
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
+DEBUG_MODE: bool = False
+
+
 class Device(EmptyDevice):
     """Driver to control a Dobot MG400 robotic arm."""
 
@@ -349,7 +352,8 @@ class DobotDashboard(dobot_api.DobotApiDashboard):
         return not not ready  # first "not" makes a bool, second "not" negates the bool to what is needed
 
     def send_data(self, string):
-        self.log(f"Send: {string}")
+        if DEBUG_MODE:
+            self.log(f"Send: {string}")
         self.socket_dobot.send(str.encode(string, 'utf-8'))
 
     def wait_reply(self, timeout=3.0):
@@ -359,7 +363,8 @@ class DobotDashboard(dobot_api.DobotApiDashboard):
         if self.is_package_ready(timeout=timeout):
             data = self.socket_dobot.recv(1024)
             data_str = str(data, encoding="utf-8")
-            self.log(f'Receive: {data_str}')
+            if DEBUG_MODE:
+                self.log(f'Receive: {data_str}')
             return data_str
         else:
             raise Exception("No package returned within timeout.")
@@ -433,7 +438,8 @@ class DobotMove(dobot_api.DobotApiMove):
         return not not ready  # first "not" makes a bool, second "not" negates the bool to what is needed
 
     def send_data(self, string):
-        self.log(f"Send move: {string}")
+        if DEBUG_MODE:
+            self.log(f"Send move: {string}")
         self.socket_dobot.send(str.encode(string, 'utf-8'))
 
     def wait_reply(self, timeout=3.0):
