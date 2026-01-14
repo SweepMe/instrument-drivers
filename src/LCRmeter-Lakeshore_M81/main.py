@@ -27,7 +27,7 @@
 
 # SweepMe! driver
 # * Module: LCRmeter
-# * Instrument: Lakeshore M81
+# * Instrument: LakeShore M81
 
 import time
 import math
