@@ -2,20 +2,50 @@
 from __future__ import annotations
 
 import ctypes
-import struct
-import sys
-import os
+import time
 from enum import Enum
 
 dll_path = r"C:\Windows\System32\wgfmu.dll"  # alternative path: r'C:\Windows\SysWOW64\wgfmu.dll' (32 Bit)
 _dll: ctypes.WinDLL
 
 
+# DLL Loading and Helper Functions
+
 def load_dll() -> None:
     """Load the library with ctypes."""
     global _dll
     _dll = ctypes.WinDLL(dll_path)
 
+def make_char_pointer(string: str) -> ctypes.Array[ctypes.c_char]:
+    """Return a ctypes buffer suitable for passing as a C `char *`.
+
+    The returned buffer object keeps the bytes alive while referenced.
+    """
+    return ctypes.create_string_buffer(string.encode("ascii"))
+
+
+def make_generic_array(len_: int, values_list: list[float|int|str] | None = None, data_type=ctypes.c_double):
+    """Makes a c_array of data_types. The array values are 0 if no values_list is specified
+    if values is not empty a length len_ is to be given.
+    """
+    if values_list:
+        if not len_:
+            len_ = len(values_list)
+        return (data_type * int(len_))(*values_list)
+    else:
+        return (data_type * int(len_))()
+
+
+def make_double_array(values: list[float] | None = None, len_: int = 0):
+    """Makes a c_double array. The array values are 0 if no values list is specified
+    - if values is not empty a length len_ is to be specified.
+    """
+    if isinstance(values, list):
+        len_ = len(values)
+
+    return make_generic_array(len_, data_type=ctypes.c_double)
+
+# Initialization functions
 
 def open_session(address: str) -> None:
     """Connect the instrument library to the device.
@@ -23,7 +53,11 @@ def open_session(address: str) -> None:
     Args:
         address: The VISA address of the device, e.g., 'GPIB0::16::INSTR'
     """
-    _dll.WGFMU_openSession(make_char_pointer(address))
+    status = _dll.WGFMU_openSession(make_char_pointer(address))
+    if status != 0:
+        pass
+        # TODO: handle error here
+
 
 
 def close_session() -> None:
@@ -36,10 +70,7 @@ def initialize() -> None:
     _dll.WGFMU_initialize()
 
 
-def set_timeout(timeout_ms: int) -> None:
-    """Set the communication timeout in milliseconds."""
-    _dll.WGFMU_setTimeout(ctypes.c_int32(timeout_ms))
-
+# Connect/Disconnect
 
 def connect(channel: int) -> None:
     """Enables the specified channel and the RSU conected to the WGFMU."""
@@ -48,92 +79,39 @@ def connect(channel: int) -> None:
     # because we are missing the parameter for which function the error occurred
     ret = _dll.WGFMU_connect(ctypes.c_int32(channel))
 
-
 def disconnect(channel: int) -> None:
     """Disables the specified channel and the RSU conected to the WGFMU."""
     _dll.WGFMU_disconnect(ctypes.c_int32(channel))
 
-
-def execute() -> None:
-    """Runs the seuencer of all enabled WGFMU channels in Fast IV or PG mode.
-
-    Calls set_operation_mode, set_force_voltage_range, set_measure_current_range, set_measure_voltage_range, set_measure_mode.
-    """
-    _dll.WGFMU_execute()
+# Error Handling
 
 
-def wait_until_completed() -> None:
-    """Waits until all connected WGFMU channels in the Fast IV mode or the PG mode are in the ready to read data status."""
-    _dll.WGFMU_waitUntilCompleted()
+def get_error_summary() -> str:
+    """Read all error messages from the error queue and return them as a single string."""
+    error_size = get_error_summary_size()
+    if error_size == 0:
+        return ""
 
-
-class OperationMode(Enum):
-    """Operation modes for the WGFMU."""
-    DC = 2000
-    FASTIV = 2001
-    PG = 2002
-    SMU = 2003
-
-
-def set_operation_mode(channel: int, mode: OperationMode) -> None:
-    """Set the operation mode for the specified channel."""
-    _dll.WGFMU_setOperationMode(
-        ctypes.c_int32(channel),
-        ctypes.c_int32(mode.value),
+    c_errors = ctypes.create_string_buffer(error_size)
+    _dll.WGFMU_getErrorSummary(
+        ctypes.byref(c_errors),
+        ctypes.byref(ctypes.c_int32(error_size)),
     )
+    return c_errors.value.decode("ascii")
 
 
-def make_char_pointer(string: str) -> ctypes.Array[ctypes.c_char]:
-    """Return a ctypes buffer suitable for passing as a C `char *`.
-
-    The returned buffer object keeps the bytes alive while referenced.
-    """
-    return ctypes.create_string_buffer(string.encode("ascii"))
-
-
-def clear() -> None:
-    """Clears all waveform patterns and sequences."""
-    _dll.WGFMU_clear()
-
-
-def create_pattern(pattern_name: str, initial_voltage: float) -> None:
-    """Creates a waveform pattern with the given name and initial voltage."""
-    _dll.WGFMU_createPattern(
-        make_char_pointer(pattern_name),
-        ctypes.c_double(initial_voltage),
+def get_error_summary_size() -> int:
+    """Gets the size of the error summary string."""
+    c_size = ctypes.c_int32()
+    _dll.WGFMU_getErrorSummarySize(
+        ctypes.byref(c_size),
     )
+    return int(c_size.value)
 
 
-def add_vector(pattern_name: str, time_value: float, voltage: float) -> None:
-    """Adds a vector to the specified waveform pattern.
-
-    Args:
-        pattern_name: The name of the waveform pattern.
-        time_value: Incremental time value in seconds (time since last point), rounded to multiples of 10ns.
-        voltage: Output voltage in volts.
-    """
-    if time_value < 1e-8 or time_value > 10995:
-        raise ValueError("time_value must be between 10ns and 10995s")
-
-    _dll.WGFMU_addVector(
-        make_char_pointer(pattern_name),
-        ctypes.c_double(time_value),
-        ctypes.c_double(voltage),
-    )
 
 
-def add_sequence(channel: int, pattern_name: str, count: int) -> None:
-    """Create a sequence of count * pattern_name and append it to the last point of the channels sequence."""
-    max_count = 1099511627776  # 2^40
-    if count < 1 or count > max_count:
-        raise ValueError(f"Invalid count: {count}. Count must be between 1 and {max_count}.")
-
-    _dll.WGFMU_addSequence(
-        ctypes.c_int32(channel),
-        make_char_pointer(pattern_name),
-        ctypes.c_int32(count),
-    )
-
+# Channel Setup
 
 def create_channel_id(slot: int, channel: int) -> int:
     """Create the channel ID needed for communication from the WGFMU hardware slot."""
@@ -170,27 +148,21 @@ def get_channel_id_size() -> int:
     return int(c_size.value)
 
 
-def get_error_summary() -> str:
-    """Read all error messages from the error queue and return them as a single string."""
-    error_size = get_error_summary_size()
-    if error_size == 0:
-        return ""
+class OperationMode(Enum):
+    """Operation modes for the WGFMU."""
+    DC = 2000
+    FASTIV = 2001
+    PG = 2002
+    SMU = 2003
 
-    c_errors = ctypes.create_string_buffer(error_size)
-    _dll.WGFMU_getErrorSummary(
-        ctypes.byref(c_errors),
-        ctypes.byref(ctypes.c_int32(error_size)),
+
+def set_operation_mode(channel: int, mode: OperationMode) -> None:
+    """Set the operation mode for the specified channel."""
+    _dll.WGFMU_setOperationMode(
+        ctypes.c_int32(channel),
+        ctypes.c_int32(mode.value),
     )
-    return c_errors.value.decode("ascii")
 
-
-def get_error_summary_size() -> int:
-    """Gets the size of the error summary string."""
-    c_size = ctypes.c_int32()
-    _dll.WGFMU_getErrorSummarySize(
-        ctypes.byref(c_size),
-    )
-    return int(c_size.value)
 
 
 def set_measure_event(pattern: str, event: str, start_time: float, points: int, interval: float, average: float, mode: str = "averaged") -> None:
@@ -232,6 +204,132 @@ def set_measure_event(pattern: str, event: str, start_time: float, points: int, 
         ctypes.c_double(average),
         ctypes.c_int32(mode_int),
     )
+
+
+
+# Pattern Creation
+
+
+def create_pattern(pattern_name: str, initial_voltage: float) -> None:
+    """Creates a waveform pattern with the given name and initial voltage."""
+    _dll.WGFMU_createPattern(
+        make_char_pointer(pattern_name),
+        ctypes.c_double(initial_voltage),
+    )
+
+
+def add_vector(pattern_name: str, time_value: float, voltage: float) -> None:
+    """Adds a vector to the specified waveform pattern.
+
+    Args:
+        pattern_name: The name of the waveform pattern.
+        time_value: Incremental time value in seconds (time since last point), rounded to multiples of 10ns.
+        voltage: Output voltage in volts.
+    """
+    if time_value < 1e-8 or time_value > 10995:
+        raise ValueError("time_value must be between 10ns and 10995s")
+
+    _dll.WGFMU_addVector(
+        make_char_pointer(pattern_name),
+        ctypes.c_double(time_value),
+        ctypes.c_double(voltage),
+    )
+
+
+
+def add_vector_array(pattern_name: str, time_values: list[float], voltage_values: list[float]) -> None:
+    """Adds multiple vectors to the specified waveform pattern.
+
+    Args:
+        pattern_name: The name of the waveform pattern.
+        time_values: List of incremental time values in seconds (time since last point), rounded to multiples of 10ns.
+        voltage_values: List of output voltages in volts.
+    """
+    if len(time_values) != len(voltage_values):
+        raise ValueError("time_values and voltage_values must have the same length")
+
+    num_points = len(time_values)
+
+    _dll.WGFMU_addVectors(
+        make_char_pointer(pattern_name),
+        make_double_array(time_values),
+        make_double_array(voltage_values),
+        ctypes.c_int32(num_points),
+    )
+
+
+def get_pattern_force_value_size(pattern: str) -> int:
+    """Gets the size of the force value array for the given pattern."""
+    c_size = ctypes.c_int32()
+    _dll.WGFMU_getPatternForceValueSize(
+        make_char_pointer(pattern),
+        ctypes.byref(c_size),
+    )
+    return int(c_size.value)
+
+
+def get_pattern_force_values(pattern: str, index: int = 0, length: int = 0) -> tuple[list[float], list[float]]:
+    """Gets the time and force value arrays for the given pattern."""
+    if length == 0:
+        length = get_pattern_force_value_size(pattern) - index
+    if length <= 0:
+        return [], []
+
+    c_times = make_double_array(len_=length)
+    c_values = make_double_array(len_=length)
+
+    _dll.WGFMU_getPatternForceValues(
+        make_char_pointer(pattern_name),
+        ctypes.c_int32(index),
+        ctypes.byref(ctypes.c_int32(length)),
+        c_times,
+        c_values,
+    )
+
+    times = [float(c_times[i]) for i in range(length)]
+    values = [float(c_values[i]) for i in range(length)]
+    return times, values
+
+
+def add_sequence(channel: int, pattern_name: str, count: int) -> None:
+    """Create a sequence of count * pattern_name and append it to the last point of the channels sequence."""
+    max_count = 1099511627776  # 2^40
+    if count < 1 or count > max_count:
+        raise ValueError(f"Invalid count: {count}. Count must be between 1 and {max_count}.")
+
+    _dll.WGFMU_addSequence(
+        ctypes.c_int32(channel),
+        make_char_pointer(pattern_name),
+        ctypes.c_double(count),
+    )
+
+
+def clear() -> None:
+    """Clears all waveform patterns and sequences."""
+    _dll.WGFMU_clear()
+
+
+
+
+# Measurement and Execution
+
+
+def set_timeout(timeout_ms: int) -> None:
+    """Set the communication timeout in milliseconds."""
+    _dll.WGFMU_setTimeout(ctypes.c_int32(timeout_ms))
+
+
+def execute() -> None:
+    """Runs the seuencer of all enabled WGFMU channels in Fast IV or PG mode.
+
+    Calls set_operation_mode, set_force_voltage_range, set_measure_current_range, set_measure_voltage_range, set_measure_mode.
+    """
+    _dll.WGFMU_execute()
+
+
+def wait_until_completed() -> None:
+    """Waits until all connected WGFMU channels in the Fast IV mode or the PG mode are in the ready to read data status."""
+    _dll.WGFMU_waitUntilCompleted()
 
 
 class ChannelStatus(Enum):
@@ -296,80 +394,120 @@ def get_measure_value_size(channel: int) -> tuple[int, int]:
     return int(c_completed_points.value), int(c_total_points.value)
 
 
-def make_generic_array(len_: int, values_list: list[float|int|str] | None = None, data_type=ctypes.c_double):
-    """Makes a c_array of data_types. The array values are 0 if no values_list is specified
-    if values is not empty a length len_ is to be given.
-    """
-    if values_list:
-        if not len_:
-            len_ = len(values_list)
-        return (data_type * int(len_))(*values_list)
-    else:
-        return (data_type * int(len_))()
+def get_measure_value(channel: int, index: int) -> tuple[float, float]:
+    """Returns measurement data (time and value) for the specified point."""
+    c_time = ctypes.c_double()
+    c_value = ctypes.c_double()
+    _dll.WGFMU_getMeasureValue(
+        ctypes.c_int32(channel),
+        ctypes.c_int32(index),
+        ctypes.byref(c_time),
+        ctypes.byref(c_value),
+    )
+    return float(c_time.value), float(c_value.value)
 
 
-def make_double_array(values: list[float] | None = None):
-    """Makes a c_double array. The array values are 0 if no values list is specified
-    - if values is not empty a length len_ is to be specified.
-    """
-    return make_generic_array(len(values), values, ctypes.c_double)
+def get_measure_values(channel: int, start_index: int, count: int) -> tuple[list[float], list[float]]:
+    """Returns measurement data (time and value) for multiple points."""
+    if count < 1:
+        raise ValueError("count must be at least 1")
+    if start_index < 0:
+        raise ValueError("start_index must be non-negative")
 
+    c_times = make_double_array(len_=count)
+    c_values = make_double_array(len_=count)
 
-def add_vector_array(pattern_name: str, time_values: list[float], voltage_values: list[float]) -> None:
-    """Adds multiple vectors to the specified waveform pattern.
+    # _dll.WGFMU_getMeasureValues.argtypes = [
+    #     ctypes.c_int32, ctypes.c_int32, ctypes.c_int32,
+    #     ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double)
+    # ]
+    time.sleep(5)
 
-    Args:
-        pattern_name: The name of the waveform pattern.
-        time_values: List of incremental time values in seconds (time since last point), rounded to multiples of 10ns.
-        voltage_values: List of output voltages in volts.
-    """
-    if len(time_values) != len(voltage_values):
-        raise ValueError("time_values and voltage_values must have the same length")
-
-    num_points = len(time_values)
-
-    _dll.WGFMU_addVectors(
-        make_char_pointer(pattern_name),
-        make_double_array(time_values),
-        make_double_array(voltage_values),
-        ctypes.c_int32(num_points),
+    status = _dll.WGFMU_getMeasureValues(
+        ctypes.c_int32(channel),
+        ctypes.c_int32(start_index),
+        ctypes.byref(ctypes.c_int32(count)),
+        # c_times,
+        # c_values,
+        ctypes.byref(c_times),
+        ctypes.byref(c_values),
     )
 
+    # if the DLL returns an error code, surface it
+    if isinstance(status, int) and status != 0:
+        raise OSError(f"WGFMU_getMeasureValues returned error code {status}")
 
-def get_pattern_force_value_size(pattern_name: str) -> int:
-    """Gets the size of the force value array for the given pattern."""
-    c_size = ctypes.c_int32()
-    _dll.WGFMU_getPatternForceValueSize(
-        make_char_pointer(pattern_name),
-        ctypes.byref(c_size),
-    )
-    return int(c_size.value)
+    times = [float(c_times[i]) for i in range(count)]
+    values = [float(c_values[i]) for i in range(count)]
+
+    return times, values
+
 
 
 if __name__ == "__main__":
+    CHANNEL = 101
     # Example 1
     # Offline commands
     load_dll()
     clear()
-    my_pattern = "pulse"
-    create_pattern(my_pattern, 0)  # 0 ms, 0 V
-    add_vector(my_pattern, 0.001, 1)  # 1 ms, 1 V
-    add_vector(my_pattern, 0.001, 0)  # 2 ms, 0 V
-    add_vector_array(my_pattern, [0.001, 0.001, 0.001], [1, 0, 1])  # 3 ms, 1 V; 4 ms, 0 V; 5 ms, 1 V
-    ret = get_pattern_force_value_size(my_pattern)
-    print(f"Pattern size: {ret}")
+
+    # create pattern
+    pattern_name = "pulse"
+    create_pattern(pattern_name, 0.0)
+
+    # Rectangular Pulse
+    add_vector(pattern_name, 0.0001, 1.0)
+    add_vector(pattern_name, 0.0004, 1.0)
+    add_vector(pattern_name, 0.0001, 0)
+    add_vector(pattern_name, 0.0004, 0)
+
+    # Repeat 10 times
+    add_sequence(CHANNEL, pattern_name, 10)
+    print("Force values:", get_pattern_force_values(pattern_name))
 
     # Online commands
     open_session("GPIB0::16::INSTR")
-    connect(101)
-    print(get_channel_id_size())
-    print(get_channel_ids())
+    initialize()
+    set_operation_mode(CHANNEL, OperationMode.FASTIV)
+    connect(CHANNEL)
+
+    set_measure_event(
+        pattern_name,
+        "evt",
+        0,
+        100,
+        0.00001,
+        0,
+        "average"
+    )
+
+    # status = get_channel_status(CHANNEL)
+    # print(status)
+    # print(f"Measure enabled: {is_measure_enabled(CHANNEL)}")
+
+    execute()
+
+    wait_until_completed()
+
+    completed_points, total_points = get_measure_value_size(CHANNEL)
+    print(f"Completed points: {completed_points}, Total points: {total_points}")
+
+    # readout data
+    # timestamps, measured_values = [], []
+    # for index in range(completed_points):
+    #     timestamp, measured_value = get_measure_value(CHANNEL, index)
+    #     timestamps.append(timestamp)
+    #     measured_values.append(measured_value)
+    #     # print(f"Point {index}: Time = {timestamp:.8f} s, Value = {measured_value:.6f} V")
+    #     # if index > 3:
+    #     #     break
+    # print(len(timestamps), len(measured_values))
     print(get_error_summary())
+    timestamps, measured_values = get_measure_values(CHANNEL, 0, 5)
+    for i in range(4):
+        print(f"Point {i}: Time = {timestamps[i]:.8f} s, Value = {measured_values[i]:.6f} V")
+    print(get_error_summary())
+
+    initialize()
+    disconnect(CHANNEL)
     close_session()
-
-
-    # client.WGFMU_addVector("pulse", 0.0001, 1)  # 0.1 ms, 1 V
-    # client.WGFMU_addVector("pulse", 0.0004, 1)  # 0.5 ms, 1 V
-    # client.WGFMU_addVector("pulse", 0.0001, 0)  # 0.6 ms, 0 V
-    # client.WGFMU_addVector("pulse", 0.0004, 0)  # 1.0 ms, 0 V
-    # client.WGFMU_addSequence(101, "pulse", 10)  # 10 pulse output
