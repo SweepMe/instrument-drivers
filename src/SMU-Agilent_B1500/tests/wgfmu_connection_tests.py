@@ -49,6 +49,11 @@ class ConnectionTest(unittest.TestCase):
             pass  # Ignore errors during cleanup
 
         try:
+            wgfmu.disconnect(CHANNEL)
+        except Exception:
+            pass  # Ignore errors during cleanup
+
+        try:
             wgfmu.close_session()
         except Exception:
             pass  # Ignore errors during cleanup
@@ -84,21 +89,18 @@ class ConnectionTest(unittest.TestCase):
         wgfmu.clear()
         wgfmu.create_pattern(pattern_name, 0.0)
 
-        # Rectangular Pulse
+        # Rectangular Pulse - 10 repetitions
         wgfmu.add_vector(pattern_name, 0.0001, 1.0)
         wgfmu.add_vector(pattern_name, 0.0004, 1.0)
         wgfmu.add_vector(pattern_name, 0.0001, 0)
         wgfmu.add_vector(pattern_name, 0.0004, 0)
+        wgfmu.add_sequence(CHANNEL, pattern_name, 10)
 
-        wgfmu.set_measure_event(
-            pattern_name,
-            "evt",
-            0,
-            1000,
-            0.000001,
-            0,
-            "average"
-        )
+        # Online - open session is done in setUp
+        wgfmu.initialize()
+        wgfmu.set_operation_mode(CHANNEL, wgfmu.OperationMode.FASTIV)
+        wgfmu.connect(CHANNEL)
+
         wgfmu.set_measure_event(
             pattern_name,
             "evt",
@@ -109,30 +111,86 @@ class ConnectionTest(unittest.TestCase):
             "average"
         )
 
-        # Repeat 10 times
+        assert wgfmu.is_measure_enabled(CHANNEL), "Measurement should be enabled."
+
+        wgfmu.execute()
+
+        wgfmu.wait_until_completed()
+
+        completed_points, total_points = wgfmu.get_measure_value_size(CHANNEL)
+        assert completed_points == 1000, "No measurement points were completed."
+        assert completed_points == total_points, "Not all measurement points were completed."
+
+    def _create_pattern_and_run(self) -> None:
+        """Helper function to create a pattern and run it."""
+        pattern_name = "pulse"
+
+        # Offline
+        wgfmu.clear()
+        wgfmu.create_pattern(pattern_name, 0.0)
+
+        # Rectangular Pulse - 10 repetitions
+        wgfmu.add_vector(pattern_name, 0.0001, 1.0)
+        wgfmu.add_vector(pattern_name, 0.0004, 1.0)
+        wgfmu.add_vector(pattern_name, 0.0001, 0)
+        wgfmu.add_vector(pattern_name, 0.0004, 0)
         wgfmu.add_sequence(CHANNEL, pattern_name, 10)
 
         # Online - open session is done in setUp
         wgfmu.initialize()
         wgfmu.set_operation_mode(CHANNEL, wgfmu.OperationMode.FASTIV)
         wgfmu.connect(CHANNEL)
-        status = wgfmu.get_channel_status(CHANNEL)
-        print(status)
 
-        assert wgfmu.is_measure_enabled(CHANNEL), "Measurement should be enabled."
+        wgfmu.set_measure_event(
+            pattern_name,
+            "evt",
+            0,
+            100,
+            0.00001,
+            0,
+            "average"
+        )
 
         wgfmu.execute()
-
-        # for _ in range(10):
-        #     status = wgfmu.get_channel_status(CHANNEL)
-        #     print(status)
-        #     time.sleep(0.01)
-        time.sleep(5)
         wgfmu.wait_until_completed()
 
-        completed_points, total_points = wgfmu.get_measure_value_size(CHANNEL)
-        print(f"Completed points: {completed_points}, Total points: {total_points}")
-        assert completed_points > 0, "No measurement points were completed."
+    def test_get_measure_value(self) -> None:
+        """Test data retrieval after running a pattern."""
+        self._create_pattern_and_run()
 
-        wgfmu.initialize()
-        # wgfmu.disconnect(CHANNEL)
+        completed_points, total_points = wgfmu.get_measure_value_size(CHANNEL)
+        assert completed_points == 1000, "No measurement points were completed."
+        assert completed_points == total_points, "Not all measurement points were completed."
+
+        # single measurement point
+        timestamps = []
+        measured_values = []
+        for index in range(completed_points):
+            timestamp, measured_value = wgfmu.get_measure_value(CHANNEL, index)
+            timestamps.append(timestamp)
+            measured_values.append(measured_value)
+
+        assert len(timestamps) == completed_points, "Voltage data size mismatch."
+        assert len(measured_values) == completed_points, "Current data size mismatch."
+
+        # Simple sanity checks on the data
+        assert all(isinstance(t, float) for t in timestamps), "Timestamp data type mismatch."
+        assert all(isinstance(v, float) for v in measured_values), "Measured values data type mismatch."
+
+    def test_get_measure_values(self) -> None:
+        """Test bulk data retrieval after running a pattern."""
+        self._create_pattern_and_run()
+
+        completed_points, total_points = wgfmu.get_measure_value_size(CHANNEL)
+        assert completed_points == 1000, "No measurement points were completed."
+        assert completed_points == total_points, "Not all measurement points were completed."
+
+        # bulk retrieval
+        timestamps, measured_values = wgfmu.get_measure_values(CHANNEL, 0, completed_points)
+
+        assert len(timestamps) == completed_points, "Timestamp data size mismatch."
+        assert len(measured_values) == completed_points, "Measured values data size mismatch."
+
+        # Simple sanity checks on the data
+        assert all(isinstance(t, float) for t in timestamps), "Timestamp data type mismatch."
+        assert all(isinstance(v, float) for v in measured_values), "Measured values data type mismatch."
