@@ -106,14 +106,14 @@ class Device(EmptyDevice):
             "Channel": ["S1 + M1","S1 + M2","S1 + M3",
                         "S2 + M1","S2 + M2","S2 + M3",
                         "S3 + M1","S3 + M2","S3 + M3",],
-            "SweepMode": ["Voltage (V)"],
+            "SweepMode": ["Voltage in V"],
             "Compliance": 0.1,  # Compliance called "Current protection" in VS-10
             "Speed": list(self.speed_nplcs.keys()),
             "RangeVoltage": list(self.source_range_limits.keys()),
             "Range": list(self.current_range_limits.keys()),
             # Voltage limits
-            "High voltage output limit (V)": 10.0,
-            "Low voltage output limit (V)": -10.0,
+            "High voltage output limit in V": 10.0,
+            "Low voltage output limit in V": -10.0,
             # Dark mode
             "Turn off LEDs": False,
         }
@@ -136,8 +136,8 @@ class Device(EmptyDevice):
             self.current_protect = 0.1
 
         try:
-            self.vlim_high = float(parameter["High voltage output limit (V)"])
-            self.vlim_low = float(parameter["Low voltage output limit (V)"])
+            self.vlim_high = float(parameter["High voltage output limit in V"])
+            self.vlim_low = float(parameter["Low voltage output limit in V"])
         except (KeyError, TypeError):
             self.vlim_high = 0.0
             self.vlim_low = 0.0
