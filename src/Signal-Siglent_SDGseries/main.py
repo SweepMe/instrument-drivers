@@ -117,7 +117,7 @@ class Device(EmptyDevice):
             "PeriodFrequencyValue": 1000,
             "AmplitudeHiLevel": ["Amplitude in V", "High level in V", "Mean level in V"],
             "AmplitudeHiLevelValue": 1.0,
-            "OffsetLoLevel": ["Offset in V", "Low level in V ", "Standard deviation in V"],
+            "OffsetLoLevel": ["Offset in V", "Low level in V", "Standard deviation in V"],
             "OffsetLoLevelValue": 0.0,
             # TODO Delay in ms or µs
             "DelayPhase": ["Phase in deg", "Delay in s"],
@@ -151,7 +151,7 @@ class Device(EmptyDevice):
         self.delay_or_phase_value = float(parameter['DelayPhaseValue'])
         self.impedance = parameter['Impedance']
 
-        self.shortname = 'SDG 2000X ' + self.channel
+        self.shortname = 'SDG Series ' + self.channel
 
         if self.sweep_mode == 'None':
             self.variables = []
@@ -169,6 +169,34 @@ class Device(EmptyDevice):
                 self.units = ['%']
             else:
                 self.units = ['V']
+
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
+        self.set_impedance(self.impedance)
+        self.update_generated_signal()
+
+    def poweron(self) -> None:
+        """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
+        self.port.write(f"{self.channel}:OUTP ON")
+
+    def poweroff(self) -> None:
+        """Turn off the device when leaving a sequencer branch."""
+        self.port.write(f"{self.channel}:OUTP OFF")
+
+    def apply(self) -> None:
+        """Update the generated signal according to the current sweep value."""
+        if self.sweep_mode == "None":
+            return
+
+        self.update_signal_parameters_with_sweep_value()
+        self.update_generated_signal()
+
+    def call(self) -> float | None:
+        if self.sweep_mode != 'None':
+            return float(self.value)
+        return None
+
+    # Convenience Functions
 
     def update_generated_signal(self) -> None:
         """Update the generated signal according to the current settings."""
@@ -194,112 +222,86 @@ class Device(EmptyDevice):
             self.port.write(f"{self.channel}:BSWV MEAN,{self.mean},STDEV,{self.stdev}")
 
         elif self.waveform == "Pulse":
-            if self.duty_cycle_or_pulse_width_mode == "Pulse width in s":
+            if self.duty_cycle_or_pulse_width_mode.startswith("Pulse width"):
                 self.set_pulse_width(self.duty_cycle_or_pulse_width_value)
-            elif self.duty_cycle_or_pulse_width_mode == "Duty cycle in %":
+            elif self.duty_cycle_or_pulse_width_mode.startswith("Duty cycle"):
                 self.set_duty_cycle(self.duty_cycle_or_pulse_width_value)
 
         elif self.waveform == "Square":
-            if self.duty_cycle_or_pulse_width_mode == "Duty cycle in %":
+            if self.duty_cycle_or_pulse_width_mode.startswith("Duty cycle"):
                 self.set_duty_cycle(self.duty_cycle_or_pulse_width_value)
-
-    def configure(self) -> None:
-        """Configure the device. This function is called every time the device is used in the sequencer."""
-        self.set_impedance(self.impedance)
-        self.update_generated_signal()
-
-    def poweron(self) -> None:
-        """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
-        self.port.write(f"{self.channel}:OUTP ON")
-
-    def poweroff(self) -> None:
-        """Turn off the device when leaving a sequencer branch."""
-        self.port.write(f"{self.channel}:OUTP OFF")
-
-    def apply(self) -> None:
-        """Update the generated signal according to the current sweep value."""
-        if self.sweep_mode == "None":
-            return
-
-        self.update_signal_parameters_with_sweep_value()
-        self.update_generated_signal()
-
-    def update_signal_parameters_with_sweep_value(self) -> None:
-        """Update the signal parameters according to the current sweep mode and value."""
-        if self.sweep_mode == "Frequency in Hz":
-            self.period_or_frequency_mode = "Frequency in Hz"
-            self.period_or_frequency_value = self.value
-
-        elif self.sweep_mode == "Period in s":
-            self.period_or_frequency_mode = "Frequency in Hz"
-            self.period_or_frequency_value = 1.0 / self.value
-
-        elif self.sweep_mode == "Amplitude in V":
-            self.amplitude_or_high_level_mode = "Amplitude in V"
-            self.amplitude_or_high_level_value = self.value
-
-        elif self.sweep_mode == "High level in V":
-            self.amplitude_or_high_level_mode = "High Level in V"
-            self.amplitude_or_high_level_value = self.value
-
-        elif self.sweep_mode == "Offset in V":
-            self.offset_or_low_level_mode = "Offset in V"
-            self.offset_or_low_level_value = self.value
-
-        elif self.sweep_mode == "Low level V":
-            self.offset_or_low_level_mode = "Low level in V"
-            self.offset_or_low_level_value = self.value
-
-        elif self.sweep_mode == "Pulse width in s":
-            self.duty_cycle_or_pulse_width_value = self.value
-
-        elif self.sweep_mode == "Duty cycle in %":
-            self.duty_cycle_or_pulse_width_value = self.value
-
-    def call(self) -> float | None:
-        if self.sweep_mode != 'None':
-            return float(self.value)
-        return None
-
-    # Convenience Functions
 
     def calculate_frequency(self) -> None:
         """Handle frequency and period settings."""
-        if self.period_or_frequency_mode == "Period in s":
+        if self.period_or_frequency_mode.startswith("Period"):
             self.frequency = 1.0 / self.period_or_frequency_value
         else:
             self.frequency = self.period_or_frequency_value
 
     def calculate_amplitude_and_offset(self) -> None:
         """Handle amplitude/high level and offset/low level settings."""
-        if self.amplitude_or_high_level_mode == "Amplitude in V":
+        if self.amplitude_or_high_level_mode.startswith("Amplitude"):
             self.amplitude = self.amplitude_or_high_level_value
 
-            if self.offset_or_low_level_mode == "Offset in V":
+            if self.offset_or_low_level_mode.startswith("Offset"):
                 self.offset = self.offset_or_low_level_value
-            else:
+            else:  # Amplitude/2 + Low level
                 self.offset = (self.amplitude_or_high_level_value / 2.0 + self.offset_or_low_level_value)
 
-        elif self.amplitude_or_high_level_mode == "High level in V":
-            if self.offset_or_low_level_mode == "Offset in V":
+        elif self.amplitude_or_high_level_mode.startswith("High level"):
+            if self.offset_or_low_level_mode.startswith("Offset"):
+                # amplitude = (high level - offset) * 2
                 self.amplitude = (self.amplitude_or_high_level_value - self.offset_or_low_level_value) * 2.0
                 self.offset = self.offset_or_low_level_value
-            else:
+            else:  # Low level
                 self.amplitude = self.amplitude_or_high_level_value - self.offset_or_low_level_value
+                # offset = (high level - low level) / 2
                 self.offset = (self.amplitude_or_high_level_value - self.offset_or_low_level_value) / 2.0
 
-        elif self.amplitude_or_high_level_mode == "Mean in V":
+        elif self.amplitude_or_high_level_mode.startswith("Mean"):
             self.mean = self.amplitude_or_high_level_value
-            if self.offset_or_low_level_mode == "Standard deviation in V":
+            if self.offset_or_low_level_mode.startswith("Standard deviation"):
                 self.stdev = self.offset_or_low_level_value
 
     def calculate_phase(self) -> None:
         """Calculate phase from delay or vice versa."""
-        if self.delay_or_phase_mode == "Delay in s":
+        if self.delay_or_phase_mode.startswith("Delay"):
             self.phase = self.delay_or_phase_value * self.frequency * 360.0
 
-        elif self.delay_or_phase_mode == "Phase in deg":
+        elif self.delay_or_phase_mode.startswith("Phase"):
             self.phase = self.delay_or_phase_value
+
+    def update_signal_parameters_with_sweep_value(self) -> None:
+        """Update the signal parameters according to the current sweep mode and value."""
+        if self.sweep_mode.startswith("Frequency"):
+            self.period_or_frequency_mode = "Frequency in Hz"
+            self.period_or_frequency_value = self.value
+
+        elif self.sweep_mode.startswith("Period"):
+            self.period_or_frequency_mode = "Frequency in Hz"
+            self.period_or_frequency_value = 1.0 / self.value
+
+        elif self.sweep_mode.startswith("Amplitude"):
+            self.amplitude_or_high_level_mode = "Amplitude in V"
+            self.amplitude_or_high_level_value = self.value
+
+        elif self.sweep_mode.startswith("High level"):
+            self.amplitude_or_high_level_mode = "High level in V"
+            self.amplitude_or_high_level_value = self.value
+
+        elif self.sweep_mode.startswith("Offset"):
+            self.offset_or_low_level_mode = "Offset in V"
+            self.offset_or_low_level_value = self.value
+
+        elif self.sweep_mode.startswith("Low level"):
+            self.offset_or_low_level_mode = "Low level in V"
+            self.offset_or_low_level_value = self.value
+
+        elif self.sweep_mode.startswith("Pulse width"):
+            self.duty_cycle_or_pulse_width_value = self.value
+
+        elif self.sweep_mode.startswith("Duty cycle"):
+            self.duty_cycle_or_pulse_width_value = self.value
 
     # Wrapped Functions
 
