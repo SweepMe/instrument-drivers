@@ -51,14 +51,13 @@ class Device(EmptyDevice):
 
         # SweepMe! parameters
         self.variables = ["Valve position", "Flow rate", "Plunger current"]
-        self.units = ["", "µl/min", "mA"]  # TODO: update units
+        self.units = ["", "µl/min", "mA"]
         self.plottype = [True, True, True]
         self.savetype = [True, True, True]
 
         # Communication Parameters
         self.port_string: str = ""
         self.port_manager = False
-        # self.port_types = ["GPIB", "COM", "TCPIP"]
         self.amf: amfTools.AMF | None = None
 
         # Configuration parameters
@@ -94,24 +93,20 @@ class Device(EmptyDevice):
 
         # Measurement parameters
         self.volume: int = 10
-        self.volume_unit: str = "µl"
         self.flow_rate_ul_min: float = 0.0  # always convert to µl/min
-        self.time_unit: str = "s"
         self.valve: int = 1
         self.valve_move_mode: str = "Shortest Way"
         self.syringe_volume: int = 5000  # in µl
         self.wait_for_pump_finish: bool = False
+        self.empty_on_start: bool = False
 
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         del parameters
         return {
-            "Volume": "10",
-            "Volume unit": list(self.volume_units_factors.keys()),
-            "": None,
-            "Flow rate": 0.0,
-            "Time unit": list(self.time_units_factors.keys()),
+            "Volume in µl": 500,
+            "Flow rate in µl/min": 100.0,
             " ": None,
             "Valve": 1,
             "Valve mode": ["Shortest Way", "Clockwise", "Counter-Clockwise"],
@@ -119,23 +114,27 @@ class Device(EmptyDevice):
             "Syringe volume in µl": 5000,
             "Plunger force": list(self.plunger_force_modes.keys()),
             "Microstep resolution": list(self.microstep_resolutions.keys()),
+            "  ": None,
             "Wait for pump finish": False,
+            "Empty on start": False,
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.port_string = parameters.get("Port", "")
-        self.volume = int(float(parameters.get("Volume", "10")))
-        self.volume_unit = parameters.get("Volume unit", "µl")
-        self.flow_rate_ul_min = float(parameters.get("Flow rate", 0.0))
-        self.time_unit = parameters.get("Time unit", "s")
-        self.speed = parameters.get("Speed", "Standard")
-        self.valve = int(parameters.get("Valve", "1"))
+
+        with contextlib.suppress(ValueError):
+            self.volume = int(float(parameters.get("Volume", 10)))
+            self.flow_rate_ul_min = float(parameters.get("Flow rate", 0.0))
+            self.valve = int(float(parameters.get("Valve", "1")))
+            self.syringe_volume = int(float(parameters.get("Syringe volume in µl", 5000)))
+
         self.valve_move_mode = parameters.get("Valve mode", "Shortest Way")
-        self.syringe_volume = int(parameters.get("Syringe volume in µl", "5000"))
+        self.speed = parameters.get("Speed", "Standard")
         self.plunger_force_mode = parameters.get("Plunger force", "Normal force")
         self.microstep_resolution = parameters.get("Microstep resolution", "0.01 mm")
         self.wait_for_pump_finish = parameters.get("Wait for pump finish", False)
+        self.empty_on_start = parameters.get("Empty on start", False)
 
     def find_ports(self) -> list[str]:
         """Return a list of available ports for the device."""
@@ -164,38 +163,39 @@ class Device(EmptyDevice):
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
-        # TODO: Check if homing is desired behavior at initialization
         if not self.amf.getHomeStatus():
             self.amf.home()
+
+        # Move to valve 1 and dispense.
+        if self.empty_on_start:
+            self.set_valve(1)
+            self.set_flow_rate(160000)  # set to max flow rate for emptying
+            self.amf.pump(0)
+            self.wait_for_pump(timeout_seconds=300)
 
     def deinitialize(self) -> None:
         """Deinitialize the device. This function is called only once at the end of the measurement."""
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        # TODO: for low flow rates, use setSpeedLowFlow or setSpeedUltraLowFlow
         self.set_valve(self.valve)
         self.amf.setMicrostepResolution(self.microstep_resolutions[self.microstep_resolution])
-        self.amf.setSpeed(int(self.speed_modes[self.speed]))
         self.amf.setSyringeSize(self.syringe_volume)
         self.amf.setPlungerForce(self.plunger_force_modes[self.plunger_force_mode])
 
     def reconfigure(self, parameters, keys) -> None:
         if "Flow" in keys:
-            flow_ul_min = float(parameters["Flow"]) * self.volume_units_factors[self.volume_unit] / self.time_units_factors[self.time_unit]
-            self.flow_rate_ul_min = flow_ul_min
+            self.flow_rate_ul_min = float(parameters["Flow"])
             self.set_flow_rate(self.flow_rate_ul_min)
         if "Volume" in keys:
             self.volume = int(float(parameters["Volume"]))
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
-        # TODO: decide if this is correct
         self.amf.hardStop()
 
     def signin(self) -> None:
         """This function is called whenever a module higher up in the sequencer changes its sweep value."""
-        # TODO: currently this is pumping/dispensing until the volume is reached instead of pumping/dispensing the given volume
         self.pump_volume(volume=self.volume)
 
     def trigger_ready(self) -> None:
@@ -206,21 +206,28 @@ class Device(EmptyDevice):
     def call(self) -> list:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         valve_position = self.amf.getValvePosition()
-
         flow_rate = self.amf.getFlowRate()
-        flow_rate_user_unit = flow_rate * self.time_units_factors[self.time_unit] / self.volume_units_factors[self.volume_unit]
-
         plunger_current = self.amf.getPlungerCurrent()  # TODO: check if *10, /10, or nothing is needed
-        return [valve_position, flow_rate_user_unit, plunger_current]
+
+        return [valve_position, flow_rate, plunger_current]
 
     # Wrapper Commands
 
     def pump_volume(self, volume: int) -> None:
-        """Pump until the specified volume in µl is filled in the syringe."""
-        self.amf.pumpVolume(
-            volume=volume,
-            block=False,  # Wait until the pumping is done
-        )
+        """Pump the specified volume in µl. Use positive volume to pick up, negative volume to dispense."""
+        if volume > 0:
+            self.amf.pumpPickupVolume(
+                volume=volume,
+                block=False,
+            )
+        elif volume < 0:
+            self.amf.pumpDispenseVolume(
+                volume=abs(volume),
+                block=False,
+            )
+        else:
+            # volume == 0, do nothing
+            pass
 
     def set_flow_rate(self, flow_rate_ul_min: float) -> None:
         """Set the flow rate in µl/min."""
@@ -228,7 +235,7 @@ class Device(EmptyDevice):
             flowRate=flow_rate_ul_min,
             speedMode=self.speed_modes[self.speed],
             syringeVolume=self.syringe_volume,
-            silentMode=False,  # TODO: switch to True after testing
+            silentMode=True,
         )
 
     def set_valve(self, valve_number: int) -> None:
@@ -253,5 +260,5 @@ class Device(EmptyDevice):
                 break
 
             status = self.amf.getPumpStatus()
-            if status == "0":  # Done
+            if status == 0:  # Done
                 break

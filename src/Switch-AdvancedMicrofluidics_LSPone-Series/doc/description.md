@@ -2,21 +2,20 @@
 
 ## Setup
 
-This driver communicates with AdvancedMicrofluidics LSPone-series pumps using the `amfTools` library. It might be compatible with other products (RVMFS, RVMLP, SPRM, and LSPone) aswell.
+This driver communicates with AdvancedMicrofluidics LSPone-series pumps using the `amfTools` library. It might be compatible with other products (RVMFS, RVMLP, SPRM, and LSPone) aswell. It requires an installation of ftd2xx64.dll, which can be found here: https://ftdichip.com/drivers/d2xx-drivers/
 
 ## Parameters
 
-- **Volume**: Total volume (displayed and entered by the user). The driver stores volume in µl by default.
-- **Volume unit**: Unit for the displayed volume (e.g. `µl`, `ml`, `l`); the driver converts between units automatically.
-- **Flow rate**: Flow set by the user. It uses the **Volume unit** and **Time unit** selected by the user.
-- **Time unit**: Unit for flow rate time base (e.g. `s`, `min`).
+- **Volume**: Use positive values to pump in, and negative values to dispense.
+- **Flow rate**: Flow in µl/min set by the user. 
 - **Valve**: Target valve index (integer).
 - **Valve mode**: Movement strategy for valve changes: *Shortest Way*, *Clockwise*, or *Counter-Clockwise*.
-- **Speed**: Drive speed profile (user-facing labels map to device-specific numeric modes).
+- **Speed**: The device has 3 speed modes that can be used to set the flow rate.
 - **Syringe volume**: Syringe capacity in µl used for flow-rate calculations.
-- **Plunger force**: Force profile for the plunger; mapped to device-specific modes.
+- **Plunger force**: Force profile for the plunger.
 - **Microstep resolution**: Motor microstep configuration used for precise positioning.
 - **Wait for pump finish**: When enabled, the driver will block further sequencer steps until the pump operation completes. Disable this option if you want to run measurements while pumping.
+- **Empty on start**: If enabled, the pump will empty any residual liquid in valve 1 at the start of the sequence.
 
 ## Returned Variables
 
