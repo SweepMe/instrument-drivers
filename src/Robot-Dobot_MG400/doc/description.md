@@ -29,7 +29,6 @@ This driver can be used to control **x, y, z** and **r (rotation)** of a Dobot M
 
 ### Coordinates:
 
-- **Home position**: `x = 350.0 mm`, `y = 0.0 mm`, `z = 0.0 mm`, `r = 0 deg`
 - **x**: horizontal direction of the robot arm in the home position
 - **y**: horizontal direction perpendicular to x
 - **z**: vertical direction perpendicular to x and y

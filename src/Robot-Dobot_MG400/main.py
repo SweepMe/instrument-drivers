@@ -225,7 +225,7 @@ class Device(EmptyDevice):
         # Position
         if "x" in self.sweepvalues and self.sweepvalues["x"] != "nan":
             x = float(self.sweepvalues["x"])
-        else: 
+        else:
             x = self._last_xyzr[0]
             
         if "y" in self.sweepvalues and self.sweepvalues["y"] != "nan":
@@ -266,7 +266,7 @@ class Device(EmptyDevice):
         """'reach' can be added to make sure the latest setvalue applied during 'apply' is reached."""
         self.sync(self.reach_position_timeout)  # wait to finish all commands in queue
                     
-    def call(self) -> tuple[float]:
+    def call(self) -> tuple[float, float, float, float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         x, y, z, r = self.get_position()
         return x, y, z, r
@@ -303,12 +303,11 @@ class Device(EmptyDevice):
     def set_acceleration_linear(self, acc) -> None:
         self.api_dashboard.AccL(int(float(acc)))
 
-    def get_robot_mode(self):
+    def get_robot_mode(self) -> str:
         mode = self.api_dashboard.RobotMode()
         return mode
         
     def move_linear(self, x, y, z, r) -> None:
-        print(f"Moving to x={x} y={y} z={z} r={r}")
         self.api_move.MovL(x, y, z, r)  # linear move to home position
         
     def go_home(self) -> None:
@@ -319,13 +318,12 @@ class Device(EmptyDevice):
     def sync(self, timeout=10.0) -> None:
         self.api_move.Sync(timeout) 
         
-    def get_pose(self):
+    def get_pose(self) -> tuple[float, float, float, float]:
         answer = self.api_dashboard.GetPose()  # added function
         x,y,z,r = tuple(map(float, self.get_response_data(answer)[0:4]))
-        print(f"Current position: x={x} y={y} z={z} r={r}")
         return x,y,z,r
       
-    def get_position(self):
+    def get_position(self) -> tuple[float, float, float, float]:
         return self.get_pose()
         
     def get_angles(self):
@@ -342,10 +340,6 @@ class Device(EmptyDevice):
 
 
 class DobotDashboard(dobot_api.DobotApiDashboard):
-
-    # def log(self, text):
-    #     pass
-    #     print(text)
 
     def is_package_ready(self, timeout = 0.0):
         ready, _, _ = select.select([self.socket_dobot], [], [], timeout)
@@ -373,9 +367,6 @@ class DobotDashboard(dobot_api.DobotApiDashboard):
         """
         Enable the robot
         """
-        # string = "EnableRobot({:f},{:f},{:f},{:f})".format(float(mass), float(x), float(y), float(z))
-        # string = "EnableRobot({:f})".format(float(mass))
-                
         if len(*args) == 0:
             string = "EnableRobot()"
         elif len(*args) == 1:
@@ -428,10 +419,6 @@ class DobotDashboard(dobot_api.DobotApiDashboard):
 
 
 class DobotMove(dobot_api.DobotApiMove):
-
-    # def log(self, text):
-    #     pass
-    #     print(text)
 
     def is_package_ready(self, timeout = 0.0):
         ready, _, _ = select.select([self.socket_dobot], [], [], timeout)
