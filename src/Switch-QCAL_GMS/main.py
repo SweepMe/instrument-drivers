@@ -117,8 +117,17 @@ class Device(EmptyDevice):
         self.concentration_3 = parameters.get("Concentration 3 in Vol%", 1.0)
         self.total_flow = parameters.get("Total flow in NmL/min", 10.0)
 
+    def initialize(self) -> None:
+        # delete zeit.txt and create new to avoid reading old data
+        if os.path.exists(self.zeit_file):
+            os.remove(self.zeit_file)
+            with open(self.zeit_file, "w", encoding="ascii") as f:
+                f.write("")
+
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
+        # TODO: set sweepvalue to 0
+        # 
         self.update_setpoints()
         self.wait_for_confirmation()
 
@@ -126,6 +135,7 @@ class Device(EmptyDevice):
         """Set the flow rate to 0. This function is called every time the device is no longer used in the sequencer."""
         self.total_flow = 0.0
         self.update_setpoints()
+        # check?
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
@@ -175,7 +185,6 @@ class Device(EmptyDevice):
             msg = f"Invalid concentration 3 value: {self.concentration_3}. It must be between 0 and 100 Vol%."
             raise ValueError(msg)
 
-
         self.write_setpoints_to_file(self.concentration_2, self.concentration_3, self.total_flow)
 
     def write_setpoints_to_file(self, concentration_2: float, concentration_3: float, total_flow: float) -> None:
@@ -196,29 +205,32 @@ class Device(EmptyDevice):
                 msg = "Timeout while waiting for the GMS to acknowledge new setpoints."
                 raise TimeoutError(msg)
 
-            last_line = self.read_response()
-            # If the total flow was set to 0, the device should respond with '_STOP'
-            if self.total_flow == 0.0:
-                if "_STOP" in last_line or "Operation stopped" in last_line:
-                    break
+            # TODO: read last 3 lines and check from the bottom up
+            last_lines = self.read_response(2)
+            for last_line in reversed(last_lines):
+                # If the total flow was set to 0, the device should respond with '_STOP'
+                if self.total_flow == 0.0:
+                    if "_STOP" in last_line or "Operation stopped" in last_line:
+                        break
 
-            if "stop" in last_line.lower():
-                msg = "The GMS reported stopped operation unexpectedly."
-                raise RuntimeError(msg)
+                if "stop" in last_line.lower():
+                    msg = "The GMS reported stopped operation unexpectedly."
+                    raise RuntimeError(msg)
 
-            # Confirmation of new setpoints starts with "NEW"
-            if "NEW" in last_line:
-                confirmed_c2, confirmed_c3, confirmed_flow = self.extract_setpoints_from_line(last_line)
-                if (
-                        abs(confirmed_c2 - self.concentration_2) < 1e-3 and
-                        abs(confirmed_c3 - self.concentration_3) < 1e-3 and
-                        abs(confirmed_flow - self.total_flow) < 1e-3
-                ):
-                    break
+                # Confirmation of new setpoints starts with "NEW"
+                if "NEW" in last_line:
+                    confirmed_c2, confirmed_c3, confirmed_flow = self.extract_setpoints_from_line(last_line)
+                    # TODO: convert to float
+                    if (
+                            abs(confirmed_c2 - self.concentration_2) < 1e-3 and
+                            abs(confirmed_c3 - self.concentration_3) < 1e-3 and
+                            abs(confirmed_flow - self.total_flow) < 1e-3
+                    ):
+                        break
 
             time.sleep(0.02)
 
-    def read_response(self) -> str:
+    def read_response(self, number_of_lines=1) -> str | list[str]:
         """Read the latest response line from zeit.txt."""
         if not os.path.exists(self.zeit_file):
             return ""
@@ -229,8 +241,12 @@ class Device(EmptyDevice):
         if not lines:
             return ""
 
-        # Return the last line without trailing newline/whitespace.
-        return lines[-1].rstrip("\n\r")
+        if number_of_lines > 1:
+            # Return the last 'number_of_lines' lines without trailing newline/whitespace.
+            return [line.rstrip("\n\r") for line in lines[-number_of_lines:]]
+        else:
+            # Return the last line without trailing newline/whitespace.
+            return lines[-1].rstrip("\n\r")
 
     @staticmethod
     def extract_setpoints_from_line(line: str) -> tuple[float, float, float]:
@@ -242,13 +258,21 @@ class Device(EmptyDevice):
         If a value cannot be parsed the corresponding element will be -1.
         """
         def _extract(tag: str) -> float:
-            match = re.search(rf"{tag}_([\d.,]+)", line)
-            if match:
-                return float(match.group(1).replace(",", "."))
-            return -1
+            # Match patterns like 'c_0,1', 'c_ 0.1' or 'c_ 0' (optional spaces after underscore,
+            # comma or dot as decimal separator). Return -1.0 if not present or not parseable.
+            pattern = rf"{re.escape(tag)}_\s*([+-]?\d+(?:[.,]\d+)?)"
+            match = re.search(pattern, line)
+            if not match:
+                return -1.0
+            s = match.group(1).replace(",", ".")
+            try:
+                return float(s)
+            except ValueError:
+                return -1.0
 
         concentration_2 = _extract("c")
         concentration_3 = _extract("d")
         total_flow = _extract("v")
 
         return concentration_2, concentration_3, total_flow
+
