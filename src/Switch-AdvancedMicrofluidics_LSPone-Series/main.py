@@ -27,7 +27,7 @@
 #
 # SweepMe! driver
 # * Module: Switch
-# * Instrument: AdvancedMicrofluidics LSPone-series
+# * Instrument: AdvancedMicrofluidics LSPone-Series
 
 from __future__ import annotations
 
@@ -41,13 +41,13 @@ import amfTools
 
 
 class Device(EmptyDevice):
-    """Driver for the AdvancedMicrofluidics LSPone-series."""
+    """Driver for the AdvancedMicrofluidics LSPone-Series."""
 
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
         super().__init__()
 
-        self.shortname = "LSPone-series"  # short name will be shown in the sequencer
+        self.shortname = "LSPone-Series"  # short name will be shown in the sequencer
 
         # SweepMe! parameters
         self.variables = ["Valve position", "Flow rate", "Plunger current"]
