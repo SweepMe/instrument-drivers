@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import time
@@ -113,9 +114,24 @@ class Device(EmptyDevice):
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.sweep_mode = parameters.get("SweepMode", "None")
-        self.concentration_2 = parameters.get("Concentration 2 in Vol%", 1.0)
-        self.concentration_3 = parameters.get("Concentration 3 in Vol%", 1.0)
-        self.total_flow = parameters.get("Total flow in NmL/min", 10.0)
+        # The parameter that is swept will be set in apply, so initialize it as 0 here
+        if not self.sweep_mode.startswith("Concentration 2"):
+            with contextlib.suppress(ValueError):
+                self.concentration_2 = float(parameters.get("Concentration 2 in Vol%", 0))
+        else:
+            self.concentration_2 = 0.0
+
+        if not self.sweep_mode.startswith("Concentration 3"):
+            with contextlib.suppress(ValueError):
+                self.concentration_3 = float(parameters.get("Concentration 3 in Vol%", 0))
+        else:
+            self.concentration_3 = 0.0
+
+        if not self.sweep_mode.startswith("Total flow"):
+            with contextlib.suppress(ValueError):
+                self.total_flow = float(parameters.get("Total flow in NmL/min", 0))
+        else:
+            self.total_flow = 0.0
 
     def initialize(self) -> None:
         # delete zeit.txt and create new to avoid reading old data
@@ -126,8 +142,6 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        # TODO: set sweepvalue to 0
-        # 
         self.update_setpoints()
         self.wait_for_confirmation()
 
@@ -155,11 +169,16 @@ class Device(EmptyDevice):
 
     def call(self) -> tuple[float, float, float]:
         """Wait until the latest response does not start with "NEW" (indicating setpoints) but with the real values."""
+        last_line = ""
         while True:
             if self.is_run_stopped():
                 return -1, -1, -1
 
             last_line = self.read_response()
+            if "stop" in last_line.lower():
+                msg = "The GMS reported stopped operation unexpectedly."
+                raise RuntimeError(msg)
+
             if not "NEW" in last_line:
                 break
             time.sleep(0.02)
@@ -185,6 +204,23 @@ class Device(EmptyDevice):
             msg = f"Invalid concentration 3 value: {self.concentration_3}. It must be between 0 and 100 Vol%."
             raise ValueError(msg)
 
+        # Wait until extern.txt is empty to avoid overwriting previous commands
+        time_start = time.time()
+        while True:
+            if self.is_run_stopped():
+                break
+
+            if (time.time() - time_start) > self.timeout_s:
+                msg = "Timeout while waiting for the GMS to read previous setpoints."
+                raise TimeoutError(msg)
+
+            with open(self.extern_file, "r", encoding="ascii", errors="ignore") as f:
+                content = f.read().strip()
+                if not content:
+                    break  # extern.txt is empty
+
+            time.sleep(0.02)
+
         self.write_setpoints_to_file(self.concentration_2, self.concentration_3, self.total_flow)
 
     def write_setpoints_to_file(self, concentration_2: float, concentration_3: float, total_flow: float) -> None:
@@ -205,7 +241,6 @@ class Device(EmptyDevice):
                 msg = "Timeout while waiting for the GMS to acknowledge new setpoints."
                 raise TimeoutError(msg)
 
-            # TODO: read last 3 lines and check from the bottom up
             last_lines = self.read_response(2)
             for last_line in reversed(last_lines):
                 # If the total flow was set to 0, the device should respond with '_STOP'
@@ -220,11 +255,10 @@ class Device(EmptyDevice):
                 # Confirmation of new setpoints starts with "NEW"
                 if "NEW" in last_line:
                     confirmed_c2, confirmed_c3, confirmed_flow = self.extract_setpoints_from_line(last_line)
-                    # TODO: convert to float
                     if (
-                            abs(confirmed_c2 - self.concentration_2) < 1e-3 and
-                            abs(confirmed_c3 - self.concentration_3) < 1e-3 and
-                            abs(confirmed_flow - self.total_flow) < 1e-3
+                            abs(confirmed_c2 - float(self.concentration_2)) < 1e-3 and
+                            abs(confirmed_c3 - float(self.concentration_3)) < 1e-3 and
+                            abs(confirmed_flow - float(self.total_flow)) < 1e-3
                     ):
                         break
 
@@ -275,4 +309,3 @@ class Device(EmptyDevice):
         total_flow = _extract("v")
 
         return concentration_2, concentration_3, total_flow
-
