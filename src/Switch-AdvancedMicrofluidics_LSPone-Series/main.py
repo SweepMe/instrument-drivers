@@ -98,13 +98,15 @@ class Device(EmptyDevice):
         self.valve_move_mode: str = "Shortest Way"
         self.syringe_volume: int = 5000  # in µl
         self.wait_for_pump_finish: bool = False
+
         self.empty_on_start: bool = False
+        self.empty_valve: int = 1
+        self.empty_flow_rate_ul_min: float = 1000.0  # in µl/min
 
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
-        del parameters
-        return {
+        new_parameters = {
             "Volume in µl": 500,
             "Flow rate in µl/min": 100.0,
             " ": None,
@@ -118,14 +120,19 @@ class Device(EmptyDevice):
             "Wait for pump finish": False,
             "Empty on start": False,
         }
+        if parameters.get("Empty on start", False):
+            new_parameters["Empty in valve"] = 1
+            new_parameters["Empty rate in µl/min"] = 1000.0
+
+        return new_parameters
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.port_string = parameters.get("Port", "")
 
         with contextlib.suppress(ValueError):
-            self.volume = int(float(parameters.get("Volume", 10)))
-            self.flow_rate_ul_min = float(parameters.get("Flow rate", 0.0))
+            self.volume = int(float(parameters.get("Volume in µl", 10)))
+            self.flow_rate_ul_min = float(parameters.get("Flow rate in µl/min", 0.0))
             self.valve = int(float(parameters.get("Valve", "1")))
             self.syringe_volume = int(float(parameters.get("Syringe volume in µl", 5000)))
 
@@ -135,6 +142,10 @@ class Device(EmptyDevice):
         self.microstep_resolution = parameters.get("Microstep resolution", "0.01 mm")
         self.wait_for_pump_finish = parameters.get("Wait for pump finish", False)
         self.empty_on_start = parameters.get("Empty on start", False)
+        if self.empty_on_start:
+            with contextlib.suppress(ValueError):
+                self.empty_valve = int(float(parameters.get("Empty in valve", 1)))
+                self.empty_flow_rate_ul_min = float(parameters.get("Empty rate in µl/min", 1000.0))
 
     def find_ports(self) -> list[str]:
         """Return a list of available ports for the device."""
@@ -168,9 +179,9 @@ class Device(EmptyDevice):
 
         # Move to valve 1 and dispense.
         if self.empty_on_start:
-            self.set_valve(1)
-            self.set_flow_rate(160000)  # set to max flow rate for emptying
-            self.amf.pump(0)
+            self.set_valve(self.empty_valve)
+            self.set_flow_rate(self.empty_flow_rate_ul_min)
+            self.amf.pump(0, block=False)
             self.wait_for_pump(timeout_seconds=300)
 
     def deinitialize(self) -> None:
@@ -182,6 +193,7 @@ class Device(EmptyDevice):
         self.amf.setMicrostepResolution(self.microstep_resolutions[self.microstep_resolution])
         self.amf.setSyringeSize(self.syringe_volume)
         self.amf.setPlungerForce(self.plunger_force_modes[self.plunger_force_mode])
+        self.set_flow_rate(self.flow_rate_ul_min)
 
     def reconfigure(self, parameters, keys) -> None:
         if "Flow" in keys:
