@@ -43,6 +43,7 @@ class Device(EmptyDevice):
 
     description = """
     Works for JUMO diraTRON 104/108/116/132
+    - Channel corresponds to the Modnbus RTU address
     """
 
     def __init__(self) -> None:
@@ -87,6 +88,7 @@ class Device(EmptyDevice):
         return {
             "SweepMode": ['None', 'Setpoint in °C'],
             "Modbus address": 1,
+            "Channel": 1,
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
