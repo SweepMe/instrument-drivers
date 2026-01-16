@@ -43,6 +43,7 @@ class Device(EmptyDevice):
 
     description = """
     Works for JUMO diraTRON 104/108/116/132
+    - Channel corresponds to the Modnbus RTU address
     """
 
     def __init__(self) -> None:
@@ -87,6 +88,7 @@ class Device(EmptyDevice):
         return {
             "SweepMode": ['None', 'Setpoint in °C'],
             "Modbus address": 1,
+            "Channel": 1,
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
@@ -150,7 +152,6 @@ class Device(EmptyDevice):
         """Reads a FLOAT (2 words) from the given Modbus address"""
         request = self.build_request_read(address, 2)
         self.port.write_raw(request)
-        response: bytes = self.port.read_bytes(9)
         raw = response[3:7]
         reordered = raw[2:4] + raw[0:2]
         return struct.unpack(">f", reordered)[0]
