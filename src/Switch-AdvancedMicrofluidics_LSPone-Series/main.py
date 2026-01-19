@@ -58,6 +58,7 @@ class Device(EmptyDevice):
         # Communication Parameters
         self.port_string: str = ""
         self.port_manager = False
+        self.communication_identifier: str = ""  # key to identify shared amf instance via self.device_communication
         self.amf: amfTools.AMF | None = None
 
         # Configuration parameters
@@ -158,19 +159,33 @@ class Device(EmptyDevice):
         return device_list
 
     def connect(self) -> None:
-        """Connect to the device. This function is called only once at the start of the measurement."""
+        """The amfTools library allows only single connections, so we share the communication object."""
+        self.communication_identifier = f"AMF_{self.port_string}"
+        if self.communication_identifier not in self.device_communication:
+            self.amf = self.create_amf_instance(self.port_string)
+            self.device_communication[self.communication_identifier] = self.amf
+        else:
+            self.amf = self.device_communication[self.communication_identifier]
+
+    @staticmethod
+    def create_amf_instance(identifier: str) -> amfTools.AMF:
+        """Connect to the AMF device and return the AMF instance."""
         list_amf = amfTools.util.getProductList(silent_mode=True)
         for amf_info in list_amf:
-            if amf_info.comPort == self.port_string:
-                self.amf = amfTools.AMF(amf_info)
+            if amf_info.comPort == identifier:
+                amf = amfTools.AMF(amf_info)
                 break
         else:
-            raise ConnectionAbortedError(f"AMF product on port {self.port_string} not found. Please check your connections")
+            raise ConnectionAbortedError(f"AMF product on port {identifier} not found. Please check your connections")
+
+        return amf
 
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
-        with contextlib.suppress(Exception):
-            self.amf.disconnect()
+        if self.communication_identifier in self.device_communication:
+            with contextlib.suppress(Exception):
+                self.amf.disconnect()
+            del self.device_communication[self.communication_identifier]
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
