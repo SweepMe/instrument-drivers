@@ -106,7 +106,7 @@ class Device(EmptyDevice):
         self.use_list_sweep: bool = False
         self.list_sweep_values: np.ndarray = np.array([])
 
-        self.list_sweep_holdtime: float = 0.0
+        self.list_sweep_holdtime: float = 0.0  # currently unused
         self.list_sweep_delay_time: float = 0.0
 
         # Measured values
@@ -578,6 +578,21 @@ class Device(EmptyDevice):
 
         return ",".join([f"{value:1.5e}" for value in values])
 
+    def set_step_delay(self, time_in_s: float) -> None:
+        """Set the delay time that the device waits after switching before starting the measurement. -> this is hold.
+
+        Note: The device also enables setting a trigger delay time, which is the time between the trigger and setting of
+        the next value. -> this is delay
+        """
+        if 0 < time_in_s < 100e-6:
+            time_in_s = 100e-6
+
+        if time_in_s > 999:
+            msg = f"Invalid delay time of {time_in_s}. The maximum delay time is 999s."
+            raise ValueError(msg)
+
+        self.port.write(f"TRIG:DEL {time_in_s}")
+
     """ Currently unused Wrapped functions """
 
     def list_sweep_current(self, values: list) -> None:
@@ -594,13 +609,3 @@ class Device(EmptyDevice):
         """Get the timestamps of the list sweep."""
         self.port.write("LIST:SEQ:TST:DATA?")
         return self.port.read().split(",")
-
-    def set_step_delay(self, time_in_s: float) -> None:
-        """Set the delay time that the device waits after switching before starting the measurement. -> this is hold.
-
-        Note: The device also enables setting a trigger delay time, which is the time between the trigger and setting of
-        the next value. -> this is delay
-        """
-        if 0 < time_in_s < 100e-6:
-            time_in_s = 100e-6
-        self.port.write(f"TRIG:DEL {time_in_s}")
