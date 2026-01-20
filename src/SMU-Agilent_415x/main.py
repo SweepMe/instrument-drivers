@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2022 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2026 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -45,7 +45,7 @@ class Device(EmptyDevice):
     
         This driver needs SMU module version 2022-04-04 or higher.
         
-        VSU Channels (Voltage Source Units) can be used for voltage sourcing only, no measurements are done. Compliance is ignored.
+        VSU Channels (Voltage Source Units) can be used for voltage sourcing only, no measurements are done. Compliance is ignored. List mode might work, but has not been tested.
         """
 
     def __init__(self):
@@ -306,7 +306,6 @@ class Device(EmptyDevice):
         listsweep_points = 0
 
         if self.sweepvalue == "List sweep":
-        
             if self.listsweep_steppoints_type.startswith("Step width"):
                 listsweepmode = 1
 
@@ -333,7 +332,6 @@ class Device(EmptyDevice):
                 listsweepmode += 2
 
             # Creating list of set values as they are not re-measured in List sweep mode
-            # TODO: Not tested for VSU channels
             if self.source == "V":
                 self.set_sweep(self.source, self.channel, listsweepmode, self.voltage_range,
                                self.listsweep_start, self.listsweep_end, listsweep_points, self.protection)
@@ -364,9 +362,9 @@ class Device(EmptyDevice):
         self.is_list_sweep_activated = "Data" in self.device_communication[self.instrument_id]
         
         if self.is_list_sweep_activated:
-            # TODO: this does not work if VSU is used as source only
-            self.set_range_voltage(self.channel, self.voltage_range)
-            self.set_range_current(self.channel, self.current_range)
+            if not self.use_vsu:  # VSU channels do not measure the range
+                self.set_range_voltage(self.channel, self.voltage_range)
+                self.set_range_current(self.channel, self.current_range)
         
         if self.sweepvalue == "List sweep":
             channels = self.device_communication[self.instrument_id]["Channels"]
@@ -631,7 +629,7 @@ class Device(EmptyDevice):
         
         self.set_source_value("V", channel, range, value, compliance)
         
-    def set_source_value(self, source, channel, range, value, compliance):
+    def set_source_value(self, source, channel, source_range, value, compliance):
         """Forces current from the specified unit.
 
         channel numbers: 1-6 (SMU)
@@ -641,11 +639,11 @@ class Device(EmptyDevice):
         if self.use_vsu:
             if source == "I":
                 raise ValueError("Current source is not supported for VSU channels.")
-            self.port.write(f"D{source} {int(channel)},{int(range)},{float(value)}")
+            self.port.write(f"D{source} {int(channel)},{int(source_range)},{float(value):1.4f}")
 
         else:
             self.port.write("D%s %i,%i,%1.4f,%1.4f" %
-                        (str(source), int(channel), int(range), float(value), float(compliance)))
+                            (str(source), int(channel), int(source_range), float(value), float(compliance)))
 
     def read_measurement_data(self, count=0):
         """ reads data from the output buffer
@@ -701,9 +699,7 @@ class Device(EmptyDevice):
         else:
             raise ValueError("Argument 'count' must be positve integer, not %i." % count)
             
-        answer = self.port.read()
-        # print(answer)
-        return answer
+        return self.port.read()
         
     def execute_measurement(self):
     
@@ -863,7 +859,7 @@ class Device(EmptyDevice):
     def set_range(self, source, channel, range):
         """
         source: V or I (for voltage or current)
-        Not supported for VSU channels, because they do not measure the range.
+        Range cannot be set for VSU channels, because they do not measure the range.
         """
         if self.channel in [21, 22]:  # VSU channels
             return
