@@ -193,9 +193,8 @@ class Device(EmptyDevice):
 
         self.port_string = parameter['Port']
                 
-        self.four_wire = parameter['4wire']
-        self.route_out = parameter['RouteOut']
-        self.source = parameter['SweepMode']
+        self.route_out = parameter["RouteOut"]
+        self.source = parameter["SweepMode"]
         
         if self.source.startswith("Voltage"):
             self.source = "V"
@@ -208,12 +207,10 @@ class Device(EmptyDevice):
         self.current_range = self.current_ranges[parameter["Range"]]
         self.voltage_range = self.voltages_ranges[parameter["RangeVoltage"]]
         
-        self.protection = parameter['Compliance']
-        self.speed = parameter['Speed']
-        self.pulse = parameter['CheckPulse']   
-        self.pulse_meas_time = parameter['PulseMeasTime']
+        self.protection = parameter["Compliance"]
+        self.speed = parameter["Speed"]
         
-        self.average = int(parameter['Average'])
+        self.average = int(parameter["Average"])
        
         self.shortname = "Agilent 415x CH%s" % self.channel
         
