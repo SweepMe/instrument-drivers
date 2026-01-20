@@ -55,6 +55,7 @@ SKIPPED_DRIVERS = {
     "Switch-FTDI_FTD2xx": "Driver requires installed manufacturer software",
     "Logger-ArtifexEngineering_OPM150": "Driver requires installed manufacturer software",
     "Logger-ArtifexEngineering_TZA500": "Driver requires installed manufacturer software",
+    "Switch-AdvancedMicrofluidics_LSPone-Series": "Driver requires installed manufacturer software",
 }
 
 
