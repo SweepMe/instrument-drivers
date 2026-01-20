@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -68,7 +68,6 @@ class Device(EmptyDevice):
         self.port_types = ["GPIB", "COM", "TCPIP"]
 
         # Measurement parameters
-        self.channel: int = 1
         self.sweep_mode: str = "None"
         self.compliance: float = 0.0
         self.speeds: dict[str, float] = {
@@ -107,7 +106,6 @@ class Device(EmptyDevice):
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         del parameters
         return {
-            "Channel": [1, 2, 3, 4],
             "SweepMode": ["None", "Voltage in V", "Current in A"],
             "Compliance": 0.0,
             "Range": list(self.current_measurement_ranges.keys()),
@@ -119,7 +117,6 @@ class Device(EmptyDevice):
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.port_string = parameters.get("Port", "")
-        self.channel = parameters.get("Channel", 1)
 
         self.sweep_mode = parameters.get("SweepMode", "None")
         self.compliance = parameters.get("Compliance", 0.0)
@@ -134,19 +131,6 @@ class Device(EmptyDevice):
             self.speed = float(parameters.get("Speed", 1.0))
 
         self.averages = int(float(parameters.get("Average", 1)))
-
-    def connect(self) -> None:
-        """Connect to the device. This function is called only once at the start of the measurement."""
-        print(self.get_identification())
-
-    def disconnect(self) -> None:
-        """Disconnect from the device. This function is called only once at the end of the measurement."""
-
-    def initialize(self) -> None:
-        """Initialize the device. This function is called only once at the start of the measurement."""
-
-    def deinitialize(self) -> None:
-        """Deinitialize the device. This function is called only once at the end of the measurement."""
 
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
@@ -189,10 +173,6 @@ class Device(EmptyDevice):
             self.port.write(":SENSe:AVERage:STATe ON")
         else:
             self.port.write(":SENSe:AVERage:STATe OFF")
-
-
-    def unconfigure(self) -> None:
-        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
@@ -243,7 +223,7 @@ class Device(EmptyDevice):
             if bits[bit_index]:
                 print(f"Measurement status: {description}")
 
-    def call(self) -> list:
+    def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return [self.measured_voltage, self.measured_current]
     
@@ -315,17 +295,17 @@ class Device(EmptyDevice):
     # Measurement wrappers
     def measure_voltage(self) -> float:
         """Measure DC voltage using :MEASure:VOLTage?"""
-        resp = self.query_raw(":MEASure:VOLTage:DC?")
+        resp = self.port.query(":MEASure:VOLTage:DC?")
         return float(resp)
 
     def measure_current(self) -> float:
         """Measure DC current using :MEASure:CURRent?"""
-        resp = self.query_raw(":MEASure:CURRent:DC?")
+        resp = self.port.query(":MEASure:CURRent:DC?")
         return float(resp)
 
     def measure_resistance(self) -> float:
         """Measure resistance using :MEASure:RESistance?"""
-        resp = self.query_raw(":MEASure:RESistance?")
+        resp = self.port.query(":MEASure:RESistance?")
         return float(resp)
 
     def read_measurement(self) -> float:
@@ -334,7 +314,7 @@ class Device(EmptyDevice):
         :READ? typically returns a comma-separated list (value, unit, status...).
         Here we read the first numeric value from the response.
         """
-        raw = self.query_raw(":READ?")
+        raw = self.port.query(":READ?")
         # parse the first token that looks like a float
         for token in raw.replace(",", " ").split():
             try:
