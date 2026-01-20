@@ -15,12 +15,12 @@ This driver communicates with AdvancedMicrofluidics LSPone-Series pumps using th
 - **Plunger force**: Force profile for the plunger.
 - **Microstep resolution**: Motor microstep configuration used for precise positioning.
 - **Wait for pump finish**: When enabled, the driver will block further sequencer steps until the pump operation completes. Disable this option if you want to run measurements while pumping.
-- **Empty on start**: If enabled, the pump will empty any residual liquid in valve 1 at the start of the sequence.
+- **Empty on start**: If enabled, the pump will empty any residual liquid in the selected valve with the selected speed at the start of the sequence.
 
 ## Returned Variables
 
 - **Valve position** — current valve index (integer).
-- **Flow rate** — measured flow rate converted to the user-selected units.
+- **Flow rate** — measured flow rate in µl/min.
 - **Plunger current** — motor/plunger current reported by the device (unit depends on device firmware; displayed as provided).
 
 ## Behavior & Notes

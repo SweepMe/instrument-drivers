@@ -81,17 +81,6 @@ class Device(EmptyDevice):
         }
         self.microstep_resolution: str = "0.01 mm"
 
-        # Unit conversion factors
-        self.volume_units_factors = {
-            "µl": 1,
-            "ml": 1000,
-            "l": 1e6,
-        }
-        self.time_units_factors = {
-            "s": 1/60,
-            "min": 1,
-        }
-
         # Measurement parameters
         self.volume: int = 10
         self.flow_rate_ul_min: float = 0.0  # always convert to µl/min
@@ -131,11 +120,10 @@ class Device(EmptyDevice):
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.port_string = parameters.get("Port", "")
 
-        with contextlib.suppress(ValueError):
-            self.volume = int(float(parameters.get("Volume in µl", 10)))
-            self.flow_rate_ul_min = float(parameters.get("Flow rate in µl/min", 0.0))
-            self.valve = int(float(parameters.get("Valve", "1")))
-            self.syringe_volume = int(float(parameters.get("Syringe volume in µl", 5000)))
+        self.volume = int(float(parameters.get("Volume in µl", 10)))
+        self.flow_rate_ul_min = float(parameters.get("Flow rate in µl/min", 0.0))
+        self.valve = int(float(parameters.get("Valve", "1")))
+        self.syringe_volume = int(float(parameters.get("Syringe volume in µl", 5000)))
 
         self.valve_move_mode = parameters.get("Valve mode", "Shortest Way")
         self.speed = parameters.get("Speed", "Standard")
@@ -144,9 +132,8 @@ class Device(EmptyDevice):
         self.wait_for_pump_finish = parameters.get("Wait for pump finish", False)
         self.empty_on_start = parameters.get("Empty on start", False)
         if self.empty_on_start:
-            with contextlib.suppress(ValueError):
-                self.empty_valve = int(float(parameters.get("Empty in valve", 1)))
-                self.empty_flow_rate_ul_min = float(parameters.get("Empty rate in µl/min", 1000.0))
+            self.empty_valve = int(float(parameters.get("Empty in valve", 1)))
+            self.empty_flow_rate_ul_min = float(parameters.get("Empty rate in µl/min", 1000.0))
 
     def find_ports(self) -> list[str]:
         """Return a list of available ports for the device."""
@@ -183,8 +170,7 @@ class Device(EmptyDevice):
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
         if self.communication_identifier in self.device_communication:
-            with contextlib.suppress(Exception):
-                self.amf.disconnect()
+            self.amf.disconnect()
             del self.device_communication[self.communication_identifier]
 
     def initialize(self) -> None:
@@ -198,9 +184,6 @@ class Device(EmptyDevice):
             self.set_flow_rate(self.empty_flow_rate_ul_min)
             self.amf.pump(0, block=False)
             self.wait_for_pump(timeout_seconds=300)
-
-    def deinitialize(self) -> None:
-        """Deinitialize the device. This function is called only once at the end of the measurement."""
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -234,7 +217,7 @@ class Device(EmptyDevice):
         """Return the measurement results. Must return as many values as defined in self.variables."""
         valve_position = self.amf.getValvePosition()
         flow_rate = self.amf.getFlowRate()
-        plunger_current = self.amf.getPlungerCurrent()  # TODO: check if *10, /10, or nothing is needed
+        plunger_current = self.amf.getPlungerCurrent() * 10  # it is measured as 10 mA
 
         return [valve_position, flow_rate, plunger_current]
 
@@ -253,8 +236,8 @@ class Device(EmptyDevice):
                 block=False,
             )
         else:
-            # volume == 0, do nothing
-            pass
+            # volume == 0
+            self.amf.hardStop()
 
     def set_flow_rate(self, flow_rate_ul_min: float) -> None:
         """Set the flow rate in µl/min."""
@@ -289,3 +272,5 @@ class Device(EmptyDevice):
             status = self.amf.getPumpStatus()
             if status == 0:  # Done
                 break
+
+            time.sleep(0.1)
