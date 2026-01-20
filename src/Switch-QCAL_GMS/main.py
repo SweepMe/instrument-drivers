@@ -85,6 +85,7 @@ class Device(EmptyDevice):
         self.extern_file = os.path.join(self.base_path, "extern.txt")
         self.zeit_file = os.path.join(self.base_path, "zeit.txt")
         self.timeout_s = 5.0  # the device should read the new setpoints every 1s, so 5s is sufficient
+        self.set_points_changed: bool = False  # indicates if setpoints were changed and need confirmation
 
         # Measurement parameters
         self.sweep_mode: str = "None"
@@ -163,8 +164,8 @@ class Device(EmptyDevice):
         self.update_setpoints()
         # do not wait here, as this would block the sequencer too long
 
-    def adapt(self) -> None:
-        """Wait until the device acknowledges the new set points."""
+    def reach(self) -> None:
+        """If the setpoints where updated, wait until the device acknowledges the new set points."""
         self.wait_for_confirmation()
 
     def call(self) -> tuple[float, float, float]:
@@ -233,7 +234,8 @@ class Device(EmptyDevice):
     def wait_for_confirmation(self) -> None:
         """Wait until the device has confirmed to the new set points."""
         time_start = time.time()
-        while True:
+        setpoints_confirmed = False
+        while not setpoints_confirmed:
             if self.is_run_stopped():
                 break
 
@@ -246,6 +248,7 @@ class Device(EmptyDevice):
                 # If the total flow was set to 0, the device should respond with '_STOP'
                 if self.total_flow == 0.0:
                     if "_STOP" in last_line or "Operation stopped" in last_line:
+                        setpoints_confirmed = True
                         break
 
                 if "stop" in last_line.lower():
@@ -255,11 +258,13 @@ class Device(EmptyDevice):
                 # Confirmation of new setpoints starts with "NEW"
                 if "NEW" in last_line:
                     confirmed_c2, confirmed_c3, confirmed_flow = self.extract_setpoints_from_line(last_line)
+                    confirmation_range = 1e-1
                     if (
-                            abs(confirmed_c2 - float(self.concentration_2)) < 1e-3 and
-                            abs(confirmed_c3 - float(self.concentration_3)) < 1e-3 and
-                            abs(confirmed_flow - float(self.total_flow)) < 1e-3
+                            abs(confirmed_c2 - float(self.concentration_2)) < confirmation_range and
+                            abs(confirmed_c3 - float(self.concentration_3)) < confirmation_range and
+                            abs(confirmed_flow - float(self.total_flow)) < confirmation_range
                     ):
+                        setpoints_confirmed = True
                         break
 
             time.sleep(0.02)
