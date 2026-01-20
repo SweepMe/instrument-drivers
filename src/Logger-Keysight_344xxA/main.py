@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,16 +28,17 @@
 
 # SweepMe! driver
 # * Module: Logger
-# * Instrument: Keysight 3441xA
+# * Instrument: Keysight 344xxA
 
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    description = """<p><strong>Keysight 34410A/34411A</strong></p>
+    description = """<p><strong>Keysight 344xxA Series</strong></p>
                      <p>DMM: Digital Multimeter</p>
                      <p>&nbsp;</p>
+                     <p>Supported devices: The driver has been tested with 34401A, 34410A, 34411A. Other versions of the 344xxA (e.g. 34465A) series that share the same SCPI commands should work as well.</p>
                      <p>The 34410A/34411A are 6.5 digit DMM that support measurement of voltage, current, resistance,
                      capacitance, temperature, and
                      frequency.</p>
@@ -48,16 +49,10 @@ class Device(EmptyDevice):
     def __init__(self):
         EmptyDevice.__init__(self)
 
-        self.shortname = "Keysight3441xA"
+        self.shortname = "Keysight344xxA"
 
         self.port_manager = True
         self.port_types = ["GPIB", "USB", "TCPIP"]
-        self.port_identifications = [
-            "Agilent Technologies,34410A",
-            "Agilent Technologies,34411A",
-            "Keysight Technologies,34410A",
-            "Keysight Technologies,34411A",
-        ]
 
         self.port_properties = {
             "timeout": 10,  # needed for 100 NPLC setting as it needs ~5s to computer
