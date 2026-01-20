@@ -194,11 +194,14 @@ class Device(EmptyDevice):
         self.set_flow_rate(self.flow_rate_ul_min)
 
     def reconfigure(self, parameters, keys) -> None:
-        if "Flow" in keys:
-            self.flow_rate_ul_min = float(parameters["Flow"])
+        if "Flow rate in µl/min" in keys:
+            self.flow_rate_ul_min = float(parameters["Flow rate in µl/min"])
             self.set_flow_rate(self.flow_rate_ul_min)
-        if "Volume" in keys:
-            self.volume = int(float(parameters["Volume"]))
+        if "Volume in µl" in keys:
+            self.volume = int(float(parameters["Volume in µl"]))
+        if "Valve" in keys:
+            self.valve = int(float(parameters["Valve"]))
+            self.set_valve(self.valve)
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
