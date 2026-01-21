@@ -90,17 +90,16 @@ class Device(EmptyDevice):
                 value = number * 10**exponent
                 key = f"{number} {prefix}A"
                 self.current_measurement_ranges[key] = value
-        self.current_measurement_range: float = 0
+        self.current_measurement_range: str = "Auto"
 
-        # TODO: use correct voltage ranges, use negative values as well
-        self.voltage_measurement_ranges: dict[str, float] = {"Auto": 0.0}
-        for prefix in ["m", "µ", "n", "p"]:
-            for number in [100, 10, 1]:
-                exponent = {"m": -3, "µ": -6, "n": -9, "p": -12}[prefix]
-                value = number * 10**exponent
-                key = f"{number} {prefix}V"
-                self.voltage_measurement_ranges[key] = value
-        self.voltage_measurement_range: float = 0.
+        self.voltage_measurement_ranges: dict[str, float] = {
+            "Auto": 0.0,  # float value is only a placeholder for "Auto"
+            "200 V": 200.0,
+            "20 V": 20.0,
+            "2 V": 2.0,
+            "200 mV": 0.2,
+        }
+        self.voltage_measurement_range: str = "Auto"
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
@@ -121,9 +120,8 @@ class Device(EmptyDevice):
         self.sweep_mode = parameters.get("SweepMode", "None")
         self.compliance = parameters.get("Compliance", 0.0)
 
-        # TODO: Allow other values
-        self.current_measurement_range = self.current_measurement_ranges[parameters.get("Range", "Auto")]
-        self.voltage_measurement_range = self.voltage_measurement_ranges[parameters.get("RangeVoltage", "Auto")]
+        self.current_measurement_range = parameters.get("Range", "Auto")
+        self.voltage_measurement_range = parameters.get("RangeVoltage", "Auto")
 
         try:
             self.speed = self.speeds[parameters.get("Speed", "Medium")]
@@ -131,6 +129,12 @@ class Device(EmptyDevice):
             self.speed = float(parameters.get("Speed", 1.0))
 
         self.averages = int(float(parameters.get("Average", 1)))
+
+    def initialize(self) -> None:
+        """Initialize the device. This function is called only once at the start of the measurement."""
+        self.port.write("*RST")          # reset instrument state
+        self.port.write(":SYSTem:CLEar") # clear error queue
+        self.port.write(":OUTPut:STATe OFF")  # explicit safety
 
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
@@ -242,19 +246,27 @@ class Device(EmptyDevice):
         func_str = ",".join([f'"{func}"' for func in functions])
         self.port.write(f":SENSe:FUNCtion:ON {func_str}")
 
-    def set_voltage_measurement_range(self, range_value: float | str = "Auto") -> None:
+    def set_voltage_measurement_range(self, range_value: str = "Auto") -> None:
         """Set the voltage measurement range."""
+        if range_value not in self.voltage_measurement_ranges:
+            msg = f"Invalid voltage range: {range_value}. Valid ranges are: {list(self.voltage_measurement_ranges.keys())}"
+            raise ValueError(msg)
+
         if range_value == "Auto":
             self.port.write(f":SENSe:VOLTage:RANGe:AUTO ON")
         else:
-            self.port.write(f":SENSe:VOLTage:RANGe {range_value}")
+            self.port.write(f":SENSe:VOLTage:RANGe {self.voltage_measurement_ranges[range_value]}")
 
-    def set_current_measurement_range(self, range_value: float | str = "Auto") -> None:
+    def set_current_measurement_range(self, range_value: str = "Auto") -> None:
         """Set the current measurement range."""
+        if range_value not in self.current_measurement_ranges:
+            msg = f"Invalid current range: {range_value}. Valid ranges are: {list(self.current_measurement_ranges.keys())}"
+            raise ValueError(msg)
+
         if range_value == "Auto":
             self.port.write(f":SENSe:CURRent:RANGe:AUTO ON")
         else:
-            self.port.write(f":SENSe:CURRent:RANGe {range_value}")
+            self.port.write(f":SENSe:CURRent:RANGe {self.current_measurement_ranges[range_value]}")
 
     def set_measurement_speed(self, mode: str, nplc: float) -> None:
         """Set the measurement speed in NPLC."""
