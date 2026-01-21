@@ -72,6 +72,7 @@ class Device(EmptyDevice):
         }
 
         # Measurement Parameters
+        self.channel: str = ""      # Full channel string
         self.src_slot: str = ""     # VS-10 source slot
         self.meas_slot: str = ""    # CM-10 measurement slot
 
@@ -120,14 +121,15 @@ class Device(EmptyDevice):
 
     def apply_gui_parameters(self, parameter):
         """Update parameter from SweepMe! GUI."""
-        channel = parameter.get("Channel")
+        self.channel = parameter.get("Channel")
         # Extract source and measurement slot numbers robustly
-        parts = [p.strip() for p in channel.split('+')]
+        parts = [p.strip() for p in self.channel.split('+')]
         if len(parts) == 2 and parts[0].startswith('S') and parts[1].startswith('M'):
             self.src_slot = parts[0][1]
             self.meas_slot = parts[1][1]
         else:
-            raise ValueError(f"Invalid channel format: '{channel}'. Expected format 'S# + M#'.")
+            self.src_slot = ""
+            self.meas_slot = ""
         self.sweepmode = parameter["SweepMode"]
         self.stepmode = parameter["StepMode"]
 
@@ -147,6 +149,8 @@ class Device(EmptyDevice):
         pass
 
     def initialize(self):
+        # Check that both modules are present
+        self.check_device()
         # Reset source and measurement modules
         self.port.write(f"SOURce{self.src_slot}:PRESet")
         self.port.write(f"SENSe{self.meas_slot}:PRESet")
@@ -295,3 +299,12 @@ class Device(EmptyDevice):
         elif mode == "Frequency in Hz":
             self.frequency = value
             self.set_frequency(value)
+
+    def check_device(self):
+        # Verify both modules are present and of the expected type
+        model_s = self.port.query(f"SOURce{self.src_slot}:MODel?")
+        model_m = self.port.query(f"SENSe{self.meas_slot}:MODel?")
+        if "VS-10" not in model_s:
+            raise ValueError(f"Source module on channel S{self.src_slot} is not a VS-10. Found: '{model_s}'")
+        if "CM-10" not in model_m:
+            raise ValueError(f"Measure module on channel M{self.meas_slot} is not a CM-10. Found: '{model_m}'")

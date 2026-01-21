@@ -121,12 +121,12 @@ class Device(EmptyDevice):
 
     def apply_gui_parameters(self, parameter):
         # Source / measure channel mapping
-        channel = parameter.get("Channel")
+        self.channel = parameter.get("Channel")
         # Extract source and measurement slot numbers robustly
-        parts = [p.strip() for p in channel.split('+')]
+        parts = [p.strip() for p in self.channel.split('+')]
         if len(parts) == 2 and parts[0].startswith('S') and parts[1].startswith('M'):
-            self.src_slot = parts[0][1]
-            self.meas_slot = parts[1][1]
+            self.sslot = parts[0][1]
+            self.mslot = parts[1][1]
         self.port_string = parameter["Port"]
         self.range_source = self.source_range_limits[parameter["RangeVoltage"]]
         self.range_current = self.current_range_limits[parameter["Range"]]
@@ -150,7 +150,7 @@ class Device(EmptyDevice):
         self.dark = parameter.get("Turn off LEDs", False)
 
         # Short name and GUI variables
-        self.shortname = f"SMU VS-10 S{self.sslot} / CM-10 M{self.mslot}"
+        self.shortname = f"SMU @ S{self.sslot} + M{self.mslot}"
         self.variables = ["Voltage", "Current"]
         self.units = ["V", "A"]
         self.plottype = [True, True]
@@ -274,6 +274,6 @@ class Device(EmptyDevice):
         model_s = self.port.query(f"SOURce{self.sslot}:MODel?")
         model_m = self.port.query(f"SENSe{self.mslot}:MODel?")
         if "VS-10" not in model_s:
-            raise ValueError(f"Source on channel S{self.sslot} is not a VS-10. Found: '{model_s}'")
-        if '"CM-10"' not in model_m and "CM-10" not in model_m:
-            raise ValueError(f"Measure on channel M{self.mslot} is not a CM-10. Found: '{model_m}'")
+            raise ValueError(f"Source module on channel S{self.sslot} is not a VS-10. Found: '{model_s}'")
+        if "CM-10" not in model_m:
+            raise ValueError(f"Measure module on channel M{self.mslot} is not a CM-10. Found: '{model_m}'")
