@@ -83,6 +83,7 @@ class Device(EmptyDevice):
                     <li>When using circle diameter, the value must be a float representing the diameter in NT Units.</li>
                     <li>Home position: The home position in NT units, e.g. "1.0,1.0". If empty, the home position will not be updated and the device will not move to Home in the configure step.</li>
                     <li>Axes can be used to move NanoTrak after latching.</li>
+                    <li>When the horizontal or vertical value is outside of the devices movement range (0-10), the home position will not be updated. This can used to remain at the optimum position after tracking</li>
                     </ul>
                     """
 
@@ -388,15 +389,19 @@ class Device(EmptyDevice):
         print("NanoTrak finished configuration.")
 
     def apply(self) -> None:
-        """Apply the axis movements after latching."""
+        """Apply the axis movements after latching. Do not move if the value is out of range (0-10)."""
         current_horizontal_position, current_vertical_position = self.get_current_position()
         if "Horizontal" in self.sweepvalues and self.sweepvalues["Horizontal"]:
             horizontal_value = float(self.sweepvalues["Horizontal"])
+            if horizontal_value < 0 or horizontal_value > 10:
+                horizontal_value = current_horizontal_position
         else:
             horizontal_value = current_horizontal_position
 
         if "Vertical" in self.sweepvalues and self.sweepvalues["Vertical"]:
             vertical_value = float(self.sweepvalues["Vertical"])
+            if vertical_value < 0 or vertical_value > 10:
+                vertical_value = current_vertical_position
         else:
             vertical_value = current_vertical_position
 
