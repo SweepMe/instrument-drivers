@@ -247,7 +247,7 @@ class Device(EmptyDevice):
         if self.home_at_start:
             print("Homing at start")
             self.set_homing_velocity(float(self.home_velocity))
-            self.stepper_motor.Home(self.timeout_ms)
+            self.stepper_motor.Home(self.timeout_ms)  # why no Int32()?
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -273,7 +273,7 @@ class Device(EmptyDevice):
             self.stepper_motor.MoveRelative(direction, Decimal(self.value), Int32(self.timeout_ms))
 
         elif self.sweep_mode == "Position":
-            self.stepper_motor.MoveTo(position, Int32(self.timeout_ms))
+            self.stepper_motor.MoveTo(position, Int32(self.timeout_ms))  # no need for Int32
 
     def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
