@@ -152,6 +152,7 @@ class Device(EmptyDevice):
         """Reads a FLOAT (2 words) from the given Modbus address"""
         request = self.build_request_read(address, 2)
         self.port.write_raw(request)
+        response: bytes = self.port.read_raw(digits=9)
         raw = response[3:7]
         reordered = raw[2:4] + raw[0:2]
         return struct.unpack(">f", reordered)[0]
