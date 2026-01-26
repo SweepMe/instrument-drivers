@@ -37,6 +37,11 @@ from typing import Any
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
+from pymodbus.pdu import ModbusPDU
+from pymodbus.pdu.pdu import ExceptionResponse
+from register import Register, DataType, Endianness, ModBusRegister
+from pymodbus.client.serial import ModbusSerialClient
+
 
 class Device(EmptyDevice):
     """Driver for the JUMO diraTRON."""
@@ -67,16 +72,16 @@ class Device(EmptyDevice):
 
         # Communication Parameters
         self.port_string: str = ""
-        self.port_manager = True
-        self.port_types = ["COM"]
-        self.port_properties = {
-            "timeout": 1,
-            "baudrate": 9600,
-            "stopbits": 1,
-            "parity": "N",
-            "bytesize": 8,
-            "EOL": "",  # Modbus RTU does not use EOL characters
-        }
+        self.port_manager = False
+        # self.port_types = ["COM"]
+        # self.port_properties = {
+        #     "timeout": 1,
+        #     "baudrate": 9600,
+        #     "stopbits": 1,
+        #     "parity": "N",
+        #     "bytesize": 8,
+        #     "EOL": "",  # Modbus RTU does not use EOL characters
+        # }
         self.modbus_address: int = 1
 
         # Measurement parameters
@@ -97,6 +102,17 @@ class Device(EmptyDevice):
         self.sweep_mode = parameters.get("SweepMode", "None")
         self.modbus_address = parameters.get("Modbus address", 1)
 
+    def connect(self):
+        self.client = ModbusSerialClient(
+            port=self.port_string,
+            baudrate=38400,
+            bytesize=8,
+            parity="N",
+            timeout=10,
+            stopbits=1,
+        )
+        self.client.connect()
+
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
 
@@ -110,17 +126,29 @@ class Device(EmptyDevice):
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        setpoint = self.get_setpoint()
-        actual = self.get_actual_value()
-        deviation = self.get_control_deviation()
-        output_level = self.get_output_level()
+        controller_actual_value_address = 8468
+        response = self.client.read_holding_registers(
+            controller_actual_value_address,
+            count=2,
+            slave=1,
+            # unit=self.modbus_address,
+        )
+        print(response)
+
+        #setpoint = self.get_setpoint()
+        # actual = self.get_actual_value()
+        # deviation = self.get_control_deviation()
+        # output_level = self.get_output_level()
 
         return [
             # self.analog_input,
-            setpoint,
-            actual,
-            deviation,
-            output_level,
+            1, #setpoint,
+            1,
+            1,
+            1,
+            # actual,
+            # deviation,
+            # output_level,
             # self.analog_output,
         ]
 
