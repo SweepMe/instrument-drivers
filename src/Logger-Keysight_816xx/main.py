@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+import struct
 import time
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -48,6 +49,7 @@ class Device(EmptyDevice):
     <li>Channel: If your power meter supports multiple channels. Otherwise, choose 1.</li>
     <li>Slot: Choose the slot your powermeter is connected to.</li>
     <li>Wavelength: If no wavelength should be set, set to 0.</li>
+    <li>List length: might need to add +1.</li>
     </ul>
     """
 
@@ -127,24 +129,24 @@ class Device(EmptyDevice):
 
         self.list_mode = parameters.get("Mode", "Single") == "Parameter Logging"
         if self.list_mode:
-            self.list_length = int(parameters.get("List length", "10"))
+            self.list_length = int(parameters.get("Data points", "10"))
             self.list_averaging = float(parameters.get("Averaging in s", "0.1"))
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         self.set_power_unit(self.power_unit)
         self.set_averaging_time(float(self.averaging_time))
-        self.set_automatic_power_ranging(True)  # Enable automatic power ranging
+        # TODO: Add power range setting
+        self.set_automatic_power_ranging(bool(self.automatic_power_ranging))  # Enable automatic power ranging
         self.set_wavelength(float(self.wavelength))
 
         if self.list_mode:
             self.port.write("trigger:configuration 1") # activate trigger input connector page 214
-            # self.port.write(f"trigger{self.slot}:input sme")
             self.configure_input_trigger_response("sme")
             self.port.write(f"sense{self.slot}:chan{self.channel}:function:parameter:logging {self.list_length},{self.list_averaging}")
 
             # see 208 page - trig not armed
-            print("Trigger armed: ", self.port.query(f"trig{self.slot}:chan{self.channel}:inp:rearm?"))  # This should return "0" if the trigger is not armed
+            # print("Trigger armed: ", self.port.query(f"trig{self.slot}:chan{self.channel}:inp:rearm?"))  # This should return "0" if the trigger is not armed
             self.port.write("trig:inp:rearm")
         else:
             # Set the software trigger system to non-continuous mode
@@ -156,14 +158,9 @@ class Device(EmptyDevice):
         """This function can be used to do some first steps before the acquisition of a measurement point starts."""
         if self.list_mode:
             # trig:inp:rearm
-            self.port.write(f"sense{self.slot}:chan{self.channel}:function:state logg,star")
+            self.port.write(f"sense{self.slot}:chan{self.channel}:function:state LOGG,start")
 
             # page 210
-
-            # in the description this done for the laser
-            self.port.write(f"sour{self.slot}:chan{self.channel}:wav:swe STOP")  # Stop any ongoing sweep
-            self.port.write(f"sour{self.slot}:chan{self.channel}:wav:swe star")  # Stop any ongoing sweep
-
             """
             Generally, a continuous sweep can only be started if:
             the trigger frequency, derived from the sweep speed and sweep step, is <= 40kHz, or <=1MHz for 81602A, 81606A, 81607A,
@@ -186,10 +183,17 @@ class Device(EmptyDevice):
     def request_result(self) -> None:
         """Wait until the measurement is complete and the results are ready to be read."""
         if self.list_mode:
+            # If the averaging time is much smaller than the sweep time of the laser, the timeout needs to be increased
             expected_time = self.list_length * self.list_averaging
             timeout_s = max(expected_time * 2, 10)
-            while "COMPLETE" not in self.port.query(f"sens{self.slot}:chan{self.channel}:func:stat?"):
+
+            while True:
                 if self.is_run_stopped():
+                    break
+
+                status = self.port.query(f"sens{self.slot}:chan{self.channel}:func:stat?")
+
+                if "COMPLETE" in status:
                     break
 
                 if timeout_s <= 0:
@@ -205,10 +209,10 @@ class Device(EmptyDevice):
         Do not split between request and read results to prevent communication problems when reading multiple channels.
         """
         if self.list_mode:
-            result = self.port.query(f"sens{self.slot}:chan{self.channel}:func:res?")
+            self.measured_power = self.get_list_mode_data()
+
             # stop logging
             self.port.write(f"sens{self.slot}:chan{self.channel}:func:state logg,stop")
-            self.measured_power = [float(res) for res in result.split(",")]
         else:
             result = self.port.query(f":fetc{self.slot}:chan{self.channel}:scal:pow:dc?")
             try:
@@ -222,16 +226,14 @@ class Device(EmptyDevice):
 
             self.measured_power = measured_power
 
-    def call(self) -> float:
-        """Return the measurement results. Must return as many values as defined in self.variables."""
-        return self.measured_power
+    def call(self) -> list[float] | list[list[float]]:
+        """Return the power as a list to prevent SweepMe! from interpreting the list mode results as individual values."""
+        return [self.measured_power]
 
     def set_averaging_time(self, averaging_time: float) -> None:
         """Set the averaging time for the power measurement."""
         self.port.write(f"sens{self.slot}:chan{self.channel}:pow:atim {averaging_time}")
         self.wait_for_opc()
-
-    # Wrapper Functions
 
     def set_automatic_power_ranging(self, enable: bool = True) -> None:
         """Enable or disable automatic power ranging.
@@ -243,6 +245,8 @@ class Device(EmptyDevice):
         else:
             self.port.write(f"sens{self.slot}:pow:rang:auto off")
         self.wait_for_opc()
+
+    # Wrapper Functions
 
     def set_power_unit(self, unit: str) -> None:
         """Set the power unit to either W or dBm."""
@@ -301,7 +305,7 @@ class Device(EmptyDevice):
         """
         self.port.write(f":init{self.slot}:imm")
 
-    def configure_input_trigger_response(self, response: str = ign) -> None:
+    def configure_input_trigger_response(self, response: str = "ign") -> None:
         """Configure the input trigger response for the device.
 
         IGNore: ignore incoming triggers.
@@ -318,6 +322,24 @@ class Device(EmptyDevice):
             raise ValueError(msg)
 
         self.port.write(f"trig{self.slot}:chan{self.channel}:inp {response}")
+
+    def get_list_mode_data(self) -> list[float]:
+        """Get the data from the list mode measurement."""
+        self.port.write(f"sens{self.slot}:chan{self.channel}:func:res?")
+        binary_data = self.port.port.read_raw()
+
+        # Strip SCPI header
+        if not binary_data.startswith(b'#'):
+            msg = "Data does not start with SCPI binary block header"
+            raise ValueError(msg)
+        n_digits = int(chr(binary_data[1]))
+        data_len = int(binary_data[2:2 + n_digits].decode())
+        header_len = 2 + n_digits
+        power_data_binary = binary_data[header_len:header_len + data_len]
+
+        # Each value is a 4-byte float (little-endian)
+        num_values = len(power_data_binary) // 4
+        return list(struct.unpack("<" + "f" * num_values, power_data_binary))
 
     # Currently unused wrapper functions
 
