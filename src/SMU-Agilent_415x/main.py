@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2022 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2026 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -38,13 +38,15 @@ from ErrorMessage import error
 
 class Device(EmptyDevice):
 
-    """
-    This driver for an Agilent 415x parameter analyzer uses the FLEX command set. The SCPI commant set is not used.
-    The FLEX command has shorter commands and is easier to handle.
-    The data is read in ASCII format. Higher speed could be reached by implementing the REAL64 binary data format.
-
-    This driver needs SMU module version 2022-04-04 or higher.
-    """
+    description = """
+        This driver for an Agilent 415x parameter analyzer uses the FLEX command set. The SCPI command set is not used.
+        The FLEX command has shorter commands and is easier to handle.
+        The data is read in ASCII format. Higher speed could be reached by implementing the REAL64 binary data format.
+    
+        This driver needs SMU module version 2022-04-04 or higher.
+        
+        VSU Channels (Voltage Source Units) can be used for voltage sourcing only, no measurements are done. Compliance is ignored. List mode might work, but has not been tested.
+        """
 
     def __init__(self):
     
@@ -65,7 +67,7 @@ class Device(EmptyDevice):
                                 }
                             
         # self.port_identifications = ['...']
-        
+
         self.channel_numbers = {
                                     "A":  1,  # SMU1
                                     "B":  2,  # SMU2
@@ -150,7 +152,7 @@ class Device(EmptyDevice):
         gui_parameter = {
                         "SweepMode": ["Voltage in V", "Current in A"],
                         
-                        "Channel": ["CH1", "CH2", "CH3", "CH4", "CH5", "CH6"],
+                        "Channel": ["CH1", "CH2", "CH3", "CH4", "CH5", "CH6", "VSU1", "VSU2"],
                         "RouteOut": ["Rear"],
                         "Speed": ["Fast", "Medium", "Slow"],
                         "Compliance": 100e-6,
@@ -181,12 +183,18 @@ class Device(EmptyDevice):
             self.sweepvalue = None
             
         self.device = parameter['Device']
-        self.channel = int(parameter['Channel'][2:])
+
+        if "vsu" in parameter['Channel'].lower():
+            self.channel = 21 if "1" in parameter['Channel'] else 22
+            self.use_vsu = True
+        else:
+            self.channel = int(parameter['Channel'][2:])
+            self.use_vsu = False
+
         self.port_string = parameter['Port']
                 
-        self.four_wire = parameter['4wire']
-        self.route_out = parameter['RouteOut']
-        self.source = parameter['SweepMode']
+        self.route_out = parameter["RouteOut"]
+        self.source = parameter["SweepMode"]
         
         if self.source.startswith("Voltage"):
             self.source = "V"
@@ -199,12 +207,10 @@ class Device(EmptyDevice):
         self.current_range = self.current_ranges[parameter["Range"]]
         self.voltage_range = self.voltages_ranges[parameter["RangeVoltage"]]
         
-        self.protection = parameter['Compliance']
-        self.speed = parameter['Speed']
-        self.pulse = parameter['CheckPulse']   
-        self.pulse_meas_time = parameter['PulseMeasTime']
+        self.protection = parameter["Compliance"]
+        self.speed = parameter["Speed"]
         
-        self.average = int(parameter['Average'])
+        self.average = int(parameter["Average"])
        
         self.shortname = "Agilent 415x CH%s" % self.channel
         
@@ -225,7 +231,7 @@ class Device(EmptyDevice):
     
         self.instrument_id = self.device + "_" + self.port_string
 
-        # we need to initialize the intrument only once for all channels
+        # we need to initialize the instrument only once for all channels
         if self.instrument_id not in self.device_communication:
 
             identification = self.get_identification()
@@ -271,7 +277,10 @@ class Device(EmptyDevice):
         pass
  
     def configure(self):
-    
+        if self.use_vsu and self.source == "I":
+            msg = f"Current source is not supported for VSU channels."
+            raise ValueError(msg)
+
         if self.speed == "Fast": 
             self.nplc = 1  # 1 Short (0.1 PLC) preconfigured selection Fast
         elif self.speed == "Medium": 
@@ -282,7 +291,7 @@ class Device(EmptyDevice):
         self.set_nplc(self.nplc)
 
         # integration time is hard coded here
-        # only nplc is changable by the user
+        # only nplc is changeable by the user
         # setting for nplc Medium = 2 is not allowed by instrument
         self.set_integration_time(1, 640e-6)
         self.set_integration_time(3, 320e-3)
@@ -294,7 +303,6 @@ class Device(EmptyDevice):
         listsweep_points = 0
 
         if self.sweepvalue == "List sweep":
-        
             if self.listsweep_steppoints_type.startswith("Step width"):
                 listsweepmode = 1
 
@@ -351,8 +359,9 @@ class Device(EmptyDevice):
         self.is_list_sweep_activated = "Data" in self.device_communication[self.instrument_id]
         
         if self.is_list_sweep_activated:
-            self.set_range_voltage(self.channel, self.voltage_range)
-            self.set_range_current(self.channel, self.current_range)
+            if not self.use_vsu:  # VSU channels do not measure the range
+                self.set_range_voltage(self.channel, self.voltage_range)
+                self.set_range_current(self.channel, self.current_range)
         
         if self.sweepvalue == "List sweep":
             channels = self.device_communication[self.instrument_id]["Channels"]
@@ -382,6 +391,9 @@ class Device(EmptyDevice):
         #                                self.value, self.value, self.protection)
 
     def measure(self):
+
+        if self.use_vsu:
+            return  # no measurement possible with VSU channels
    
         if not self.is_list_sweep_activated:
             self.measure_current(self.channel, self.current_range)
@@ -393,6 +405,9 @@ class Device(EmptyDevice):
                 # self.port.write("*OPC?")  # old solution with using 'operation complete' to check end of measurement
 
     def request_result(self):
+
+        if self.use_vsu:
+            return  # no measurement possible with VSU channels
     
         # only the module in List sweep mode must check whether measurement execution has finished
         if self.sweepvalue == "List sweep":
@@ -409,6 +424,9 @@ class Device(EmptyDevice):
                 time.sleep(0.1)
        
     def read_result(self):
+
+        if self.use_vsu:
+            return  # no measurement possible with VSU channels
     
         if not self.is_list_sweep_activated:
             self.i = float(self.read_measurement_data()[5:])
@@ -477,6 +495,9 @@ class Device(EmptyDevice):
             print("Error message Agilent 415x:", e)
             
     def process_data(self):
+
+        if self.use_vsu:
+            return  # no measurement possible with VSU channels
     
         if not self.is_list_sweep_activated:
             
@@ -515,6 +536,9 @@ class Device(EmptyDevice):
                     self.i = float(self.value)*np.ones(len(self.v))  # sweep values of the synchronous sources
                            
     def call(self):
+        if self.use_vsu:
+            self.v = float(self.value)
+            self.i = float("nan")
     
         return [self.v, self.i]
 
@@ -559,11 +583,17 @@ class Device(EmptyDevice):
         self.port.write("AV %i" % int(count))
       
     def enable_channel(self, channel):
-    
+        """Enable channel by setting the output switches to ON.
+
+        channel numbers: 1-6 (SMU), 21-22 (VSU)
+        """
         self.port.write("CN %i" % int(channel))  # switches the channel on
         
     def disable_channel(self, channel):
-    
+        """Disable channel by setting the output switches to OFF.
+
+        channel numbers: 1-6 (SMU), 21-22 (VSU)
+        """
         self.port.write("CL %i" % int(channel))  # switches the channel off
         
     def get_current(self, channel, range):
@@ -596,10 +626,21 @@ class Device(EmptyDevice):
         
         self.set_source_value("V", channel, range, value, compliance)
         
-    def set_source_value(self, source, channel, range, value, compliance):
-        
-        self.port.write("D%s %i,%i,%1.4f,%1.4f" %
-                        (str(source), int(channel), int(range), float(value), float(compliance)))
+    def set_source_value(self, source, channel, source_range, value, compliance):
+        """Forces current from the specified unit.
+
+        channel numbers: 1-6 (SMU)
+        Current source is not supported for VSU channels.
+        VSU channels do not support compliance settings.
+        """
+        if self.use_vsu:
+            if source == "I":
+                raise ValueError("Current source is not supported for VSU channels.")
+            self.port.write(f"D{source} {int(channel)},{int(source_range)},{float(value):1.4f}")
+
+        else:
+            self.port.write("D%s %i,%i,%1.4f,%1.4f" %
+                            (str(source), int(channel), int(source_range), float(value), float(compliance)))
 
     def read_measurement_data(self, count=0):
         """ reads data from the output buffer
@@ -655,9 +696,7 @@ class Device(EmptyDevice):
         else:
             raise ValueError("Argument 'count' must be positve integer, not %i." % count)
             
-        answer = self.port.read()
-        # print(answer)
-        return answer
+        return self.port.read()
         
     def execute_measurement(self):
     
@@ -817,9 +856,11 @@ class Device(EmptyDevice):
     def set_range(self, source, channel, range):
         """
         source: V or I (for voltage or current)
-
+        The range selection is not available for VSU channels. These channels do not measure the applied voltage/current,
+        hence the source cannot be limited by a specific range.
         """
-        
+        if self.channel in [21, 22]:  # VSU channels
+            return
         self.port.write("R%s %i,%i" % (str(source), int(channel), int(range)))
 
     def read_errors(self):
