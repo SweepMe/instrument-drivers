@@ -52,7 +52,7 @@ time.sleep(0.5)
 
 # Load motor configuration
 motor_config = device.LoadMotorConfiguration(port_string)
-current_settings: ThorlabsIntegratedStepperMotorSettings = device.MotorDeviceSettings
+current_settings = device.MotorDeviceSettings
 
 position = Decimal(60)
 device.MoveTo(position, 60000)

@@ -44,7 +44,8 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 kinesis_imported = False
 
 bitness = 64 if sys.maxsize > 2**32 else 32
-kinesis_path = "C:\\Program Files\\Thorlabs\\Kinesis" # if bitness == 64 else "C:\\Program Files (x86)\\Thorlabs\\Kinesis"
+kinesis_path = "C:\\Program Files\\Thorlabs\\Kinesis" if bitness == 64 else "C:\\Program Files (x86)\\Thorlabs\\Kinesis"
+
 try:
     if kinesis_path not in sys.path:
         sys.path.insert(0, kinesis_path)
@@ -58,7 +59,7 @@ try:
     # from Thorlabs.MotionControl.GenericMotorCLI.ControlParameters import VelocityParameters
     from Thorlabs.MotionControl.IntegratedStepperMotorsCLI import LongTravelStage  # , ThorlabsIntegratedStepperMotorSettings
 
-except:
+except Exception:
     pass
 else:
     kinesis_imported = True
@@ -81,7 +82,6 @@ class Device(EmptyDevice):
 
         # Communication Parameters
         self.serial_number: str = ""
-        self.use_simulation = False
 
         # Device Parameters
         self.stage: LongTravelStage = None  # type: ignore
@@ -91,11 +91,6 @@ class Device(EmptyDevice):
         """Returns the serial numbers of all devices connected via Kinesis."""
         device_list = self.list_devices()
 
-        if self.use_simulation:
-            self.set_simulation_mode(True)
-            device_list = self.list_devices()
-            self.set_simulation_mode(False)
-
         if not device_list:
             device_list = ["No devices found!"]
 
@@ -103,12 +98,7 @@ class Device(EmptyDevice):
 
     @staticmethod
     def list_devices() -> list[str]:
-        """Lists all devices.
-
-        Bug: Once Simulation mode is switched on, GetDeviceList will also find simulated devices even when simulation
-        mode is uninitialized.
-        The device list can be filtered by the device prefix, e.g. BenchtopNanoTrakCLI.BenchtopNanoTrak.DevicePrefix
-        """
+        """Lists all connected devices."""
         if not kinesis_imported:
             msg = ("Kinesis .NET dlls not found! Please install Kinesis to C:\\Program Files\\Thorlabs\\Kinesis, and "
                    "ensure it is closed when running this driver.")
@@ -118,14 +108,6 @@ class Device(EmptyDevice):
 
         device_list = DeviceManagerCLI.DeviceManagerCLI.GetDeviceList()
         return [str(serial_num) for serial_num in device_list]
-
-    @staticmethod
-    def set_simulation_mode(state: bool) -> None:
-        """Set the simulation mode for the device."""
-        if state:
-            DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
-        else:
-            DeviceManagerCLI.SimulationManager.Instance.UninitializeSimulations()
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
@@ -144,7 +126,7 @@ class Device(EmptyDevice):
         """Connect to the device. This function is called only once at the start of the measurement."""
         available_devices = self.list_devices()
         if self.serial_number in ["No devices found!", ""]:
-            msg = "No device connected! Please connect a Thorlabs NanoTrak device."
+            msg = "No device connected! Please connect a Thorlabs LTS device."
             raise ValueError(msg)
 
         if self.serial_number not in available_devices:
@@ -173,8 +155,6 @@ class Device(EmptyDevice):
         """Disconnect from the device. This function is called only once at the end of the measurement."""
         self.stage.StopPolling()
         self.stage.Disconnect(True)
-        if self.use_simulation:
-            self.set_simulation_mode(False)
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -185,23 +165,16 @@ class Device(EmptyDevice):
                 print(f"Settings failed to initialize: {e}")
 
         self.stage.StartPolling(250)
-        time.sleep(0.5)
+        time.sleep(0.5)  # waiting time given by Kinesis .NET documentation example
         self.stage.EnableDevice()
-        time.sleep(0.5)
+        time.sleep(0.5)  # waiting time given by Kinesis .NET documentation example
 
-    def deinitialize(self) -> None:
-        """Deinitialize the device. This function is called only once at the end of the measurement."""
+        # Load motor configuration
+        self.stage.LoadMotorConfiguration(self.serial_number)
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        # Load motor configuration
-        motor_config = self.stage.LoadMotorConfiguration(self.serial_number)
-        current_settings: ThorlabsIntegratedStepperMotorSettings = self.stage.MotorDeviceSettings
-
         self.set_velocity(float(self.velocity))
-
-    def unconfigure(self) -> None:
-        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
@@ -211,8 +184,11 @@ class Device(EmptyDevice):
             msg = f"Invalid position value: {self.value}. Must be a number."
             raise ValueError(msg)
 
+        expected_travel_time = abs(float(new_position) - self.get_position_mm()) / float(self.velocity)
+        timeout_s = max(60, int(expected_travel_time * 2))  # set timeout to twice the expected travel time, minimum 60s
+
         # todo reach. Currently, the command is blocking until the position is reached.
-        self.stage.MoveTo(new_position, 60000)
+        self.stage.MoveTo(new_position, timeout_s * 1000)  # timeout in ms
 
     def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
