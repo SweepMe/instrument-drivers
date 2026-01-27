@@ -856,7 +856,8 @@ class Device(EmptyDevice):
     def set_range(self, source, channel, range):
         """
         source: V or I (for voltage or current)
-        Range cannot be set for VSU channels, because they do not measure the range.
+        The range selection is not available for VSU channels. These channels do not measure the applied voltage/current,
+        hence the source cannot be limited by a specific range.
         """
         if self.channel in [21, 22]:  # VSU channels
             return
