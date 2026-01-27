@@ -257,11 +257,7 @@ class Device(EmptyDevice):
             except ValueError:
                 measured_power = float("nan")
 
-            error_value = 3.402823E38
-            if measured_power == error_value:
-                measured_power = float("nan")
-
-            self.measured_power = measured_power
+            self.measured_power = self.handle_error_value(measured_power)
 
     def call(self) -> list[float] | list[list[float]]:
         """Return the power as a list to prevent SweepMe! from interpreting the list mode data as individual values."""
@@ -380,6 +376,9 @@ class Device(EmptyDevice):
             status = self.port.query("*OPC?")
             if status.strip() == "1":
                 break
+        else:
+            msg = f"Operation did not complete within the timeout period of {timeout_s}s."
+            raise TimeoutError(msg)
 
     def set_reference_state(self, reference: str = "absolute") -> None:
         """Set the reference state of the power measurement to either absolute or relative."""
@@ -445,7 +444,7 @@ class Device(EmptyDevice):
     @staticmethod
     def handle_error_value(value: float) -> float:
         """Convert the error value returned by the device to NaN."""
-        error_value = 3.4E38
+        error_value = 3.402823E38
         if value >= error_value:
             return float("nan")
         return value
