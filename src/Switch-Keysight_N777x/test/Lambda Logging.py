@@ -1,6 +1,5 @@
-# This script runs a lambda logging measurement
-# It uses the reference from looptool_sweep_copy.py
-# written by Franz
+# This script shows an example of how to perform a lambda logging measurement using the Keysight N777x series tunable
+# laser and a power sensor in the Lightwave Measurement System (Keysight 816xx).
 
 import numpy as np
 import time
