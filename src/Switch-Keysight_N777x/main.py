@@ -114,7 +114,7 @@ class Device(EmptyDevice):
 
         # Measurement variables
         self.sweepmode: str = "None"
-        self.measured_power: float = -1
+        self.measured_power: float | np.ndarray = -1
         self.measured_wavelength: float | np.ndarray = -1
 
         # List mode
@@ -270,7 +270,7 @@ class Device(EmptyDevice):
         if self.list_mode:
             self.wait_for_sweep_completion()
             self.measured_wavelength = self.get_lambda_logging_data()
-            self.measured_power = self.get_power()
+            self.measured_power = self.get_power() * np.ones_like(self.measured_wavelength)
 
     def wait_for_sweep_completion(self) -> None:
         """Wait until the sweep is completed, the measurement is aborted, or the timeout is reached."""
@@ -378,22 +378,23 @@ class Device(EmptyDevice):
             self.get_power_range()
 
         if power_level * self.power_conversion < self.pow_min:
-            power_level = "MIN"  # set to minimum if below
+            power_level_str = "MIN"  # set to minimum if below
+            self.power_level = self.pow_min / self.power_conversion
             if self.debug_mode:
                 debug(f"Warning: Power level {power_level * self.power_conversion} {unit} below minimum {self.pow_min} "
                       f"{unit}, setting to minimum.")
 
         elif power_level * self.power_conversion > self.pow_max:
-            power_level = "MAX"  # set to maximum if above
+            power_level_str = "MAX"  # set to maximum if above
+            self.power_level = self.pow_max / self.power_conversion
             if self.debug_mode:
                 debug(f"Warning: Power level {power_level * self.power_conversion} {unit} above maximum {self.pow_max} "
                       f"{unit}, setting to maximum.")
 
         else:
-            power_level = f"{power_level} {unit.upper()}"
+            power_level_str = f"{power_level} {unit.upper()}"
 
-        self.port.write(f"sour0:pow {power_level}")
-        self.power_level = power_level
+        self.port.write(f"sour0:pow {power_level_str}")
 
     def set_wavelength(self, wavelength_m: float) -> None:
         """Set the laser wavelength m."""
