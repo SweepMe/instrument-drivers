@@ -70,7 +70,7 @@ class Device(EmptyDevice):
 
         # Measurement parameters
         self.slot: int = 0
-        self.output_path: str = "1"  # 1 = low power/high sens, 2 = high power
+        self.output_path: str = "Low SSE"
         self.output_paths_dict = {
             "High Power": "HIGHpower",
             "Low SSE": "LOWSse",
@@ -138,9 +138,9 @@ class Device(EmptyDevice):
         self.port_string = parameters.get("Port", "")
         self.sweep_mode = parameters.get("SweepMode", "")
 
-        self.slot = parameters.get("Slot", "")
+        self.slot = int(parameters.get("Slot", "0"))
 
-        self.output_path = parameters.get("Output Path", "Low SSE")
+        self.output_path = parameters.get("Output Path", "")
         self.wavelength = parameters.get("Wavelength in nm", "")
         self.power_level = parameters.get("Power", "")
         self.power_unit = parameters.get("Power unit", "dBm")
@@ -163,7 +163,7 @@ class Device(EmptyDevice):
         # TODO: find better solution
         try:
             self.get_wavelength_range()
-        except:
+        except TimeoutError:  # TODO: validate exception type
             self.get_wavelength_range()
 
     def poweron(self) -> None:
@@ -186,10 +186,20 @@ class Device(EmptyDevice):
             self.configure_list_mode()
 
         if self.sweep_mode != "Power":
-            self.set_power(float(self.power_level))
+            try:
+                power_level_float = float(self.power_level)
+            except ValueError:
+                msg = f"Invalid power level '{self.power_level}'. Must be a number."
+                raise ValueError(msg)
+            self.set_power(power_level_float)
 
         if self.sweep_mode != "Wavelength" and not self.list_mode:
-            self.set_wavelength(float(self.wavelength))
+            try:
+                wavelength_float = float(self.wavelength)
+            except ValueError:
+                msg = f"Invalid wavelength '{self.wavelength}'. Must be a number."
+                raise ValueError(msg)
+            self.set_wavelength(wavelength_float)
 
     def configure_list_mode(self) -> None:
         """Configure the device for wavelength sweeps in list mode."""
@@ -201,7 +211,7 @@ class Device(EmptyDevice):
         # Laser Lambda Logging settings
         self.port.write("wavelength:sweep:mode continuous")
 
-        # # only 0.5 5 40 nm/s allowed
+        # Depending on the device model, only certain scan speeds might be allowed
         self.port.write(f"wavelength:sweep:speed {self.scan_speed}nm/s")
         self.get_wavelength_range()  # range might change depending on scan speed
 
@@ -345,9 +355,13 @@ class Device(EmptyDevice):
 
         self.port.write(f"SOURce{self.slot}:POWer:LEVel:IMMediate:AMPLitude {power}")
         set_power = self.get_power()
-        if abs(set_power - power) / abs(power) > 0.05:
+        if power != 0 and abs(set_power - power) / abs(power) > 0.05:
             msg = (f"Set power {power} {self.power_unit} differs from readback power {set_power} {self.power_unit} by "
                    f"more than 5%. Check attenuator settings.")
+            print(msg)
+        elif power == 0 and set_power != 0:
+            msg = (f"Set power is 0 {self.power_unit} but readback power is {set_power} {self.power_unit}. "
+                   f"Check attenuator settings.")
             print(msg)
 
     def get_power(self) -> float:
