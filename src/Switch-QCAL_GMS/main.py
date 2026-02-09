@@ -102,10 +102,10 @@ class Device(EmptyDevice):
 
         selected_sweep_mode = parameters.get("SweepMode", "None")
         if selected_sweep_mode != "Concentration 2 in Vol%":
-            new_parameters["Concentration 2 in Vol%"] = 1.0
+            new_parameters["Concentration 2 in Vol%"] = 0.
 
         if selected_sweep_mode != "Concentration 3 in Vol%":
-            new_parameters["Concentration 3 in Vol%"] = 1.0
+            new_parameters["Concentration 3 in Vol%"] = 0.
 
         if selected_sweep_mode != "Total flow in NmL/min":
             new_parameters["Total flow in NmL/min"] = 10.0
