@@ -85,7 +85,6 @@ class Device(EmptyDevice):
         self.extern_file = os.path.join(self.base_path, "extern.txt")
         self.zeit_file = os.path.join(self.base_path, "zeit.txt")
         self.timeout_s = 5.0  # the device should read the new setpoints every 1s, so 5s is sufficient
-        self.set_points_changed: bool = False  # indicates if setpoints were changed and need confirmation
 
         # Measurement parameters
         self.sweep_mode: str = "None"
@@ -136,10 +135,8 @@ class Device(EmptyDevice):
 
     def initialize(self) -> None:
         # delete zeit.txt and create new to avoid reading old data
-        if os.path.exists(self.zeit_file):
-            os.remove(self.zeit_file)
-            with open(self.zeit_file, "w", encoding="ascii") as f:
-                f.write("")
+        with open(self.zeit_file, "w", encoding="ascii") as f:
+            f.write("")
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -150,7 +147,6 @@ class Device(EmptyDevice):
         """Set the flow rate to 0. This function is called every time the device is no longer used in the sequencer."""
         self.total_flow = 0.0
         self.update_setpoints()
-        # check?
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
@@ -180,7 +176,7 @@ class Device(EmptyDevice):
                 msg = "The GMS reported stopped operation unexpectedly."
                 raise RuntimeError(msg)
 
-            if not "NEW" in last_line:
+            if "NEW" not in last_line:
                 break
             time.sleep(0.02)
 
