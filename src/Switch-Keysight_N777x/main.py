@@ -86,6 +86,14 @@ class Device(EmptyDevice):
         }
         self.port_string = ""
 
+        # Trigger
+        self.trigger_modes = {
+            "Default": "DEF",
+            "Disabled": "DIS",
+            "Pass trough": "PASS",
+        }
+        self.trigger_config: str = "DEF"
+
         # Power
         self.power_level: float = -1
         self.power_units = {
@@ -123,7 +131,6 @@ class Device(EmptyDevice):
         self.list_stop: float = 0.0  # Stop of the list in nm
         self.list_step: float = 10  # step size in nm
         self.scan_speed: float = 10.0  # Scan speed in nm/s
-        self.previous_trigger_config: str = "2"  # to restore after list mode, default is 2 (passthrough)
 
         self.debug_mode: bool = False  # Debug errors and warnings
 
@@ -150,6 +157,8 @@ class Device(EmptyDevice):
             with contextlib.suppress(KeyError):
                 del new_parameters["Wavelength"]
                 del new_parameters["Wavelength unit"]
+        else:
+            new_parameters["Trigger"] = list(self.trigger_modes.keys())
 
         return new_parameters
 
@@ -173,6 +182,10 @@ class Device(EmptyDevice):
             self.list_stop = float(parameters.get("List Stop in nm", "1650"))
             self.list_step = float(parameters.get("List Step in nm", "10"))
             self.scan_speed = float(parameters.get("Scan speed in nm/s", "10"))
+        else:
+            self.list_mode = False
+            trigger_mode_str = parameters.get("Trigger", "Default")
+            self.trigger_config = self.trigger_modes.get(trigger_mode_str, "DEF")
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -200,6 +213,8 @@ class Device(EmptyDevice):
                 msg = "SweepMe! cannot sweep wavelength if the device does a wavelength sweep."
                 raise ValueError(msg)
             self.configure_list_mode()
+        else:
+            self.set_trigger_configuration(self.trigger_config)
 
         if self.sweepmode != "Power":
             self.set_power(self.power_level, self.power_unit)
@@ -210,7 +225,7 @@ class Device(EmptyDevice):
     def unconfigure(self) -> None:
         if self.list_mode:
             # Restore previous trigger configuration, e.g. 2 for passthrough
-            self.port.write(f":TRIGger:CONFiguration {self.previous_trigger_config}")
+            self.set_trigger_configuration(self.trigger_config)
 
     def configure_list_mode(self) -> None:
         """Configure the device for wavelength sweeps in list mode."""
@@ -219,7 +234,7 @@ class Device(EmptyDevice):
 
         # Configure list parameters
         # Save the previous trigger configuration to restore it later
-        self.previous_trigger_config = self.port.query(":TRIGger:CONFiguration?")
+        self.trigger_config = self.port.query(":TRIGger:CONFiguration?")
         self.port.write(":TRIGger:CONFiguration 1")  # default
         self.port.write(":sour0:wav:swe:mode CONT")  # Set sweep mode to continuous
         self.set_sweep_cycles(1)
@@ -453,6 +468,13 @@ class Device(EmptyDevice):
                 errors.append(err)
 
         return ",".join(errors)
+
+    def set_trigger_configuration(self, trigger_config: str) -> None:
+        """Set the trigger configuration for single mode operation.
+
+        Allowed values: DISabled or 0, DEFault or 1, PASSthrough or 2
+        """
+        self.port.write(f":TRIGger:CONFiguration {trigger_config}")
 
     # List Mode Functions
 
