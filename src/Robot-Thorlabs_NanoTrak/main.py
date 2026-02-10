@@ -156,6 +156,8 @@ class Device(EmptyDevice):
         self.frequency: str = "100"
         self.gain: str = "1"
         self.open_loop: bool = True  # True for open loop, False for closed loop
+        self.horizontal_phase_compensation: str = "0"  # in deg
+        self.vertical_phase_compensation: str = "0"  # in deg
         self.tracking_time_string: str = "10"
         self.debug_while_tracking: bool = False
 
@@ -188,6 +190,10 @@ class Device(EmptyDevice):
             "Frequency in samples/rev": 100.,
             "Gain": 1,
             "Control mode": ["Open Loop", "Closed Loop"],
+
+            "Horizontal phase compensation in °": 0,
+            "Vertical phase compensation in °": 0,
+
             "Simulation": False,
             "Debug while Tracking": False,
             "Modular Rack": False,
@@ -210,6 +216,9 @@ class Device(EmptyDevice):
         self.frequency = parameters.get("Frequency in samples/rev", "100")
         self.gain = parameters.get("Gain", "1.0")
         self.open_loop = "open" in parameters.get("Control mode", "Open Loop").lower()
+        self.horizontal_phase_compensation = parameters.get("Horizontal phase compensation in °", "0")
+        self.vertical_phase_compensation = parameters.get("Vertical phase compensation in °", "0")
+
         self.tracking_time_string = parameters.get("Tracking time in s", 10)
         self.debug_while_tracking = parameters.get("Debug while Tracking", False)
 
@@ -326,13 +335,12 @@ class Device(EmptyDevice):
         DeviceSettingsUseOptionType = DeviceManagerCLI.DeviceConfiguration.DeviceSettingsUseOptionType
         nanoTrakConfiguration = self.nanotrak_channel.GetNanoTrakConfiguration(self.serial_number, DeviceSettingsUseOptionType.UseConfiguredSettings)
         currentDeviceSettings = self.nanotrak_channel.NanoTrakDeviceSettings
+        currentDeviceSettings = self.handle_phase_compensation(currentDeviceSettings)
+
         self.nanotrak_channel.SetSettings(currentDeviceSettings, False)
 
         self.nanotrak_channel.GetSettings(currentDeviceSettings)
         NanoTrakStatusBase = GenericNanoTrakCLI.NanoTrakStatusBase
-
-        # Set feedback source depending on the GUI parameter
-        self.nanotrak_channel.SetFeedbackSource(self.feedback_sources[self.feedback_source])
 
         self.set_control_mode(self.open_loop)
 
@@ -350,6 +358,9 @@ class Device(EmptyDevice):
                 msg = f"Invalid gain: {self.gain}. Expected an integer value."
                 raise ValueError(msg) from e
             self.set_gain(gain)
+
+        # Set feedback source. This has to be done after all other settings are applied
+        self.nanotrak_channel.SetFeedbackSource(self.feedback_sources[self.feedback_source])
 
         # Home Position. If none is given, do not update the home position
         if self.go_home_at_start:
@@ -441,8 +452,6 @@ class Device(EmptyDevice):
 
         return [str(serial_num) for serial_num in device_list]
 
-    # Utility functions
-
     def determine_nanotrak_type(self, serial_number: str) -> str:
         """Determine the device type based on the serial number prefix."""
         if self.is_modular_rack:
@@ -454,6 +463,8 @@ class Device(EmptyDevice):
                 return supported_type
 
         return "Unknown"
+
+    # Utility functions
 
     def import_device_dlls(self, nanotrak_type: str) -> None:
         """Import the device specific Kinesis .NET dll based on the device type."""
@@ -518,8 +529,6 @@ class Device(EmptyDevice):
         else:
             DeviceManagerCLI.SimulationManager.Instance.UninitializeSimulations()
 
-    # Wrapper Functions
-
     def get_identification(self) -> str:
         """Returns the identification of the device."""
         if not self.nanotrak:
@@ -527,6 +536,30 @@ class Device(EmptyDevice):
             return ""
 
         return self.nanotrak.GetDeviceInfo().SerialNumber
+
+    # Wrapper Functions
+
+    def handle_phase_compensation(self, currentDeviceSettings):
+        """Handle the horizontal and vertical phase compensation settings."""
+        if self.horizontal_phase_compensation:
+            try:
+                horizontal_phase = float(self.horizontal_phase_compensation)
+            except ValueError as e:
+                msg = f"Invalid horizontal phase compensation: {self.horizontal_phase_compensation}. Expected a float value."
+                raise ValueError(msg) from e
+
+            currentDeviceSettings.TrackingSettingsBase.HorizontalPhaseCompensation = horizontal_phase
+
+        if self.vertical_phase_compensation:
+            try:
+                vertical_phase = float(self.vertical_phase_compensation)
+            except ValueError as e:
+                msg = f"Invalid vertical phase compensation: {self.vertical_phase_compensation}. Expected a float value."
+                raise ValueError(msg) from e
+
+            currentDeviceSettings.TrackingSettingsBase.VerticalPhaseCompensation = vertical_phase
+
+        return currentDeviceSettings
 
     def get_current_position(self) -> tuple[float, float]:
         """Get the current circular position and signal strength at the current position."""
@@ -550,21 +583,9 @@ class Device(EmptyDevice):
         However, moving in Latch mode is also possible according to the manual.
         For now, do not switch to Tracking mode if already in Latch mode.
         """
-        # current_mode = self.nanotrak_channel.GetMode()
-        # reset_to_latch = False
-        # # TODO: moving should be usable in latch mode as well
-        # if current_mode == GenericNanoTrakCLI.NanoTrakStatusBase.OperatingModes.Latch:
-        #     # print(f"Setting NanoTrak to Tracking mode before moving to home.")
-        #     self.track()
-        #     reset_to_latch = True
-
         self.nanotrak_channel.HomeCircle()
         # Need to wait until the movement is finished
         time.sleep(1)
-
-        # if reset_to_latch:
-        #     # print("Setting NanoTrak back to Latch mode after moving to home.")
-        #     self.latch()
 
     def set_home_and_go_home(self, horizontal: float, vertical: float) -> None:
         """Set the home position and go there."""
