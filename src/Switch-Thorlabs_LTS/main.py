@@ -85,6 +85,7 @@ class Device(EmptyDevice):
 
         # Device Parameters
         self.stage: LongTravelStage = None  # type: ignore
+        self.sweep_mode: str = "Absolute position in mm"
         self.velocity: float = 5.0  # in mm/s
 
     def find_ports(self) -> list[str]:
@@ -113,13 +114,14 @@ class Device(EmptyDevice):
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         del parameters
         return {
-            "SweepMode": ["Position in mm"],
+            "SweepMode": ["Absolute position in mm", "Relative position in mm"],
             "Velocity in mm/s": 10.0,
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.serial_number = parameters.get("Port", "")
+        self.sweep_mode = parameters.get("SweepMode", "Absolute position in mm")
         self.velocity = parameters.get("Velocity in mm/s", 5.0)
 
     def connect(self) -> None:
@@ -179,16 +181,32 @@ class Device(EmptyDevice):
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         try:
-            new_position = Decimal(float(self.value))
+            self.value = float(self.value)
         except ValueError:
             msg = f"Invalid position value: {self.value}. Must be a number."
             raise ValueError(msg)
 
-        expected_travel_time = abs(float(new_position) - self.get_position_mm()) / float(self.velocity)
-        timeout_s = max(60, int(expected_travel_time * 2))  # set timeout to twice the expected travel time, minimum 60s
+        if self.sweep_mode.startswith("Relative"):
+            current_position = self.get_position_mm()
+            new_position = current_position + self.value
+            if new_position < 0:
+                msg = f"Invalid relative movement: current position is {current_position} mm, cannot move by {self.value} mm to a negative position."
+                raise ValueError(msg)
+        else:
+            new_position = self.value
 
+        timeout_ms = self.calculate_timeout(new_position)
         # todo reach. Currently, the command is blocking until the position is reached.
-        self.stage.MoveTo(new_position, timeout_s * 1000)  # timeout in ms
+        self.stage.MoveTo(Decimal(new_position), timeout_ms)
+
+    def calculate_timeout(self, new_position: float) -> int:
+        """Calculate the timeout for the MoveTo command based on the distance to travel and the velocity."""
+        current_position = self.get_position_mm()
+        distance = abs(new_position - current_position)
+
+        expected_travel_time = distance / float(self.velocity)
+        timeout_s = max(60, int(expected_travel_time * 2))  # set timeout to twice the expected travel time, minimum 60s
+        return timeout_s * 1000  # return timeout in ms
 
     def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
