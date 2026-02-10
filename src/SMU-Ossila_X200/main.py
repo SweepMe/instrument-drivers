@@ -93,6 +93,8 @@ class Device(EmptyDevice):
         }
         self.voltage_range_index: int = 0
 
+        self.high_impedance_mode: bool = False
+
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         del parameters
@@ -103,8 +105,9 @@ class Device(EmptyDevice):
             "Average": 1,
             "Speed": list(self.speed_dict.keys()),
             "Range": list(self.current_ranges.keys()),
-            # "RangeVoltage": list(self.voltage_ranges.keys())  # only for non-sourcing mode
+            # "RangeVoltage": list(self.voltage_ranges.keys()),  # no command found to set the voltage range, so we keep it fixed for now
             "ADC 2x Mode": False,
+            "High impedance mode": False,
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
@@ -118,9 +121,11 @@ class Device(EmptyDevice):
         if parameters.get("ADC 2x Mode", False):
             self.speed += 10  # if ADC 2x mode is enabled, add 10 to the OSR index according to the manual
 
-        self.current_range_index = self.current_ranges.get(parameters.get("Range", "200 mA"), 0)
-        self.voltage_range_index = self.voltage_ranges.get(parameters.get("RangeVoltage", "333 µV precision (Sourcing mode)"), 0)
-        self.compliance = float(parameters.get("Compliance", 1e-3))
+        self.current_range_index = self.current_ranges.get(parameters.get("Range", "200 mA"), -1)  # if the range is invalid, use an invalid index to raise an error later
+        # self.voltage_range_index = self.voltage_ranges.get(parameters.get("RangeVoltage", "333 µV precision (Sourcing mode)"), 0)
+        self.compliance = parameters.get("Compliance", "1e-3")
+
+        self.high_impedance_mode = parameters.get("High impedance mode", False)
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -141,7 +146,6 @@ class Device(EmptyDevice):
         self.set_average(self.average)
 
         self.set_oversample_rate(self.speed)
-        self.set_voltage_range(self.voltage_range_index)
         self.set_current_range(self.current_range_index)
 
         if self.sweep_mode.startswith("Voltage"):
@@ -151,6 +155,11 @@ class Device(EmptyDevice):
                 msg = f"Invalid value for Compliance: {self.compliance}. Must be a number."
                 raise ValueError(msg)
             self.set_current_limit(self.compliance)
+
+        if self.high_impedance_mode:
+            self.port.write(f"{self.channel} set hiz 1")
+        else:
+            self.port.write(f"{self.channel} set hiz 0")
 
     def poweron(self) -> None:
         """Enable the device."""
@@ -168,9 +177,13 @@ class Device(EmptyDevice):
     def call(self) -> list:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         response = self.port.query(f"{self.channel} measure")
-        voltage, current = response.split(",")
-        voltage = float(voltage)
-        current = float(current)
+        try:
+            voltage, current = response.split(",")
+            voltage = float(voltage)
+            current = float(current)
+        except ValueError as e:
+            msg = f"Invalid response from the device: {response}. Expected format: 'voltage,current'. Error: {e}"
+            raise ValueError(msg)
 
         return [voltage, current]
 
@@ -187,15 +200,11 @@ class Device(EmptyDevice):
         self.port.write(f"{self.channel} set limitv {voltage_limit}")
 
     def set_current_range(self, measure_range_index: int) -> None:
-        """Set the current range index for the measurement, which determines maximum measurable current, accuracy, and resolution. The range index can be 1-9. See manual 5.2.3 for reference."""
-        try:
-            measure_range_index = int(measure_range_index)
-        except ValueError:
-            msg = f"Invalid value for current Range: {measure_range_index}. Must be an integer between 1 and 9."
-            raise ValueError(msg)
-
-        if not (1 <= measure_range_index <= 9):
-            msg = f"Invalid value for current Range: {measure_range_index}. Must be an integer between 1 and 9."
+        """Set the current range index for the measurement, which determines maximum measurable current, accuracy, and
+        resolution. The range index can be 1-5. See manual 5.2.4 for reference.
+        """
+        if not (1 <= measure_range_index <= 5):
+            msg = f"Invalid index value for current Range: {measure_range_index}. Must be an integer between 1 and 5."
             raise ValueError(msg)
 
         self.port.write(f"{self.channel} set range {measure_range_index}")
