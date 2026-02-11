@@ -87,6 +87,7 @@ class Device(EmptyDevice):
         self.stage: LongTravelStage = None  # type: ignore
         self.sweep_mode: str = "Absolute position in mm"
         self.velocity: float = 5.0  # in mm/s
+        self.timeout: int = 60  # in s, default value, will be updated in apply() based on the distance to travel and the velocity
 
     def find_ports(self) -> list[str]:
         """Returns the serial numbers of all devices connected via Kinesis."""
@@ -174,6 +175,10 @@ class Device(EmptyDevice):
         # Load motor configuration
         self.stage.LoadMotorConfiguration(self.serial_number)
 
+    def poweroff(self) -> None:
+        """Stop stage movement."""
+        self.stage.StopImmediate()
+
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         self.set_velocity(float(self.velocity))
@@ -195,22 +200,37 @@ class Device(EmptyDevice):
         else:
             new_position = self.value
 
-        timeout_ms = self.calculate_timeout(new_position)
-        # todo reach. Currently, the command is blocking until the position is reached.
-        self.stage.MoveTo(Decimal(new_position), timeout_ms)
+        self.timeout = self.calculate_timeout(new_position)
+        self.stage.MoveTo(Decimal(new_position))  # do not parse a timeout value here, to keep the MoveTo command non-blocking
 
-    def calculate_timeout(self, new_position: float) -> int:
-        """Calculate the timeout for the MoveTo command based on the distance to travel and the velocity."""
-        current_position = self.get_position_mm()
-        distance = abs(new_position - current_position)
+    def reach(self) -> None:
+        """Wait until the device has reached the target position."""
+        time_start = time.time()
+        while True:
+            if self.is_run_stopped():
+                break
 
-        expected_travel_time = distance / float(self.velocity)
-        timeout_s = max(60, int(expected_travel_time * 2))  # set timeout to twice the expected travel time, minimum 60s
-        return timeout_s * 1000  # return timeout in ms
+            if time.time() - time_start > self.timeout:
+                msg = f"Failed to reach the target position within the timeout period of {self.timeout} seconds."
+                raise TimeoutError(msg)
+
+            status = self.stage.Status
+            if status.IsInMotion:
+                time.sleep(0.1)
+            else:
+                break
 
     def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return self.get_position_mm()
+
+    def calculate_timeout(self, new_position: float) -> int:
+        """Calculate the timeout in s for the MoveTo command based on the distance to travel and the velocity."""
+        current_position = self.get_position_mm()
+        distance = abs(new_position - current_position)
+
+        expected_travel_time = distance / float(self.velocity)
+        return max(60, int(expected_travel_time * 2))  # set timeout to twice the expected travel time, minimum 60s
 
     def get_position_mm(self) -> float:
         """Get the current position in mm."""
