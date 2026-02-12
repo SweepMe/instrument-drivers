@@ -88,6 +88,7 @@ class Device(EmptyDevice):
         self.sweep_mode: str = "Absolute position in mm"
         self.velocity: float = 5.0  # in mm/s
         self.timeout: int = 60  # in s, default value, will be updated in apply() based on the distance to travel and the velocity
+        self.relative_movement_done: bool = False  # flag to keep track of whether the relative movement has already been performed in apply() or not
 
     def find_ports(self) -> list[str]:
         """Returns the serial numbers of all devices connected via Kinesis."""
@@ -183,13 +184,14 @@ class Device(EmptyDevice):
         """Configure the device. This function is called every time the device is used in the sequencer."""
         self.set_velocity(float(self.velocity))
 
+    def start(self) -> None:
+        """Preparation before applying a new value."""
+        # Reset the flag for performing the relative movement in adapt()
+        self.relative_movement_done = False
+
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-        try:
-            self.value = float(self.value)
-        except ValueError:
-            msg = f"Invalid position value: {self.value}. Must be a number."
-            raise ValueError(msg)
+        self.convert_sweep_value()
 
         if self.sweep_mode.startswith("Relative"):
             current_position = self.get_position_mm()
@@ -197,6 +199,7 @@ class Device(EmptyDevice):
             if new_position < 0:
                 msg = f"Invalid relative movement: current position is {current_position} mm, cannot move by {self.value} mm to a negative position."
                 raise ValueError(msg)
+            self.relative_movement_done = True
         else:
             new_position = self.value
 
@@ -220,9 +223,29 @@ class Device(EmptyDevice):
             else:
                 break
 
+    def adapt(self) -> None:
+        """Perform relative movements, as they are skipped in the apply() function.
+
+        SweepMe! ignores relative movements if the SweepValue stays the same as in the previous run, which is the case
+        for example when running multiple cycles of the same sequence. In this case, we perform the relative movement
+        here in adapt(), which is called every time a sequence is run, even if the SweepValue does not change.
+        """
+        # Only perform the relative movement if it was not already performed in apply() (which is the case when the SweepValue did change since the last sweep).
+        if self.sweep_mode.startswith("Relative") and not self.relative_movement_done:
+            self.apply()
+            self.reach()
+
     def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return self.get_position_mm()
+
+    def convert_sweep_value(self) -> None:
+        """Convert the sweep value to float."""
+        try:
+            self.value = float(self.value)
+        except ValueError:
+            msg = f"Invalid position value: {self.value}. Must be a number."
+            raise ValueError(msg)
 
     def calculate_timeout(self, new_position: float) -> int:
         """Calculate the timeout in s for the MoveTo command based on the distance to travel and the velocity."""
