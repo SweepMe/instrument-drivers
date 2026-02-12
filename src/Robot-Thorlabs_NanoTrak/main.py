@@ -191,8 +191,8 @@ class Device(EmptyDevice):
             "Gain": 1,
             "Control mode": ["Open Loop", "Closed Loop"],
 
-            "Horizontal phase compensation in °": 0,
-            "Vertical phase compensation in °": 0,
+            "Horizontal phase compensation in °": 0.,
+            "Vertical phase compensation in °": 0.,
 
             "Simulation": False,
             "Debug while Tracking": False,
@@ -216,8 +216,8 @@ class Device(EmptyDevice):
         self.frequency = parameters.get("Frequency in samples/rev", "100")
         self.gain = parameters.get("Gain", "1.0")
         self.open_loop = "open" in parameters.get("Control mode", "Open Loop").lower()
-        self.horizontal_phase_compensation = parameters.get("Horizontal phase compensation in °", "0")
-        self.vertical_phase_compensation = parameters.get("Vertical phase compensation in °", "0")
+        self.horizontal_phase_compensation = parameters.get("Horizontal phase compensation in °", "0.")
+        self.vertical_phase_compensation = parameters.get("Vertical phase compensation in °", "0.")
 
         self.tracking_time_string = parameters.get("Tracking time in s", 10)
         self.debug_while_tracking = parameters.get("Debug while Tracking", False)
@@ -337,8 +337,6 @@ class Device(EmptyDevice):
         currentDeviceSettings = self.nanotrak_channel.NanoTrakDeviceSettings
         currentDeviceSettings = self.handle_phase_compensation(currentDeviceSettings)
 
-        self.nanotrak_channel.SetSettings(currentDeviceSettings, False)
-
         self.nanotrak_channel.GetSettings(currentDeviceSettings)
         NanoTrakStatusBase = GenericNanoTrakCLI.NanoTrakStatusBase
 
@@ -358,6 +356,8 @@ class Device(EmptyDevice):
                 msg = f"Invalid gain: {self.gain}. Expected an integer value."
                 raise ValueError(msg) from e
             self.set_gain(gain)
+
+        self.nanotrak_channel.SetSettings(currentDeviceSettings, False)
 
         # Set feedback source. This has to be done after all other settings are applied
         self.nanotrak_channel.SetFeedbackSource(self.feedback_sources[self.feedback_source])
@@ -548,7 +548,7 @@ class Device(EmptyDevice):
                 msg = f"Invalid horizontal phase compensation: {self.horizontal_phase_compensation}. Expected a float value."
                 raise ValueError(msg) from e
 
-            currentDeviceSettings.TrackingSettingsBase.HorizontalPhaseCompensation = horizontal_phase
+            currentDeviceSettings.Tracking.HorizontalPhaseCompensation = horizontal_phase
 
         if self.vertical_phase_compensation:
             try:
@@ -557,7 +557,7 @@ class Device(EmptyDevice):
                 msg = f"Invalid vertical phase compensation: {self.vertical_phase_compensation}. Expected a float value."
                 raise ValueError(msg) from e
 
-            currentDeviceSettings.TrackingSettingsBase.VerticalPhaseCompensation = vertical_phase
+            currentDeviceSettings.Tracking.VerticalPhaseCompensation = vertical_phase
 
         return currentDeviceSettings
 
