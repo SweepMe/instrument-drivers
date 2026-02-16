@@ -1,18 +1,16 @@
 import time
 import unittest
 
-# add parent path to sys.path to enable import of pysweepme
-import sys
+# add libs folder to sys.path to enable import of pywgfmu
 from pathlib import Path
+import sys
 here = Path(__file__).resolve().parent
-if str(here) not in sys.path:
-    sys.path.insert(0, str(here))
+libs_folder = here.parent.parent / "libs"
+if str(libs_folder) not in sys.path:
+    sys.path.insert(0, str(libs_folder))
 
-import wgfmu_sandbox as wgfmu
+from pywgfmu import wgfmu
 
-# COM_PORT = "COM16"  # Needs to be adjusted
-DRIVER_PATH = r"C:\~\instrument-drivers\src"  # Needs to be adjusted
-DRIVER_NAME = "Logger-PREVAC_TMC13"
 
 ADDRESS = "GPIB0::16::INSTR"
 CHANNEL = 101  # wgfmu.create_channel_id(1, 1)
