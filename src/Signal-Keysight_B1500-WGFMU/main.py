@@ -32,6 +32,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -66,7 +67,7 @@ class Device(EmptyDevice):
         # Sequence parameters
         self.csv_file_path: str = "Path to file"
         self.measure_events: list[tuple[float, int, float]] = []  # list of tuples (measure_start, points, interval)
-        self.time_stamps: np.ndarray = np.array([])
+        self.time_increments_s: np.ndarray = np.array([])
         self.voltages: np.ndarray = np.array([])
 
         self.end_condition: str = "Repetitions"
@@ -173,14 +174,14 @@ class Device(EmptyDevice):
 
         pattern_name = f"sweepme_pattern_{self.channel}"
 
-        if self.time_stamps[0] != 0.0:
-            msg = f"Time stamps in the CSV file should start with 0.0, but got {self.time_stamps[0]}."
+        if self.time_increments_s[0] != 0.0:
+            msg = f"Time increments in the CSV file should start with 0.0, but got {self.time_increments_s[0]}."
             raise ValueError(msg)
 
         wgfmu.create_pattern(pattern_name, self.voltages[0])
         wgfmu.add_vector_array(
             pattern_name,
-            time_values=self.time_stamps[1:].tolist(),
+            time_values=self.time_increments_s[1:].tolist(),
             voltage_values=self.voltages[1:].tolist(),
         )
 
@@ -254,6 +255,10 @@ class Device(EmptyDevice):
         """Read the csv file and extract measurement events, time stamps and voltage values."""
         self.measure_events = []
 
+        if not self.csv_file_path or self.csv_file_path == "Path to file" or not Path(self.csv_file_path).is_file():
+            msg = f"CSV file path is not set or file does not exist: '{self.csv_file_path}'."
+            raise ValueError(msg)
+
         with open(self.csv_file_path, "r", encoding="utf-8") as fh:
             number_of_header_lines = 0
 
@@ -272,15 +277,23 @@ class Device(EmptyDevice):
                     self.measure_events.append([float(measure_start), int(points), float(interval)])
 
         data = np.genfromtxt(self.csv_file_path, delimiter=";", skip_header=number_of_header_lines)
-        self.time_stamps = data[:, 0]
+        self.time_increments_s = data[:, 0]
         self.voltages = data[:, 1]
+
+        if len(self.time_increments_s) == 0 or len(self.voltages) == 0:
+            msg = "No time increments or voltage values found in the CSV file."
+            raise ValueError(msg)
+
+        if len(self.time_increments_s) != len(self.voltages):
+            msg = f"Number of time increments ({len(self.time_increments_s)}) does not match number of voltage values ({len(self.voltages)})."
+            raise ValueError(msg)
 
     def calculate_repetitions(self) -> int:
         """Calculate the number of repetitions based on the end condition and end value."""
         if self.end_condition == "Repetitions":
             return int(float(self.end_value))
         elif self.end_condition == "Measurement time in s":  # "Measurement time in s"
-            pattern_length_s = self.time_stamps[-1]
+            pattern_length_s = np.sum(self.time_increments_s)
             count = float(self.end_value) / pattern_length_s  # round up to next integer
             return int(np.ceil(count))
         else:
