@@ -1,8 +1,8 @@
-# Agilent B1500 Driver
+# Keysight B1500 Driver
 
 ## Description
 
-This driver automates the waveform generation of WGFMU modules in the Agilent B1500 semiconductor parameter analyzer. 
+This driver automates the waveform generation of WGFMU modules in the Keysight B1500 semiconductor parameter analyzer. 
 It allows users to define custom pulse sequences and measurement events, which can be repeated for a specified number of 
 times or duration.
 
