@@ -27,7 +27,7 @@
 #
 # SweepMe! driver
 # * Module: Signal
-# * Instrument: Agilent B1500
+# * Instrument: Keysight B1500
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ from pywgfmu import wgfmu
 
 
 class Device(EmptyDevice):
-    """Driver for the Agilent B1500."""
+    """Driver for the Keysight B1500."""
 
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
