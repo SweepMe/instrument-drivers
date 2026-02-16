@@ -37,7 +37,7 @@ The CSV file must follow this structure:
 
 ### Important Notes
 
-- **First timestamp**: Must be 0 for the initial point
+- **First time increment**: Must be 0 for the initial point, representing the first timestamp of the sequence
 - **Time values**: Represent increments (time since the last point), not absolute times
 - **Time resolution**: 10ns minimum. Values below this will raise an error. Non-multiples of 10ns will be rounded
 - **Measurement repetition**: Measurement events are repeated for each sequence repetition. For example, 3 measurement events with 2 repetitions results in 6 total measurements
