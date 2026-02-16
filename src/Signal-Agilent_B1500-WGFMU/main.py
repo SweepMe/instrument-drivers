@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import numpy as np
@@ -58,15 +59,24 @@ class Device(EmptyDevice):
         self.port_string: str = ""
         self.port_manager = False # True
         self.port_types = ["GPIB"]
+        self.channel_string: str = "Slot 1, Channel 1"
         self.channel: int = 101
         self.is_master: bool = True
 
-        # Measurement parameters
-        self.measured_timestamps: list[float] = []
-        self.measured_voltages: list[float] = []
+        # Sequence parameters
+        self.csv_file_path: str = "Path to file"
         self.measure_events: list[tuple[float, int, float]] = []  # list of tuples (measure_start, points, interval)
         self.time_stamps: np.ndarray = np.array([])
         self.voltages: np.ndarray = np.array([])
+
+        self.end_condition: str = "Repetitions"
+        self.end_value: float = 1.0
+        self.scaling_mode: str = "No scaling"
+        self.scaling_value: float = 1.0
+
+        # Measured values
+        self.measured_timestamps: list[float] = []
+        self.measured_voltages: list[float] = []
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
@@ -77,11 +87,11 @@ class Device(EmptyDevice):
             "Channel": "Slot 1, Channel 1",
             "PeriodFrequency": ["Repetitions", "Measurement time in s"],
             "PeriodFrequencyValue": 1.0,
-            "AmplitudeHiLevel": ["Amplitude in V", "No Scaling"],
+            "AmplitudeHiLevel": ["Amplitude in V", "No scaling"],
             "AmplitudeHiLevelValue": 1.0,
             # "OffsetLoLevel": ['Offset in V', 'Low level in V'],
             # "OffsetLoLevelValue": 0.0,
-            # "DelayPhase": ['Delay in s', 'Phase in �'],
+            # "DelayPhase": ['Delay in s', 'Phase in °'],
             # "DelayPhaseValue": 0.0,
             # "DutyCyclePulseWidth": ['Duty cycle in %', 'Pulse width in s'],
             # "DutyCyclePulseWidthValue": 50.0,
@@ -91,7 +101,7 @@ class Device(EmptyDevice):
             # "TimeConstant": 1.0,
             # "OperationMode": ['None'],
             # "Impedance": ['Auto', 'High-Z', '50 Ohm'],
-            "Trigger": ['None', 'External', 'Internal'],
+            # "Trigger": ['None', 'External', 'Internal'],
             "ArbitraryWaveformFile": "Path to file",
         }
 
@@ -103,8 +113,8 @@ class Device(EmptyDevice):
         # self.waveform = parameters.get("Waveform", "Sine")
         self.end_condition = parameters.get("PeriodFrequency", "Repetitions")
         self.end_value = parameters.get("PeriodFrequencyValue", 1.0)
-        self.amplitudehilevel = parameters.get("AmplitudeHiLevel", "Amplitude in V")
-        self.amplitudehilevelvalue = parameters.get("AmplitudeHiLevelValue", 1.0)
+        self.scaling_mode = parameters.get("AmplitudeHiLevel", "No scaling")
+        self.scaling_value = parameters.get("AmplitudeHiLevelValue", 1.0)
         # self.offsetlolevel = parameters.get("OffsetLoLevel", "Offset in V")
         # self.offsetlolevelvalue = parameters.get("OffsetLoLevelValue", 0.0)
         # self.delayphase = parameters.get("DelayPhase", "Delay in s")
@@ -117,7 +127,7 @@ class Device(EmptyDevice):
         # self.timeconstant = parameters.get("TimeConstant", 1.0)
         # self.operationmode = parameters.get("OperationMode", "None")
         # self.impedance = parameters.get("Impedance", "Auto")
-        self.trigger = parameters.get("Trigger", "None")
+        # self.trigger = parameters.get("Trigger", "None")
         self.csv_file_path = parameters.get("ArbitraryWaveformFile", "Path to file")
 
     def connect(self) -> None:
@@ -126,10 +136,9 @@ class Device(EmptyDevice):
             # First instance, load the dll and connect to the device
             wgfmu.load_dll()
 
-            if True:
-                return
             wgfmu.open_session(self.port_string)
             wgfmu.initialize()
+            wgfmu.clear()  # clear any previous waveforms and sequences
             self.device_communication[self.port_string] = -1  # will be set to master channel in configure
 
         # retrieve slot and channel from channel_string
@@ -147,37 +156,20 @@ class Device(EmptyDevice):
 
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
-        if True:
-            return
         wgfmu.disconnect(self.channel)
         if self.port_string in self.device_communication:
             wgfmu.close_session()
             del self.device_communication[self.port_string]
 
-    def initialize(self) -> None:
-        """Initialize the device. This function is called only once at the start of the measurement."""
-
-    def deinitialize(self) -> None:
-        """Deinitialize the device. This function is called only once at the end of the measurement."""
-
-    def calculate_repetitions(self) -> int:
-        """Calculate the number of repetitions based on the end condition and end value."""
-        if self.end_condition == "Repetitions":
-            return int(float(self.end_value))
-        elif self.end_condition == "Measurement time in s":  # "Measurement time in s"
-            pattern_length_s = self.time_stamps[-1]
-            count = float(self.end_value) / pattern_length_s  # round up to next integer
-            return int(np.ceil(count))
-        else:
-            return 1
-
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         self.read_csv()
 
-        if self.amplitudehilevel == "Amplitude in V":
+        if self.scaling_mode == "Amplitude in V":
             # scale the voltage values to the specified amplitude while level
-            self.voltages *= self.amplitudehilevelvalue / np.max(np.abs(self.voltages))
+            max_voltage = np.max(np.abs(self.voltages))
+            if max_voltage != 0:
+                self.voltages *= float(self.scaling_value) / max_voltage
 
         pattern_name = f"sweepme_pattern_{self.channel}"
 
@@ -195,12 +187,16 @@ class Device(EmptyDevice):
         count = self.calculate_repetitions()
         wgfmu.add_sequence(self.channel, pattern_name, count=count)
 
+        # For long range box, there might be a different mode
+        wgfmu.set_operation_mode(self.channel, wgfmu.OperationMode.FASTIV)
+
         # Add measurement events
         for number, measurement_event in enumerate(self.measure_events):
             measure_start, points, interval = measurement_event
+            event_name = f"Event_{self.channel}_{number}"
             wgfmu.set_measure_event(
                 pattern_name,
-                event=f"Event_{self.channel}_{number}",
+                event=event_name,
                 start_time=measure_start,
                 points=points,
                 interval=interval,
@@ -208,16 +204,10 @@ class Device(EmptyDevice):
                 mode="average",
             )
 
-        # Other configurations
-        wgfmu.set_operation_mode(self.channel, wgfmu.OperationMode.FASTIV)
-
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
-        if self.device_communication[self.port_string] == self.channel:
+        if self.device_communication.get(self.port_string, -1) == self.channel:
             self.device_communication[self.port_string] = -1  # reset master channel when leaving the branch
-
-    def apply(self) -> None:
-        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
 
     def measure(self) -> None:
         """Perform the measurement."""
@@ -234,9 +224,20 @@ class Device(EmptyDevice):
             wgfmu.execute()
 
     def request_result(self) -> None:
-        """The master waits until the measurement is finished."""
-        if self.is_master:
-            wgfmu.wait_until_completed()
+        """Each channel waits until its status is not 'RUNNING'."""
+        while True:
+            if self.is_run_stopped():
+                break
+
+            status, elapsed_time, estimated_total_time = wgfmu.get_channel_status(self.channel)
+            if status != wgfmu.ChannelStatus.RUNNING:
+                break
+
+            if elapsed_time > 2 * estimated_total_time:
+                msg = f"Measurement is taking much longer than estimated (elapsed: {elapsed_time:.2f}s, estimated total: {estimated_total_time:.2f}s). Stopping measurement."
+                raise RuntimeError(msg)
+
+            time.sleep(0.5)
 
     def read_result(self) -> None:
         """Read the results."""
@@ -247,11 +248,13 @@ class Device(EmptyDevice):
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return [self.measured_timestamps, self.measured_voltages]
 
+    # Helper functions
+
     def read_csv(self) -> None:
         """Read the csv file and extract measurement events, time stamps and voltage values."""
         self.measure_events = []
 
-        with open("example.csv", "r", encoding="utf-8") as fh:
+        with open(self.csv_file_path, "r", encoding="utf-8") as fh:
             number_of_header_lines = 0
 
             while True:
@@ -268,7 +271,18 @@ class Device(EmptyDevice):
                     measure_start, points, interval = next_line.split(";")
                     self.measure_events.append([float(measure_start), int(points), float(interval)])
 
-        data = np.genfromtxt("example.csv", delimiter=";", skip_header=number_of_header_lines)
+        data = np.genfromtxt(self.csv_file_path, delimiter=";", skip_header=number_of_header_lines)
         self.time_stamps = data[:, 0]
         self.voltages = data[:, 1]
+
+    def calculate_repetitions(self) -> int:
+        """Calculate the number of repetitions based on the end condition and end value."""
+        if self.end_condition == "Repetitions":
+            return int(float(self.end_value))
+        elif self.end_condition == "Measurement time in s":  # "Measurement time in s"
+            pattern_length_s = self.time_stamps[-1]
+            count = float(self.end_value) / pattern_length_s  # round up to next integer
+            return int(np.ceil(count))
+        else:
+            return 1
 
