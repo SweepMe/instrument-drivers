@@ -42,8 +42,10 @@ def make_double_array(values: list[float] | None = None, len_: int = 0):
     """
     if isinstance(values, list):
         len_ = len(values)
+        return make_generic_array(len_, values_list=values, data_type=ctypes.c_double)
 
     return make_generic_array(len_, data_type=ctypes.c_double)
+
 
 # Initialization functions
 
