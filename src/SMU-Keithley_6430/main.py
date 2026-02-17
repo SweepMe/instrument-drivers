@@ -65,6 +65,9 @@ class Device(EmptyDevice):
         # Communication Parameters
         self.port_string: str = ""
         self.port_manager = True
+        self.port_properties = {
+            "timeout": 5,  # seconds
+        }
         self.port_types = ["GPIB", "COM", "TCPIP"]
 
         # Measurement parameters
@@ -126,7 +129,7 @@ class Device(EmptyDevice):
         try:
             self.speed = self.speeds[parameters.get("Speed", "Medium")]
         except KeyError:
-            self.speed = float(parameters.get("Speed", 1.0))
+            self.speed = float(parameters.get("Speed", -1.0))
 
         self.averages = int(float(parameters.get("Average", 1)))
 
