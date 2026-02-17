@@ -83,6 +83,7 @@ class Device(EmptyDevice):
         self.averages: int = 1
         self.measured_current: float = 0.0
         self.measured_voltage: float = 0.0
+        self.time_stamps: list[float] = []
 
         # Current range
         self.current_measurement_ranges: dict[str, float] = {"Auto": 0.0}
@@ -114,6 +115,18 @@ class Device(EmptyDevice):
             "RangeVoltage": list(self.voltage_measurement_ranges.keys()),
             "Speed": list(self.speeds.keys()),
             "Average": 1,
+
+            # List Mode Parameters
+            "ListSweepCheck": False,
+            "ListSweepType": ["Sweep", "Custom"],
+            "ListSweepStart": 0.5,
+            "ListSweepEnd": 1.0,
+            "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
+            "ListSweepStepPointsValue": 0.1,
+            "ListSweepCustomValues": "",
+            # "ListSweepDual": False,
+            "ListSweepHoldtime": 0.1,
+            "ListSweepDelaytime": 0.1,
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
@@ -132,6 +145,35 @@ class Device(EmptyDevice):
             self.speed = float(parameters.get("Speed", -1.0))
 
         self.averages = int(float(parameters.get("Average", 1)))
+
+        # Reset return variables
+        self.variables = ["Voltage", "Current"]
+        self.units = ["V", "A"]
+        self.plottype = [True, True]
+        self.savetype = [True, True]
+
+        print(parameters.get("SweepValue", "A"))
+        if parameters.get("SweepValue", "") == "List sweep":
+            self.list_mode = True
+            self.list_type = parameters.get("ListSweepType", "Sweep")
+
+            if self.list_type == "Sweep":
+                print("Sweep type selected")
+                self.list_start = parameters.get("ListSweepStart", 0.0)
+                self.list_end = parameters.get("ListSweepEnd", 1.0)
+                self.list_step_points_type = parameters.get("ListSweepStepPointsType", "Step width:")
+                self.list_step_points_value = parameters.get("ListSweepStepPointsValue", 0.)
+            elif self.list_type == "Custom":
+                print("Custom type selected")
+                self.list_custom_values = parameters.get("ListSweepCustomValues", "")
+
+            self.list_hold_time = parameters.get("ListSweepHoldtime", 0.1)
+            self.list_delay_time = parameters.get("ListSweepDelaytime", 0.1)
+
+            self.variables.append("Timestamp")
+            self.units.append("s")
+            self.plottype.append(True)
+            self.savetype.append(True)
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -155,21 +197,23 @@ class Device(EmptyDevice):
         if self.sweep_mode.startswith("Voltage"):
             self.set_compliance_current(self.compliance)
             self.set_current_measurement_range(self.current_measurement_range)
-            self.set_measurement_speed("CURR", self.speed)
-
-            self.port.write("SOURce:VOLTage:MODE FIXed")  # Alternative: list, sweep
+            if not self.list_mode:
+                self.port.write("SOURce:VOLTage:MODE FIXed")  # Alternative: list, sweep
 
         elif self.sweep_mode.startswith("Current"):
             self.set_compliance_voltage(self.compliance)
             self.set_voltage_measurement_range(self.voltage_measurement_range)
-            self.set_measurement_speed("VOLT", self.speed)
 
-            self.port.write("SOURce:CURRent:MODE FIXed")  # Alternative: list, sweep
+            if not self.list_mode:
+                self.port.write("SOURce:CURRent:MODE FIXed")  # Alternative: list, sweep
+
+        self.set_measurement_speed("CURR", self.speed)
+        self.set_measurement_speed("VOLT", self.speed)
 
         self.port.write("SENSe:FUNCtion:OFF:ALL")  # reset measurement functions
         self.set_measurement_functions(["VOLT", "CURR"])
 
-        self.port.query(":SENSe:FUNCtion:ON?")
+        # self.port.query(":SENSe:FUNCtion:ON?")
 
         if self.averages < 1 or self.averages > 100:
             msg = f"Invalid average: {self.averages}. Averages must be between 1 and 100"
@@ -181,8 +225,62 @@ class Device(EmptyDevice):
         else:
             self.port.write(":SENSe:AVERage:STATe OFF")
 
+        if self.list_mode:
+            self.configure_list_mode()
+
+    def configure_list_mode(self) -> None:
+        """Configure list mode parameters."""
+        source_type = "VOLT" if self.sweep_mode.startswith("Voltage") else "CURR"
+        if self.list_type == "Sweep":
+            self.port.write(f"SOURce:{source_type}:MODE SWEep")
+            self.port.write(f":SOURce:{source_type}:STARt {self.list_start}")
+            self.port.write(f":SOURce:{source_type}:STOP {self.list_end}")
+
+            if self.list_step_points_type == "Step width:":
+                self.port.write(f":SOURce:{source_type}:STEP {self.list_step_points_value}")
+            else:  # Linear or logarithmic points
+                spacing = "LINear" if self.list_step_points_type == "Points (lin.):" else "LOGarithmic"
+                self.port.write(f":SOURce:SWEep:SPACing {spacing}")
+                self.port.write(f":SOURce:SWEep:POINts {self.list_step_points_value}")
+
+            number_of_points = self.port.query(f":SOURce:SWEep:POINts?")
+
+        else:  # self.list_type == "Custom"
+            self.port.write(f":SOURce:{source_type}:MODE LIST")
+            # ensure that custom values are formatted as comma-separated list
+            custom_values_list = [v.strip() for v in self.list_custom_values.split(",")]
+            for value in custom_values_list:
+                try:
+                    float(value)  # validate that each value can be parsed as float
+                except ValueError:
+                    raise ValueError(f"Invalid custom list value: '{value}' is not a number")
+
+            number_of_points = len(custom_values_list)
+            if number_of_points > 100:
+                msg = f"Too many points in custom list: {number_of_points}. Maximum is 100."
+                # TODO: more than 100 points can be set by appending to an existing list
+                raise ValueError(msg)
+
+            self.port.write(f":SOURce:LIST:{source_type} {self.list_custom_values}")
+
+        # Source ranging
+        self.port.write(f":SOURce:SWEep:RANGing AUTO")
+
+        # Number of triggers
+        self.port.write(f"TRIGger:COUNt {number_of_points}")
+
+        # Source delay
+        self.port.write(f":SOURce:DELay {self.list_delay_time}")
+
+        # Trigger delay
+        trigger_delay = self.list_hold_time if self.list_hold_time else "AUTO"
+        self.port.write(f":TRIGger:DELay {trigger_delay}")
+
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        if self.list_mode:
+            return
+
         if self.sweep_mode.startswith("Voltage"):
             self.set_voltage(self.value)
         elif self.sweep_mode.startswith("Current"):
@@ -206,32 +304,43 @@ class Device(EmptyDevice):
         """Read the measured data from a buffer that was requested during 'request_result'."""
         # When using FETCh?, the response is a comma-separated list of values:
         # voltage, current, resistance, time_stamp, status code
-        results = self.port.read()
-        values = results.split(",")
-        self.measured_voltage = float(values[0])
-        self.measured_current = float(values[1])
+        if self.list_mode:
+            results = self.port.read()
+            # the results should be multiples of 5 values (voltage, current, resistance, time_stamp, status code)
+            values = [float(res) for res in results.split(",")]
+            self.measured_voltage = values[0::5]
+            self.measured_current = values[1::5]
+            self.time_stamps = values[3::5]
 
-        if self.measured_voltage >= 9.9E37:
-            self.measured_voltage = float("nan")
-        if self.measured_current >= 9.9E37:
-            self.measured_current = float("nan")
+        else:
+            results = self.port.read()
+            values = results.split(",")
+            self.measured_voltage = float(values[0])
+            self.measured_current = float(values[1])
 
-        status_int = int(float(values[4]))
-        # Extract 24 bits
-        bits = [(status_int >> i) & 1 for i in range(24)]
-        status_bits = {
-            0: "Over range",
-            # 1: "Filter enabled",  # no error
-            3: "In compliance",  # 2 is not used
-            4: "Over voltage protection reached",
-            16: "In range compliance"
-        }
-        for bit_index, description in status_bits.items():
-            if bits[bit_index]:
-                print(f"Measurement status: {description}")
+            if self.measured_voltage >= 9.9E37:
+                self.measured_voltage = float("nan")
+            if self.measured_current >= 9.9E37:
+                self.measured_current = float("nan")
+
+            status_int = int(float(values[4]))
+            # Extract 24 bits
+            bits = [(status_int >> i) & 1 for i in range(24)]
+            status_bits = {
+                0: "Over range",
+                # 1: "Filter enabled",  # no error
+                3: "In compliance",  # 2 is not used
+                4: "Over voltage protection reached",
+                16: "In range compliance"
+            }
+            for bit_index, description in status_bits.items():
+                if bits[bit_index]:
+                    print(f"Measurement status: {description}")
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
+        if self.list_mode:
+            return [self.measured_voltage, self.measured_current, self.time_stamps]
         return [self.measured_voltage, self.measured_current]
     
     # Wrapped Functions
