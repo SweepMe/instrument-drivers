@@ -44,8 +44,8 @@ from pysweepme.ErrorMessage import error
 # Import Kinesis dll
 kinesis_imported = False
 
-bitness = 64 if sys.maxsize > 2**32 else 32
-kinesis_path = "C:\\Program Files\\Thorlabs\\Kinesis" # if bitness == 64 else "C:\\Program Files (x86)\\Thorlabs\\Kinesis"
+bitness = 64 if sys.maxsize > 2 ** 32 else 32
+kinesis_path = "C:\\Program Files\\Thorlabs\\Kinesis"  # if bitness == 64 else "C:\\Program Files (x86)\\Thorlabs\\Kinesis"
 try:
     if kinesis_path not in sys.path:
         sys.path.insert(0, kinesis_path)
@@ -83,6 +83,7 @@ class Device(EmptyDevice):
                     <li>When using circle diameter, the value must be a float representing the diameter in NT Units.</li>
                     <li>Home position: The home position in NT units, e.g. "1.0,1.0". If empty, the home position will not be updated and the device will not move to Home in the configure step.</li>
                     <li>Axes can be used to move NanoTrak after latching.</li>
+                    <li>Tracking: if true, tracking is performed after moving to horizontal and vertical position in apply. If false, position will only be set to Horizontal/Vertical.</li>
                     <li>When the horizontal or vertical value is outside of the devices movement range (0-10), the home position will not be updated. This can used to remain at the optimum position after tracking</li>
                     </ul>
                     """
@@ -134,6 +135,9 @@ class Device(EmptyDevice):
             "Vertical": {
                 "Value": 0.0,
             },
+            "Tracking": {
+                "Value": "True",
+            },
         }
 
         # Feedback sources
@@ -152,12 +156,13 @@ class Device(EmptyDevice):
         self.reading_mode: str = "Absolute"  # Can be "Absolute", "Relative", or "None"
         self.home_position_string: str = "1.0,1.0"
         self.go_home_at_start: bool = False
-        self.circle_diameter_string: str =  "1"
+        self.circle_diameter_string: str = "1"
         self.frequency: str = "100"
         self.gain: str = "1"
-        self.open_loop: bool = True  # True for open loop, False for closed loop
+        self.control_mode: bool = True  # True for open loop, False for closed loop
         self.horizontal_phase_compensation: str = "0"  # in deg
         self.vertical_phase_compensation: str = "0"  # in deg
+        self.tracking_mode: str = "Both"
         self.tracking_time_string: str = "10"
         self.debug_while_tracking: bool = False
 
@@ -182,22 +187,26 @@ class Device(EmptyDevice):
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         new_parameters = {
-            "Home position": "1.0,1.0",
-            "Circle diameter in NT": "1",
-            "Tracking time in s": "10",
-            "Feedback Source": list(self.feedback_sources.keys()),
             "Channel": ["1", "2", "1,2"],
+            "GoHomeStart": False,
+
+            "Tracking mode": ["Horizontal", "Vertical", "Both"],
+            "Tracking time in s": "10",
+            "Circle diameter in NT": "1",
+            "Home position": "1.0,1.0",
+
+            "": None,  # Separator
+            "Feedback Source": list(self.feedback_sources.keys()),
             "Frequency in samples/rev": 100.,
             "Gain": 1,
             "Control mode": ["Open Loop", "Closed Loop"],
-
             "Horizontal phase compensation in °": 0.,
             "Vertical phase compensation in °": 0.,
 
-            "Simulation": False,
-            "Debug while Tracking": False,
+            " ": None,  # Separator
             "Modular Rack": False,
-            "GoHomeStart": False,
+            "Debug while Tracking": False,
+            "Simulation": False,
         }
 
         if parameters.get("Modular Rack", False):
@@ -208,25 +217,26 @@ class Device(EmptyDevice):
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Apply the parameters received from the SweepMe GUI or the pysweepme instance to the driver instance."""
         self.serial_number = parameters.get("Port", "")
-        self.home_position_string = parameters.get("Home position", "1.0,1.0")
-        self.go_home_at_start = parameters.get("GoHomeStart", False)
-        self.circle_diameter_string = parameters.get("Circle diameter in NT", "1")
-        self.feedback_source = parameters.get("Feedback Source", "10V BNC")
         self.channel = parameters.get("Channel", "1")
+        self.go_home_at_start = parameters.get("GoHomeStart", False)
+
+        self.tracking_mode = parameters.get("Tracking mode", "Both")
+        self.tracking_time_string = parameters.get("Tracking time in s", 10)
+        self.circle_diameter_string = parameters.get("Circle diameter in NT", "1")
+        self.home_position_string = parameters.get("Home position", "1.0,1.0")
+
+        self.feedback_source = parameters.get("Feedback Source", "10V BNC")
         self.frequency = parameters.get("Frequency in samples/rev", "100")
         self.gain = parameters.get("Gain", "1.0")
-        self.open_loop = "open" in parameters.get("Control mode", "Open Loop").lower()
+        self.control_mode = "open" in parameters.get("Control mode", "Open Loop").lower()
         self.horizontal_phase_compensation = parameters.get("Horizontal phase compensation in °", "0.")
         self.vertical_phase_compensation = parameters.get("Vertical phase compensation in °", "0.")
-
-        self.tracking_time_string = parameters.get("Tracking time in s", 10)
-        self.debug_while_tracking = parameters.get("Debug while Tracking", False)
-
-        self.is_simulation = parameters.get("Simulation", False)
 
         self.is_modular_rack = parameters.get("Modular Rack", False)
         if self.is_modular_rack:
             self.bay = parameters.get("Bay", 1)
+        self.debug_while_tracking = parameters.get("Debug while Tracking", False)
+        self.is_simulation = parameters.get("Simulation", False)
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
@@ -288,7 +298,6 @@ class Device(EmptyDevice):
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
         if not self.nanotrak:
-            print(f"self.nanotrak {self.nanotrak} is not")
             return
 
         self.nanotrak.StopPolling()
@@ -317,30 +326,26 @@ class Device(EmptyDevice):
         self.nanotrak.EnableDevice()
         time.sleep(0.5)
 
-    def configure(self) -> None:
-        """Configure the device. This function is called only once at the start of the measurement."""
         # Unsure why, but when using a modular rack, there is a difference between rack.GetNanoTrakChannel and rack[bay].
         if self.is_modular_rack:
             self.nanotrak_channel = self.rack.GetNanoTrakChannel(int(self.bay))
         else:
             self.nanotrak_channel = self.nanotrak
 
-        try:
-            tracking_time = float(self.tracking_time_string)
-        except ValueError as e:
-            msg = f"Invalid tracking time: {self.tracking_time_string}. Expected a float value."
-            raise ValueError(msg) from e
+        # Start in latch mode before changing any configuration to avoid unwanted movements
+        self.latch()
 
-        # Configure NanoTrak
+    def configure(self) -> None:
+        """Configure the device. This function is called only once at the start of the measurement."""
         DeviceSettingsUseOptionType = DeviceManagerCLI.DeviceConfiguration.DeviceSettingsUseOptionType
-        nanoTrakConfiguration = self.nanotrak_channel.GetNanoTrakConfiguration(self.serial_number, DeviceSettingsUseOptionType.UseConfiguredSettings)
-        currentDeviceSettings = self.nanotrak_channel.NanoTrakDeviceSettings
-        currentDeviceSettings = self.handle_phase_compensation(currentDeviceSettings)
+        nanoTrakConfiguration = self.nanotrak_channel.GetNanoTrakConfiguration(
+            self.serial_number,
+           DeviceSettingsUseOptionType.UseConfiguredSettings
+        )
 
-        self.nanotrak_channel.GetSettings(currentDeviceSettings)
         NanoTrakStatusBase = GenericNanoTrakCLI.NanoTrakStatusBase
-
-        self.set_control_mode(self.open_loop)
+        self.handle_phase_compensation()
+        self.set_control_mode(self.control_mode)
 
         for channel in ["1", "2"]:
             enable = channel in self.channel
@@ -357,7 +362,7 @@ class Device(EmptyDevice):
                 raise ValueError(msg) from e
             self.set_gain(gain)
 
-        self.nanotrak_channel.SetSettings(currentDeviceSettings, False)
+        self.nanotrak_channel.SetSettings(self.nanotrak_channel.NanoTrakDeviceSettings, False)
 
         # Set feedback source. This has to be done after all other settings are applied
         self.nanotrak_channel.SetFeedbackSource(self.feedback_sources[self.feedback_source])
@@ -370,37 +375,8 @@ class Device(EmptyDevice):
             else:
                 self.go_home()
 
-        # Allow comma separated values for multiple trackings
-        diameter_list = self.circle_diameter_string.split(",")
-        for diameter in diameter_list:
-            # we latch before changing the diameter
-            self.nanotrak_channel.SetMode(NanoTrakStatusBase.OperatingModes.Latch)
-            self.set_circle_diameter(float(diameter))
-            self.track()
-
-            # tracking time
-            remaining_tracking_time = tracking_time
-            while remaining_tracking_time > 0:
-                if self.is_run_stopped():
-                    break
-
-                # Check position
-                horizontal_position, vertical_position = self.get_current_position()
-                self.debug(f"{horizontal_position}, {vertical_position}")
-
-                wait_time = min(remaining_tracking_time, 0.5)
-                time.sleep(wait_time)
-                remaining_tracking_time -= wait_time
-
-            # Latch after tracking is finished
-            self.latch()
-
-            # TODO: Check if position is too close to the edges
-
-        print("NanoTrak finished configuration.")
-
     def apply(self) -> None:
-        """Apply the axis movements after latching. Do not move if the value is out of range (0-10)."""
+        """Apply the axis movements, but do not move if the value is out of range (0-10). Perform tracking if activated."""
         current_horizontal_position, current_vertical_position = self.get_current_position()
         if "Horizontal" in self.sweepvalues and self.sweepvalues["Horizontal"]:
             horizontal_value = float(self.sweepvalues["Horizontal"])
@@ -419,11 +395,16 @@ class Device(EmptyDevice):
         if (horizontal_value != current_horizontal_position) or (vertical_value != current_vertical_position):
             self.set_home_and_go_home(horizontal_value, vertical_value)
 
+        if "Tracking" in self.sweepvalues and self.sweepvalues["Tracking"].lower() in ["true", "1", "yes"]:
+            self.perform_tracking_routine()
+
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         horizontal, vertical = self.get_current_position()
         reading = self.get_reading()
         return [horizontal, vertical, reading]
+
+    # NanoTrak functions
 
     def list_devices(self, nanotrak_type: str = "") -> list[str]:
         """Lists all devices.
@@ -452,19 +433,41 @@ class Device(EmptyDevice):
 
         return [str(serial_num) for serial_num in device_list]
 
-    def determine_nanotrak_type(self, serial_number: str) -> str:
-        """Determine the device type based on the serial number prefix."""
-        if self.is_modular_rack:
-            # TODO: Add prefix
-            return "modular_rack"
+    def perform_tracking_routine(self) -> None:
+        """Perform a tracking routine with the current settings."""
+        try:
+            tracking_time = float(self.tracking_time_string)
+        except ValueError as e:
+            msg = f"Invalid tracking time: {self.tracking_time_string}. Expected a float value."
+            raise ValueError(msg) from e
 
-        for supported_type, prefix in self.device_prefixes.items():
-            if serial_number.startswith(str(prefix)):
-                return supported_type
+        # Allow comma separated values for multiple trackings
+        diameter_list = self.circle_diameter_string.split(",")
+        for diameter in diameter_list:
+            # we latch before changing the diameter
+            self.latch()
+            self.set_circle_diameter(float(diameter))
+            self.track()  # either horizontal, vertical, or both depending on the settings
 
-        return "Unknown"
+            # tracking time
+            remaining_tracking_time = tracking_time
+            while remaining_tracking_time > 0:
+                if self.is_run_stopped():
+                    break
 
-    # Utility functions
+                # Check position
+                horizontal_position, vertical_position = self.get_current_position()
+                self.debug(f"{horizontal_position}, {vertical_position}")
+
+                wait_time = min(remaining_tracking_time, 0.5)
+                time.sleep(wait_time)
+                remaining_tracking_time -= wait_time
+
+        # Latch after tracking is finished
+        self.latch()
+
+        # TODO: Check if position is too close to the edges
+        self.debug("NanoTrak finished configuration.")
 
     def import_device_dlls(self, nanotrak_type: str) -> None:
         """Import the device specific Kinesis .NET dll based on the device type."""
@@ -493,6 +496,8 @@ class Device(EmptyDevice):
             msg = f"Unknown device type: {nanotrak_type}. Supported prefixes (first two numbers) are: {', '.join(self.device_prefixes.values())}."
             raise ValueError(msg)
 
+    # Utility functions
+
     def create_nanotrak(self, serial_number: str, nanotrak_type: str) -> GenericNanoTrakCLI.GenericNanoTrak:
         """Create a nanotrak instance based on the serial number and device type."""
         if nanotrak_type == "benchtop":
@@ -520,6 +525,18 @@ class Device(EmptyDevice):
 
         return self.nanotrak
 
+    def determine_nanotrak_type(self, serial_number: str) -> str:
+        """Determine the device type based on the serial number prefix."""
+        if self.is_modular_rack:
+            # TODO: Add prefix
+            return "modular_rack"
+
+        for supported_type, prefix in self.device_prefixes.items():
+            if serial_number.startswith(str(prefix)):
+                return supported_type
+
+        return "Unknown"
+
     @staticmethod
     def set_simulation_mode(state: bool) -> None:
         """Set the simulation mode for the device."""
@@ -538,28 +555,6 @@ class Device(EmptyDevice):
         return self.nanotrak.GetDeviceInfo().SerialNumber
 
     # Wrapper Functions
-
-    def handle_phase_compensation(self, currentDeviceSettings):
-        """Handle the horizontal and vertical phase compensation settings."""
-        if self.horizontal_phase_compensation:
-            try:
-                horizontal_phase = float(self.horizontal_phase_compensation)
-            except ValueError as e:
-                msg = f"Invalid horizontal phase compensation: {self.horizontal_phase_compensation}. Expected a float value."
-                raise ValueError(msg) from e
-
-            currentDeviceSettings.Tracking.HorizontalPhaseCompensation = horizontal_phase
-
-        if self.vertical_phase_compensation:
-            try:
-                vertical_phase = float(self.vertical_phase_compensation)
-            except ValueError as e:
-                msg = f"Invalid vertical phase compensation: {self.vertical_phase_compensation}. Expected a float value."
-                raise ValueError(msg) from e
-
-            currentDeviceSettings.Tracking.VerticalPhaseCompensation = vertical_phase
-
-        return currentDeviceSettings
 
     def get_current_position(self) -> tuple[float, float]:
         """Get the current circular position and signal strength at the current position."""
@@ -589,6 +584,7 @@ class Device(EmptyDevice):
 
     def set_home_and_go_home(self, horizontal: float, vertical: float) -> None:
         """Set the home position and go there."""
+        self.latch()
         self.set_home(horizontal, vertical)
         self.go_home()
 
@@ -603,7 +599,12 @@ class Device(EmptyDevice):
 
     def track(self) -> None:
         """Set the mode to tracking."""
-        self.nanotrak_channel.SetMode(GenericNanoTrakCLI.NanoTrakStatusBase.OperatingModes.Tracking)
+        if self.tracking_mode == "Both":
+            self.nanotrak_channel.SetMode(GenericNanoTrakCLI.NanoTrakStatusBase.OperatingModes.Tracking)
+        elif self.tracking_mode == "Horizontal":
+            self.nanotrak_channel.SetMode(GenericNanoTrakCLI.NanoTrakStatusBase.OperatingModes.HorizontalTracking)
+        elif self.tracking_mode == "Vertical":
+            self.nanotrak_channel.SetMode(GenericNanoTrakCLI.NanoTrakStatusBase.OperatingModes.VerticalTracking)
         self.debug("NanoTrak set to Tracking mode.")
 
     def set_circle_diameter(self, diameter: float) -> None:
@@ -611,6 +612,24 @@ class Device(EmptyDevice):
         self.nanotrak_channel.SetCircleDiameter(diameter)
         self.debug(f"Set circle diameter to {diameter}")
         time.sleep(0.5)  # Optional: wait for device to update
+
+    def handle_phase_compensation(self):
+        """Handle the horizontal and vertical phase compensation settings."""
+        if self.horizontal_phase_compensation:
+            try:
+                horizontal_phase = float(self.horizontal_phase_compensation)
+            except ValueError as e:
+                msg = f"Invalid horizontal phase compensation: {self.horizontal_phase_compensation}. Expected a float value."
+                raise ValueError(msg) from e
+            self.nanotrak_channel.NanoTrakDeviceSettings.Tracking.set_HorizontalPhaseCompensation(horizontal_phase)
+
+        if self.vertical_phase_compensation:
+            try:
+                vertical_phase = float(self.vertical_phase_compensation)
+            except ValueError as e:
+                msg = f"Invalid vertical phase compensation: {self.vertical_phase_compensation}. Expected a float value."
+                raise ValueError(msg) from e
+            self.nanotrak_channel.NanoTrakDeviceSettings.Tracking.set_VerticalPhaseCompensation(vertical_phase)
 
     def set_frequency(self, frequency: float) -> None:
         """Set the circle frequency in samples per revolution.
@@ -648,7 +667,7 @@ class Device(EmptyDevice):
             msg = f"Invalid channel number: {channel_number}. Valid channel numbers are 1 and 2."
             raise ValueError(msg)
 
-        self.nanotrak_channel.SetSettings(self.nanotrak_channel.NanoTrakDeviceSettings, False)
+        # self.nanotrak_channel.SetSettings(self.nanotrak_channel.NanoTrakDeviceSettings, False)
 
     def set_control_mode(self, open_loop: bool = True) -> None:
         """Set the control mode (1: Open loop, 2: Closed loop)."""
