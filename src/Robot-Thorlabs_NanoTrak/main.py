@@ -62,32 +62,6 @@ else:
 
 class Device(EmptyDevice):
     """Device class to implement functionalities of Thorlabs NanoTrak via Kinesis."""
-    description = """
-                    <h3>Thorlabs NanoTrak</h3>
-                    This drivers implements the functionalities of the Thorlabs NanoTrak devices via Kinesis. NanoTrak
-                    comes in three different versions: Benchtop, TCube, and KCube. The driver detects the device type
-                    automatically based on the serial number prefix.
-                    The driver detects the optimum position during 'configure', and does not require a set value.
-
-                    <p>Setup:</p>
-                    <ul>
-                    <li>Install Kinesis</li>
-                    <li>Kinesis must be closed when running this driver.</li>
-                    </ul>
-
-                    <p>Parameters:</p>
-                    <ul>
-                    <li>Reading: Return the reading as absolute, relative, or not.</li>
-                    <li>When using center position, the value must be a string with two values separated by a semicolon,
-                     e.g. "5;2" for horizontal and vertical position.</li>
-                    <li>When using circle diameter, the value must be a float representing the diameter in NT Units.</li>
-                    <li>Home position: The home position in NT units, e.g. "1.0,1.0". If empty, the home position will not be updated and the device will not move to Home in the configure step.</li>
-                    <li>Axes can be used to move NanoTrak after latching.</li>
-                    <li>Tracking: if true, tracking is performed after moving to horizontal and vertical position in apply. If false, position will only be set to Horizontal/Vertical.</li>
-                    <li>When the horizontal or vertical value is outside of the devices movement range (0-10), the home position will not be updated. This can used to remain at the optimum position after tracking</li>
-                    </ul>
-                    """
-
     actions = ["latch", "track"]  # Enables the latch and track actions in the GUI
 
     def __init__(self) -> None:
