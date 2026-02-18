@@ -105,6 +105,17 @@ class Device(EmptyDevice):
         }
         self.voltage_measurement_range: str = "Auto"
 
+        # List Mode
+        self.list_mode: bool = False
+        self.list_type: str = "Sweep"
+        self.list_start: float = 0.0
+        self.list_end: float = 1.0
+        self.list_step_points_type: str = "Step width:"
+        self.list_step_points_value: float = 0.0
+        self.list_custom_values: str = ""  # comma separated list of values for custom list mode
+        self.list_hold_time: float = 0.1
+        self.list_delay_time: float = 0.1
+
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         del parameters
@@ -142,7 +153,7 @@ class Device(EmptyDevice):
         try:
             self.speed = self.speeds[parameters.get("Speed", "Medium")]
         except KeyError:
-            self.speed = float(parameters.get("Speed", -1.0))
+            self.speed = float(parameters.get("Speed", 1.0))
 
         self.averages = int(float(parameters.get("Average", 1)))
 
@@ -152,19 +163,17 @@ class Device(EmptyDevice):
         self.plottype = [True, True]
         self.savetype = [True, True]
 
-        print(parameters.get("SweepValue", "A"))
         if parameters.get("SweepValue", "") == "List sweep":
             self.list_mode = True
             self.list_type = parameters.get("ListSweepType", "Sweep")
 
             if self.list_type == "Sweep":
-                print("Sweep type selected")
                 self.list_start = parameters.get("ListSweepStart", 0.0)
                 self.list_end = parameters.get("ListSweepEnd", 1.0)
                 self.list_step_points_type = parameters.get("ListSweepStepPointsType", "Step width:")
                 self.list_step_points_value = parameters.get("ListSweepStepPointsValue", 0.)
-            elif self.list_type == "Custom":
-                print("Custom type selected")
+
+            else:  # Custom"
                 self.list_custom_values = parameters.get("ListSweepCustomValues", "")
 
             self.list_hold_time = parameters.get("ListSweepHoldtime", 0.1)
@@ -231,7 +240,13 @@ class Device(EmptyDevice):
     def configure_list_mode(self) -> None:
         """Configure list mode parameters."""
         source_type = "VOLT" if self.sweep_mode.startswith("Voltage") else "CURR"
+
         if self.list_type == "Sweep":
+            # Type conversions
+            self.list_start = float(self.list_start)
+            self.list_end = float(self.list_end)
+            self.list_step_points_value = float(self.list_step_points_value)
+
             self.port.write(f"SOURce:{source_type}:MODE SWEep")
             self.port.write(f":SOURce:{source_type}:STARt {self.list_start}")
             self.port.write(f":SOURce:{source_type}:STOP {self.list_end}")
@@ -243,7 +258,7 @@ class Device(EmptyDevice):
                 self.port.write(f":SOURce:SWEep:SPACing {spacing}")
                 self.port.write(f":SOURce:SWEep:POINts {self.list_step_points_value}")
 
-            number_of_points = self.port.query(f":SOURce:SWEep:POINts?")
+            number_of_points = int(self.port.query(f":SOURce:SWEep:POINts?"))
 
         else:  # self.list_type == "Custom"
             self.port.write(f":SOURce:{source_type}:MODE LIST")
@@ -270,10 +285,10 @@ class Device(EmptyDevice):
         self.port.write(f"TRIGger:COUNt {number_of_points}")
 
         # Source delay
-        self.port.write(f":SOURce:DELay {self.list_delay_time}")
+        self.port.write(f":SOURce:DELay {float(self.list_delay_time)}")
 
         # Trigger delay
-        trigger_delay = self.list_hold_time if self.list_hold_time else "AUTO"
+        trigger_delay = float(self.list_hold_time) if self.list_hold_time else "AUTO"
         self.port.write(f":TRIGger:DELay {trigger_delay}")
 
     def apply(self) -> None:
@@ -337,7 +352,7 @@ class Device(EmptyDevice):
                 if bits[bit_index]:
                     print(f"Measurement status: {description}")
 
-    def call(self) -> list[float]:
+    def call(self) -> list[float] | list[list[float]]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         if self.list_mode:
             return [self.measured_voltage, self.measured_current, self.time_stamps]
