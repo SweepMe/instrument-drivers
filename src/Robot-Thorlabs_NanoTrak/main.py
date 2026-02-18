@@ -369,6 +369,8 @@ class Device(EmptyDevice):
         if (horizontal_value != current_horizontal_position) or (vertical_value != current_vertical_position):
             self.set_home_and_go_home(horizontal_value, vertical_value)
 
+    def reach(self) -> None:
+        """Perform tracking if activated."""
         if "Tracking" in self.sweepvalues and self.sweepvalues["Tracking"].lower() in ["true", "1", "yes"]:
             self.perform_tracking_routine()
 
