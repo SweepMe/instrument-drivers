@@ -31,8 +31,8 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
-
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -127,14 +127,10 @@ class Device(EmptyDevice):
 
         self.high_impedance_mode = parameters.get("High impedance mode", False)
 
-    def connect(self) -> None:
-        """Connect to the device. This function is called only once at the start of the measurement."""
-        version = self.port.query("version")
-        print(f"Device version: {version}")
-
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
-        self.port.write("reset")
+        # Do not call 'reset' here, because it performs a hard reset of the device which also disconnects the communication
+        # self.port.write("reset")
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -176,11 +172,12 @@ class Device(EmptyDevice):
 
     def call(self) -> list:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        response = self.port.query(f"{self.channel} measure")
+        response = self.port.query(f"{self.channel} measure 1")
+
         try:
             voltage, current = response.split(",")
-            voltage = float(voltage)
-            current = float(current)
+            voltage = float(voltage.strip("["))
+            current = float(current.strip("]"))
         except ValueError as e:
             msg = f"Invalid response from the device: {response}. Expected format: 'voltage,current'. Error: {e}"
             raise ValueError(msg)
@@ -226,3 +223,7 @@ class Device(EmptyDevice):
     def set_voltage(self, voltage: float) -> None:
         """Set the output voltage."""
         self.port.write(f"{self.channel} set voltage {voltage}")
+
+    def get_identification(self) -> str:
+        """Get the device identification."""
+        return self.port.query("version")
