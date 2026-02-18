@@ -38,6 +38,7 @@ import time
 from typing import Any
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme import debug
 
 
 class Device(EmptyDevice):
@@ -94,7 +95,6 @@ class Device(EmptyDevice):
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
-        # Use typing.Union for compatibility with type checkers that don't support `|` on types
         new_parameters = {
             "SweepMode": ["None", "Concentration 2 in Vol%", "Concentration 3 in Vol%", "Total flow in NmL/min"],
         }
@@ -211,10 +211,14 @@ class Device(EmptyDevice):
                 msg = "Timeout while waiting for the GMS to read previous setpoints."
                 raise TimeoutError(msg)
 
-            with open(self.extern_file, "r", encoding="ascii", errors="ignore") as f:
-                content = f.read().strip()
-                if not content:
-                    break  # extern.txt is empty
+            try:
+                with open(self.extern_file, "r", encoding="ascii", errors="ignore") as f:
+                    content = f.read().strip()
+                    if not content:
+                        break  # extern.txt is empty
+            except Exception as e:
+                msg = f"Error while reading {self.extern_file}. Ensure the file exists and is accessible. Error details: {e}"
+                debug(msg)
 
             time.sleep(0.02)
 
@@ -224,8 +228,19 @@ class Device(EmptyDevice):
         """Write the given setpoints to extern.txt."""
         # The device expects a single-line token like "c_<c2>d_<c3>v_<flow>e".
         command = f"c_{concentration_2}d_{concentration_3}v_{total_flow}e"
-        with open(self.extern_file, "w", encoding="ascii") as f:
-            f.write(command)
+
+        number_of_retries = 3
+        while number_of_retries > 0:
+            try:
+                with open(self.extern_file, "w", encoding="ascii") as f:
+                    f.write(command)
+                break  # Successfully wrote to the file, exit the loop
+            except Exception as e:
+                msg = f"Error while writing to {self.extern_file}. Ensure the file is accessible and not locked by another process. Error details: {e}"
+                debug(msg)
+
+            time.sleep(0.05)
+            number_of_retries -= 1
 
     def wait_for_confirmation(self) -> None:
         """Wait until the device has confirmed to the new set points."""
@@ -270,8 +285,24 @@ class Device(EmptyDevice):
         if not os.path.exists(self.zeit_file):
             return ""
 
-        with open(self.zeit_file, "r", encoding="ascii", errors="ignore") as f:
-            lines = f.readlines()
+        # Retry reading the file a few times in case it's temporarily locked by the GMS software
+        number_of_retries = 3
+        while number_of_retries > 0:
+            try:
+                with open(self.zeit_file, "r", encoding="ascii", errors="ignore") as f:
+                    lines = f.readlines()
+                    # ensure that the last line is complete (i.e. ends with a newline character), otherwise it might be
+                    # currently written by the GMS software and not yet complete
+                    if lines and not lines[-1].endswith("\n\r"):
+                        lines = lines[:-1]
+                        break
+
+            except Exception as e:
+                msg = f"Error while reading {self.zeit_file}. Ensure the file is accessible and not locked by another process. Error details: {e}"
+                debug(msg)
+
+            time.sleep(0.05)
+            number_of_retries -= 1
 
         if not lines:
             return ""
