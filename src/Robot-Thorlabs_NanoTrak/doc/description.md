@@ -17,7 +17,7 @@ This driver can be used to control the **horizontal** and **vertical** position 
 - Insert numbers into the **Axes fields** for `Horizontal` and `Vertical` positions. Valid range is **0 to 10 NT units**.
 - The driver performs automatic **latching** before tracking to ensure stable position detection.
 - For complex tracking procedures, use the **Tracking mode** parameter to select between Horizontal, Vertical, or Both axes.
-- Set the **Circle diameter** parameter for the tracking routine (in NT units). Multiple diameters can be specified using comma-separated values.
+- Set the **Circle diameter** parameter for the tracking routine (in NT units).
 - The **Tracking time** parameter specifies how long the device should track after reaching each diameter setting.
 - Use **Feedback Source** to select the appropriate input signal (10V BNC, 5V BNC, 2V BNC, 1V BNC, or TIA).
 

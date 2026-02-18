@@ -341,6 +341,8 @@ class Device(EmptyDevice):
         # Set feedback source. This has to be done after all other settings are applied
         self.nanotrak_channel.SetFeedbackSource(self.feedback_sources[self.feedback_source])
 
+        self.set_circle_diameter(float(self.circle_diameter_string))
+
         # Home Position. If none is given, do not update the home position
         if self.go_home_at_start:
             if self.home_position_string:
@@ -350,7 +352,7 @@ class Device(EmptyDevice):
                 self.go_home()
 
     def apply(self) -> None:
-        """Apply the axis movements, but do not move if the value is out of range (0-10). Perform tracking if activated."""
+        """Apply the axis movements, but do not move if the value is out of range (0-10). Start tracking if activated."""
         current_horizontal_position, current_vertical_position = self.get_current_position()
         if "Horizontal" in self.sweepvalues and self.sweepvalues["Horizontal"]:
             horizontal_value = float(self.sweepvalues["Horizontal"])
@@ -369,10 +371,19 @@ class Device(EmptyDevice):
         if (horizontal_value != current_horizontal_position) or (vertical_value != current_vertical_position):
             self.set_home_and_go_home(horizontal_value, vertical_value)
 
-    def reach(self) -> None:
-        """Perform tracking if activated."""
         if "Tracking" in self.sweepvalues and self.sweepvalues["Tracking"].lower() in ["true", "1", "yes"]:
-            self.perform_tracking_routine()
+            self.track()  # either horizontal, vertical, or both depending on the settings
+
+    def reach(self) -> None:
+        """Wait for tracking to finish if activated."""
+        if "Tracking" in self.sweepvalues and self.sweepvalues["Tracking"].lower() in ["true", "1", "yes"]:
+            self.wait_for_finish_tracking()
+
+            # Latch after tracking is finished
+            self.latch()
+
+            # TODO: Check if position is too close to the edges
+            self.debug("NanoTrak finished configuration.")
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
@@ -409,41 +420,26 @@ class Device(EmptyDevice):
 
         return [str(serial_num) for serial_num in device_list]
 
-    def perform_tracking_routine(self) -> None:
-        """Perform a tracking routine with the current settings."""
+    def wait_for_finish_tracking(self) -> None:
+        """Wait for the given time until the tracking is finished."""
         try:
             tracking_time = float(self.tracking_time_string)
         except ValueError as e:
             msg = f"Invalid tracking time: {self.tracking_time_string}. Expected a float value."
             raise ValueError(msg) from e
 
-        # Allow comma separated values for multiple trackings
-        diameter_list = self.circle_diameter_string.split(",")
-        for diameter in diameter_list:
-            # we latch before changing the diameter
-            self.latch()
-            self.set_circle_diameter(float(diameter))
-            self.track()  # either horizontal, vertical, or both depending on the settings
+        remaining_tracking_time = tracking_time
+        while remaining_tracking_time > 0:
+            if self.is_run_stopped():
+                break
 
-            # tracking time
-            remaining_tracking_time = tracking_time
-            while remaining_tracking_time > 0:
-                if self.is_run_stopped():
-                    break
+            # Check position
+            horizontal_position, vertical_position = self.get_current_position()
+            self.debug(f"{horizontal_position}, {vertical_position}")
 
-                # Check position
-                horizontal_position, vertical_position = self.get_current_position()
-                self.debug(f"{horizontal_position}, {vertical_position}")
-
-                wait_time = min(remaining_tracking_time, 0.5)
-                time.sleep(wait_time)
-                remaining_tracking_time -= wait_time
-
-        # Latch after tracking is finished
-        self.latch()
-
-        # TODO: Check if position is too close to the edges
-        self.debug("NanoTrak finished configuration.")
+            wait_time = min(remaining_tracking_time, 0.5)
+            time.sleep(wait_time)
+            remaining_tracking_time -= wait_time
 
     def import_device_dlls(self, nanotrak_type: str) -> None:
         """Import the device specific Kinesis .NET dll based on the device type."""
