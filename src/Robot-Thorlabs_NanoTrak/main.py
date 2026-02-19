@@ -109,9 +109,6 @@ class Device(EmptyDevice):
             "Vertical": {
                 "Value": 0.0,
             },
-            "Tracking": {
-                "Value": "True",
-            },
         }
 
         # Feedback sources
@@ -127,6 +124,7 @@ class Device(EmptyDevice):
 
         # Measurement parameters
         self.channel = "1"  # Can be "1", "2", or "1,2"
+        self.tracking_mode: str = "Tracking"  # Can be "Tracking", "Latch after Tracking", or "Latch without Tracking"
         self.reading_mode: str = "Absolute"  # Can be "Absolute", "Relative", or "None"
         self.home_position_string: str = "1.0,1.0"
         self.go_home_at_start: bool = False
@@ -136,8 +134,9 @@ class Device(EmptyDevice):
         self.control_mode: bool = True  # True for open loop, False for closed loop
         self.horizontal_phase_compensation: str = "0"  # in deg
         self.vertical_phase_compensation: str = "0"  # in deg
-        self.tracking_mode: str = "Both"
+        self.tracking_axis: str = "Both"
         self.tracking_time_string: str = "10"
+        self.tracking_start_time: float = 0.0
         self.debug_while_tracking: bool = False
 
     def find_ports(self) -> list[str]:
@@ -164,7 +163,8 @@ class Device(EmptyDevice):
             "Channel": ["1", "2", "1,2"],
             "GoHomeStart": False,
 
-            "Tracking mode": ["Horizontal", "Vertical", "Both"],
+            "Mode": ["Tracking", "Latch after Tracking", "Latch without Tracking"],
+            "Tracking axis": ["Horizontal", "Vertical", "Both"],
             "Tracking time in s": "10",
             "Circle diameter in NT": "1",
             "Home position": "1.0,1.0",
@@ -194,7 +194,8 @@ class Device(EmptyDevice):
         self.channel = parameters.get("Channel", "1")
         self.go_home_at_start = parameters.get("GoHomeStart", False)
 
-        self.tracking_mode = parameters.get("Tracking mode", "Both")
+        self.tracking_mode = parameters.get("Mode", "Tracking")
+        self.tracking_axis = parameters.get("Tracking axis", "Both")
         self.tracking_time_string = parameters.get("Tracking time in s", 10)
         self.circle_diameter_string = parameters.get("Circle diameter in NT", "1")
         self.home_position_string = parameters.get("Home position", "1.0,1.0")
@@ -371,19 +372,19 @@ class Device(EmptyDevice):
         if (horizontal_value != current_horizontal_position) or (vertical_value != current_vertical_position):
             self.set_home_and_go_home(horizontal_value, vertical_value)
 
-        if "Tracking" in self.sweepvalues and self.sweepvalues["Tracking"].lower() in ["true", "1", "yes"]:
+        if self.tracking_mode in ["Tracking", "Latch after Tracking"]:
+            self.tracking_start_time = time.time()
             self.track()  # either horizontal, vertical, or both depending on the settings
 
     def reach(self) -> None:
         """Wait for tracking to finish if activated."""
-        if "Tracking" in self.sweepvalues and self.sweepvalues["Tracking"].lower() in ["true", "1", "yes"]:
+        if self.tracking_mode in ["Tracking", "Latch after Tracking"]:
             self.wait_for_finish_tracking()
 
-            # Latch after tracking is finished
+        if self.tracking_mode in ["Latch after Tracking", "Latch without Tracking"]:
             self.latch()
 
-            # TODO: Check if position is too close to the edges
-            self.debug("NanoTrak finished configuration.")
+        self.debug("NanoTrak finished configuration.")
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
@@ -428,18 +429,16 @@ class Device(EmptyDevice):
             msg = f"Invalid tracking time: {self.tracking_time_string}. Expected a float value."
             raise ValueError(msg) from e
 
-        remaining_tracking_time = tracking_time
-        while remaining_tracking_time > 0:
-            if self.is_run_stopped():
-                break
+        while (time.time() - self.tracking_start_time) < tracking_time and not self.is_run_stopped():
+            if self.debug_while_tracking:
+                # Check position
+                horizontal_position, vertical_position = self.get_current_position()
+                self.debug(f"{horizontal_position}, {vertical_position}")
 
-            # Check position
-            horizontal_position, vertical_position = self.get_current_position()
-            self.debug(f"{horizontal_position}, {vertical_position}")
-
-            wait_time = min(remaining_tracking_time, 0.5)
+            elapsed_time = time.time() - self.tracking_start_time
+            remaining_time = tracking_time - elapsed_time
+            wait_time = min(max(remaining_time, 0), 0.5)
             time.sleep(wait_time)
-            remaining_tracking_time -= wait_time
 
     def import_device_dlls(self, nanotrak_type: str) -> None:
         """Import the device specific Kinesis .NET dll based on the device type."""
@@ -571,11 +570,11 @@ class Device(EmptyDevice):
 
     def track(self) -> None:
         """Set the mode to tracking."""
-        if self.tracking_mode == "Both":
+        if self.tracking_axis == "Both":
             self.nanotrak_channel.SetMode(GenericNanoTrakCLI.NanoTrakStatusBase.OperatingModes.Tracking)
-        elif self.tracking_mode == "Horizontal":
+        elif self.tracking_axis == "Horizontal":
             self.nanotrak_channel.SetMode(GenericNanoTrakCLI.NanoTrakStatusBase.OperatingModes.HorizontalTracking)
-        elif self.tracking_mode == "Vertical":
+        elif self.tracking_axis == "Vertical":
             self.nanotrak_channel.SetMode(GenericNanoTrakCLI.NanoTrakStatusBase.OperatingModes.VerticalTracking)
         self.debug("NanoTrak set to Tracking mode.")
 
