@@ -31,7 +31,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
@@ -78,13 +77,28 @@ class Device(EmptyDevice):
         self.average: int = 1
 
         self.current_ranges = {
+            "Auto": 0,
             "200 mA": 1,
             "20 mA": 2,
             "2 mA": 3,
             "200 µA": 4,
             "20 µA": 5,
         }
+        self.current_range_limits = {
+            1: 0.2,  # 200 mA
+            2: 0.02,  # 20 mA
+            3: 0.002,  # 2 mA
+            4: 0.0002,  # 200 µA
+            5: 0.00002,  # 20 µA
+        }
+        """The current range limits are used for auto-ranging. If the measured current is above 90% of the current range
+         limit, the driver will switch to the next higher range. If the measured current is below 10% of the current 
+         range limit, the driver will switch to the next lower range. The auto-ranging will stop if the current is 
+         within 10-90% of the current range limit or if the minimum or maximum range is reached.
+         """
+
         self.current_range_index: int = 1
+        self.auto_range: bool = False
 
         self.voltage_ranges = {
             "333 µV precision (Sourcing mode)": 0,
@@ -122,6 +136,8 @@ class Device(EmptyDevice):
             self.speed += 10  # if ADC 2x mode is enabled, add 10 to the OSR index according to the manual
 
         self.current_range_index = self.current_ranges.get(parameters.get("Range", "200 mA"), -1)  # if the range is invalid, use an invalid index to raise an error later
+        self.auto_range = self.current_range_index == 0  # auto range is enabled if the index is 0
+
         # self.voltage_range_index = self.voltage_ranges.get(parameters.get("RangeVoltage", "333 µV precision (Sourcing mode)"), 0)
         self.compliance = parameters.get("Compliance", "1e-3")
 
@@ -142,6 +158,10 @@ class Device(EmptyDevice):
         self.set_average(self.average)
 
         self.set_oversample_rate(self.speed)
+
+        if self.auto_range:
+            self.current_range_index = 5  # start with the lowest range for auto-ranging
+
         self.set_current_range(self.current_range_index)
 
         if self.sweep_mode.startswith("Voltage"):
@@ -172,6 +192,34 @@ class Device(EmptyDevice):
 
     def call(self) -> list:
         """Return the measurement results. Must return as many values as defined in self.variables."""
+        if self.auto_range:
+            self.set_current_range(5)  # start with the lowest range for auto-ranging
+            voltage, current = self.get_voltage_and_current()
+
+            while True:
+                if self.is_run_stopped():
+                    break
+
+                # if the current is above 90% of the current range limit, switch to the next higher range
+                if abs(current) > 0.9 * self.current_range_limits[self.current_range_index]:
+                    if self.current_range_index > 1:
+                        self.current_range_index -= 1
+                        self.set_current_range(self.current_range_index)
+                        voltage, current = self.get_voltage_and_current()
+                    else:
+                        # the maximum range is reached, stop auto-ranging
+                        break
+
+                else:
+                    # Value is within the current range limit, stop auto-ranging
+                    break
+        else:
+            voltage, current = self.get_voltage_and_current()
+
+        return [voltage, current]
+
+    def get_voltage_and_current(self) -> tuple[float, float]:
+        """Get the voltage and current measurement results as a tuple."""
         response = self.port.query(f"{self.channel} measure 1")
 
         try:
@@ -179,10 +227,10 @@ class Device(EmptyDevice):
             voltage = float(voltage.strip("["))
             current = float(current.strip("]"))
         except ValueError as e:
-            msg = f"Invalid response from the device: {response}. Expected format: 'voltage,current'. Error: {e}"
+            msg = f"Invalid response from the device: {response}. Expected format: '[voltage,current]'. Error: {e}"
             raise ValueError(msg)
 
-        return [voltage, current]
+        return voltage, current
 
     def set_average(self, average: int) -> None:
         """Set the average value for the measurement."""
