@@ -70,7 +70,7 @@ class Device(EmptyDevice):
         # SweepMe parameters
         self.shortname = "FTD2xx"
         self.variables = ["Response"]
-        self.units = []
+        self.units = [""]
         self.port_manager = False
 
         self.port_str: str = ""
@@ -121,7 +121,7 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Read parameters from SweepMe GUI and check their type."""
         self.encoding = parameter["Encoding"]
-        self.units.append(self.encoding)
+        self.units = [self.encoding]
 
         self.start_command = self.handle_bytestring(parameter["Start command"])
         self.end_command = self.handle_bytestring(parameter["End command"])
