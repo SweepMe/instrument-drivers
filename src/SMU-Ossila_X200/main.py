@@ -92,10 +92,7 @@ class Device(EmptyDevice):
             5: 0.00002,  # 20 µA
         }
         """The current range limits are used for auto-ranging. If the measured current is above 90% of the current range
-         limit, the driver will switch to the next higher range. If the measured current is below 10% of the current 
-         range limit, the driver will switch to the next lower range. The auto-ranging will stop if the current is 
-         within 10-90% of the current range limit or if the minimum or maximum range is reached.
-         """
+         limit, the driver will switch to the next higher range."""
 
         self.current_range_index: int = 1
         self.auto_range: bool = False
@@ -150,6 +147,9 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
+        if self.channel not in ["smu1", "smu2"]:
+            raise ValueError(f"Invalid channel: {self.channel}. Must be 'SMU1' or 'SMU2'.")
+
         try:
             self.average = int(self.average)
         except ValueError:
@@ -223,9 +223,9 @@ class Device(EmptyDevice):
         response = self.port.query(f"{self.channel} measure 1")
 
         try:
-            voltage, current = response.split(",")
-            voltage = float(voltage.strip("["))
-            current = float(current.strip("]"))
+            voltage, current = response.strip("[]").split(",")
+            voltage = float(voltage)
+            current = float(current)
         except ValueError as e:
             msg = f"Invalid response from the device: {response}. Expected format: '[voltage,current]'. Error: {e}"
             raise ValueError(msg)

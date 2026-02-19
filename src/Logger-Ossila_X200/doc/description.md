@@ -30,6 +30,7 @@ This driver enables voltage measurement using the **VSense1** or **VSense2** cha
   - Available values: 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768
   - Lower values: faster measurements, more noise
   - Higher values: slower measurements, better noise reduction
+  - See manual 5.2.2 for details on OSR and noise reduction
   
 - **ADC 2x Mode**: Enhanced speed mode
   - When enabled, unit's measurement rate is approximately doubled
