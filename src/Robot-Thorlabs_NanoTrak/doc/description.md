@@ -33,7 +33,11 @@ This driver can be used to control the **horizontal** and **vertical** position 
 ### Parameters:
 
 - **Channel**: select which channels to enable: **1**, **2**, or **1,2** (both channels).
-- **Tracking mode**: select tracking axis: **Horizontal**, **Vertical**, or **Both**.
+- **Tracking mode**: select the state after apply()
+  - **Tracking**: NanoTrak keeps tracking after reaching the tracking time
+  - **Latch after Tracking**: NanoTrak performs a latch after the tracking time is reached, holding the position.
+  - **Latch without Tracking**: NanoTrak performs a latch immediately after moving to the Axis positions, without performing any tracking.
+- **Tracking axis**: select tracking axis: **Horizontal**, **Vertical**, or **Both**.
 - **Tracking time in s**: duration in seconds to perform tracking at each circle diameter setting.
 - **Circle diameter in NT**: diameter value(s) for the tracking routine. Multiple values can be comma-separated.
 - **Go home at start**: moves the NanoTrak to the home position at the beginning of a run.
