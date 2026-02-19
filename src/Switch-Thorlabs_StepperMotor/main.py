@@ -77,6 +77,7 @@ class Device(EmptyDevice):
         self.savetype = [True]
 
         # Communication Parameters
+        self.idn: str = ""  # device identifier, e.g. "Thorlabs stepper 12345678", used as key in the device_communication dictionary
         self.use_simulation_mode: bool = False
         self.serial_number: str = ""
         self.rack = None
@@ -164,28 +165,60 @@ class Device(EmptyDevice):
         if self.use_simulation_mode:
             self.set_simulation_mode(True)
 
-        available_devices = self.list_devices()
-        if self.serial_number not in available_devices:
-            msg = f"Device with serial number {self.serial_number} not found in the list of available devices: {available_devices}"
-            raise ValueError(msg)
+        # Check if the device is already connected to avoid multiple connections in case connect() is called multiple times (e.g. when using the driver in multiple branches of the sequencer)
+        self.idn = f"Thorlabs stepper {self.serial_number}{self.channel}"
+        if self.idn in self.device_communication:
+            communication_dict = self.device_communication[self.idn]
+            self.rack = communication_dict["rack"]
+            self.stepper = communication_dict["stepper"]
+            self.stepper_motor = communication_dict["stepper_motor"]
 
-        device_info = DeviceManagerCLI.DeviceFactory.GetDeviceInfo(self.serial_number)
-        self.rack = ModularRackCLI.Rack.ModularRack.CreateModularRack(device_info.GetTypeID(), self.serial_number)
+        else:
+            available_devices = self.list_devices()
+            if self.serial_number not in available_devices:
+                msg = f"Device with serial number {self.serial_number} not found in the list of available devices: {available_devices}"
+                raise ValueError(msg)
 
-        self.stepper = self.rack[int(self.channel)]
+            device_info = DeviceManagerCLI.DeviceFactory.GetDeviceInfo(self.serial_number)
+            self.rack = ModularRackCLI.Rack.ModularRack.CreateModularRack(device_info.GetTypeID(), self.serial_number)
 
-        # Connect to the device
-        number_of_retries = 2
-        while number_of_retries > 0:
-            try:
-                self.device_manager_connect(timeout_s=2)
-            except TimeoutError as e:
-                number_of_retries -= 1
-                if number_of_retries == 0:
-                    raise e
-                print(f"Retrying to connect to device {self.serial_number}, {number_of_retries} attempts left...")
-            else:
-                break
+            self.stepper = self.rack[int(self.channel)]
+
+            # Connect to the device
+            number_of_retries = 2
+            while number_of_retries > 0:
+                try:
+                    self.device_manager_connect(timeout_s=2)
+                except TimeoutError as e:
+                    number_of_retries -= 1
+                    if number_of_retries == 0:
+                        raise e
+                    print(f"Retrying to connect to device {self.serial_number}, {number_of_retries} attempts left...")
+                else:
+                    break
+
+            # pass if the device is already initialized
+            if not self.stepper.IsSettingsInitialized():
+                with contextlib.suppress(Exception):
+                    self.stepper.WaitForSettingsInitialized(5000)
+
+            # The polling loop requests regular status requests to the motor to ensure the program keeps track of the device.
+            self.stepper.StartPolling(250)
+            time.sleep(0.5)
+
+            # Enable the channel otherwise any move is ignored
+            self.stepper.EnableDevice()
+            time.sleep(0.5)
+
+            # continue with stepper_motor object - unclear why
+            self.stepper_motor = self.rack.GetStepperChannel(int(self.channel))
+
+            # Store the communication objects in the device_communication dictionary to reuse them if the device is used again
+            self.device_communication[self.idn] = {
+                "rack": self.rack,
+                "stepper": self.stepper,
+                "stepper_motor": self.stepper_motor,
+            }
 
     def device_manager_connect(self, timeout_s=10):
         """Connect to the device manager with a timeout."""
@@ -203,33 +236,19 @@ class Device(EmptyDevice):
 
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
-        self.stepper.StopPolling()
-        self.rack.Disconnect(True)
-        # self.stepper.Disconnect(True)  # attribute error
-        self.stepper_motor.Disconnect(True)
+        if self.idn in self.device_communication:
+            self.stepper.StopPolling()
+            self.rack.Disconnect(True)
+            # self.stepper.Disconnect(True)  # attribute error
+            self.stepper_motor.Disconnect(True)
 
-        if self.use_simulation_mode:
-            self.set_simulation_mode(False)
+            if self.use_simulation_mode:
+                self.set_simulation_mode(False)
 
-    def initialize(self) -> None:
-        """Initialize the device. This function is called only once at the start of the measurement."""
-        # pass if the device is already initialized
-        if not self.stepper.IsSettingsInitialized():
-            with contextlib.suppress(Exception):
-                self.stepper.WaitForSettingsInitialized(5000)
+            del self.device_communication[self.idn]
 
-        # The polling loop requests regular status requests to the motor to ensure the program keeps track of the device.
-        self.stepper.StartPolling(250)
-        time.sleep(0.5)
-
-        # Enable the channel otherwise any move is ignored
-        self.stepper.EnableDevice()
-        time.sleep(0.5)
-
-        print(self.rack.BayDeviceType(int(self.channel)))
-
-        # continue with stepper_motor object - unclear why
-        self.stepper_motor = self.rack.GetStepperChannel(int(self.channel))
+    def configure(self) -> None:
+        """Configure the device. This function is called every time the device is used in the sequencer."""
         # Why?
         motorConfiguration = self.stepper_motor.LoadMotorConfiguration(self.stepper.DeviceID)
         currentDeviceSettings = self.stepper_motor.MotorDeviceSettings
@@ -248,9 +267,6 @@ class Device(EmptyDevice):
             print("Homing at start")
             self.set_homing_velocity(float(self.home_velocity))
             self.stepper_motor.Home(self.timeout_ms)  # why no Int32()?
-
-    def configure(self) -> None:
-        """Configure the device. This function is called every time the device is used in the sequencer."""
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
