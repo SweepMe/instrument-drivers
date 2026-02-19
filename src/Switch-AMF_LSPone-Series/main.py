@@ -25,9 +25,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #
-# The amfTools library included with this driver is not part of the MIT License and remains subject to its own separate
-# license terms. Users must comply with the amfTools license conditions; SweepMe! has obtained explicit permission from
-# AMF to redistribute the library together with this driver.
+# The amfTools library included with this driver is not covered by the MIT License and remains subject to its own
+# separate license terms. Users must comply with the amfTools license conditions; SweepMe! has obtained explicit
+# permission from AMF to redistribute the library together with this driver.
 #
 # SweepMe! driver
 # * Module: Switch
