@@ -2,7 +2,7 @@
 
 ## Setup
 
-This driver communicates with AMF LSPone-Series pumps using the `amfTools` library. It might be compatible with other products (RVMFS, RVMLP, SPRM, and LSPone) aswell. It requires an installation of ftd2xx64.dll, which can be found here: https://ftdichip.com/drivers/d2xx-drivers/
+This driver communicates with AMF LSPone-Series pumps using the `amfTools` library. It might be compatible with other products (RVMFS, RVMLP, SPRM, and LSPone) as well. It requires an installation of ftd2xx64.dll, which can be found here: https://ftdichip.com/drivers/d2xx-drivers/
 
 ## Parameters
 
@@ -21,7 +21,7 @@ This driver communicates with AMF LSPone-Series pumps using the `amfTools` libra
 
 - **Valve position** — current valve index (integer).
 - **Flow rate** — measured flow rate in µl/min.
-- **Plunger current** — motor/plunger current reported by the device (unit depends on device firmware; displayed as provided).
+- **Plunger current** — motor/plunger current reported by the device (unit depends on device firmware).
 
 ## Behavior & Notes
 
