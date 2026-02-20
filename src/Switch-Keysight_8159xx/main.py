@@ -79,7 +79,6 @@ class Device(EmptyDevice):
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
-        del parameters
         return {
             "Channel": "1",
             "Slot": "1",
@@ -95,11 +94,20 @@ class Device(EmptyDevice):
         self.sweep_mode = parameters.get("SweepMode", "None")
         self.route = parameters.get("Route", "")
 
-    def connect(self) -> None:
-        """Connect to the device. This function is called only once at the start of the measurement."""
-
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
+        try:
+            self.slot = int(self.slot)
+        except ValueError as e:
+            msg = f"Slot must be an integer, got '{self.slot}'."
+            raise ValueError(msg) from e
+
+        try:
+            self.channel = int(self.channel)
+        except ValueError as e:
+            msg = f"Channel must be an integer, got '{self.channel}'."
+            raise ValueError(msg) from e
+
         self.available_left_ports, self.available_right_ports = self.get_available_ports()
         # Apply initial route if set in GUI
         if self.route:
@@ -114,11 +122,11 @@ class Device(EmptyDevice):
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return self.get_route()
 
+    # Wrapper Functions
+
     def get_identification(self) -> str:
         """Return the identification string of the device."""
         return self.port.query("*IDN?")
-
-    # Wrapper Functions
 
     def apply_route_string(self, route_string: str) -> None:
         """Apply a route string to the device.
@@ -128,7 +136,12 @@ class Device(EmptyDevice):
         """
         routes = route_string.split(";")
         for route in routes:
-            left_port, right_port = route.split(":")
+            try:
+                left_port, right_port = route.split(":")
+            except ValueError as e:
+                msg = f"Invalid route format for route '{route}'. Expected format 'LeftPort:RightPort', got '{route}'."
+                raise ValueError(msg) from e
+
             if left_port not in self.available_left_ports:
                 msg = f"Left port '{left_port}' is not available. Available ports: {self.available_left_ports}"
                 raise ValueError(msg)
@@ -142,12 +155,9 @@ class Device(EmptyDevice):
 
     def wait_for_completion(self) -> None:
         """Wait for the device to complete the current operation."""
-        while True:
+        while not self.is_run_stopped():
             status = self.port.query("*OPC?")
             if status.strip() == "1":
-                break
-
-            if self.is_run_stopped():
                 break
 
             time.sleep(0.05)
@@ -173,14 +183,9 @@ class Device(EmptyDevice):
 
         command = f":ROUT{self.slot}:CHAN{self.channel} {left_port},{right_port}"
         self.port.write(command)
-        # print(f"Response: {response}")
-        # if "StatParamError" in response:
-        #     msg = f"Invalid route command: {command}. Response: {response}"
-        #     raise ValueError(msg)
 
     def get_route(self) -> str:
         """Get the current route of the device."""
-        # todo maybe remove channel if it does not work
         return self.port.query(f":ROUT{self.slot}:CHAN{self.channel}?")
 
     def get_available_ports(self) -> tuple[list[str], list[str]]:
