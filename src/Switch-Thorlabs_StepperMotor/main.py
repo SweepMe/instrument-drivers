@@ -37,7 +37,7 @@ import time
 from typing import Any
 
 import clr
-from System import Decimal, Int32
+from System import Decimal, Action, UInt64
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 # Import Kinesis dll
@@ -58,6 +58,14 @@ except:
     pass
 else:
     kinesis_imported = True
+
+
+def callback_function(value):
+    """Dummy callback function for the MoveTo command, which is called when the movement is completed.
+
+    The function must take the return value of the MoveTo command as an argument.
+    """
+    pass
 
 
 class Device(EmptyDevice):
@@ -91,6 +99,7 @@ class Device(EmptyDevice):
         self.acceleration: str = "1.0"
         self.home_at_start: bool = False
         self.home_velocity: str = "1.0"
+        self.relative_movement_done: bool = False  # flag to keep track of whether the relative movement has already been performed in apply() or not
 
     def find_ports(self) -> list[str]:
         """Returns the serial numbers of all devices connected via Kinesis."""
@@ -262,14 +271,15 @@ class Device(EmptyDevice):
             self.stepper_motor.SetVelocityParams(velocity_parameters)
 
         # homing leads to timeout errors if the device is too far from home, leave it for now
-        # TODO: add increased homing speed
         if self.home_at_start:
             print("Homing at start")
             self.set_homing_velocity(float(self.home_velocity))
             self.stepper_motor.Home(self.timeout_ms)  # why no Int32()?
 
-    def unconfigure(self) -> None:
-        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
+    def start(self) -> None:
+        """Preparation before applying a new value."""
+        # Reset the flag for performing the relative movement in adapt()
+        self.relative_movement_done = False
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
@@ -282,18 +292,61 @@ class Device(EmptyDevice):
             msg = f"Invalid position format. Expected a integer, got '{self.value}'."
             raise ValueError(msg) from e
 
+        # The MoveTo method can be used in a non-blocking way by providing a callback function that is called when the movement is completed.
+        # Create a .NET Action[UInt64] delegate
+        action_u_int64 = Action[UInt64]
+        callback_delegate = action_u_int64(callback_function)
+
         if self.sweep_mode.startswith("Relative"):
             direction = GenericMotorCLI.MotorDirection.Forward if float(
                 self.value) > 0 else GenericMotorCLI.MotorDirection.Backward
             self.value = abs(float(self.value))
-            self.stepper_motor.MoveRelative(direction, Decimal(self.value), Int32(self.timeout_ms))
+            # self.stepper_motor.MoveRelative(direction, Decimal(self.value), Int32(self.timeout_ms))
+            self.timeout_ms = self.calculate_timeout(float(self.value), relative_move=True)
+            self.stepper_motor.MoveRelative(direction, Decimal(self.value), callback_delegate)
+            self.relative_movement_done = True
 
         elif self.sweep_mode == "Position":
-            self.stepper_motor.MoveTo(position, Int32(self.timeout_ms))  # no need for Int32
+            self.timeout_ms = self.calculate_timeout(float(self.value))
+            # self.stepper_motor.MoveTo(position, Int32(self.timeout_ms))  # no need for Int32
+            self.stepper_motor.MoveTo(Decimal(position), callback_delegate)
+
+        # Wait either 1s or until the status shows that the movement has started
+        for _ in range(10):
+            if self.stepper_motor.Status.IsInMotion or self.stepper_motor.Status.IsMoving:
+                break
+
+            time.sleep(0.1)
+
+    def reach(self) -> None:
+        """Wait until the device has reached the target position."""
+        time_start = time.time()
+        while not self.is_run_stopped():
+            if time.time() - time_start > self.timeout_ms * 1000:
+                msg = f"Failed to reach the target position within the timeout period of {self.timeout_ms * 1000} seconds."
+                raise TimeoutError(msg)
+
+            status = self.stepper_motor.Status
+            if status.IsInMotion or status.IsMoving:
+                time.sleep(0.1)
+            else:
+                break
+
+    def adapt(self) -> None:
+        """Perform relative movements, as they are skipped in the apply() function.
+
+        SweepMe! ignores relative movements if the SweepValue stays the same as in the previous run, which is the case
+        for example when running multiple cycles of the same sequence. In this case, we perform the relative movement
+        here in adapt(), which is called every time a sequence is run, even if the SweepValue does not change.
+        """
+        # Only perform the relative movement if it was not already performed in apply() (which is the case when the SweepValue did change since the last sweep).
+        if self.sweep_mode.startswith("Relative") and not self.relative_movement_done:
+            self.apply()
+            self.reach()
 
     def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        return float(str(self.stepper_motor.Position).replace(",", "."))
+        return self.get_position_mm()
 
     # Wrapper functions
 
@@ -311,3 +364,18 @@ class Device(EmptyDevice):
         motor_device_settings = self.stepper_motor.MotorDeviceSettings
         motor_device_settings.Home.set_HomeVel(Decimal(velocity))
         self.stepper_motor.SetSettings(motor_device_settings, False)
+
+    def get_position_mm(self) -> float:
+        """Get the current position of the motor in mm."""
+        return float(str(self.stepper_motor.Position).replace(",", "."))
+
+    def calculate_timeout(self, new_position: float, relative_move: bool = False) -> int:
+        """Calculate the timeout in s for the MoveTo command based on the distance to travel and the velocity."""
+        if relative_move:
+            distance = abs(new_position)
+        else:
+            current_position = self.get_position_mm()
+            distance = abs(new_position - current_position)
+
+        expected_travel_time = distance / float(self.max_velocity)
+        return max(60, int(expected_travel_time * 2)) * 1000  # set timeout to twice the expected travel time, minimum 60s
