@@ -53,14 +53,14 @@ pid_phase = {
 
 
 class Device(EmptyDevice):
-    """Driver class for Velox Temperature Control."""
+    """Driver class Thorlabs Series 4000 temperature controllers."""
 
     description = """
     <h3>Thorlabs Series 4000</h3>
     <p>E.g. TED4015, ITC40xx. LDC is not supported as it does not allow for direct temperature control.</p>
     <h4>Parameters</h4>
     <ul>
-         <li>Reach Temperature: Set the PID parameters.</li>
+         <li>Reach Temperature: Use the SweepMe! reach temperature feature, which continuously measures the temperature until the target temperature is reached..</li>
     </ul>
     """
 
@@ -89,14 +89,13 @@ class Device(EmptyDevice):
 
         # Measurement Parameter
         self.sweep_mode: str = "Temperature"
-        self.use_reach: bool = True
+        self.use_reach: bool = True  # use the SweepMe! reach temperature feature, which continuously measures the temperature until the target temperature is reached.
         self.temperature_units = {
             "C": "C",
             "F": "F",
             "K": "K",
         }
         self.temperature_unit: str = "C"
-        self.measure_temperature: bool = True
         self.measured_temperature: float = 0.0
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
@@ -106,7 +105,6 @@ class Device(EmptyDevice):
             "SweepMode": ["Temperature", "None"], #[TemperatureMode.SET_TEMPERATURE.value],
             "TemperatureUnit": list(self.temperature_units.keys()),
             "Channel": ["1", "2"],
-            "MeasureT": True,
             "ReachT": True,
         }
 
@@ -115,7 +113,6 @@ class Device(EmptyDevice):
         self.sweep_mode = parameters.get("SweepMode", "None")
         self.channel = parameters.get("Channel", "1")
 
-        self.measure_temperature = parameters.get("MeasureT", True)
         self.temperature_unit = self.temperature_units[parameters.get("TemperatureUnit", "C")]
         self.units = [parameters["TemperatureUnit"]]
 
@@ -124,7 +121,6 @@ class Device(EmptyDevice):
     def connect(self) -> None:
         """Establish connection to Velox Software."""
         identification = self.get_identification()
-        print(f"Connected to {identification}")
 
         if "TED" in identification:
             self.device_type = "TED"
@@ -133,9 +129,6 @@ class Device(EmptyDevice):
         else:
             msg = f"Unsupported device type: {identification}. Only TED and ITC series are supported."
             raise RuntimeError(msg)
-
-    def disconnect(self) -> None:
-        """Disconnect from Velox Software."""
 
     def configure(self) -> None:
         """Configure the device."""
@@ -172,7 +165,7 @@ class Device(EmptyDevice):
     def set_temperature(self, temperature: float) -> None:
         """Sets the target temperature.
 
-        is it TEC Temperature Setpoint (3.11.5)
+        This corresponds to the TEC Temperature Setpoint (see manual 3.11.5)
         """
         # For TED4000 Series instruments the command suffix is 1 (can be omitted), for ITC4000 Series instruments its 2.
         suffixes = {
@@ -229,8 +222,8 @@ class Device(EmptyDevice):
 
     def wait_for_pid_auto_tune(self) -> None:
         """Waits for the PID auto-tuning procedure to finish."""
-        while True:
-            state, phase, loop = self.get_pid_auto_tune_status()
+        while not self.is_run_stopped():
+            state = self.get_pid_auto_tune_status()
 
             if state == PIDState.FINISHED:
                 break
@@ -238,8 +231,5 @@ class Device(EmptyDevice):
             if state in [PIDState.FAILED, PIDState.CANCELED, PIDState.NEVER_RUN]:
                 msg = f"PID auto-tuning failed or was canceled. Current state: {state}"
                 raise RuntimeError(msg)
-
-            if self.is_run_stopped():
-                break
 
             time.sleep(0.5)
