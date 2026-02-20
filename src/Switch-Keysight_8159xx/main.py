@@ -40,7 +40,7 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
     """Driver for the Keysight 8159xx."""
 
-    description = """"Driver for the Keysight 8159xx. Can be implemented in Agilent 816x Lightwave Measurement System.
+    description = """Driver for the Keysight 8159xx. Can be implemented in Agilent 816x Lightwave Measurement System.
 
     Also supports The discontinued 81591A, 81591S, 81592A, 81592S, 81594A, 81594S, and 81595A, 81595S
 
