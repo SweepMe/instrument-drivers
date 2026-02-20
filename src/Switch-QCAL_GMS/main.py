@@ -201,12 +201,13 @@ class Device(EmptyDevice):
             msg = f"Invalid concentration 3 value: {self.concentration_3}. It must be between 0 and 100 Vol%."
             raise ValueError(msg)
 
-        # Wait until extern.txt is empty to avoid overwriting previous commands
-        time_start = time.time()
-        while True:
-            if self.is_run_stopped():
-                break
+        self.wait_for_extern_file_to_be_empty()
+        self.write_setpoints_to_file(self.concentration_2, self.concentration_3, self.total_flow)
 
+    def wait_for_extern_file_to_be_empty(self) -> None:
+        """Wait until extern.txt is empty to avoid overwriting previous commands."""
+        time_start = time.time()
+        while not self.is_run_stopped():
             if (time.time() - time_start) > self.timeout_s:
                 msg = "Timeout while waiting for the GMS to read previous setpoints."
                 raise TimeoutError(msg)
@@ -222,15 +223,12 @@ class Device(EmptyDevice):
 
             time.sleep(0.02)
 
-        self.write_setpoints_to_file(self.concentration_2, self.concentration_3, self.total_flow)
-
     def write_setpoints_to_file(self, concentration_2: float, concentration_3: float, total_flow: float) -> None:
         """Write the given setpoints to extern.txt."""
         # The device expects a single-line token like "c_<c2>d_<c3>v_<flow>e".
         command = f"c_{concentration_2}d_{concentration_3}v_{total_flow}e"
 
-        number_of_retries = 3
-        while number_of_retries > 0:
+        for _ in range(5):
             try:
                 with open(self.extern_file, "w", encoding="ascii") as f:
                     f.write(command)
@@ -240,7 +238,9 @@ class Device(EmptyDevice):
                 debug(msg)
 
             time.sleep(0.05)
-            number_of_retries -= 1
+        else:
+            msg = f"Failed to write setpoints to {self.extern_file} after multiple attempts."
+            raise Exception(msg)
 
     def wait_for_confirmation(self) -> None:
         """Wait until the device has confirmed to the new set points."""
@@ -286,8 +286,7 @@ class Device(EmptyDevice):
             return ""
 
         # Retry reading the file a few times in case it's temporarily locked by the GMS software
-        number_of_retries = 3
-        while number_of_retries > 0:
+        for _ in range(5):
             try:
                 with open(self.zeit_file, "r", encoding="ascii", errors="ignore") as f:
                     lines = f.readlines()
@@ -302,7 +301,9 @@ class Device(EmptyDevice):
                 debug(msg)
 
             time.sleep(0.05)
-            number_of_retries -= 1
+        else:
+            msg = f"Failed to read from {self.zeit_file} after multiple attempts."
+            raise Exception(msg)
 
         if not lines:
             return ""
