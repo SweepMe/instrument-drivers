@@ -549,6 +549,10 @@ class Device(EmptyDevice):
         However, moving in Latch mode is also possible according to the manual.
         For now, do not switch to Tracking mode if already in Latch mode.
         """
+        if not self.nanotrak_channel:
+            self.connect()
+            self.initialize()
+
         self.nanotrak_channel.HomeCircle()
         # Need to wait until the movement is finished
         time.sleep(1)
