@@ -37,10 +37,8 @@ from typing import Any
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
-from pymodbus.pdu import ModbusPDU
-from pymodbus.pdu.pdu import ExceptionResponse
-from register import Register, DataType, Endianness, ModBusRegister
-from pymodbus.client.serial import ModbusSerialClient
+
+
 
 
 class Device(EmptyDevice):
@@ -48,7 +46,7 @@ class Device(EmptyDevice):
 
     description = """
     Works for JUMO diraTRON 104/108/116/132
-    - Channel corresponds to the Modnbus RTU address
+    - Channel corresponds to the Modbus RTU address
     """
 
     def __init__(self) -> None:
@@ -59,12 +57,10 @@ class Device(EmptyDevice):
 
         # SweepMe! parameters
         self.variables = [
-            # "Analog Input",
             "Controller Setpoint",  # Sollwert
             "Controller Actual",  # Istwert
             "Control Deviation",  # Regelabweichung
             "Output Level",  # Stellgradanzeige
-            # "Analog Output"
         ]
         self.units = [""] * len(self.variables)
         self.plottype = [True] * len(self.variables)
@@ -72,27 +68,30 @@ class Device(EmptyDevice):
 
         # Communication Parameters
         self.port_string: str = ""
-        self.port_manager = False
-        # self.port_types = ["COM"]
-        # self.port_properties = {
-        #     "timeout": 1,
-        #     "baudrate": 9600,
-        #     "stopbits": 1,
-        #     "parity": "N",
-        #     "bytesize": 8,
-        #     "EOL": "",  # Modbus RTU does not use EOL characters
-        # }
+        self.port_manager = True
+        self.port_types = ["COM"]
+        self.port_properties = {
+            "timeout": 1,
+            "baudrate": 38400,
+            "stopbits": 1,
+            "parity": "N",
+            "bytesize": 8,
+        }
         self.modbus_address: int = 1
 
         # Measurement parameters
         self.sweep_mode: str = "None"
+
+        self.temperature_setpoint: float = 0.0
+        self.current_temperature: float = 0.0
+        self.temperature_difference: float = 0.0
+        self.output_power_percent: float = 0.0
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         del parameters
         return {
             "SweepMode": ['None', 'Setpoint in °C'],
-            "Modbus address": 1,
             "Channel": 1,
         }
 
@@ -100,18 +99,15 @@ class Device(EmptyDevice):
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.port_string = parameters.get("Port", "")
         self.sweep_mode = parameters.get("SweepMode", "None")
-        self.modbus_address = parameters.get("Modbus address", 1)
+        self.modbus_address = parameters.get("Channel", 1)
 
     def connect(self):
-        self.client = ModbusSerialClient(
-            port=self.port_string,
-            baudrate=38400,
-            bytesize=8,
-            parity="N",
-            timeout=10,
-            stopbits=1,
-        )
-        self.client.connect()
+        """Connect to the device."""
+        try:
+            self.modbus_address = int(self.modbus_address)
+        except ValueError:
+            msg = f"Invalid Modbus address: {self.modbus_address}. Must be an integer."
+            raise ValueError(msg)
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -126,111 +122,142 @@ class Device(EmptyDevice):
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        controller_actual_value_address = 8468
-        response = self.client.read_holding_registers(
-            controller_actual_value_address,
-            count=2,
-            slave=1,
-            # unit=self.modbus_address,
-        )
-        print(response)
-
-        #setpoint = self.get_setpoint()
-        # actual = self.get_actual_value()
-        # deviation = self.get_control_deviation()
-        # output_level = self.get_output_level()
-
+        self.read_registers()
         return [
-            # self.analog_input,
-            1, #setpoint,
-            1,
-            1,
-            1,
-            # actual,
-            # deviation,
-            # output_level,
-            # self.analog_output,
+            self.temperature_setpoint,
+            self.current_temperature,
+            self.temperature_difference,
+            self.output_power_percent,
         ]
 
     # Wrapper functions
 
     def set_setpoint(self, setpoint: float) -> None:
         """Set the controller setpoint."""
-        self.write_float(0x7002, setpoint)
+        cmd = self.generate_set_register_command(
+            slave_address=self.modbus_address,
+            register_address=8468,  # register for the temperature setpoint
+            register_value=setpoint,
+        )
+        print(f"Generated setpoint command: {cmd}")
+        response = self.port.query(cmd)
+        # TODO: Handle response, check for success, etc.
 
-    def get_setpoint(self) -> float:
-        """Get the controller setpoint (Regler Sollwert)."""
-        return self.read_float(0x7002)
+    def read_registers(self) -> None:
+        """Read the 4 relevant 4-byte float values from the device and store them in instance variables."""
+        cmd = self.generate_read_command(
+            slave_address=self.modbus_address,
+            function_code=3,  # read holding registers
+            register_address=28688,  # starting register for setpoint, other values follow
+            num_registers=8,  # read 8 registers to get all 4 float values (2 registers per float)
+        )
+        print(f"Sending Read command: {' '.join(f'{byte:02X}' for byte in cmd)}")
+        self.port.write(cmd)
+        # time.sleep(0.1)  # wait for response
 
-    def get_actual_value(self) -> float:
-        """Get the controller actual value (Regler IstWert)."""
-        return self.read_float(0x7012)
+        response = self.port.read(32)  # read up to 32 bytes
+        # response = b'\x01\x03\x10\x00\x00B\xc8\x1bLA\xbb9-B\x99\x00\x00B\xc8\xffu'
+        print(f"Received response: {response.hex().upper()}")
 
-    def get_control_deviation(self) -> float:
-        """Get the control deviation (Regler Differenz)."""
-        return self.read_float(0x7014)
+        # Extract the data payload (skip address, function code, byte count)
+        data_start = 3
 
-    def get_output_level(self) -> float:
-        """Get the output level (Regler Stellgradanzeige)."""
-        return self.read_float(0x7016)
+        # Parse 4 float32 values with word-swapped byte order
+        # Each float32 is 4 bytes, but words (2-byte pairs) are swapped
+        values = []
+        for i in range(4):
+            offset = data_start + (i * 4)
+            # Get 4 bytes: [0, 1, 2, 3] but they're stored as [2, 3, 0, 1]
+            # So we need to swap the word order: read bytes 2,3,0,1
+            word1 = response[offset + 2:offset + 4]  # bytes 2,3
+            word0 = response[offset:offset + 2]  # bytes 0,1
+            # Reconstruct in correct order: word0, word1 (which is bytes 2,3,0,1)
+            float_bytes = word1 + word0
+            # Unpack as big-endian float
+            value = struct.unpack('>f', float_bytes)[0]
+            values.append(value)
 
-    # Modbus RTU functions
+        self.current_temperature = values[1]
+        self.temperature_difference = values[2]
+        self.temperature_setpoint = values[0]
+        self.output_power_percent = values[3]
 
-    def read_float(self, address: int) -> float:
-        """Reads a FLOAT (2 words) from the given Modbus address"""
-        request = self.build_request_read(address, 2)
-        self.port.write_raw(request)
-        response: bytes = self.port.read_raw(digits=9)
-        raw = response[3:7]
-        reordered = raw[2:4] + raw[0:2]
-        return struct.unpack(">f", reordered)[0]
+    def generate_read_command(self, slave_address: int, function_code: int, register_address: int,
+                              num_registers: int) -> bytes:
+        """
+        Generate a Modbus RTU command for reading registers.
 
-    def write_float(self, address: int, value: float) -> None:
-        """Writes a FLOAT (2 words) to the given Modbus address"""
-        packed = struct.pack(">f", value)
-        reordered = packed[2:4] + packed[0:2]
-        data = list(reordered)
-        request = self.build_request_write_n_words(address, data)
-        self.port.write_raw(request)
-        self.port.read_bytes(8)  # read ack
-
-    def build_request_read(self, address: int, num_words: int) -> bytes:
-        """Builds a Modbus RTU request to read 'num_words' words starting from 'address'."""
-        data = [
-            self.modbus_address,
-            0x03,
-            (address >> 8) & 0xFF,
-            address & 0xFF,
-            (num_words >> 8) & 0xFF,
-            num_words & 0xFF,
-        ]
-        crc = self.crc16(data)
-        return bytes(data + crc)
-
-    def build_request_write_n_words(self, address: int, byte_data: list[int]) -> bytes:
-        word_count = len(byte_data) // 2
-        data = [
-            self.modbus_address,
-            0x10,
-            (address >> 8) & 0xFF,
-            address & 0xFF,
-            (word_count >> 8) & 0xFF,
-            word_count & 0xFF,
-            len(byte_data),
-        ] + byte_data
-        crc = self.crc16(data)
-        return bytes(data + crc)
+        Args:
+            slave_address: Modbus slave address (1-247), typically matches the channel
+            function_code: Modbus function code (e.g., 0x03 for read holding registers)
+            register_address: Starting register address to read from
+            num_registers: Number of registers to read)
+        """
+        command = bytes([slave_address, function_code])
+        command += register_address.to_bytes(2, byteorder='big')
+        command += num_registers.to_bytes(2, byteorder='big')
+        command += self.calculate_crc16(command)
+        return command
 
     @staticmethod
-    def crc16(data: list[int]) -> list[int]:
-        """CRC16 (Modbus RTU) calculation"""
+    def calculate_crc16(data: bytes) -> bytes:
+        """Calculate CRC16 for Modbus RTU."""
         crc = 0xFFFF
-        for pos in data:
-            crc ^= pos
+        for byte in data:
+            crc ^= byte
             for _ in range(8):
-                if crc & 0x0001:
-                    crc >>= 1
-                    crc ^= 0xA001
+                if crc & 1:
+                    crc = (crc >> 1) ^ 0xA001
                 else:
                     crc >>= 1
-        return [crc & 0xFF, (crc >> 8) & 0xFF]
+        # Return as bytes (low byte first, high byte second - little endian)
+        return bytes([crc & 0xFF, (crc >> 8) & 0xFF])
+
+    def generate_set_register_command(
+            self,
+            slave_address: int,
+            register_address: int,
+            register_value: float,
+    ) -> bytes:
+        """Generate a Modbus RTU command for setting a single register to a float value."""
+        function_code = 0x10  # Write command
+        num_registers = 0x0002  # 2 for float32
+        byte_count = num_registers * 2  # 4 bytes for 2 registers
+
+        # The JUMO device uses word-swapped byte order for float values
+        # Bytes come in as [0, 1, 2, 3] but need to be sent as [2, 3, 0, 1]
+        float_bytes = struct.pack('>f', register_value)
+        swapped_float_bytes = self.swap_bytes(float_bytes)
+
+        # Build the command payload
+        command = bytes([slave_address, function_code])
+        command += register_address.to_bytes(2, byteorder='big')  # Register address 0x2114 -> 21 14
+        command += num_registers.to_bytes(2, byteorder='big')
+        command += byte_count.to_bytes(1, byteorder='big')
+        command += swapped_float_bytes
+
+        # Calculate CRC16
+        crc = self.calculate_crc16(command)
+
+        # Append CRC
+        command += crc
+
+        return command
+
+    @staticmethod
+    def swap_bytes(data: bytes) -> bytes:
+        """
+        Swap bytes in pairs for word-swapped order.
+
+        The input [0, 1, 2, 3] becomes [2, 3, 0, 1].
+        """
+        if len(data) != 4:
+            raise ValueError("Data must be exactly 4 bytes for float32 swapping")
+
+        swapped = bytearray(4)
+        swapped[0] = data[2]  # byte 2 goes to position
+        swapped[1] = data[3]  # byte 3 goes to position
+        swapped[2] = data[0]  # byte 0 goes to position
+        swapped[3] = data[1]  # byte 1 goes to position
+
+        return bytes(swapped)
