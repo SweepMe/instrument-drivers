@@ -341,11 +341,12 @@ class Device(EmptyDevice):
         However, this leads to a reset of all parameters previously changed during 'configure'. Therefore, the CN
         command should not be used here, but has been moved to the beginning of 'configure'.
         """
-        pass
 
     def poweroff(self) -> None:
         """Turn off the device when leaving a sequencer branch."""
-        self.port.write(f"CL {self.channel}")  # switches the channel off
+        # Save the output settings and set the channel to 0V. CL command for turning off
+        self.port.write(f"DZ {self.channel}")
+        self.port.write(f"CL {self.channel}")
 
     def start(self) -> None:
         """Channels that are configured for list mode but are not the list master register their list values after the
@@ -382,8 +383,6 @@ class Device(EmptyDevice):
             self.port.write(f"DI {self.channel},{self.current_range},{self.value}")
 
         self.check_errors()
-
-
 
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
