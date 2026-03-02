@@ -78,6 +78,7 @@ class Device(EmptyDevice):
 
         # Common parameters
         # Source slot
+        self.channel: str = ""
         self.sslot: str = ""
         self.mslot: str = ""
         self.port_string: str = ""
@@ -128,8 +129,8 @@ class Device(EmptyDevice):
             self.sslot = parts[0][1]
             self.mslot = parts[1][1]
         self.port_string = parameter["Port"]
-        self.range_source = self.source_range_limits[parameter["RangeVoltage"]]
-        self.range_current = self.current_range_limits[parameter["Range"]]
+        self.range_source = self.source_range_limits.get(parameter.get("RangeVoltage"),"")
+        self.range_current = self.current_range_limits.get(parameter.get("Range"),"")
         try:
             self.current_protect = float(parameter["Compliance"])
         except (KeyError, TypeError):
