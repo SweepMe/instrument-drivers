@@ -6,6 +6,10 @@ This driver automates the waveform generation of WGFMU modules in the Keysight B
 It allows users to define custom pulse sequences and measurement events, which can be repeated for a specified number of 
 times or duration.
 
+## Requirements
+
+Install the WGFMU istrument library https://www.keysight.com/us/en/lib/software-detail/driver/b1530a-wgfmu-instrument-library--sample-programs-2117445.html
+
 ## Usage
 
 The driver requires a CSV file that defines the pulse sequence and measurement events.
@@ -44,6 +48,8 @@ The CSV file must follow this structure:
 - An example sequence file can be found in the driver folder
 
 ## Parameters
+
+- **Channel and Slot**: The dropdown menu items are editable, choose the slot where the WGFMU module is installed and the channel to use for output
 
 - **Amplitude in V / No scaling**: 
   - "Amplitude in V": Scales the maximum output voltage to the specified value

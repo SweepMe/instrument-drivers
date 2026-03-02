@@ -85,7 +85,7 @@ class Device(EmptyDevice):
         return {
             "SweepMode": ["None"],
             "Waveform": ["Custom"],
-            "Channel": "Slot 1, Channel 1",
+            "Channel": ["Slot 1, Channel 1", "Slot 1, Channel 2"],
             "PeriodFrequency": ["Repetitions", "Measurement time in s"],
             "PeriodFrequencyValue": 1.0,
             "AmplitudeHiLevel": ["Amplitude in V", "No scaling"],
