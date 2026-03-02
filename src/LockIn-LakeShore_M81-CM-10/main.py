@@ -98,6 +98,8 @@ class Device(EmptyDevice):
         self.lia_lowpass: bool = False
         self.lia_harm: int = 1
         self.lia_tc: float = 0.1
+        self.wait_time_constants : str = "Auto"
+        self.wait_time: float = 0.0
         self.lia_rolloff: int = 6
         self.lia_avg_ref_cycles: int = 0
         self.lia_auto_phase: bool = True
@@ -127,7 +129,7 @@ class Device(EmptyDevice):
             "Source": ["S1", "S2", "S3", "Reference In"],
             "Sensitivity": list(self.range_limits.keys()),
             "TimeConstant": ["Traditional low pass output filter OFF", "0.0 (edit)"],
-            #"WaitTimeConstants": ["Auto", "0 (edit)"],  #Not used because M81 returns "settled" boolean
+            "WaitTimeConstants": "Auto",
             "Slope": ["6 dB/oct (output filter)", "12 dB/oct (output filter)",
                       "18 dB/oct (output filter)", "24 dB/oct (output filter)"],
             "Reserve": list(self.filter_optimizations.keys()),
@@ -168,6 +170,7 @@ class Device(EmptyDevice):
             self.lia_rolloff = int(parameter.get("Slope", "0").split(" ")[0])
         except ValueError:
             self.lia_lowpass = False
+        self.wait_time_constants = parameter.get("WaitTimeConstants", "Auto")
 
         # Bias Voltage
         self.bias_voltage = parameter.get("BiasVoltage")
@@ -247,6 +250,8 @@ class Device(EmptyDevice):
                         f"MRFRequency,{self.slot},"
                         f"MSETtling,{self.slot}"
                         )
+        if self.wait_time:
+            time.sleep(self.wait_time)
 
     def read_result(self):
         t_start = time.time()
@@ -351,6 +356,12 @@ class Device(EmptyDevice):
             self.port.write(f"SENSe{self.slot}:LIA:REFerence:CYCLes {self.lia_avg_ref_cycles}")
 
         # Time constant and rolloff for traditional lowpass filter
+        if not self.wait_time_constants == 'Auto':
+            try:
+                self.wait_time = (float(self.wait_time_constants) * float(self.lia_tc))
+            except (ValueError, TypeError):
+                raise ValueError("'Settling in time constants' must be 'Auto' or a float.")
+
         # Enable/Disable Lowpass filter
         self.port.write(f'SENSe{self.slot}:LIA:LPASs {"1" if self.lia_lowpass else "0"}')
         if self.lia_lowpass:
