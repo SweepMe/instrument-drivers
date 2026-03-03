@@ -96,14 +96,6 @@ class Device(EmptyDevice):
         self.plottype = [True] * len(self.channels)
         self.savetype = [True] * len(self.channels)
 
-    def connect(self) -> None:
-        """Connect to the device. This function is called only once at the start of the measurement."""
-        try:
-            self.modbus_address = int(self.modbus_address)
-        except ValueError:
-            msg = f"Invalid Modbus address: {self.modbus_address}. Must be an integer."
-            raise ValueError(msg)
-
     def call(self) -> list:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         results = []
@@ -123,13 +115,13 @@ class Device(EmptyDevice):
         register_address = channel - 1
 
         cmd = self.generate_read_command(
-            slave_address=self.modbus_address,
+            slave_address=int(self.modbus_address),
             function_code=4,  # read input register (FC04)
             register_address=register_address,
             num_registers=1,  # read 1 register (16-bit value)
         )
-        print(f"Generated command for channel {channel}: {cmd.hex()}")
-        response = self.port.query(cmd)
+        self.port.port.write(cmd)
+        response = self.port.port.read(32)
 
         # Validate response length
         # Response structure: [slave_addr][func_code][byte_count][data...][CRC_low][CRC_high]
