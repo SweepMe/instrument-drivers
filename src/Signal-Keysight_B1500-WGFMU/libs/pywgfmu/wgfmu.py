@@ -349,6 +349,15 @@ def set_timeout(timeout_ms: int) -> None:
     _dll.WGFMU_setTimeout(ctypes.c_int32(timeout_ms))
 
 
+def set_measure_mode(channel: int, mode: str) -> None:
+    """Set the measurement mode for the specified channel to either Voltage (4000) or Current (4001)."""
+    mode_int = 4000 if "v" in mode.lower() else 4001  # voltage or current
+    _dll.WGFMU_setMeasureMode(
+        ctypes.c_int32(channel),
+        ctypes.c_int32(mode_int),
+    )
+
+
 def execute() -> None:
     """Runs the seuencer of all enabled WGFMU channels in Fast IV or PG mode.
 
