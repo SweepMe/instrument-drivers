@@ -66,18 +66,18 @@ def parse_modbus_response(response):
 if __name__ == "__main__":
     port = serial.Serial(
         port=serial_port,
-        baudrate=BAUD_RATE,
-        bytesize=serial.EIGHTBITS,
-        parity=serial.PARITY_NONE,
-        stopbits=serial.STOPBITS_ONE,
-        timeout=TIMEOUT,
-        xonxoff=False,
-        rtscts=False,
+        baudrate=38400,
+        bytesize=8,
+        parity="N",
+        stopbits=1,
+        timeout=1,
+        # xonxoff=False,
+        # rtscts=False,
     )
 
     # Set set point
     setpoint_address = 2114
-    value = 50
+    value = 21
     set_raw_hex = "0110 2114 0002 0400 0042 4857 97"
     set_raw_hex_clean = set_raw_hex.replace(" ", "")
     set_cmd = bytes.fromhex(set_raw_hex_clean)
