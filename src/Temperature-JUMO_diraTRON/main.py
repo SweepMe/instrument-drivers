@@ -38,16 +38,8 @@ from typing import Any
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
-
-
-
 class Device(EmptyDevice):
     """Driver for the JUMO diraTRON."""
-
-    description = """
-    Works for JUMO diraTRON 104/108/116/132
-    - Channel corresponds to the Modbus RTU address
-    """
 
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
@@ -57,12 +49,12 @@ class Device(EmptyDevice):
 
         # SweepMe! parameters
         self.variables = [
-            "Controller Setpoint",  # Sollwert
-            "Controller Actual",  # Istwert
-            "Control Deviation",  # Regelabweichung
-            "Output Level",  # Stellgradanzeige
+            "Temperature",
+            "Setpoint",
+            "Deviation",
+            "Output Level",
         ]
-        self.units = [""] * len(self.variables)
+        self.units = ["°C", "°C", "K", "%"]
         self.plottype = [True] * len(self.variables)
         self.savetype = [True] * len(self.variables)
 
@@ -71,11 +63,11 @@ class Device(EmptyDevice):
         self.port_manager = True
         self.port_types = ["COM"]
         self.port_properties = {
-            "timeout": 1,
             "baudrate": 38400,
-            "stopbits": 1,
-            "parity": "N",
             "bytesize": 8,
+            "parity": "N",
+            "stopbits": 1,
+            "timeout": 1,
         }
         self.modbus_address: int = 1
 
@@ -91,7 +83,7 @@ class Device(EmptyDevice):
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         del parameters
         return {
-            "SweepMode": ['None', 'Setpoint in °C'],
+            "SweepMode": ["None", "Temperature in °C"],
             "Channel": 1,
         }
 
@@ -101,63 +93,48 @@ class Device(EmptyDevice):
         self.sweep_mode = parameters.get("SweepMode", "None")
         self.modbus_address = parameters.get("Channel", 1)
 
-    def connect(self):
-        """Connect to the device."""
-        try:
-            self.modbus_address = int(self.modbus_address)
-        except ValueError:
-            msg = f"Invalid Modbus address: {self.modbus_address}. Must be an integer."
-            raise ValueError(msg)
-
-    def configure(self) -> None:
-        """Configure the device. This function is called every time the device is used in the sequencer."""
-
-    def unconfigure(self) -> None:
-        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
-
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-        if self.sweep_mode.startswith("Setpoint"):
+        if self.sweep_mode.startswith("Temperature"):
             self.set_setpoint(float(self.value))
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         self.read_registers()
         return [
-            self.temperature_setpoint,
             self.current_temperature,
+            self.temperature_setpoint,
             self.temperature_difference,
             self.output_power_percent,
         ]
+
+    def measure_temperature(self) -> float:
+        """Measure the current temperature from the device."""
+        self.read_registers()
+        return self.current_temperature
 
     # Wrapper functions
 
     def set_setpoint(self, setpoint: float) -> None:
         """Set the controller setpoint."""
         cmd = self.generate_set_register_command(
-            slave_address=self.modbus_address,
+            slave_address=int(self.modbus_address),
             register_address=8468,  # register for the temperature setpoint
             register_value=setpoint,
         )
-        print(f"Generated setpoint command: {cmd}")
-        response = self.port.query(cmd)
-        # TODO: Handle response, check for success, etc.
+        self.port.port.write(cmd)
+        self.port.read_raw(32)  # Read response to clear the buffer
 
     def read_registers(self) -> None:
         """Read the 4 relevant 4-byte float values from the device and store them in instance variables."""
         cmd = self.generate_read_command(
-            slave_address=self.modbus_address,
+            slave_address=int(self.modbus_address),
             function_code=3,  # read holding registers
             register_address=28688,  # starting register for setpoint, other values follow
             num_registers=8,  # read 8 registers to get all 4 float values (2 registers per float)
         )
-        print(f"Sending Read command: {' '.join(f'{byte:02X}' for byte in cmd)}")
-        self.port.write(cmd)
-        # time.sleep(0.1)  # wait for response
-
-        response = self.port.read(32)  # read up to 32 bytes
-        # response = b'\x01\x03\x10\x00\x00B\xc8\x1bLA\xbb9-B\x99\x00\x00B\xc8\xffu'
-        print(f"Received response: {response.hex().upper()}")
+        self.port.port.write(cmd)  # write bytes directly to the port
+        response = self.port.port.read(32)  # read up to 32 bytes
 
         # Extract the data payload (skip address, function code, byte count)
         data_start = 3
@@ -167,8 +144,7 @@ class Device(EmptyDevice):
         values = []
         for i in range(4):
             offset = data_start + (i * 4)
-            # Get 4 bytes: [0, 1, 2, 3] but they're stored as [2, 3, 0, 1]
-            # So we need to swap the word order: read bytes 2,3,0,1
+            # Get 4 bytes: [0, 1, 2, 3] but they're stored as [2, 3, 0, 1] -> swap the word order: read bytes 2,3,0,1
             word1 = response[offset + 2:offset + 4]  # bytes 2,3
             word0 = response[offset:offset + 2]  # bytes 0,1
             # Reconstruct in correct order: word0, word1 (which is bytes 2,3,0,1)

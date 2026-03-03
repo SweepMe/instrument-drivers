@@ -101,14 +101,11 @@ if __name__ == "__main__":
     # Example usage: Set channel 1 setpoint to 100.0°C
     slave_address = 1
     register_address = 8468  # Setpoint decimal register for channel 1, hex = 21224
-    register_value = 50.0
-    # register_value = 0
+    register_value = 100.0
 
     command_hex = generate_set_register_command(slave_address, register_address, register_value)
     print(f"Generated cmd for {register_value}: {command_hex}")
-    # print("Expected cmd for 100.0:  01 10 21 14 00 02 04 90 00 40 05 BB C2")
-    # print("Expected cmd for 0: 01 10 21 14 00 02 04 00 00 00 00 67 01")
-    print("Expected cmd for 50.0:  01 10 21 14 00 02 04 00 00 42 48 57 97")
+    print("Expected cmd for 100.0:  01 10 21 14 00 02 04 90 00 40 05 BB C2")
 
     # Create reading commands
     modbus_address = 1
