@@ -75,6 +75,8 @@ class Device(EmptyDevice):
         self.scaling_mode: str = "No scaling"
         self.scaling_value: float = 1.0
 
+        self.measure_mode: str = "Measure Voltage"
+
         # Measured values
         self.measured_timestamps: list[float] = []
         self.measured_voltages: list[float] = []
@@ -100,7 +102,7 @@ class Device(EmptyDevice):
             # "RiseTime": 1.0,
             # "FallTime": 1.0,
             # "TimeConstant": 1.0,
-            # "OperationMode": ['None'],
+            "OperationMode": ["Measure Voltage", "Measure Current"],
             # "Impedance": ['Auto', 'High-Z', '50 Ohm'],
             # "Trigger": ['None', 'External', 'Internal'],
             "ArbitraryWaveformFile": "Path to file",
@@ -126,7 +128,7 @@ class Device(EmptyDevice):
         # self.risetime = parameters.get("RiseTime", 1.0)
         # self.falltime = parameters.get("FallTime", 1.0)
         # self.timeconstant = parameters.get("TimeConstant", 1.0)
-        # self.operationmode = parameters.get("OperationMode", "None")
+        self.measure_mode = parameters.get("OperationMode", "Measure Voltage")
         # self.impedance = parameters.get("Impedance", "Auto")
         # self.trigger = parameters.get("Trigger", "None")
         self.csv_file_path = parameters.get("ArbitraryWaveformFile", "Path to file")
@@ -191,6 +193,9 @@ class Device(EmptyDevice):
         # For long range box, there might be a different mode
         wgfmu.set_operation_mode(self.channel, wgfmu.OperationMode.FASTIV)
 
+        measure_mode = "Voltage" if "voltage" in self.measure_mode.lower() else "Current"
+        wgfmu.set_measure_mode(self.channel, measure_mode)
+
         # Add measurement events
         for number, measurement_event in enumerate(self.measure_events):
             measure_start, points, interval = measurement_event
@@ -242,7 +247,14 @@ class Device(EmptyDevice):
 
     def read_result(self) -> None:
         """Read the results."""
+        if not self.measure_events:
+            # No measurement events defined, so no results to read
+            return
+
         completed_points, total_points = wgfmu.get_measure_value_size(self.channel)
+        if completed_points < 1:
+            msg = "No measurement points completed. Cannot read results."
+            raise RuntimeError(msg)
         self.measured_timestamps, self.measured_voltages = wgfmu.get_measure_values(self.channel, 0, completed_points)
 
     def call(self) -> list:
