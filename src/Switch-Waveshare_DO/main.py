@@ -39,22 +39,6 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
     """Driver for the Waveshare DO."""
 
-    description = """
-    <h3>Waveshare Digital Output 8CH</h3>
-    <p>This driver controls the Waveshare Digital Output 8CH module via Modbus RTU.</p>
-    <p><strong>Features:</strong></p>
-    <ul>
-    <li>8 independent digital output channels</li>
-    <li>Modbus RTU communication over RS485</li>
-    <li>Configurable Modbus address (default: 1)</li>
-    </ul>
-    <p><strong>Configuration:</strong></p>
-    <ul>
-    <li>Set each channel to ON or OFF state</li>
-    <li>Default baudrate: 38400, 8N1</li>
-    </ul>
-    """
-
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
         super().__init__()
@@ -119,16 +103,17 @@ class Device(EmptyDevice):
         self.channel_7 = parameters.get("Channel 7", "ON")
         self.channel_8 = parameters.get("Channel 8", "ON")
 
-    def connect(self) -> None:
-        """Connect to the device. This function is called only once at the start of the measurement."""
-        self.modbus_address = int(self.modbus_address)
-
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
         for channel in range(1, 9):
             value = getattr(self, f"channel_{channel}", "ON") == "ON"
-            cmd = self.create_command(self.modbus_address, channel, value)
-            response = self.port.query(cmd)
+            self.set_channel(channel, value)
+
+    def set_channel(self, channel: int, value: bool) -> None:
+        """Set a specific channel to ON or OFF."""
+        cmd = self.create_command(int(self.modbus_address), channel, value)
+        self.port.port.write(cmd)
+        self.port.port.read(32)  # Read response to clear the buffer
 
     def create_command(self, slave_address: int, channel: int, value: bool) -> bytes:
         """Generate a Modbus RTU command for setting a single register to a bool value."""
