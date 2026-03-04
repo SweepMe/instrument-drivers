@@ -146,12 +146,11 @@ class Device(EmptyDevice):
         self.power_unit = parameters.get("Power unit", "dBm")
 
         if parameters.get("Mode", "Single") == "List":
-            # TODO: add exceptions to prevent gui errors while changing
             self.list_mode = True
-            self.list_start = float(parameters.get("List Start in nm", "1250"))
-            self.list_stop = float(parameters.get("List Stop in nm", "1650"))
-            self.list_step = float(parameters.get("List Step in nm", "10"))
-            self.scan_speed = float(parameters.get("Scan speed in nm/s", "10"))
+            self.list_start = parameters.get("List Start in nm", "1250")
+            self.list_stop = parameters.get("List Stop in nm", "1650")
+            self.list_step = parameters.get("List Step in nm", "10")
+            self.scan_speed = parameters.get("Scan speed in nm/s", "10")
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -163,7 +162,7 @@ class Device(EmptyDevice):
         # TODO: find better solution
         try:
             self.get_wavelength_range()
-        except TimeoutError:  # TODO: validate exception type
+        except TimeoutError:
             self.get_wavelength_range()
 
     def poweron(self) -> None:
@@ -203,6 +202,11 @@ class Device(EmptyDevice):
 
     def configure_list_mode(self) -> None:
         """Configure the device for wavelength sweeps in list mode."""
+        self.list_start = float(self.list_start)
+        self.list_stop = float(self.list_stop)
+        self.list_step = float(self.list_step)
+        self.scan_speed = float(self.scan_speed)
+
         # activate trigger connectors (1 = DEFault)
         self.port.write("trigger:configuration 1")
         # Continuous sweep with lambda logging requires laser output trigger to be set to "Step Finished"
@@ -231,9 +235,6 @@ class Device(EmptyDevice):
 
         # turn on lambda logging for the laser. Important to allow readout of wavelength data afterwards
         self.port.write(f"sour{self.slot}:wav:swe:llog ON")
-
-    def unconfigure(self) -> None:
-        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'.
@@ -266,10 +267,10 @@ class Device(EmptyDevice):
         """Wait until the sweep is completed, the measurement is aborted, or the timeout is reached."""
         # Calculate expected measurement time
         expected_time = (self.list_stop - self.list_start) / self.scan_speed
-        # TODO: Check if this is a good formula
         timeout_s = max(expected_time * 2, 15)
 
-        while True:
+        time_start = time.time()
+        while not self.is_run_stopped():
             # the status is returned with a leading '+'
             status = self.port.query(f"source{self.slot}:wav:sweep:state?")[1]
 
@@ -277,15 +278,11 @@ class Device(EmptyDevice):
                 # Sweep finished successfully
                 break
 
-            if self.is_run_stopped():
-                break
-
-            if timeout_s <= 0:
-                msg = f"Sweep did not finish within the timeout period of {max(expected_time * 2, 15)}s."
+            if time.time() - time_start > timeout_s:
+                msg = f"Sweep did not finish within the timeout period of {timeout_s}s."
                 raise TimeoutError(msg)
 
             time.sleep(0.1)
-            timeout_s -= 0.1
 
     def get_lambda_logging_data(self) -> np.ndarray:
         """Get the lambda logging data in nm after a sweep in list mode.
