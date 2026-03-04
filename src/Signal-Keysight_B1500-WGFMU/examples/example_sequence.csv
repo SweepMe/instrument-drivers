@@ -1,0 +1,9 @@
+measure_start;points;interval in s;
+0.001;10;0.00001
+0.002;2;0.00001
+time in s;voltage in V
+0;0
+0.001;1
+0.001;1
+0.001;0
+
