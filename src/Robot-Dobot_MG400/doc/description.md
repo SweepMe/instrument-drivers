@@ -13,7 +13,14 @@ This driver can be used to control **x, y, z** and **r (rotation)** of a Dobot M
   2. Tab **Network** -> **Internet Protocol Version 4 (TCP/IPv4)** -> **Properties**  
   3. Select **Static IP Address** and **255.255.255.0** as subnet mask.  
      Use an address that is different from the robot but in the same subnet, e.g., `192.168.1.5` if using the first Ethernet port.
+
+---
+
+### Connection:
+
 - Connect to the robot via DobotStudioPro and set: Configuration -> Remote Control -> Current Mode = **TCP/IP Secondary Development**. Otherwise, the robot might not respond to commands from this driver.
+- In DobotStudioPro, set the robot to **Enabled**
+- Now the robot should be ready to receive commands from this driver.
 
 ---
 
