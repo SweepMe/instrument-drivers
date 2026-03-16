@@ -82,7 +82,7 @@ class Device(EmptyDevice):
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.modbus_address = parameters["Modbus address"]
+        self.modbus_address = parameters.get("Modbus address", 1)
         self.mode = parameters.get("Mode", "Voltage in V")
 
         channels = parameters.get("Channel", "1,2,3,4")
@@ -121,6 +121,7 @@ class Device(EmptyDevice):
             num_registers=1,  # read 1 register (16-bit value)
         )
         self.port.port.write(cmd)
+        # TODO: test with correct response length
         response = self.port.port.read(32)
 
         # Validate response length

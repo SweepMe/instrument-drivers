@@ -117,7 +117,7 @@ if __name__ == "__main__":
     command += starting_register.to_bytes(2, byteorder='big')
     command += number_of_registers.to_bytes(2, byteorder='big')
     command += calculate_crc16(command)
-    print(command)
+    print(command, len(command))
     print(f"Gen. Read command: {' '.join(f'{byte:02X}' for byte in command)}")
     print(f"Expected read cmd: 01 03 70 10 00 08 5F 09")
 
