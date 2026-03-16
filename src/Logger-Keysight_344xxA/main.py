@@ -30,6 +30,7 @@
 # * Module: Logger
 # * Instrument: Keysight 344xxA
 
+import re
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
@@ -146,6 +147,11 @@ class Device(EmptyDevice):
         # once at the beginning of the initialization; STATUS:PRESET to reset registers
         self.port.write("STAT:PRES")
 
+        self.model = self.get_model()
+        if self.model in ["34401A"] and self.mode in ["Temperature", "Capacitance"]:
+            msg = f"Mode '{self.mode}' is not supported for model {self.model}."
+            raise ValueError(msg)
+
         # can be used for text on lower instrument display
         # self.port.write(":DISP:WIND2:TEXT \"DRIVEN BY SWEEPME\"")
 
@@ -215,3 +221,15 @@ class Device(EmptyDevice):
         # here we read the response from the "READ?" request in 'measure'
         answer = self.port.read()
         return [float(answer)]
+
+    def get_model(self) -> str:
+        """Returns the device model, such as 34410A, 34411A, etc.
+
+        idn string can be like '34410A,MY12345678,2.35-2.35-0.09-46-09' or 'HEWLETT-PACKARD,34401A,0,11-1-1'
+        """
+        idn = self.port.query("*IDN?")
+        match = re.search(r"344\d{2}A", idn)
+        if match:
+            return match.group(0)
+        else:
+            return "Unknown Model"
