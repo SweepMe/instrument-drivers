@@ -155,14 +155,14 @@ class Device(EmptyDevice):
         """
         Enable or disable input zero correction.
         """
-        value = "ON" if state else "OFF"
-        self.port.write(f"INP:ZCOR {value}") #:INPut:ZCORrect <ON|OFF>
-        """
-        Acquire zero-current:
-        - Input must be open or in a known zero-current condition
-        - This is true in the configure-phase of the sequencer
-        """
-        self.port.write("INP OFF")  # Open input (guaranteed zero current)
-        self.port.write("INP:ZCOR:ACQ")  # Acquire zero reference
-        self.port.write("INP ON")  # Reconnect DUT
+        if state:
+            self.port.write("INP:ZCOR ON")
+            # Acquire zero-current:
+            # - Input must be open or in a known zero-current condition
+            # - This is true in the configure-phase of the sequencer
+            self.port.write("INP OFF")  # Open input (guaranteed zero current)
+            self.port.write("INP:ZCOR:ACQ")  # Acquire zero reference
+            self.port.write("INP ON")  # Reconnect DUT
+        else:
+            self.port.write("INP:ZCOR OFF")
 
