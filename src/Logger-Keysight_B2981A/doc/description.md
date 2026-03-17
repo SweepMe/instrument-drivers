@@ -27,7 +27,6 @@ This driver enables **ultra-low DC current measurements** with the **Keysight B2
 | Range            | Fixed current range or Auto |
 | NPLC             | Integration time (longer = lower noise) |
 | Zero Correction  | Boolean |
-| Include Timestamp | Boolean |
 
 ---
 
