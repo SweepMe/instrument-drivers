@@ -95,12 +95,12 @@ class Device(EmptyDevice):
         }
         return gui_parameters
 
-    def apply_gui_parameters(self, parameter) -> None:
+    def apply_gui_parameters(self, parameters) -> None:
         """Read values input by the user"""
-        self.port_string = parameter.get("Port")
-        self.range = parameter.get('Range')
-        self.nplc = parameter.get('NPLC')
-        self.zero_correct = parameter.get("Zero Correction")
+        self.port_string = parameters.get("Port")
+        self.range = parameters.get('Range')
+        self.nplc = parameters.get('NPLC')
+        self.zero_correct = parameters.get("Zero Correction")
 
 
     def connect(self) -> None:
