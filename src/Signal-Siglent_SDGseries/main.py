@@ -338,7 +338,7 @@ class Device(EmptyDevice):
 
     def set_frequency(self, frequency: float) -> None:
         """Set the frequency in Hz of the selected channel."""
-        self.port.write(f"{self.channel}:BSWV FREQ,{frequency}")
+        self.port.write(f"{self.channel}:BSWV FRQ,{frequency}")
 
     def set_amplitude(self, amplitude: float) -> None:
         """Set the amplitude in V of the selected channel."""
