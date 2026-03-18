@@ -171,3 +171,7 @@ cython_debug/
 /src/*/libs/**/__pycache__/
 /src/*/libraries/libs_39_32/**/__pycache__/
 /src/*/libraries/libs_39_64/**/__pycache__/
+
+# Claude Code - an AI-powered code assistant by Anthropic.
+.claude
+CLAUDE.md
