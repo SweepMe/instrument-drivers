@@ -133,6 +133,13 @@ class Device(EmptyDevice):
         # self.trigger = parameters.get("Trigger", "None")
         self.csv_file_path = parameters.get("ArbitraryWaveformFile", "Path to file")
 
+        if "voltage" in self.measure_mode.lower():
+            self.variables = ["Timestamp", "Voltage"]
+            self.units = ["s", "V"]
+        else:
+            self.variables = ["Timestamp", "Current"]
+            self.units = ["s", "A"]
+
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
         if self.port_string not in self.device_communication:
