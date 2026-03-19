@@ -74,6 +74,7 @@ class Device(EmptyDevice):
             "Fast (0.1 NPLC)": 0.1,
             "Medium (1.0 NPLC)": 1.0,
             "Slow (10.0 NPLC)": 10.0,
+            "Very slow (25.0 NPLC)": 25.0,
         }
 
         # Common parameters
