@@ -63,6 +63,7 @@ class Device(EmptyDevice):
         self.channel_string: str = "Slot 1, Channel 1"
         self.channel: int = 101
         self.is_master: bool = True
+        self.device_communication_key: str = ""
 
         # Sequence parameters
         self.csv_file_path: str = "Path to file"
@@ -142,14 +143,15 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
-        if self.port_string not in self.device_communication:
+        self.device_communication_key = f"Signal_Keysight_B1500-WGFMU_{self.port_string}"
+        if self.device_communication_key not in self.device_communication:
             # First instance, load the dll and connect to the device
             wgfmu.load_dll()
 
             wgfmu.open_session(self.port_string)
             wgfmu.initialize()
             wgfmu.clear()  # clear any previous waveforms and sequences
-            self.device_communication[self.port_string] = -1  # will be set to master channel in configure
+            self.device_communication[self.device_communication_key] = -1  # will be set to master channel in configure
 
         # retrieve slot and channel from channel_string
         # expected format: "Slot X, Channel Y"
@@ -167,9 +169,9 @@ class Device(EmptyDevice):
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
         wgfmu.disconnect(self.channel)
-        if self.port_string in self.device_communication:
+        if self.device_communication_key in self.device_communication:
             wgfmu.close_session()
-            del self.device_communication[self.port_string]
+            del self.device_communication[self.device_communication_key]
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -219,15 +221,15 @@ class Device(EmptyDevice):
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
-        if self.device_communication.get(self.port_string, -1) == self.channel:
-            self.device_communication[self.port_string] = -1  # reset master channel when leaving the branch
+        if self.device_communication.get(self.device_communication_key, -1) == self.channel:
+            self.device_communication[self.device_communication_key] = -1  # reset master channel when leaving the branch
 
     def measure(self) -> None:
         """Perform the measurement."""
-        master_channel = self.device_communication[self.port_string]
+        master_channel = self.device_communication[self.device_communication_key]
         if master_channel < 0:  # no master channel set yet
             self.is_master = True
-            self.device_communication[self.port_string] = self.channel
+            self.device_communication[self.device_communication_key] = self.channel
         elif master_channel == self.channel:
             self.is_master = True
         else:
