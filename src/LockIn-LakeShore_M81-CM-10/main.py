@@ -367,12 +367,6 @@ class Device(EmptyDevice):
             self.port.write(f'SENSe{self.slot}:LIA:AVERage 1')  # Enable averaging filter
             self.port.write(f"SENSe{self.slot}:LIA:REFerence:CYCLes {self.lia_avg_ref_cycles}")
 
-        if not self.wait_time_constants == 'Auto':
-            try:
-                self.wait_time = (float(self.wait_time_constants) * float(self.lia_tc))
-            except (ValueError, TypeError):
-                raise ValueError("'Settling in time constants' must be 'Auto' or a float.")
-
         # Phase shift to lock-in reference source
         if self.lia_ref_phase_shift == "Auto":
             self.port.write(f"SENSe{self.slot}:LIA:DPHase:AUTO")
@@ -387,6 +381,12 @@ class Device(EmptyDevice):
             self.port.write(f"SENSe{self.slot}:LIA:DPHase {self.lia_ref_phase_shift}")
 
     def set_timeconstant(self):
+        # Calculate wait time
+        if not self.wait_time_constants == 'Auto':
+            try:
+                self.wait_time = (float(self.wait_time_constants) * float(self.lia_tc))
+            except (ValueError, TypeError):
+                raise ValueError("'Settling in time constants' must be 'Auto' or a float.")
         # Time constant and rolloff for traditional lowpass filter
         # Enable/Disable Lowpass filter
         self.port.write(f'SENSe{self.slot}:LIA:LPASs {"1" if self.lia_lowpass else "0"}')
