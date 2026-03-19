@@ -90,6 +90,7 @@ class Device(EmptyDevice):
         # Measurement Parameters
         self.slot: str = ""
         self.port_string: str = ""
+        self.sweep_mode: str = "None"
         self.range: float = 0.0
         self.use_bias: bool = False
         self.bias_voltage: float = 0.0
@@ -124,7 +125,7 @@ class Device(EmptyDevice):
     def set_GUIparameter(self):
 
         GUIparameter = {
-            # "SweepMode": ["None", "Time constant in s"], # Currently no sweepmode implemented. Unclear which parameter to sweep.
+            "SweepMode": ["None","Sensitivity in A", "Time constant in s"],
             "Channel": ["M1", "M2", "M3"],
             "Source": ["S1", "S2", "S3", "Reference In"],
             "Sensitivity": list(self.range_limits.keys()),
@@ -153,6 +154,7 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter):
         channel = parameter.get("Channel")
+        self.sweep_mode = parameter.get("SweepMode")
         if channel.strip().lower() in  ["m1", "m2", "m3"]:
             self.slot = channel[1]  # e.g. "1 for "M1"
         else:
@@ -233,12 +235,21 @@ class Device(EmptyDevice):
     def configure(self):
         self.set_mode()
         self.set_range()
+        self.set_timeconstant()
         self.set_lockin_settings()
         self.set_advanced_settings()
         # Bias voltage must be set after filter settings or a warning will appear on the touch panel.
         self.set_bias(self.use_bias, self.bias_voltage)
 
     """ the following functions are called for each measurement point """
+
+    def apply(self):
+        if self.sweep_mode == "Sensitivity in A":
+            self.range = float(self.value)
+            self.set_range()
+        elif self.sweep_mode == "Time constant in s":
+            self.lia_tc = float(self.value)
+            self.set_timeconstant()
 
     def measure(self):
         # Use Fetch to get X and Y (latest settled values).
@@ -252,11 +263,12 @@ class Device(EmptyDevice):
                         )
         if self.wait_time:
             time.sleep(self.wait_time)
+            # Change self.port_properties["timeout"] to accommodate wait_time?
 
     def read_result(self):
         t_start = time.time()
         while True:
-            if time.time() - t_start > self.port_properties.get("timeout"):
+            if time.time() - t_start > (self.port_properties.get("timeout") + self.wait_time):
                 raise RuntimeError(
                     f'Lock-in did not settle within timeout of {self.port_properties.get("timeout")} seconds.')
             resp = self.port.read().split(",")
@@ -355,20 +367,12 @@ class Device(EmptyDevice):
             self.port.write(f'SENSe{self.slot}:LIA:AVERage 1')  # Enable averaging filter
             self.port.write(f"SENSe{self.slot}:LIA:REFerence:CYCLes {self.lia_avg_ref_cycles}")
 
-        # Time constant and rolloff for traditional lowpass filter
         if not self.wait_time_constants == 'Auto':
             try:
                 self.wait_time = (float(self.wait_time_constants) * float(self.lia_tc))
             except (ValueError, TypeError):
                 raise ValueError("'Settling in time constants' must be 'Auto' or a float.")
 
-        # Enable/Disable Lowpass filter
-        self.port.write(f'SENSe{self.slot}:LIA:LPASs {"1" if self.lia_lowpass else "0"}')
-        if self.lia_lowpass:
-            if not (10000 >= self.lia_tc >= 0.0001):
-                raise ValueError("Lock-In time constant must be >= 0.0001 s and <= 10,000 s.")
-            self.port.write(f"SENSe{self.slot}:LIA:TIMEconstant {self.lia_tc}")
-            self.port.write(f"SENSe{self.slot}:LIA:ROLLoff R{self.lia_rolloff}")
         # Phase shift to lock-in reference source
         if self.lia_ref_phase_shift == "Auto":
             self.port.write(f"SENSe{self.slot}:LIA:DPHase:AUTO")
@@ -381,6 +385,16 @@ class Device(EmptyDevice):
                 raise ValueError('Reference phase shift must be a float between -360 and +360 degrees or "Auto".') \
                     from e
             self.port.write(f"SENSe{self.slot}:LIA:DPHase {self.lia_ref_phase_shift}")
+
+    def set_timeconstant(self):
+        # Time constant and rolloff for traditional lowpass filter
+        # Enable/Disable Lowpass filter
+        self.port.write(f'SENSe{self.slot}:LIA:LPASs {"1" if self.lia_lowpass else "0"}')
+        if self.lia_lowpass:
+            if not (10000 >= self.lia_tc >= 0.0001):
+                raise ValueError("Lock-In time constant must be >= 0.0001 s and <= 10,000 s.")
+            self.port.write(f"SENSe{self.slot}:LIA:TIMEconstant {self.lia_tc}")
+            self.port.write(f"SENSe{self.slot}:LIA:ROLLoff R{self.lia_rolloff}")
 
     def set_advanced_settings(self):
         # Filters
@@ -423,8 +437,9 @@ class Device(EmptyDevice):
             return float('nan')
 
         # Special value M81: Overload → +inf
-        if val == 9.90e37:
-            return float('inf')
+#       Commented out to ensure that something shows up in the plot.
+#        if val == 9.90e37:
+#           return float('inf')
 
         # Special value M81: PLL unlocked → NaN
         if val == 9.91e37:
