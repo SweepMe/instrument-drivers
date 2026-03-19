@@ -134,7 +134,7 @@ class Device(EmptyDevice):
         # self.trigger = parameters.get("Trigger", "None")
         self.csv_file_path = parameters.get("ArbitraryWaveformFile", "Path to file")
 
-        if "voltage" in self.measure_mode.lower():
+        if "Voltage" in self.measure_mode:
             self.variables = ["Timestamp", "Voltage"]
             self.units = ["s", "V"]
         else:
@@ -237,13 +237,17 @@ class Device(EmptyDevice):
 
         if self.is_master:
             wgfmu.execute()
+            # ensure the measurement is started by waiting for the running state (max 3s)
+            start_time = time.time()
+            while not self.is_run_stopped() and time.time() - start_time < 3:
+                status, _, _ = wgfmu.get_channel_status(self.channel)
+                if status == wgfmu.ChannelStatus.RUNNING:
+                    break
+                time.sleep(0.1)
 
     def request_result(self) -> None:
         """Each channel waits until its status is not 'RUNNING'."""
-        while True:
-            if self.is_run_stopped():
-                break
-
+        while not self.is_run_stopped():
             status, elapsed_time, estimated_total_time = wgfmu.get_channel_status(self.channel)
             if status != wgfmu.ChannelStatus.RUNNING:
                 break
