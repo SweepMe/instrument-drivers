@@ -123,29 +123,29 @@ class Device(EmptyDevice):
 
     def apply_gui_parameters(self, parameter):
         # Source / measure channel mapping
-        self.channel = parameter.get("Channel")
+        self.channel = parameter.get("Channel", "")
         # Extract source and measurement slot numbers robustly
         parts = [p.strip() for p in self.channel.split('+')]
         if len(parts) == 2 and parts[0].startswith('S') and parts[1].startswith('M'):
             self.sslot = parts[0][1]
             self.mslot = parts[1][1]
-        self.port_string = parameter["Port"]
+        self.port_string = parameter.get("Port", "")
         self.range_source = self.source_range_limits.get(parameter.get("RangeVoltage", "Auto"))
         self.range_current = self.current_range_limits.get(parameter.get("Range", "Auto"))
         try:
-            self.current_protect = float(parameter["Compliance"])
+            self.current_protect = float(parameter.get("Compliance", 0.1))
         except (KeyError, TypeError):
             self.current_protect = 0.1
 
         try:
-            self.vlim_high = float(parameter["High voltage output limit in V"])
-            self.vlim_low = float(parameter["Low voltage output limit in V"])
+            self.vlim_high = float(parameter.get("High voltage output limit in V", 0.0))
+            self.vlim_low = float(parameter.get("Low voltage output limit in V", 0.0))
         except (KeyError, TypeError):
             self.vlim_high = 0.0
             self.vlim_low = 0.0
 
         try:
-            self.nplc = float(self.speed_nplcs[parameter["Speed"]])
+            self.nplc = float(self.speed_nplcs.get(parameter.get("Speed"), 0.0))
         except KeyError:
             self.nplc = 0.0
 
