@@ -306,7 +306,9 @@ class Device(EmptyDevice):
                         f"MSETtling,{self.slot}"
                         )
         if self.wait_time:
-            time.sleep(self.wait_time)
+start_time = time.time()
+    while not self.is_run_aborted() and time.time() - start_time < self.wait_time:  # this flag is set True when the user presses 'Stop'
+        time.sleep(min(0.1, self.wait_time))
 
     def read_result(self):
         t_start = time.time()
