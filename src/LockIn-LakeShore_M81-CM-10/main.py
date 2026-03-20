@@ -437,7 +437,8 @@ start_time = time.time()
         self.port.write(f'SENSe{self.slot}:LIA:LPASs {"1" if self.lia_lowpass else "0"}')
         if self.lia_lowpass:
             if not (10000 >= self.lia_tc >= 0.0001):
-                raise ValueError("Lock-In time constant must be >= 0.0001 s and <= 10,000 s.")
+                msg = f"Invaldid Lock-In time constant of {self.lia_tc}. Must be >= 0.0001 s and <= 10,000 s. "
+                raise ValueError(msg)
             self.port.write(f"SENSe{self.slot}:LIA:TIMEconstant {self.lia_tc}")
             self.port.write(f"SENSe{self.slot}:LIA:ROLLoff R{self.lia_rolloff}")
 
