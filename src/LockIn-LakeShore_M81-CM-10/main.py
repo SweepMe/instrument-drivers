@@ -165,13 +165,32 @@ class Device(EmptyDevice):
         self.lia_avg_ref_cycles = parameter.get("Averaging reference cycles", 0)
 
         # Traditional low pass output filter
-        self.lia_tc = parameter.get("TimeConstant", "")
+        raw_tc = parameter.get("TimeConstant", "")
+        # Default to previous value; try to parse string or numeric input
+        self.lia_lowpass = False
+        if isinstance(raw_tc, str):
+            try:
+                self.lia_tc = float(raw_tc.split(" ")[0])
+                self.lia_lowpass = True
+            except (ValueError, TypeError):
+                # leave lia_lowpass False and lia_tc unchanged
+                pass
+        else:
+            try:
+                self.lia_tc = float(raw_tc)
+                self.lia_lowpass = True
+            except (ValueError, TypeError):
+                self.lia_lowpass = False
+
+        raw_slope = parameter.get("Slope", "0")
         try:
-            self.lia_tc = float(self.lia_tc.split(" ")[0])
-            self.lia_lowpass = True
-            self.lia_rolloff = int(parameter.get("Slope", "0").split(" ")[0])
-        except ValueError:
-            self.lia_lowpass = False
+            if isinstance(raw_slope, str):
+                self.lia_rolloff = int(raw_slope.split(" ")[0])
+            else:
+                self.lia_rolloff = int(raw_slope)
+        except (ValueError, TypeError):
+            self.lia_rolloff = 0
+            pass
         self.wait_time_constants = parameter.get("WaitTimeConstants", "Auto")
 
         # Bias Voltage
@@ -197,7 +216,7 @@ class Device(EmptyDevice):
             self.filter_on = False
 
         # Digital filter
-        self.high_digital_filter = (True if "ON" in parameter.get("Filter1") else False)
+        self.high_digital_filter = (True if "ON" in parameter.get("Filter1", "") else False)
 
         # Reference wave
         self.lia_harm = parameter.get("Lock-In harmonic", 0)
@@ -244,11 +263,36 @@ class Device(EmptyDevice):
     """ the following functions are called for each measurement point """
 
     def apply(self):
+        """
+        Apply a swept value. Accept both GUI label-strings (e.g. "100 mA")
+        and numeric values (strings or numbers). For time constant allow
+        switching the traditional low-pass off by passing a label.
+        """
         if self.sweep_mode == "Sensitivity in A":
-            self.range = float(self.value)
+            val = self.value
+            # Accept labels from GUI (keys of range_limits) or numeric values
+            try:
+                if isinstance(val, str) and val in self.range_limits:
+                    self.range = self.range_limits[val]
+                else:
+                    # Try numeric conversion (handles strings like '0.1')
+                    self.range = float(val)
+            except (ValueError, TypeError) as e:
+                raise ValueError(f"Cannot parse sensitivity sweep value: {val}") from e
             self.set_range()
         elif self.sweep_mode == "Time constant in s":
-            self.lia_tc = float(self.value)
+            val = self.value
+            # If user selects an explicit 'off' label, disable lowpass
+            if isinstance(val, str) and 'off' in val.lower():
+                # e.g. "Traditional low pass output filter OFF"
+                self.lia_lowpass = False
+            else:
+                try:
+                    # numeric value (string or number)
+                    self.lia_tc = float(val)
+                    self.lia_lowpass = True
+                except (ValueError, TypeError) as e:
+                    raise ValueError(f"Cannot parse time constant sweep value: {val}") from e
             self.set_timeconstant()
 
     def measure(self):
