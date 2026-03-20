@@ -301,6 +301,8 @@ class Device(EmptyDevice):
             self.set_frequency(value)
 
     def check_device(self):
+        if not self.src_slot or not self.meas_slot:
+            raise ValueError(f"Invalid channel format: '{self.channel}'. Expected format 'S# + M#'.")
         # Verify both modules are present and of the expected type
         model_s = self.port.query(f"SOURce{self.src_slot}:MODel?")
         model_m = self.port.query(f"SENSe{self.meas_slot}:MODel?")
