@@ -122,6 +122,11 @@ class Device(EmptyDevice):
         self.freq_lia: float = 0.0
         self.dc: float = 0.0
 
+        self.variables = ["X", "Y", "Magnitude", "Phase", "Frequency", "Lock-In DC"]
+        self.units = ["A", "A", "A", "°", "Hz", "A"]
+        self.plottype = [True] * len(self.variables)
+        self.savetype = [True] * len(self.variables)
+
     def set_GUIparameter(self):
 
         GUIparameter = {
@@ -226,11 +231,6 @@ class Device(EmptyDevice):
         self.darkmode = parameter.get("Turn off LED", False)
 
         self.shortname = "CM-10 @ M" + self.slot
-
-        self.variables = ["X", "Y", "Magnitude", "Phase", "Frequency", "Lock-In DC"]
-        self.units = ["A", "A", "A", "°", "Hz", "A"]
-        self.plottype = [True] * len(self.variables)
-        self.savetype = [True] * len(self.variables)
 
     """ here, semantic standard functions start that are called by SweepMe! during a measurement """
     def connect(self):
