@@ -285,10 +285,11 @@ class Device(EmptyDevice):
         elif self.sweepmode.startswith("Offset"):
             self.set_offset(float(self.value))
 
-    def read_result(self):
-        # Return last applied voltage as the measurement; read back from instrument to be accurate
+    def measure(self):
         # Query the actual applied voltage (SOURce#:VOLTage:LEVel:AMPLitude:PEAK?)
         self.port.write(f"SOURce{self.slot}:VOLTage:LEVel:AMPLitude:PEAK?")
+
+    def read_result(self):
         try:
             self.peak_read = float(self.port.read())
         except (ValueError, TypeError):

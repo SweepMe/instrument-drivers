@@ -74,10 +74,12 @@ class Device(EmptyDevice):
             "Fast (0.1 NPLC)": 0.1,
             "Medium (1.0 NPLC)": 1.0,
             "Slow (10.0 NPLC)": 10.0,
+            "Very slow (25.0 NPLC)": 25.0,
         }
 
         # Common parameters
         # Source slot
+        self.channel: str = ""
         self.sslot: str = ""
         self.mslot: str = ""
         self.port_string: str = ""
@@ -106,14 +108,14 @@ class Device(EmptyDevice):
             "Channel": ["S1 + M1","S1 + M2","S1 + M3",
                         "S2 + M1","S2 + M2","S2 + M3",
                         "S3 + M1","S3 + M2","S3 + M3",],
-            "SweepMode": ["Voltage (V)"],
+            "SweepMode": ["Voltage in V"],
             "Compliance": 0.1,  # Compliance called "Current protection" in VS-10
             "Speed": list(self.speed_nplcs.keys()),
             "RangeVoltage": list(self.source_range_limits.keys()),
             "Range": list(self.current_range_limits.keys()),
             # Voltage limits
-            "High voltage output limit (V)": 10.0,
-            "Low voltage output limit (V)": -10.0,
+            "High voltage output limit in V": 10.0,
+            "Low voltage output limit in V": -10.0,
             # Dark mode
             "Turn off LEDs": False,
         }
@@ -121,36 +123,36 @@ class Device(EmptyDevice):
 
     def apply_gui_parameters(self, parameter):
         # Source / measure channel mapping
-        channel = parameter.get("Channel")
+        self.channel = parameter.get("Channel", "")
         # Extract source and measurement slot numbers robustly
-        parts = [p.strip() for p in channel.split('+')]
+        parts = [p.strip() for p in self.channel.split('+')]
         if len(parts) == 2 and parts[0].startswith('S') and parts[1].startswith('M'):
-            self.src_slot = parts[0][1]
-            self.meas_slot = parts[1][1]
-        self.port_string = parameter["Port"]
-        self.range_source = self.source_range_limits[parameter["RangeVoltage"]]
-        self.range_current = self.current_range_limits[parameter["Range"]]
+            self.sslot = parts[0][1]
+            self.mslot = parts[1][1]
+        self.port_string = parameter.get("Port", "")
+        self.range_source = self.source_range_limits.get(parameter.get("RangeVoltage", "Auto"))
+        self.range_current = self.current_range_limits.get(parameter.get("Range", "Auto"))
         try:
-            self.current_protect = float(parameter["Compliance"])
+            self.current_protect = float(parameter.get("Compliance", 0.1))
         except (KeyError, TypeError):
             self.current_protect = 0.1
 
         try:
-            self.vlim_high = float(parameter["High voltage output limit (V)"])
-            self.vlim_low = float(parameter["Low voltage output limit (V)"])
+            self.vlim_high = float(parameter.get("High voltage output limit in V", 0.0))
+            self.vlim_low = float(parameter.get("Low voltage output limit in V", 0.0))
         except (KeyError, TypeError):
             self.vlim_high = 0.0
             self.vlim_low = 0.0
 
         try:
-            self.nplc = float(self.speed_nplcs[parameter["Speed"]])
+            self.nplc = float(self.speed_nplcs.get(parameter.get("Speed"), 0.0))
         except KeyError:
             self.nplc = 0.0
 
         self.dark = parameter.get("Turn off LEDs", False)
 
         # Short name and GUI variables
-        self.shortname = f"SMU VS-10 S{self.sslot} / CM-10 M{self.mslot}"
+        self.shortname = f"SMU @ S{self.sslot} + M{self.mslot}"
         self.variables = ["Voltage", "Current"]
         self.units = ["V", "A"]
         self.plottype = [True, True]
@@ -274,6 +276,6 @@ class Device(EmptyDevice):
         model_s = self.port.query(f"SOURce{self.sslot}:MODel?")
         model_m = self.port.query(f"SENSe{self.mslot}:MODel?")
         if "VS-10" not in model_s:
-            raise ValueError(f"Source on channel S{self.sslot} is not a VS-10. Found: '{model_s}'")
-        if '"CM-10"' not in model_m and "CM-10" not in model_m:
-            raise ValueError(f"Measure on channel M{self.mslot} is not a CM-10. Found: '{model_m}'")
+            raise ValueError(f"Source module on channel S{self.sslot} is not a VS-10. Found: '{model_s}'")
+        if "CM-10" not in model_m:
+            raise ValueError(f"Measure module on channel M{self.mslot} is not a CM-10. Found: '{model_m}'")
