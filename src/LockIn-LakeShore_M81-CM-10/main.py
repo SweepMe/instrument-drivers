@@ -99,7 +99,7 @@ class Device(EmptyDevice):
         self.lia_lowpass: bool = False
         self.lia_harm: int = 1
         self.lia_tc: float = 0.1
-        self.wait_time_constants : str = "Auto"
+        self.wait_time_constants: str = "Auto"
         self.wait_time: float = 0.0
         self.lia_rolloff: int = 6
         self.lia_avg_ref_cycles: int = 0
