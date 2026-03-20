@@ -307,7 +307,6 @@ class Device(EmptyDevice):
                         )
         if self.wait_time:
             time.sleep(self.wait_time)
-            # Change self.port_properties["timeout"] to accommodate wait_time?
 
     def read_result(self):
         t_start = time.time()
