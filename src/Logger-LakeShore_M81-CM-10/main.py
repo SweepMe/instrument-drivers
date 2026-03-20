@@ -154,7 +154,7 @@ class Device(EmptyDevice):
         if self.use_bias:
             self.bias_voltage = float(parameter.get("Bias voltage in V", -1.0))
 
-        self.shortname = "CM-10 M@ " + self.slot
+        self.shortname = "CM-10 @ M " + self.slot
 
         self.variables = ["Current " + self.mode_read]
         self.units = ["A"]
