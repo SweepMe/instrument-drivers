@@ -32,14 +32,13 @@
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
-class Device(EmptyDevice):
 
+class Device(EmptyDevice):
     def __init__(self) -> None:
-    
         EmptyDevice.__init__(self)
 
         self.shortname = "KeysightB2981A"
-        
+
         self.port_manager = True
         self.port_types = ["GPIB", "COM", "USB", "TCPIP"]
 
@@ -69,7 +68,7 @@ class Device(EmptyDevice):
             "200 µA": 2e-4,
             "2 mA": 2e-3,
             "20 mA": 2e-2,
-    }
+        }
 
         self.nplc_types = {
             "Very Fast (0.01)": 0.01,
@@ -84,52 +83,50 @@ class Device(EmptyDevice):
         self.range: str = ""
         self.nplc: str = ""
         self.zero_correct: bool = True
-        self.current_value: float = float('nan')
+        self.current_value: float = float("nan")
 
     def update_gui_parameters(self, parameters) -> dict:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         gui_parameters = {
             "NPLC": list(self.nplc_types.keys()),
             "Range": list(self.ranges.keys()),
-            "Zero Correction" : False,
+            "Zero Correction": False,
         }
         return gui_parameters
 
     def apply_gui_parameters(self, parameters) -> None:
         """Read values input by the user"""
         self.port_string = parameters.get("Port")
-        self.range = parameters.get('Range')
-        self.nplc = parameters.get('NPLC')
+        self.range = parameters.get("Range")
+        self.nplc = parameters.get("NPLC")
         self.zero_correct = parameters.get("Zero Correction")
 
-
     def connect(self) -> None:
-    
-        self.port.write("*IDN?")
-        idn = self.port.read()
-        self.message_log(f"Connected to: {idn}")
+        pass
 
     def initialize(self) -> None:
-    
         self.port.write("*RST")  # Resets the device to initial settings
         self.port.write("*CLS")  # Clears the Status Byte register
         self.port.write(":SYST:BEEP:STAT OFF")
 
     def configure(self) -> None:
-        self.port.write(':SENS:FUNC "CURR"')  # Explicitly set device to current measurement mode
-        self.port.write(f":SENS:CURR:DC:NPLC {self.nplc_types[self.nplc]}")  # Set integration time in number of power line cycles
+        self.port.write(
+            ':SENS:FUNC "CURR"'
+        )  # Explicitly set device to current measurement mode
+        self.port.write(
+            f":SENS:CURR:DC:NPLC {self.nplc_types[self.nplc]}"
+        )  # Set integration time in number of power line cycles
         self.set_range(self.range)
         self.set_zero_correction(self.zero_correct)
         self.port.write(":FORM:ELEM:SENS CURR")
-        self.port.write("INP ON") # Connect DUT
-        
+        self.port.write("INP ON")  # Connect DUT
+
     def measure(self) -> None:
         self.port.write(":READ?")
 
     def read_result(self) -> None:
         try:
             answer = self.port.read()
-            #self.message_log(f"Antwort vom Gerät: '{answer}'")  # writes to temp_logbook.txt within the temp-folder
             self.current_value = float(answer.strip())
         except (ValueError, TypeError):
             self.current_value = float("nan")
@@ -166,3 +163,6 @@ class Device(EmptyDevice):
         else:
             self.port.write("INP:ZCOR OFF")
 
+    def get_identification(self) -> str:
+        self.port.write("*IDN?")
+        return self.port.read()

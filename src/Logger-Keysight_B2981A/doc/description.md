@@ -34,7 +34,7 @@ This driver enables **ultra-low DC current measurements** with the **Keysight B2
 
 This driver uses the B2981A **input zero correction** mechanism (`:INPut:ZCORrect`)
 to compensate for internal offsets and leakage currents,
-which is especially important for fA–pA measurements.
+which is especially important for fA and pA measurements.
 When zero correction is enabled via the driver, the instrument **immediately
 acquires a zero reference** using `INP:ZCOR:ACQ` and applies it to all
 subsequent measurements.
