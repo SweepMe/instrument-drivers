@@ -121,7 +121,7 @@ class Device(EmptyDevice):
 
     def apply_gui_parameters(self, parameter):
         """Update parameter from SweepMe! GUI."""
-        self.channel = parameter.get("Channel")
+        self.channel = parameter.get("Channel", "")
         # Extract source and measurement slot numbers robustly
         parts = [p.strip() for p in self.channel.split('+')]
         if len(parts) == 2 and parts[0].startswith('S') and parts[1].startswith('M'):
@@ -130,15 +130,15 @@ class Device(EmptyDevice):
         else:
             self.src_slot = ""
             self.meas_slot = ""
-        self.sweepmode = parameter["SweepMode"]
-        self.stepmode = parameter["StepMode"]
+        self.sweepmode = parameter.get("SweepMode", "None")
+        self.stepmode = parameter.get("StepMode", "None")
 
-        self.amplitude = float(parameter["ValueRMS"])
-        self.offset = float(parameter["ValueBias"])
-        self.frequency = float(parameter["Frequency"])
-        self.nplc = self.speed_nplcs.get(parameter["Integration"], 1.0)
-        self.measure_range = self.measurement_ranges.get(parameter["Range"],0.0)
-        self.number_of_cycles = int(parameter["Average"])
+        self.amplitude = float(parameter.get("ValueRMS", 0))
+        self.offset = float(parameter.get("ValueBias", 0))
+        self.frequency = float(parameter.get("Frequency", 0))
+        self.nplc = self.speed_nplcs.get(parameter.get("Integration"), 1.0)
+        self.measure_range = self.measurement_ranges.get(parameter.get("Range"),0.0)
+        self.number_of_cycles = int(parameter.get("Average", 1))
 
         self.shortname = f"LCR @ S{self.src_slot} + M{self.meas_slot}"
 
