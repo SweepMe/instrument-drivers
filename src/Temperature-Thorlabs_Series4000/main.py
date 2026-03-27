@@ -78,7 +78,7 @@ class Device(EmptyDevice):
         self.port_manager = True
         self.port_types = ["USB", "COM", "GPIB"]
         self.port_properties = {
-            "timeout": 5,
+            "timeout": 1,
             # "baudrate": 57600,
             # "stopbits": 1,
             # "parity": "N",
@@ -91,8 +91,8 @@ class Device(EmptyDevice):
         self.sweep_mode: str = "Temperature"
         self.use_reach: bool = True  # use the SweepMe! reach temperature feature, which continuously measures the temperature until the target temperature is reached.
         self.temperature_units = {
-            "C": "C",
-            "F": "F",
+            "°C": "C",
+            "°F": "F",
             "K": "K",
         }
         self.temperature_unit: str = "C"
@@ -102,7 +102,7 @@ class Device(EmptyDevice):
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         del parameters
         return {
-            "SweepMode": ["Temperature", "None"], #[TemperatureMode.SET_TEMPERATURE.value],
+            "SweepMode": ["Temperature", "None"]
             "TemperatureUnit": list(self.temperature_units.keys()),
             "Channel": ["1", "2"],
             "ReachT": True,
@@ -119,8 +119,15 @@ class Device(EmptyDevice):
         self.use_reach = bool(parameters["ReachT"])
 
     def connect(self) -> None:
-        """Establish connection to Velox Software."""
-        identification = self.get_identification()
+        """Establish connection to device."""
+        # In some instances the device does not respond to the first command, so the IDN command is tried multiple times
+        for _ in range(4):
+            try:
+                identification = self.get_identification()
+            except Exception:
+                pass
+            else:
+                break
 
         if "TED" in identification:
             self.device_type = "TED"
@@ -136,13 +143,19 @@ class Device(EmptyDevice):
         self.port.write(f"UNIT:TEMP {self.temperature_unit}")  # Possible values: C, F, K
 
     def unconfigure(self) -> None:
-        """Unconfigure the device."""
-        self.port.write("ABOR")
+        """Unconfigure the device.
+
+        The 'ABORt' command cancels ongoing measurement operations and returns the device to an idle state.
+        Currently unsure if it should be used, as it results in timeout errors sometimes.
+        """
+        # self.port.write("ABOR")
+        # self.wait_for_operation_complete()
 
     def apply(self) -> None:
         """Set the target temperature."""
         if self.sweep_mode == "Temperature":
             self.set_temperature(self.value)
+        self.wait_for_operation_complete()
 
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
@@ -185,6 +198,22 @@ class Device(EmptyDevice):
         This command is simple, but does not offer any additional configuration options.
         """
         return float(self.port.query("MEAS:TEMP?"))
+
+    def wait_for_operation_complete(self, timeout: float = 10.0 ) -> bool:
+        """Checks the Operation complete query and continues when it returns 1 (completed)."""
+        start_time = time.time()
+        while not self.is_run_stopped():
+            self.port.write("*OPC?")
+            time.sleep(0.01)
+            complete_status = self.port.read()
+
+            if complete_status == "1":
+                return True
+
+            if time.time() - start_time > timeout:
+                return False
+
+        return False
 
     # PID Control Functions - currently not used
 
