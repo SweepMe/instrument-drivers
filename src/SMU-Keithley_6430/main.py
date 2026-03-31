@@ -179,6 +179,11 @@ class Device(EmptyDevice):
             self.list_hold_time = parameters.get("ListSweepHoldtime", 0.1)
             self.list_delay_time = parameters.get("ListSweepDelaytime", 0.1)
 
+            # Set a generous timeout based on expected sweep duration.
+            # Max custom list is 100 points; sweep mode can be more, but 100 is a safe upper bound.
+            estimated_time_per_point = self.list_hold_time + self.list_delay_time + self.speed / 50.0
+            self.port_properties["timeout"] = max(60.0, 100 * estimated_time_per_point + 30)
+
             self.variables.append("Timestamp")
             self.units.append("s")
             self.plottype.append(True)
@@ -307,13 +312,21 @@ class Device(EmptyDevice):
 
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
-        # self.port.write("TRIGger:INITiate:IMMediate")
-        self.port.write("INIT")
+        if self.list_mode:
+            # INIT starts the full list/sweep; FETCh? is sent separately in request_result.
+            self.port.write("INIT")
+        else:
+            # READ? = ABORt; INIT; FETCh? — triggers and waits for the measurement to
+            # complete before placing the result in the output buffer. This avoids the
+            # race condition where FETCh? could return the previous reading if sent
+            # separately while INIT is still in progress.
+            self.port.write("READ?")
 
     def request_result(self) -> None:
         """Write command to ask the instrument to send measured data."""
-        self.port.write("FETCh?")
-        # self.port.write("READ?")
+        if self.list_mode:
+            # For list sweeps, INIT was already sent in measure(); fetch all results now.
+            self.port.write("FETCh?")
 
     def read_result(self) -> None:
         """Read the measured data from a buffer that was requested during 'request_result'."""
