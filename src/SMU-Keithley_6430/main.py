@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -115,6 +116,7 @@ class Device(EmptyDevice):
         self.list_custom_values: str = ""  # comma separated list of values for custom list mode
         self.list_hold_time: float = 0.1
         self.list_delay_time: float = 0.1
+        self.list_expected_time: float = 0.0  # estimated sweep duration in seconds, set in configure_list_mode
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
@@ -163,6 +165,8 @@ class Device(EmptyDevice):
         self.plottype = [True, True]
         self.savetype = [True, True]
 
+        self.list_mode = False
+
         if parameters.get("SweepValue", "") == "List sweep":
             self.list_mode = True
             self.list_type = parameters.get("ListSweepType", "Sweep")
@@ -179,21 +183,24 @@ class Device(EmptyDevice):
             self.list_hold_time = parameters.get("ListSweepHoldtime", 0.1)
             self.list_delay_time = parameters.get("ListSweepDelaytime", 0.1)
 
-            # Set a generous timeout based on expected sweep duration.
-            # Max custom list is 100 points; sweep mode can be more, but 100 is a safe upper bound.
-            estimated_time_per_point = self.list_hold_time + self.list_delay_time + self.speed / 50.0
-            self.port_properties["timeout"] = max(60.0, 100 * estimated_time_per_point + 30)
+            # Use a short 1 s port timeout so the polling loop in wait_for_list_complete can cycle every second
+            # without blocking the whole program. The loop handles the overall timeout itself.
+            self.port_properties["timeout"] = 1
 
             self.variables.append("Timestamp")
             self.units.append("s")
             self.plottype.append(True)
             self.savetype.append(True)
 
+        else:
+            self.port_properties["timeout"] = 5
+
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
         self.port.write("*RST")          # reset instrument state
         self.port.write(":SYSTem:CLEar") # clear error queue
         self.port.write(":OUTPut:STATe OFF")  # explicit safety
+        self.port.write("SYSTem:BEEPer:STATe OFF")  # turn off beeper
 
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
@@ -205,8 +212,6 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        self.port.write("SYSTem:BEEPer:STATe OFF")  # turn off beeper
-
         # set compliance, range and speed
         if self.sweep_mode.startswith("Voltage"):
             self.set_compliance_current(self.compliance)
@@ -296,6 +301,10 @@ class Device(EmptyDevice):
         trigger_delay = float(self.list_hold_time) if self.list_hold_time else "AUTO"
         self.port.write(f":TRIGger:DELay {trigger_delay}")
 
+        # Store expected sweep duration for the timeout guard in wait_for_list_complete.
+        # speed / 50 converts NPLC to approximate measurement time in seconds (50 Hz line frequency).
+        self.list_expected_time = number_of_points * (self.list_hold_time + self.list_delay_time + self.speed / 50.0)
+
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         if self.list_mode:
@@ -313,19 +322,18 @@ class Device(EmptyDevice):
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
         if self.list_mode:
-            # INIT starts the full list/sweep; FETCh? is sent separately in request_result.
+            # INIT starts the full list/sweep; completion is polled in request_result before FETCh? is sent.
             self.port.write("INIT")
         else:
-            # READ? = ABORt; INIT; FETCh? — triggers and waits for the measurement to
-            # complete before placing the result in the output buffer. This avoids the
-            # race condition where FETCh? could return the previous reading if sent
-            # separately while INIT is still in progress.
+            # READ? = ABORt; INIT; FETCh? — triggers and waits for measurement completion before buffering the
+            # result. Avoids the race where FETCh? could return the previous reading while INIT is in progress.
             self.port.write("READ?")
 
     def request_result(self) -> None:
         """Write command to ask the instrument to send measured data."""
         if self.list_mode:
-            # For list sweeps, INIT was already sent in measure(); fetch all results now.
+            # Poll until the sweep finishes, then request the buffered results.
+            self.wait_for_list_complete()
             self.port.write("FETCh?")
 
     def read_result(self) -> None:
@@ -370,7 +378,7 @@ class Device(EmptyDevice):
         if self.list_mode:
             return [self.measured_voltage, self.measured_current, self.time_stamps]
         return [self.measured_voltage, self.measured_current]
-    
+
     # Wrapped Functions
 
     def get_identification(self) -> str:
@@ -479,3 +487,27 @@ class Device(EmptyDevice):
     def wait_for_complete(self) -> None:
         """Waits for the operation queue to be completed."""
         self.port.query("*OPC?")
+
+    def wait_for_list_complete(self) -> None:
+        """Poll *OPC? with 1 s port timeout intervals until the list sweep finishes or the run is stopped.
+
+        Sending *OPC? causes the instrument to respond with "1" only after all pending operations are done.
+        With a 1 s port timeout, each poll attempt either returns quickly (sweep done) or raises a timeout
+        exception (sweep still running). This loop avoids blocking the whole program for the entire sweep
+        duration while still detecting a true instrument error if the elapsed time greatly exceeds the
+        expected sweep duration.
+        """
+        start_time = time.monotonic()
+        max_wait = self.list_expected_time * 3 + 30  # allow 3x expected time plus a fixed 30 s margin
+
+        while not self.is_run_stopped():
+            try:
+                self.port.query("*OPC?")
+                return  # instrument confirmed all operations complete
+            except Exception:
+                elapsed = time.monotonic() - start_time
+                if elapsed > max_wait:
+                    raise TimeoutError(
+                        f"List sweep did not complete within {max_wait:.0f} s "
+                        f"(expected ~{self.list_expected_time:.1f} s)"
+                    )
