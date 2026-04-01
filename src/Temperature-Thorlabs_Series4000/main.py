@@ -137,6 +137,14 @@ class Device(EmptyDevice):
             msg = f"Unsupported device type: {identification}. Only TED and ITC series are supported."
             raise RuntimeError(msg)
 
+    def poweron(self) -> None:
+        """Switch on the TEC output device."""
+        self.set_output_state(True)
+
+    def poweroff(self) -> None:
+        """Switch off the TEC output of the device."""
+        self.set_output_state(False)
+
     def configure(self) -> None:
         """Configure the device."""
         self.port.write("CONF:TEMP")  # Set the device to temperature mode
@@ -169,11 +177,11 @@ class Device(EmptyDevice):
         """Return the current temperature."""
         return self.measured_temperature
 
-    # Wrapper Functions
-
     def get_identification(self) -> str:
         """Return the device identification string."""
         return self.port.query("*IDN?").strip()
+
+    # Wrapper Functions
 
     def set_temperature(self, temperature: float) -> None:
         """Sets the target temperature.
@@ -190,6 +198,15 @@ class Device(EmptyDevice):
             raise RuntimeError(msg)
 
         self.port.write(f"SOUR{suffixes[self.device_type]}:TEMP {temperature}")
+
+    def set_output_state(self, state: bool) -> None:
+        """Set the output state of the device.
+
+        Depending on the device type, the temperature control is either denoted as output 2 or without a number.
+        """
+        channel_num = "2" if self.device_type == "ITC" else ""
+        state_command = "ON" if state else "OFF"
+        self.port.write(f"OUTPut{channel_num} {state_command}")
 
     def measure_temperature(self) -> float:
         """Retrieve measured temperature directly.
