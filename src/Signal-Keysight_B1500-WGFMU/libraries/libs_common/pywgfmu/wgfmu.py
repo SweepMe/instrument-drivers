@@ -210,7 +210,7 @@ def set_measure_event(pattern: str, event: str, start_time: float, points: int, 
         points: The number of measurements to be taken.
         interval: The time in seconds between measurements. 10ns resolution.
         average: Averaging time in seconds. 0 = no averaging. The device will measure every 5ns and return the average. Do not exceed the interval time.
-        mode: The measurement mode (e.g., voltage, current).
+        mode: The measurement mode.
     """
     if start_time < 0:
         raise ValueError("start_time must be non-negative")
@@ -236,6 +236,37 @@ def set_measure_event(pattern: str, event: str, start_time: float, points: int, 
         ctypes.c_double(interval),
         ctypes.c_double(average),
         ctypes.c_int32(mode_int),
+    )
+
+
+class CurrentMeasurementRange(Enum):
+    """Current measurement ranges for the WGFMU."""
+    RANGE_1uA = 6001
+    RANGE_10uA = 6002
+    RANGE_100uA = 6003
+    RANGE_1mA = 6004
+    RANGE_10mA = 6005
+
+
+def set_range_event(pattern: str, event: str, start_time: float, range: CurrentMeasurementRange) -> None:
+    """Defines a range change event for a waveform pattern. Can only be used in current measurement mode.
+
+    start_time is rounded to the nearest multiple of 10ns.
+
+    Args:
+        pattern: The name of the waveform pattern.
+        event: The name of the range change event.
+        start_time: The time in seconds when the range change event starts. 0 = pattern start. 10ns resolution.
+        range: The current measurement range to switch to at the specified time.
+    """
+    if start_time < 0:
+        raise ValueError("start_time must be non-negative")
+
+    _dll.WGFMU_setRangeEvent(
+        make_char_pointer(pattern),
+        make_char_pointer(event),
+        ctypes.c_double(start_time),
+        ctypes.c_int32(range.value),
     )
 
 
