@@ -32,6 +32,7 @@
 from __future__ import annotations
 
 import struct
+import time
 
 from typing import Any
 
@@ -83,7 +84,7 @@ class Device(EmptyDevice):
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         del parameters
         return {
-            "SweepMode": ["None", "Temperature in °C"],
+            "SweepMode": ["None", "Temperature in °C", "Output in %"],
             "Channel": 1,
         }
 
@@ -93,10 +94,37 @@ class Device(EmptyDevice):
         self.sweep_mode = parameters.get("SweepMode", "None")
         self.modbus_address = parameters.get("Channel", 1)
 
+    def configure(self) -> None:
+        """Enter manual mode when sweeping output power."""
+        if self.sweep_mode.startswith("Output"):
+            self.set_manual_mode(True)
+
+    def unconfigure(self) -> None:
+        """Return controller to automatic mode after sweeping output power."""
+        if self.sweep_mode.startswith("Output"):
+            self.set_manual_mode(False)
+
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         if self.sweep_mode.startswith("Temperature"):
             self.set_setpoint(float(self.value))
+
+        elif self.sweep_mode.startswith("Output"):
+            self.set_output_percent(float(self.value))
+
+            # # reach function in Temperature module is only called for Temperature mode, so we wait here
+            # time_start = time.monotonic()
+            # while not self.is_run_stopped():
+            #     self.read_registers()
+            #     print(f"Current output power: {self.output_power_percent}%, Target: {self.value}%")
+            #     if abs(self.output_power_percent - float(self.value)) <= 0.5:  # consider it reached if within 0.5%
+            #         break
+            #
+            #     time.sleep(0.1)
+            #
+            #     if time.monotonic() - time_start > 120:  # timeout after 2 minutes
+            #         msg = "Warning: Timeout while waiting for the setpoint to be reached."
+            #         raise TimeoutError(msg)
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
@@ -114,6 +142,23 @@ class Device(EmptyDevice):
         return self.current_temperature
 
     # Wrapper functions
+
+    def set_manual_mode(self, enable: bool) -> None:
+        """Switch controller to manual mode (True) or automatic mode (False)."""
+        register = 0x5352 if enable else 0x5353  # 21330 = enter manual, 21331 = enter automatic
+        cmd = self.generate_write_register_command(int(self.modbus_address), register, 1)
+        self.port.port.write(cmd)
+        self.port.port.read(32)
+
+    def set_output_percent(self, value: float) -> None:
+        """Set the manual output power level in %."""
+        cmd = self.generate_set_register_command(
+            slave_address=int(self.modbus_address),
+            register_address=0x5354,  # 21332 = manual output level
+            register_value=value,
+        )
+        self.port.port.write(cmd)
+        self.port.port.read(32)
 
     def set_setpoint(self, setpoint: float) -> None:
         """Set the controller setpoint."""
@@ -157,6 +202,14 @@ class Device(EmptyDevice):
         self.temperature_difference = values[2]
         self.temperature_setpoint = values[0]
         self.output_power_percent = values[3]
+
+    def generate_write_register_command(self, slave_address: int, register_address: int, register_value: int) -> bytes:
+        """Generate a Modbus FC 0x06 write single register command for BOOL16/INT16/UINT16 values."""
+        command = bytes([slave_address, 0x06])
+        command += register_address.to_bytes(2, byteorder='big')
+        command += register_value.to_bytes(2, byteorder='big')
+        command += self.calculate_crc16(command)
+        return command
 
     def generate_read_command(self, slave_address: int, function_code: int, register_address: int,
                               num_registers: int) -> bytes:
