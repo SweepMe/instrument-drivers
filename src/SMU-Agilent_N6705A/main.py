@@ -53,16 +53,11 @@ class Device(EmptyDevice):
                             - 200 uA measurement range
                     """
 
-    multichannel = ["CH1", "CH2", "CH3", "CH4"]
-
     def __init__(self):
 
         super().__init__()
 
         self.shortname = "Agilent N6705A"
-
-        # remains here for compatibility with v1.5.3
-        self.multichannel = ["CH1", "CH2", "CH3", "CH4"]
 
         self.variables = ["Voltage", "Current"]
         self.units = ["V", "A"]
@@ -96,6 +91,7 @@ class Device(EmptyDevice):
     def set_GUIparameter(self):
         GUIparameter = {
             "SweepMode": ["Voltage [V]", "Current [A]"],
+            "Channel": ["CH1", "CH2", "CH3", "CH4"],
             "Range": list(self.current_ranges.keys()),
             "RangeVoltage": list(self.voltage_ranges.keys()),
             "Compliance": 100e-6,
@@ -110,9 +106,7 @@ class Device(EmptyDevice):
         self.vrange = self.voltage_ranges[parameter["RangeVoltage"]]
         self.irange = self.current_ranges[parameter["Range"]]
         self.average = parameter["Average"]
-
-        self.device = parameter['Device']
-        self.channel = self.device[-1]
+        self.channel = parameter["Channel"][-1]
 
     def initialize(self):
         self.port.port.read_termination = '\n'

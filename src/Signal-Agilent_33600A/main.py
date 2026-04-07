@@ -34,8 +34,6 @@ from EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
 
-    multichannel = [" CH1", " CH2"]
-
     def __init__(self):
     
         EmptyDevice.__init__(self)
@@ -44,9 +42,6 @@ class Device(EmptyDevice):
         self.port_types = ['USB', 'GPIB']
         self.port_identifications = ['Agilent Technologies,336', 'Agilent Technologies,335']
         
-        # remains here for compatibility with v1.5.3
-        self.multichannel = [" CH1", " CH2"]
-
         # to be defined by user
         self.commands = {   "Sine":"SIN",
                             "Square":"SQU", 
@@ -83,6 +78,7 @@ class Device(EmptyDevice):
     def set_GUIparameter(self):
         GUIparameter = {
                         "SweepMode": ["Frequency [Hz]", "Period [s]", "Amplitude [V]", "HiLevel [V]", "Offset [V]", "LoLevel [V]", "Pulse width [s]", "Duty cycle [%]", "Delay [s]", "Phase [deg]", "None"],
+                        "Channel": ["CH1", "CH2"],
                         "PeriodFrequency" : ["Frequency [Hz]", "Period [s]"],
                         "PeriodFrequencyValue": 1000,
                         "AmplitudeHiLevel" : ["Amplitude [V]", "HiLevel [V]"],
@@ -102,7 +98,7 @@ class Device(EmptyDevice):
         
     def get_GUIparameter(self, parameter={}):
         # could be part of the MeasClass
-        self.channel                  = parameter['Device'][-1]
+        self.channel                  = parameter['Channel'][-1]
         self.sweep_mode               = parameter['SweepMode'] 
         self.waveform                 = parameter['Waveform'] 
         self.periodfrequency          = parameter['PeriodFrequency' ]
@@ -138,9 +134,7 @@ class Device(EmptyDevice):
             self.savetype = []     # True to save data
         else:
             self.units =    ['V']
-        
 
-        
     def initialize(self):
     
         pass   

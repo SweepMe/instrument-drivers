@@ -35,8 +35,6 @@ from EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
 
-    multichannel = [" CH1", " CH2"]
-
     def __init__(self):
     
     
@@ -55,9 +53,6 @@ class Device(EmptyDevice):
                                 }
         #self.port_identifications = ['']
         
-        # remains here for compatibility with v1.5.3
-        self.multichannel = [" CH1", " CH2"]
-
         # to be defined by user
         self.commands = {  
                             "Period [s]":"PER", 
@@ -89,6 +84,7 @@ class Device(EmptyDevice):
     
         GUIparameter = {
                         "SweepMode" : ["Frequency [Hz]", "Period [s]", "Amplitude [V]", "Offset [V]", "HiLevel [V]", "LoLevel [V]", "Phase [deg]", "Delay [s]", "None"],
+                        "Channel": [" CH1", " CH2"],
                         "Waveform": list(self.waveforms.keys()),
                         "PeriodFrequency" : ["Period [s]", "Frequency [Hz]"],
                         "AmplitudeHiLevel" : ["Amplitude [V]", "HiLevel [V]"],
@@ -109,7 +105,7 @@ class Device(EmptyDevice):
         self.device = parameter['Device']
     
         self.shortname = 'TGP3122' + self.device[-4:]
-        self.channel = int(self.device[-1])
+        self.channel = int(parameter["Channel"][-1])
         
         # could be part of the MeasClass
         self.sweep_mode                 = parameter['SweepMode'] 
