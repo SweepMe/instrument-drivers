@@ -206,22 +206,26 @@ class Device(EmptyDevice):
         self.plottype = [True, True, True]
         self.savetype = [True, True, True]
 
+    def connect(self) -> None:
+        """Reset the device before any configurations are done in initialize."""
+        self.port.write("*RST")  # reset to initial settings
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
-        self.driver_port_string = "Agilent_B1500_" + self.port_string
+        # device communication is shared with the Signal-Keysight_B1500-WGFMU driver and the WGFMU pulse builder Custom Function
+        self.driver_port_string = "Keysight_B1500_" + self.port_string
 
         # initialize commands only need to be sent once, so we check here whether another instance of the same driver
         # AND same port did it already. If not, this instance is the first and has to do it.
-        if not self.driver_port_string in self.device_communication:
-            self.port.write("*RST")  # reset to initial settings
-            self.port.write("BC")  # buffer clear
-            self.port.write("AZ 0")  # Auto-Zero off for faster measurements
-            self.port.write("FMT 2")  # use to change the output format. This will be overwritten if list mode is used
+        if self.driver_port_string not in self.device_communication:
+            self.device_communication[self.driver_port_string] = {}
 
-            # if initialize commands have been sent, we can add the driver_port_string to the dictionary that is seen by
-            # all drivers
-            self.device_communication[self.driver_port_string] = {
+        device_info = self.device_communication[self.driver_port_string]
+        if not device_info.get("is_initialized", False):
+            self.port.write("BC")  # buffer clear
+            self.port.write("AZ 0")  # Auto-Zero off for faster measurements. This will be overwritten if list mode is used, as the list master has to set it up for all channels
+            self.port.write("FMT 2")  # use to change the output format. This will be overwritten if list mode is used, as the list master has to set it up for all channels
+            device_info.update({
                 "is_initialized": True,
                 "channels": [self.channel],
                 "list_master_channel": -1,
@@ -229,7 +233,7 @@ class Device(EmptyDevice):
                 "list_hold": 0.0,
                 "list_delay": 0.0,
                 "list_results": {},
-            }
+            })
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -393,10 +397,6 @@ class Device(EmptyDevice):
         elif self.list_follower:
             return
 
-        else:
-            self.port.write(f"TI {self.channel},0")
-            self.port.write(f"TV {self.channel},0")
-
     def request_result(self) -> None:
         """The master channel waits for the list mode to finish and request the measurement results."""
         if self.list_master:
@@ -454,13 +454,13 @@ class Device(EmptyDevice):
             return
 
         else:
-            answer = self.port.read()
+            answer = self.port.query(f"TI {self.channel},0")
             try:
                 self.measured_current = float(answer)
             except ValueError:
                 self.measured_current = float(answer[3:])  # sometimes NAI comes first, we have to strip it
 
-            answer = self.port.read()
+            answer = self.port.query(f"TV {self.channel},0")
             try:
                 self.measured_voltage = float(answer)
             except ValueError:
