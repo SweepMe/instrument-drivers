@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -102,9 +102,9 @@ class Device(EmptyDevice):
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         del parameters
         return {
-            "SweepMode": ["Temperature", "None"]
+            "SweepMode": ["Temperature", "None"],
             "TemperatureUnit": list(self.temperature_units.keys()),
-            "Channel": ["1", "2"],
+            # "Channel": ["1", "2"],  # Only needed for PID control, which is currently not used
             "ReachT": True,
         }
 
@@ -179,7 +179,7 @@ class Device(EmptyDevice):
 
     def get_identification(self) -> str:
         """Return the device identification string."""
-        return self.port.query("*IDN?").strip()
+        return str(self.port.query("*IDN?").strip())
 
     # Wrapper Functions
 
