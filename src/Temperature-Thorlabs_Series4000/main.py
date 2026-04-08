@@ -76,7 +76,7 @@ class Device(EmptyDevice):
 
         # Device Communication
         self.port_manager = True
-        self.port_types = ["USB", "COM", "GPIB"]
+        self.port_types = ["USB"]
         self.port_properties = {
             "timeout": 1,
             # "baudrate": 57600,
