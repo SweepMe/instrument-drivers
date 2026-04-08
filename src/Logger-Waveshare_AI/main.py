@@ -112,6 +112,7 @@ class Device(EmptyDevice):
     def read_channel(self, channel: int) -> float:
         """Read the value of the given channel in V, which measures with 1 mV resolution."""
         # Waveshare AI channel mapping: channel 1 = register 0, channel 2 = register 1, etc.
+        # TODO: use minimalmodbus library for Modbus communication instead of manual command generation and parsing
         register_address = channel - 1
 
         cmd = self.generate_read_command(
@@ -121,7 +122,7 @@ class Device(EmptyDevice):
             num_registers=1,  # read 1 register (16-bit value)
         )
         self.port.port.write(cmd)
-        # TODO: test with correct response length
+        # TODO: test with correct response length (7) and validate CRC16
         response = self.port.port.read(32)
 
         # Validate response length
@@ -159,6 +160,7 @@ class Device(EmptyDevice):
     @staticmethod
     def calculate_crc16(data: bytes) -> bytes:
         """Calculate CRC16 for Modbus RTU."""
+        # TODO: use minimalmodbus or a standard library for CRC16 calculation instead of manual implementation
         crc = 0xFFFF
         for byte in data:
             crc ^= byte

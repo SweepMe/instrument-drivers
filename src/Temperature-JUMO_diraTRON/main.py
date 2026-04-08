@@ -112,20 +112,6 @@ class Device(EmptyDevice):
         elif self.sweep_mode.startswith("Output"):
             self.set_output_percent(float(self.value))
 
-            # # reach function in Temperature module is only called for Temperature mode, so we wait here
-            # time_start = time.monotonic()
-            # while not self.is_run_stopped():
-            #     self.read_registers()
-            #     print(f"Current output power: {self.output_power_percent}%, Target: {self.value}%")
-            #     if abs(self.output_power_percent - float(self.value)) <= 0.5:  # consider it reached if within 0.5%
-            #         break
-            #
-            #     time.sleep(0.1)
-            #
-            #     if time.monotonic() - time_start > 120:  # timeout after 2 minutes
-            #         msg = "Warning: Timeout while waiting for the setpoint to be reached."
-            #         raise TimeoutError(msg)
-
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         self.read_registers()
@@ -179,6 +165,8 @@ class Device(EmptyDevice):
             num_registers=8,  # read 8 registers to get all 4 float values (2 registers per float)
         )
         self.port.port.write(cmd)  # write bytes directly to the port
+        # TODO: use minimalmodbus read function instead of manually writing and reading bytes
+        # TODO: read only required byte length and validate the response
         response = self.port.port.read(32)  # read up to 32 bytes
 
         # Extract the data payload (skip address, function code, byte count)
