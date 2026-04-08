@@ -86,6 +86,11 @@ class Device(EmptyDevice):
         }
         self.channel: str = "1"
         self.device_type: str = ""  # "TED" or "ITC"
+        # For TED4000 Series instruments the command suffix is 1 (can be omitted), for ITC4000 Series instruments its 2.
+        self.command_suffixes = {
+            "TED": "1",  # TED4000 Series
+            "ITC": "2",  # ITC4000 Series
+        }
 
         # Measurement Parameter
         self.sweep_mode: str = "Temperature"
@@ -96,7 +101,11 @@ class Device(EmptyDevice):
             "K": "K",
         }
         self.temperature_unit: str = "C"
+        self.temperature_max: float = -275.0
+        self.temperature_min: float = -275.0
         self.measured_temperature: float = 0.0
+        self.idle_temperature: str = ""  # temperature when unconfiguring, empty string means no action. Can be different from last sweep value
+        self.zero_power_after_sweep: bool = False  # whether to switch off after the sweep is finished
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
@@ -106,6 +115,8 @@ class Device(EmptyDevice):
             "TemperatureUnit": list(self.temperature_units.keys()),
             # "Channel": ["1", "2"],  # Only needed for PID control, which is currently not used
             "ReachT": True,
+            "IdleTemperature": "",
+            "ZeroPowerAfterSweep": False,
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
@@ -115,6 +126,9 @@ class Device(EmptyDevice):
 
         self.temperature_unit = self.temperature_units[parameters.get("TemperatureUnit", "C")]
         self.units = [parameters["TemperatureUnit"]]
+
+        self.idle_temperature = parameters.get("IdleTemperature", "")
+        self.zero_power_after_sweep = parameters.get("ZeroPowerAfterSweep", False)
 
         self.use_reach = bool(parameters["ReachT"])
 
@@ -143,12 +157,14 @@ class Device(EmptyDevice):
 
     def poweroff(self) -> None:
         """Switch off the TEC output of the device."""
-        self.set_output_state(False)
+        if self.zero_power_after_sweep:
+            self.set_output_state(False)
 
     def configure(self) -> None:
         """Configure the device."""
         self.port.write("CONF:TEMP")  # Set the device to temperature mode
         self.port.write(f"UNIT:TEMP {self.temperature_unit}")  # Possible values: C, F, K
+        self.update_temperature_limits()
 
     def unconfigure(self) -> None:
         """Unconfigure the device.
@@ -158,6 +174,8 @@ class Device(EmptyDevice):
         """
         # self.port.write("ABOR")
         # self.wait_for_operation_complete()
+        if self.idle_temperature:
+            self.set_temperature(float(self.idle_temperature))
 
     def apply(self) -> None:
         """Set the target temperature."""
@@ -177,27 +195,42 @@ class Device(EmptyDevice):
         """Return the current temperature."""
         return self.measured_temperature
 
-    def get_identification(self) -> str:
-        """Return the device identification string."""
-        return str(self.port.query("*IDN?").strip())
-
-    # Wrapper Functions
-
     def set_temperature(self, temperature: float) -> None:
         """Sets the target temperature.
 
         This corresponds to the TEC Temperature Setpoint (see manual 3.11.5)
         """
-        # For TED4000 Series instruments the command suffix is 1 (can be omitted), for ITC4000 Series instruments its 2.
-        suffixes = {
-            "TED": "1",  # TED4000 Series
-            "ITC": "2",  # ITC4000 Series
-        }
-        if self.device_type not in suffixes:
+        if self.device_type not in self.command_suffixes:
             msg = f"Unsupported device type: {self.device_type}. Only TED and ITC series are supported."
             raise RuntimeError(msg)
 
-        self.port.write(f"SOUR{suffixes[self.device_type]}:TEMP {temperature}")
+        if self.temperature_min <= temperature <= self.temperature_max:
+            self.port.write(f"SOUR{self.command_suffixes[self.device_type]}:TEMP {temperature}")
+        else:
+            raise ValueError(f"Temperature setpoint {temperature} is out of limits. MIN: {self.temperature_min} MAX: {self.temperature_max}.")
+
+    # Wrapper Functions
+
+    def get_max_temperature(self) -> float:
+        """Returns the maximum allowed temperature setpoint."""
+        if self.device_type not in self.command_suffixes:
+            msg = f"Unsupported device type: {self.device_type}. Only TED and ITC series are supported."
+            raise RuntimeError(msg)
+
+        return float(self.port.query(f"SOUR{self.command_suffixes[self.device_type]}:TEMP:LIM:HIGH?"))
+
+    def get_min_temperature(self) -> float:
+        """Returns the minimum allowed temperature setpoint."""
+        if self.device_type not in self.command_suffixes:
+            msg = f"Unsupported device type: {self.device_type}. Only TED and ITC series are supported."
+            raise RuntimeError(msg)
+
+        return float(self.port.query(f"SOUR{self.command_suffixes[self.device_type]}:TEMP:LIM:LOW?"))
+
+    def update_temperature_limits(self) -> None:
+        """Updates the maximum and minimum allowed temperature setpoints."""
+        self.temperature_max = self.get_max_temperature()
+        self.temperature_min = self.get_min_temperature()
 
     def set_output_state(self, state: bool) -> None:
         """Set the output state of the device.
@@ -216,7 +249,7 @@ class Device(EmptyDevice):
         """
         return float(self.port.query("MEAS:TEMP?"))
 
-    def wait_for_operation_complete(self, timeout: float = 10.0 ) -> bool:
+    def wait_for_operation_complete(self, timeout: float = 10.0) -> bool:
         """Checks the Operation complete query and continues when it returns 1 (completed)."""
         start_time = time.time()
         while not self.is_run_stopped():
@@ -232,9 +265,14 @@ class Device(EmptyDevice):
 
         return False
 
+    def get_identification(self) -> str:
+        """Return the device identification string."""
+        return str(self.port.query("*IDN?").strip())
+
     # PID Control Functions - currently not used
 
-    def set_pid_constants(self, gain: float = 1.0, integral: float = 0.1, derivative: float = 0, period: float = 1) -> None:
+    def set_pid_constants(self, gain: float = 1.0, integral: float = 0.1, derivative: float = 0,
+                          period: float = 1) -> None:
         """Sets the PID constants for the temperature control.
 
         The gain value (proportional) is in [A/K], its default value is 1.0. The integral value is in [A/K×s], its
