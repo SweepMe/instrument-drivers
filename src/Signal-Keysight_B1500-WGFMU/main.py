@@ -36,7 +36,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pywgfmu import wgfmu
 
@@ -58,12 +57,13 @@ class Device(EmptyDevice):
 
         # Communication Parameters
         self.port_string: str = ""
-        self.port_manager = False # True
+        self.port_manager = False  # True
         self.port_types = ["GPIB"]
         self.channel_string: str = "Slot 1, Channel 1"
         self.channel: int = 101
         self.is_master: bool = True
         self.device_communication_key: str = ""
+        self.communication_dict: dict[str, Any] = {}  # dictionary for this device in device_communication
 
         # Sequence parameters
         self.csv_file_path: str = "Path to file"
@@ -141,17 +141,27 @@ class Device(EmptyDevice):
             self.variables = ["Timestamp", "Current"]
             self.units = ["s", "A"]
 
-    def connect(self) -> None:
-        """Connect to the device. This function is called only once at the start of the measurement."""
-        self.device_communication_key = f"Signal_Keysight_B1500-WGFMU_{self.port_string}"
-        if self.device_communication_key not in self.device_communication:
-            # First instance, load the dll and connect to the device
+    def initialize(self) -> None:
+        """Connect to the device. This function is called only once at the start of the measurement.
+        
+        The SMU driver calls *RST in connect, therefore the initialization is done after in initialize.
+        """
+        # Share the key with SMU-Agilent_B1500 and PulseBuilder WGFMU CustomFunction
+        self.device_communication_key = f"Keysight_B1500_{self.port_string}"
+        if self.device_communication_key not in self.device_communication or not self.device_communication[
+            self.device_communication_key].get("wgfmu_session_open", False):
             wgfmu.load_dll()
-
             wgfmu.open_session(self.port_string)
             wgfmu.initialize()
             wgfmu.clear()  # clear any previous waveforms and sequences
-            self.device_communication[self.device_communication_key] = -1  # will be set to master channel in configure
+            if self.device_communication_key not in self.device_communication:
+                self.device_communication[self.device_communication_key] = {}
+
+            self.device_communication[self.device_communication_key]["wgfmu_session_open"] = True
+            self.device_communication[self.device_communication_key][
+                "wgfmu_master_channel"] = -1  # updates in configure
+
+        self.communication_dict = self.device_communication[self.device_communication_key]
 
         # retrieve slot and channel from channel_string
         # expected format: "Slot X, Channel Y"
@@ -169,9 +179,9 @@ class Device(EmptyDevice):
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
         wgfmu.disconnect(self.channel)
-        if self.device_communication_key in self.device_communication:
+        if self.communication_dict and self.communication_dict.get("wgfmu_session_open", False):
             wgfmu.close_session()
-            del self.device_communication[self.device_communication_key]
+            self.communication_dict["wgfmu_session_open"] = False
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -221,15 +231,15 @@ class Device(EmptyDevice):
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
-        if self.device_communication.get(self.device_communication_key, -1) == self.channel:
-            self.device_communication[self.device_communication_key] = -1  # reset master channel when leaving the branch
+        if self.communication_dict.get("wgfmu_master_channel", -1) == self.channel:
+            self.communication_dict["wgfmu_master_channel"] = -1  # reset master channel when leaving the branch
 
     def measure(self) -> None:
         """Perform the measurement."""
-        master_channel = self.device_communication[self.device_communication_key]
+        master_channel = self.communication_dict["wgfmu_master_channel"]
         if master_channel < 0:  # no master channel set yet
             self.is_master = True
-            self.device_communication[self.device_communication_key] = self.channel
+            self.communication_dict["wgfmu_master_channel"] = self.channel
         elif master_channel == self.channel:
             self.is_master = True
         else:
@@ -241,7 +251,7 @@ class Device(EmptyDevice):
             start_time = time.time()
             while not self.is_run_stopped() and time.time() - start_time < 3:
                 status, _, _ = wgfmu.get_channel_status(self.channel)
-                if status == wgfmu.ChannelStatus.RUNNING:
+                if status in (wgfmu.ChannelStatus.RUNNING, wgfmu.ChannelStatus.COMPLETED):
                     break
                 time.sleep(0.1)
 
@@ -270,7 +280,7 @@ class Device(EmptyDevice):
             raise RuntimeError(msg)
         self.measured_timestamps, self.measured_voltages = wgfmu.get_measure_values(self.channel, 0, completed_points)
 
-    def call(self) -> list:
+    def call(self) -> list[list[float]]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return [self.measured_timestamps, self.measured_voltages]
 
@@ -323,4 +333,3 @@ class Device(EmptyDevice):
             return int(np.ceil(count))
         else:
             return 1
-
