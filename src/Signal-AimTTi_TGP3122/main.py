@@ -5,7 +5,7 @@
 #
 # MIT License
 # 
-# Copyright (c) 2018 Axel Fischer (sweep-me.net)
+# Copyright (c) 2026 SweepMe! GmbH (sweep-me.net)
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,192 +25,182 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# SweepMe! device class
-# Type: Signal
-# Device: AIM-TTi TGP3122
+# SweepMe! driver
+# * Module: Signal
+# * Instrument: AIM-TTi TGP3122
 
 from collections import OrderedDict
+from typing import Any
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
+
 
 class Device(EmptyDevice):
 
-    multichannel = [" CH1", " CH2"]
-
     def __init__(self):
-    
-    
+
         EmptyDevice.__init__(self)
-        
+
         self.idlevalue = None
-        
+
         self.port_manager = True
-        self.port_types = ['COM']
-        
+        self.port_types = ["COM"]
+
         self.port_properties = {
-                                "EOL": "\n",
-                                "Baudrate": 9600,
-                                "timeout":1,
-                                #"query": "*IDN?",
-                                }
-        #self.port_identifications = ['']
-        
-        # remains here for compatibility with v1.5.3
-        self.multichannel = [" CH1", " CH2"]
+            "EOL": "\n",
+            "Baudrate": 9600,
+            "timeout": 1,
+            # "query": "*IDN?",
+        }
+        # self.port_identifications = [""]
 
         # to be defined by user
-        self.commands = {  
-                            "Period [s]":"PER", 
-                            "Frequency [Hz]":"FREQ", 
-                            "HiLevel [V]":"HILVL", 
-                            "LoLevel [V]":"LOLVL",
-                            "Amplitude [V]":"AMPL",
-                            "Offset [V]":"DCOFFS",
-                            "Phase [deg]":"PHASE",
-                            "Delay [s]": "PHASE",
-                        }
-                        
+        self.commands = {
+            "Period in s": "PER",
+            "Frequency in Hz": "FREQ",
+            "HiLevel in V": "HILVL",
+            "LoLevel in V": "LOLVL",
+            "Amplitude in V": "AMPL",
+            "Offset in V": "DCOFFS",
+            "Phase in deg": "PHASE",
+            "Delay in s": "PHASE",
+        }
+
         self.waveforms = OrderedDict([
-                           ("Sine", "SINE"),
-                           ("Square", "SQUARE"), 
-                           ("Ramp", "RAMP"), 
-                           ("Pulse", "PULSE"), 
-                           ("Doublepulse", "DOUBLEPULSE"),
-                           ("Noise", "NOISE"),
-                           ("Arb", "ARB"),
-                           ("Triangle", "TRIANG")
-                        ])
-        
-        self.plottype = [True] # True to plot data
-        self.savetype = [True] # True to save data
-        
-               
-    def set_GUIparameter(self):
-    
-        GUIparameter = {
-                        "SweepMode" : ["Frequency [Hz]", "Period [s]", "Amplitude [V]", "Offset [V]", "HiLevel [V]", "LoLevel [V]", "Phase [deg]", "Delay [s]", "None"],
-                        "Waveform": list(self.waveforms.keys()),
-                        "PeriodFrequency" : ["Period [s]", "Frequency [Hz]"],
-                        "AmplitudeHiLevel" : ["Amplitude [V]", "HiLevel [V]"],
-                        "OffsetLoLevel" : ["Offset [V]", "LoLevel [V]"],
-                        "DelayPhase": ["Phase [deg]", "Delay [s]"],
-                        #"DutyCyclePulseWidth": ["Duty cycle [%]"],
-                        "PeriodFrequencyValue": 1000,
-                        "AmplitudeHiLevelValue": 1.0,
-                        "OffsetLoLevelValue": 0.0,
-                        "DelayPhaseValue": 0,
-                        #"DutyCyclePulseWidthValue": 50,
-                        }
-                        
-        return GUIparameter
-                
-    def get_GUIparameter(self, parameter={}):
-    
-        self.device = parameter['Device']
-    
-        self.shortname = 'TGP3122' + self.device[-4:]
-        self.channel = int(self.device[-1])
-        
+            ("Sine", "SINE"),
+            ("Square", "SQUARE"),
+            ("Ramp", "RAMP"),
+            ("Pulse", "PULSE"),
+            ("Doublepulse", "DOUBLEPULSE"),
+            ("Noise", "NOISE"),
+            ("Arb", "ARB"),
+            ("Triangle", "TRIANG")
+        ])
+
+        # Measurement Parameters
+        self.sweep_mode: str = "None"
+        self.channel: int = 1
+        self.waveform: str = "Sine"
+        self.period_frequency: str = "Frequency in Hz"
+        self.period_frequency_value: float = 1000
+        self.amplitude_hi_level: str = "Amplitude in V"
+        self.amplitude_hi_level_value: float = 1.0
+        self.offset_lo_level: str = "Offset in V"
+        self.offset_lo_level_value: float = 0.0
+        self.duty_cycle_pulse_width: str = "Duty cycle in %"
+        self.duty_cycle_pulse_width_value: float = 50
+        self.delay_phase: str = "Phase in deg"
+        self.delay_phase_value: float = 0
+
+        self.plottype = [True]  # True to plot data
+        self.savetype = [True]  # True to save data
+
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+        return {
+            "SweepMode": ["Frequency in Hz", "Period in s", "Amplitude in V", "Offset in V", "HiLevel in V",
+                          "LoLevel in V", "Phase in deg", "Delay in s", "None"],
+            "Channel": ["1", "2"],
+            "Waveform": list(self.waveforms.keys()),
+            "PeriodFrequency": ["Period in s", "Frequency in Hz"],
+            "AmplitudeHiLevel": ["Amplitude in V", "HiLevel in V"],
+            "OffsetLoLevel": ["Offset in V", "LoLevel in V"],
+            "DelayPhase": ["Phase in deg", "Delay in s"],
+            # "DutyCyclePulseWidth": ["Duty cycle in %"],
+            "PeriodFrequencyValue": 1000,
+            "AmplitudeHiLevelValue": 1.0,
+            "OffsetLoLevelValue": 0.0,
+            "DelayPhaseValue": 0,
+            # "DutyCyclePulseWidthValue": 50,
+        }
+
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
+        self.device = parameters.get("Device", "")  # e.g. "COM3"
+        self.shortname = "TGP3122" + self.device[-4:]
+        self.channel = int(parameters.get("Channel", "1")[-1])
+
         # could be part of the MeasClass
-        self.sweep_mode                 = parameter['SweepMode'] 
-        self.waveform                   = parameter['Waveform'] 
-        self.periodfrequency            = parameter['PeriodFrequency' ]
-        self.periodfrequencyvalue       = parameter['PeriodFrequencyValue']
-        self.amplitudehilevel           = parameter['AmplitudeHiLevel']
-        self.amplitudehilevelvalue      = parameter['AmplitudeHiLevelValue']
-        self.offsetlolevel              = parameter['OffsetLoLevel']
-        self.offsetlolevelvalue         = parameter['OffsetLoLevelValue']
-        self.dutycyclepulsewidth        = parameter['DutyCyclePulseWidth']
-        self.dutycyclepulsewidthvalue   = parameter['DutyCyclePulseWidthValue']
-        self.delayphase                 = parameter['DelayPhase']
-        self.delayphasevalue            = parameter['DelayPhaseValue']
-        
-        
+        self.sweep_mode = parameters.get("SweepMode", "None")
+        self.waveform = parameters.get("Waveform", "Sine")
+        self.period_frequency = parameters.get("PeriodFrequency", "Frequency in Hz")
+        self.period_frequency_value = parameters.get("PeriodFrequencyValue", 1000)
+        self.amplitude_hi_level = parameters.get("AmplitudeHiLevel", "Amplitude in V")
+        self.amplitude_hi_level_value = parameters.get("AmplitudeHiLevelValue", 1.0)
+        self.offset_lo_level = parameters.get("OffsetLoLevel", "Offset in V")
+        self.offset_lo_level_value = parameters.get("OffsetLoLevelValue", 0.0)
+        self.duty_cycle_pulse_width = parameters.get("DutyCyclePulseWidth", "Duty cycle in %")
+        self.duty_cycle_pulse_width_value = parameters.get("DutyCyclePulseWidthValue", 50)
+        self.delay_phase = parameters.get("DelayPhase", "Phase in deg")
+        self.delay_phase_value = parameters.get("DelayPhaseValue", 0)
+
         if self.sweep_mode == "None":
             self.variables = []
-            self.units     = []
-            self.plottype  = []     # True to plot data
-            self.savetype  = []          # True to save data
-            
+            self.units = []
+            self.plottype = []  # True to plot data
+            self.savetype = []  # True to save data
+
         else:
             self.variables = [self.sweep_mode.split(" ")[0]]
             self.units = [self.sweep_mode.split(" ")[1][1:-1]]
 
-      
-    def initialize(self):
-        # self.port.write("BEEPMODE ON")
-    
-        # self.port.write("BEEP")
-        
+    def initialize(self) -> None:
+        """Initialize the device, e.g. set the initial state of the device."""
         self.port.write("BEEPMODE OFF")
-    
+
         self.port.write("CHN %i" % self.channel)
 
-        self.port.write("WAVE %s" % self.waveforms[self.waveform])   
+        self.port.write("WAVE %s" % self.waveforms[self.waveform])
 
-        self.port.write("ALIGN") # aligns the two channel to the same phase 
+        self.port.write("ALIGN")  # aligns the two channel to the same phase
 
-        
         # set period/frequency
-        self.port.write("%s %s" % (self.commands[self.periodfrequency ], self.periodfrequencyvalue))    
-        self.port.write("%s %s" % (self.commands[self.amplitudehilevel], self.amplitudehilevelvalue))  
-        self.port.write("%s %s" % (self.commands[self.offsetlolevel], self.offsetlolevelvalue)) 
-        
-        if self.delayphase == "Delay [s]":
-            if self.periodfrequency == "Period [s]":
-                self.delayphasevalue = 360.0 * float(self.delayphasevalue) / float(self.periodfrequencyvalue)
+        self.port.write("%s %s" % (self.commands[self.period_frequency], self.period_frequency_value))
+        self.port.write("%s %s" % (self.commands[self.amplitude_hi_level], self.amplitude_hi_level_value))
+        self.port.write("%s %s" % (self.commands[self.offset_lo_level], self.offset_lo_level_value))
+
+        if self.delay_phase == "Delay in s":
+            if self.period_frequency == "Period in s":
+                self.delay_phase_value = 360.0 * float(self.delay_phase_value) / float(self.period_frequency_value)
             else:
-                self.delayphasevalue = 360.0 * float(self.delayphasevalue) * float(self.periodfrequencyvalue)
-                
-            
-        self.port.write("%s %s" % (self.commands[self.delayphase], self.delayphasevalue))   
-               
-        
+                self.delay_phase_value = 360.0 * float(self.delay_phase_value) * float(self.period_frequency_value)
+
+        self.port.write("%s %s" % (self.commands[self.delay_phase], self.delay_phase_value))
+
         # VOLT 3.0 Set amplitude to 3 Vpp
         # VOLT:OFFS -2.5 Set offset to -2.5 Vdc
-                        
-    def deinitialize(self):
-        pass
-        # self.port.write("BEEPMODE ON")
-    
-        # self.port.write("BEEP")
-        
-        # self.port.write("BEEPMODE OFF")
-        #self.port.write("*RST")
-        # self.port.write("SYST:LOC")
-         
-    def poweron(self):
+
+    def poweron(self) -> None:
+        """Turn on the output and activate the channel."""
         self.port.write("CHN %i" % self.channel)
         self.port.write("OUTPUT ON")
-        
-    def poweroff(self):
+
+    def poweroff(self) -> None:
+        """Turn off the output and deactivate the channel."""
         self.port.write("CHN %i" % self.channel)
         self.port.write("OUTPUT OFF")
-                        
-    def apply(self):
-        
-        if self.sweep_mode != 'None':
-            self.port.write("CHN %i" % self.channel)
-            if self.sweep_mode == "Delay [s]":
-                if self.periodfrequency == "Period [s]":
-                
-                    self.phasevalue = 360.0 * self.value / float(self.periodfrequencyvalue)
-                else:
-                    self.phasevalue = 360.0 * self.value * float(self.periodfrequencyvalue)
-                
-                self.port.write("%s %s" % (self.commands[self.sweep_mode],self.phasevalue))
-                    
+
+    def apply(self) -> None:
+        """Apply the sweep value."""
+        if self.sweep_mode == "None":
+            return
+
+        self.port.write("CHN %i" % self.channel)
+        if self.sweep_mode == "Delay in s":
+            if self.period_frequency == "Period in s":
+
+                self.phasevalue = 360.0 * self.value / float(self.period_frequency_value)
             else:
-                self.port.write("%s %s" % (self.commands[self.sweep_mode],self.value))
-            
-            
-    def measure(self):
-        pass
-       
-    def call(self):
-        if self.sweep_mode != "None":
-            return [self.value]
+                self.phasevalue = 360.0 * self.value * float(self.period_frequency_value)
+
+            self.port.write("%s %s" % (self.commands[self.sweep_mode], self.phasevalue))
+
         else:
+            self.port.write("%s %s" % (self.commands[self.sweep_mode], self.value))
+
+    def call(self) -> list[float]:
+        """Return the current sweep value as a 1-element list."""
+        if self.sweep_mode != "None":
             return []
-        
-                    
+
+        return [float(self.value)]

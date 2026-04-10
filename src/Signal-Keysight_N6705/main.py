@@ -6,6 +6,7 @@
 # MIT License
 #
 # Copyright (c) 2022 Gennaro Tortone (Istituto Nazionale di Fisica Nucleare - Sezione di Napoli - tortone@na.infn.it)
+# Copyright (c) 2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,17 +26,18 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# SweepMe! device class
-# Type: Signal
-# Device: Keysight N6705
+# SweepMe! driver
+# * Module: Signal
+# * Instrument: Keysight N6705
 
-from EmptyDeviceClass import EmptyDevice
-from ErrorMessage import debug
+from typing import Any
+
+from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import debug
 
 
 class Device(EmptyDevice):
-
-    description =   """
+    description = """
                         Keysight N6705
                         DC power analyzer
                     """
@@ -66,7 +68,7 @@ class Device(EmptyDevice):
         self.NSTEPS = "Number of steps"
         self.TCONSTANT = "Time constant"
         #
-        self.ENDTIME = "End time in s"          # not available on GUI
+        self.ENDTIME = "End time in s"  # not available on GUI
 
         self.waveforms = dict()
         # Sine
@@ -125,10 +127,31 @@ class Device(EmptyDevice):
         self.waveforms['Exponential'][self.TCONSTANT] = dict({"command": "TCONSTANT", "unit": "s"})
         self.waveforms['Exponential'][self.HILEVEL] = dict({"command": "END:LEVEL", "unit": "V"})
 
-    def set_GUIparameter(self):
-        GUIparameter = {
-            "SweepMode": [self.PERIOD, self.FREQUENCY, self.AMPLITUDE, self.HILEVEL, self.OFFSET,  self.LOLEVEL, self.PHASE, \
-                self.DELAY, self.DUTYCYCLE, self.PULSEWIDTH, self.RISETIME, self.FALLTIME, self.NSTEPS,  self.TCONSTANT, "None"],
+        # Measurement Parameters
+        self.channel: str = "1"
+        self.parameters: dict[str, Any] = dict()
+        self.sweep_mode: str = "None"
+        self.waveform: str = "Sine"
+        self.period_frequency: str = self.PERIOD
+        self.period_frequency_value: float = 1.0
+        self.amplitude_hi_level: str = self.AMPLITUDE
+        self.amplitude_hi_level_value: float = 1.0
+        self.offset_lo_level: str = self.OFFSET
+        self.offset_lo_level_value: float = 0.0
+        self.delay_phase: str = self.DELAY
+        self.delay_phase_value: float = 0.0
+        self.duty_cycle_pulse_width: str = self.DUTYCYCLE
+        self.duty_cycle_pulse_width_value: float = 0.0
+        self.rise_time: float = 1.0
+        self.fall_time: float = 1.0
+
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+        return {
+            "SweepMode": [self.PERIOD, self.FREQUENCY, self.AMPLITUDE, self.HILEVEL, self.OFFSET, self.LOLEVEL,
+                          self.PHASE, \
+                          self.DELAY, self.DUTYCYCLE, self.PULSEWIDTH, self.RISETIME, self.FALLTIME, self.NSTEPS,
+                          self.TCONSTANT, "None"],
             "Channel": ["1", "2", "3", "4"],
             "Waveform": list(self.waveforms.keys()),
             "PeriodFrequency": [self.PERIOD, self.FREQUENCY],
@@ -141,47 +164,43 @@ class Device(EmptyDevice):
             "OffsetLoLevelValue": 0.0,
             "DelayPhaseValue": 10,
             "DutyCyclePulseWidthValue": 5,
-            self.RISETIME: 1,
-            self.FALLTIME: 1
+            "RiseTime": 1,
+            "FallTime": 1,
         }
 
-        return GUIparameter
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
+        self.parameters = parameters
+        self.sweep_mode = parameters.get('SweepMode', "None")
+        self.waveform = parameters.get('Waveform', "Sine")
 
-    def get_GUIparameter(self, parameter={}):
-        self.sweep_mode = parameter['SweepMode'] 
-        self.waveform = parameter['Waveform']
-        
-        self.periodfrequency          = parameter['PeriodFrequency' ]
-        self.periodfrequencyvalue     = float(parameter['PeriodFrequencyValue'])
-        self.amplitudehilevel         = parameter['AmplitudeHiLevel']
-        self.amplitudehilevelvalue    = float(parameter['AmplitudeHiLevelValue'])
-        self.offsetlolevel            = parameter['OffsetLoLevel']
-        self.offsetlolevelvalue       = float(parameter['OffsetLoLevelValue'])
-        self.delayphase               = parameter['DelayPhase']
-        self.delayphasevalue          = float(parameter['DelayPhaseValue'])
-        self.dutycyclepulsewidth      = parameter['DutyCyclePulseWidth']
-        self.dutycyclepulsewidthvalue = float(parameter['DutyCyclePulseWidthValue'])
-        self.risetime                 = float(parameter['RiseTime'])
-        self.falltime                 = float(parameter['FallTime'])
+        self.period_frequency = parameters.get('PeriodFrequency', self.PERIOD)
+        self.period_frequency_value = self.convert_gui_value_to_float('PeriodFrequencyValue', 1)
+        self.amplitude_hi_level = parameters.get('AmplitudeHiLevel', self.AMPLITUDE)
+        self.amplitude_hi_level_value = self.convert_gui_value_to_float('AmplitudeHiLevelValue', 1)
+        self.offset_lo_level = parameters.get('OffsetLoLevel', self.OFFSET)
+        self.offset_lo_level_value = self.convert_gui_value_to_float('OffsetLoLevelValue', 0)
+        self.delay_phase = parameters.get('DelayPhase', self.PHASE)
+        self.delay_phase_value = self.convert_gui_value_to_float('DelayPhaseValue', 0)
+        self.duty_cycle_pulse_width = parameters.get('DutyCyclePulseWidth', self.DUTYCYCLE)
+        self.duty_cycle_pulse_width_value = self.convert_gui_value_to_float('DutyCyclePulseWidthValue', 0)
+        self.rise_time = self.convert_gui_value_to_float('RiseTime', 1)
+        self.fall_time = self.convert_gui_value_to_float('FallTime', 1)
 
-        self.device = parameter['Device']
-        self.channel = parameter['Channel']
+        self.channel = parameters.get('Channel', "1")
         self.shortname = "Keysight N6705 CH" + self.channel
 
         self.variables = ['Voltage in V', 'Current in A']
         self.units = ['V', 'A']
         self.plottype = [True, True]
         self.savetype = [True, True]
-        
-    def initialize(self):
 
-        # once at the beginning of the measurement
+    def initialize(self) -> None:
+        """Reset the device at the start of the measurement."""
         self.port.write("*RST")
 
-    def deinitialize(self):
-        pass
-
-    def poweron(self):
+    def poweron(self) -> None:
+        """Turn on the output."""
         # TODO: include current operation mode
         self.port.write(f"VOLT:MODE ARB, (@{self.channel})")
         self.port.write(f"ARB:FUNC:TYPE VOLT, (@{self.channel})")
@@ -192,18 +211,22 @@ class Device(EmptyDevice):
         self.port.write(f"OUTP ON, (@{self.channel})")
         self.port.write(f"INIT:TRAN (@{self.channel})")
 
-    def poweroff(self):
+    def poweroff(self) -> None:
+        """Turn off the output and abort pending waveform generation."""
         self.port.write(f"OUTP OFF, (@{self.channel})")
         self.port.write(f"ABORT:TRAN (@{self.channel})")
 
     def set_parameter(self, param, value):
         arb_prefix = f"ARB:VOLTAGE:{self.waveforms[self.waveform]['label']}"
         if self.waveforms[self.waveform].get(param, False):
-            self.port.write(f"{arb_prefix}:{self.waveforms[self.waveform][param]['command']} {value}, (@{self.channel}); *WAI")
+            self.port.write(
+                f"{arb_prefix}:{self.waveforms[self.waveform][param]['command']} {value}, (@{self.channel}); *WAI")
             return True
-        else: return False
+        else:
+            return False
 
-    def configure(self):
+    def configure(self) -> None:
+        """Configure the waveform parameters based on the selected waveform and sweep mode."""
         if self.waveform == 'Sine':
             self.set_sine_params()
         elif self.waveform == 'Step':
@@ -218,65 +241,69 @@ class Device(EmptyDevice):
             self.set_trapezoid_params()
         elif self.waveform == 'Exponential':
             self.set_exponential_params()
-            
-    def apply(self):
+
+    def apply(self) -> None:
+        """Update the waveform parameters with the new sweep value."""
         if self.sweep_mode == 'None':
-            pass
-        else:
-            self.update_sweep_params(self.value)
-            self.port.write(f"ABORT:TRAN (@{self.channel}); *WAI")  # wait for pending abort                       
-            self.configure()                                        # reconfigure waveform
-            self.port.write(f"INIT:TRAN (@{self.channel})")
+            return
 
-    def measure(self):
-        # default read voltage and current
-        self.port.write(f"MEAS:VOLT? (@{self.channel})")
-        self.port.write(f"MEAS:CURR? (@{self.channel})")
+        self.update_sweep_params(self.value)
+        self.port.write(f"ABORT:TRAN (@{self.channel}); *WAI")  # wait for pending abort
+        self.configure()  # reconfigure waveform
+        self.port.write(f"INIT:TRAN (@{self.channel})")
 
-    def call(self):
-        retarr = []
-        retarr.append(float(self.port.read()))      # voltage
-        retarr.append(float(self.port.read()))      # current
-        
-        return retarr
+    def call(self) -> list[float]:
+        """Query the measurement values in the same phase to allow multi-channel use."""
+        measured_voltage = float(self.port.query(f"MEAS:VOLT? (@{self.channel})"))
+        measured_current = float(self.port.query(f"MEAS:CURR? (@{self.channel})"))
+
+        return [measured_voltage, measured_current]
 
     # convenience functions
 
+    def convert_gui_value_to_float(self, parameter: str, default: float) -> float:
+        """Helper function to convert GUI parameter values to float, with error handling."""
+        try:
+            value = float(self.parameters.get(parameter, default))
+            return value
+        except ValueError:
+            return default
+
     def update_sweep_params(self, value):
         if self.sweep_mode == self.PERIOD or self.sweep_mode == self.FREQUENCY:
-            self.periodfrequencyvalue = value
+            self.period_frequency_value = value
         elif self.sweep_mode == self.AMPLITUDE or self.sweep_mode == self.HILEVEL:
-            self.amplitudehilevelvalue = value
+            self.amplitude_hi_level_value = value
         elif self.sweep_mode == self.OFFSET or self.sweep_mode == self.LOLEVEL:
-            self.offsetlolevelvalue = value
+            self.offset_lo_level_value = value
         elif self.sweep_mode == self.PHASE or self.sweep_mode == self.DELAY:
-            self.delayphasevalue = value
+            self.delay_phase_value = value
         elif self.sweep_mode == self.DUTYCYCLE or self.sweep_mode == self.PULSEWIDTH:
-            self.dutycyclepulsewidthvalue = value
+            self.duty_cycle_pulse_width_value = value
         elif self.sweep_mode == self.RISETIME:
-            self.risetime = value
+            self.rise_time = value
         elif self.sweep_mode == self.FALLTIME:
-            self.falltime = value
+            self.fall_time = value
         elif self.sweep_mode == self.NSTEPS:
-            None    # fixme
+            None  # fixme
         elif self.sweep_mode == self.TCONSTANT:
-            None    # fixme
+            None  # fixme
 
     # STEP
 
     def get_step_params(self):
-        self.delay = self.delayphasevalue
+        self.delay = self.delay_phase_value
 
         # lolevel and offset have same meaning
-        self.lolevel = self.offsetlolevelvalue
+        self.lolevel = self.offset_lo_level_value
 
-        if self.amplitudehilevel == self.AMPLITUDE:
+        if self.amplitude_hi_level == self.AMPLITUDE:
             # hilevel = amplitude + lolevel
-            self.hilevel = self.amplitudehilevelvalue + self.lolevel
+            self.hilevel = self.amplitude_hi_level_value + self.lolevel
         else:
-            self.hilevel = self.amplitudehilevelvalue
+            self.hilevel = self.amplitude_hi_level_value
 
-        return { self.DELAY: self.delay, self.LOLEVEL: self.lolevel, self.HILEVEL: self.hilevel }
+        return {self.DELAY: self.delay, self.LOLEVEL: self.lolevel, self.HILEVEL: self.hilevel}
 
     def set_step_params(self):
         params = self.get_step_params()
@@ -287,29 +314,30 @@ class Device(EmptyDevice):
     # RAMP
 
     def get_ramp_params(self):
-        if self.periodfrequency == self.PERIOD:
-            self.period = self.periodfrequencyvalue
+        if self.period_frequency == self.PERIOD:
+            self.period = self.period_frequency_value
         else:
-            self.period = float(1/self.periodfrequencyvalue)
+            self.period = float(1 / self.period_frequency_value)
 
-        if self.delayphase == self.DELAY:
-            self.delay = self.delayphasevalue
+        if self.delay_phase == self.DELAY:
+            self.delay = self.delay_phase_value
         else:
             # delay = period * phase / 360
-            self.delay = float(self.period * self.delayphasevalue / 360)
+            self.delay = float(self.period * self.delay_phase_value / 360)
 
         # lolevel and offset have same meaning
-        self.lolevel = self.offsetlolevelvalue
+        self.lolevel = self.offset_lo_level_value
 
-        if self.amplitudehilevel == self.AMPLITUDE:
+        if self.amplitude_hi_level == self.AMPLITUDE:
             # hilevel = amplitude + lolevel
-            self.hilevel = self.amplitudehilevelvalue + self.lolevel
+            self.hilevel = self.amplitude_hi_level_value + self.lolevel
         else:
-            self.hilevel = self.amplitudehilevelvalue
+            self.hilevel = self.amplitude_hi_level_value
 
-        self.endtime = self.period - self.risetime - self.delay
+        self.endtime = self.period - self.rise_time - self.delay
 
-        return { self.DELAY: self.delay, self.RISETIME: self.risetime, self.ENDTIME: self.endtime, self.LOLEVEL: self.lolevel, self.HILEVEL: self.hilevel, self.PERIOD: self.period }
+        return {self.DELAY: self.delay, self.RISETIME: self.rise_time, self.ENDTIME: self.endtime,
+                self.LOLEVEL: self.lolevel, self.HILEVEL: self.hilevel, self.PERIOD: self.period}
 
     def set_ramp_params(self):
         params = self.get_ramp_params()
@@ -323,7 +351,7 @@ class Device(EmptyDevice):
 
     def get_staircase_params(self):
         params = self.get_ramp_params()
-        self.nsteps = self.dutycyclepulsewidthvalue
+        self.nsteps = self.duty_cycle_pulse_width_value
         params.update({self.NSTEPS: self.nsteps})
         return params
 
@@ -335,35 +363,35 @@ class Device(EmptyDevice):
         self.set_parameter(self.LOLEVEL, params[self.LOLEVEL])
         self.set_parameter(self.HILEVEL, params[self.HILEVEL])
         self.set_parameter(self.NSTEPS, params[self.NSTEPS])
-    
+
     # SINE 
 
     def get_sine_params(self):
-        if self.periodfrequency == self.PERIOD:
-            self.frequency = 1 / self.periodfrequencyvalue
+        if self.period_frequency == self.PERIOD:
+            self.frequency = 1 / self.period_frequency_value
         else:
-            self.frequency = self.periodfrequencyvalue
+            self.frequency = self.period_frequency_value
 
-        if self.offsetlolevel == self.OFFSET:
-            self.offset = self.offsetlolevelvalue
-            if self.amplitudehilevel == self.AMPLITUDE:
-                self.amplitude = self.amplitudehilevelvalue
-            else: # self.amplitudehilevel == self.HILEVEL
+        if self.offset_lo_level == self.OFFSET:
+            self.offset = self.offset_lo_level_value
+            if self.amplitude_hi_level == self.AMPLITUDE:
+                self.amplitude = self.amplitude_hi_level_value
+            else:  # self.amplitudehilevel == self.HILEVEL
                 # amplitude = hilevel - offset
-                self.amplitude = self.amplitudehilevelvalue - self.offset
+                self.amplitude = self.amplitude_hi_level_value - self.offset
 
-        else: # self.offsetlolevel == self.LOLEVEL:
-            if self.amplitudehilevel == self.AMPLITUDE:
-                self.amplitude = self.amplitudehilevelvalue
+        else:  # self.offsetlolevel == self.LOLEVEL:
+            if self.amplitude_hi_level == self.AMPLITUDE:
+                self.amplitude = self.amplitude_hi_level_value
                 # offset = lolevel + amplitude
-                self.offset = self.offsetlolevelvalue + self.amplitudehilevelvalue
-            else:   # self.amplitudehilevel == self.HILEVEL
+                self.offset = self.offset_lo_level_value + self.amplitude_hi_level_value
+            else:  # self.amplitudehilevel == self.HILEVEL
                 # amplitude - (hilevel - lolevel) / 2
-                self.amplitude = (self.amplitudehilevelvalue - self.offsetlolevelvalue) / 2
+                self.amplitude = (self.amplitude_hi_level_value - self.offset_lo_level_value) / 2
                 # offset = lolevel + ((hilevel - lolevel) / 2)
-                self.offset = self.offsetlolevelvalue + ((self.amplitudehilevelvalue - self.offsetlolevelvalue) / 2)
+                self.offset = self.offset_lo_level_value + ((self.amplitude_hi_level_value - self.offset_lo_level_value) / 2)
 
-        return { self.FREQUENCY: self.frequency, self.AMPLITUDE: self.amplitude, self.OFFSET: self.offset }
+        return {self.FREQUENCY: self.frequency, self.AMPLITUDE: self.amplitude, self.OFFSET: self.offset}
 
     def set_sine_params(self):
         params = self.get_sine_params()
@@ -378,15 +406,15 @@ class Device(EmptyDevice):
         # remove parameters not used
         params.pop(self.RISETIME)
         params.pop(self.ENDTIME)
-        
-        if self.dutycyclepulsewidth == self.PULSEWIDTH:
-            self.pulsewidth = self.dutycyclepulsewidthvalue
-        elif self.dutycyclepulsewidth == self.DUTYCYCLE:
+
+        if self.duty_cycle_pulse_width == self.PULSEWIDTH:
+            self.pulsewidth = self.duty_cycle_pulse_width_value
+        elif self.duty_cycle_pulse_width == self.DUTYCYCLE:
             # pulsewidth = dutycycle / 100 * period
-            self.pulsewidth = self.dutycyclepulsewidthvalue / 100 * params[self.PERIOD]
-        
+            self.pulsewidth = self.duty_cycle_pulse_width_value / 100 * params[self.PERIOD]
+
         self.endtime = params[self.PERIOD] - self.pulsewidth - params[self.DELAY]
-        
+
         params.update({self.PULSEWIDTH: self.pulsewidth})
         params.update({self.ENDTIME: self.endtime})
 
@@ -405,9 +433,9 @@ class Device(EmptyDevice):
     def get_trapezoid_params(self):
         params = self.get_pulse_params()
 
-        self.endtime = params[self.PERIOD] - self.risetime - params[self.PULSEWIDTH] - self.falltime
-        params.update({self.RISETIME: self.risetime})
-        params.update({self.FALLTIME: self.falltime})
+        self.endtime = params[self.PERIOD] - self.rise_time - params[self.PULSEWIDTH] - self.fall_time
+        params.update({self.RISETIME: self.rise_time})
+        params.update({self.FALLTIME: self.fall_time})
         params.update({self.ENDTIME: self.endtime})
 
         return params
@@ -429,7 +457,7 @@ class Device(EmptyDevice):
         # remove parameters not used
         params.pop(self.ENDTIME)
 
-        self.tconstant = self.dutycyclepulsewidthvalue
+        self.tconstant = self.duty_cycle_pulse_width_value
         params.update({self.TCONSTANT: self.tconstant})
 
         return params
