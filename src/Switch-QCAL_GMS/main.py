@@ -101,10 +101,10 @@ class Device(EmptyDevice):
 
         selected_sweep_mode = parameters.get("SweepMode", "None")
         if selected_sweep_mode != "Concentration 2 in Vol%":
-            new_parameters["Concentration 2 in Vol%"] = 0.
+            new_parameters["Concentration 2 in Vol%"] = 0.0
 
         if selected_sweep_mode != "Concentration 3 in Vol%":
-            new_parameters["Concentration 3 in Vol%"] = 0.
+            new_parameters["Concentration 3 in Vol%"] = 0.0
 
         if selected_sweep_mode != "Total flow in NmL/min":
             new_parameters["Total flow in NmL/min"] = 10.0
@@ -201,10 +201,12 @@ class Device(EmptyDevice):
             msg = f"Invalid concentration 3 value: {self.concentration_3}. It must be between 0 and 100 Vol%."
             raise ValueError(msg)
 
-        self.wait_for_extern_file_to_be_empty()
+        if not self.wait_for_extern_file_to_be_empty():
+            msg = "Run was stopped while waiting for extern.txt to be empty. Aborting setpoint update."
+            raise RuntimeError(msg)
         self.write_setpoints_to_file(self.concentration_2, self.concentration_3, self.total_flow)
 
-    def wait_for_extern_file_to_be_empty(self) -> None:
+    def wait_for_extern_file_to_be_empty(self) -> bool:
         """Wait until extern.txt is empty to avoid overwriting previous commands."""
         time_start = time.time()
         while not self.is_run_stopped():
@@ -216,12 +218,13 @@ class Device(EmptyDevice):
                 with open(self.extern_file, "r", encoding="ascii", errors="ignore") as f:
                     content = f.read().strip()
                     if not content:
-                        break  # extern.txt is empty
+                        return True  # extern.txt is empty
             except Exception as e:
                 msg = f"Error while reading {self.extern_file}. Ensure the file exists and is accessible. Error details: {e}"
                 debug(msg)
 
             time.sleep(0.02)
+        return False
 
     def write_setpoints_to_file(self, concentration_2: float, concentration_3: float, total_flow: float) -> None:
         """Write the given setpoints to extern.txt."""
@@ -284,6 +287,7 @@ class Device(EmptyDevice):
         """Read the latest response line from zeit.txt."""
         if not os.path.exists(self.zeit_file):
             return ""
+        lines = []
 
         # Retry reading the file a few times in case it's temporarily locked by the GMS software
         for _ in range(5):
@@ -294,13 +298,14 @@ class Device(EmptyDevice):
                     # currently written by the GMS software and not yet complete
                     if lines and not lines[-1].endswith("\n\r"):
                         lines = lines[:-1]
-                        break
+                    break
 
             except Exception as e:
                 msg = f"Error while reading {self.zeit_file}. Ensure the file is accessible and not locked by another process. Error details: {e}"
                 debug(msg)
 
             time.sleep(0.05)
+
         else:
             msg = f"Failed to read from {self.zeit_file} after multiple attempts."
             raise Exception(msg)
