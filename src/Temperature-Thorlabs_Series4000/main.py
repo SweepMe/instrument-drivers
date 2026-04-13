@@ -142,6 +142,9 @@ class Device(EmptyDevice):
                 pass
             else:
                 break
+        else:
+            msg = "Failed to connect to the device after multiple attempts. Try restarting the device or SweepMe!."
+            raise RuntimeError(msg)
 
         if "TED" in identification:
             self.device_type = "TED"
