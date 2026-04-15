@@ -54,7 +54,7 @@ class Device(EmptyDevice):
         # Communication Parameters
         self.port_string: str = ""
         self.port_manager = True
-        self.port_types = ["GPIB", "COM", "TCPIP"]
+        self.port_types = ["COM"]
         self.channel: str = "vsense1"  # or vsense2
 
         # Measurement parameters

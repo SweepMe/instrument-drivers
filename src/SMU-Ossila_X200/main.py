@@ -54,7 +54,7 @@ class Device(EmptyDevice):
         # Communication Parameters
         self.port_string: str = ""
         self.port_manager = True
-        self.port_types = ["COM", "USB", "TCPIP"]
+        self.port_types = ["COM"]
 
         self.channel = "smu1"  # or smu2
 
