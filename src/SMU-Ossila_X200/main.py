@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from typing import Any
 from pysweepme.EmptyDeviceClass import EmptyDevice
+import time
 
 
 class Device(EmptyDevice):
@@ -132,8 +133,13 @@ class Device(EmptyDevice):
         if parameters.get("ADC 2x Mode", False):
             self.speed += 10  # if ADC 2x mode is enabled, add 10 to the OSR index according to the manual
 
-        self.current_range_index = self.current_ranges.get(parameters.get("Range", "200 mA"), -1)  # if the range is invalid, use an invalid index to raise an error later
-        self.auto_range = self.current_range_index == 0  # auto range is enabled if the index is 0
+        self.current_range_index = self.current_ranges.get(parameters.get("Range", "200 mA"),
+                                                           -1)  # if the range is invalid, use an invalid index to raise an error later
+        if self.current_range_index in (0, "0"):  # auto range is enabled if the index is 0
+            self.auto_range = True
+            self.current_range_index = 1
+        else:
+            self.auto_range = False
 
         # self.voltage_range_index = self.voltage_ranges.get(parameters.get("RangeVoltage", "333 µV precision (Sourcing mode)"), 0)
         self.compliance = parameters.get("Compliance", "1e-3")
@@ -160,7 +166,7 @@ class Device(EmptyDevice):
         self.set_oversample_rate(self.speed)
 
         if self.auto_range:
-            self.current_range_index = 5  # start with the lowest range for auto-ranging
+            self.current_range_index = 1  # start with the highest range for auto-ranging
 
         self.set_current_range(self.current_range_index)
 
@@ -188,31 +194,61 @@ class Device(EmptyDevice):
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         if self.sweep_mode.startswith("Voltage"):
-            self.set_voltage(float(self.value))
+            if self.auto_range:
+                # In auto range mode, the current range is updated in call() based on the measured current
+                # We need to check if the current range should be increased for the new voltage
+                while not self.is_run_stopped():
+                    self.set_voltage(float(self.value))
+                    if self.has_error():
+                        # range is too low, increase it
+                        if self.current_range_index > 1:
+                            self.current_range_index -= 1  # go to next higher range
+                            self.set_current_range(self.current_range_index)
+                            continue  # try to set the voltage again with the new range
+                        else:
+                            # maximum range is reached. this case should be very rare, as the voltage limit is already
+                            # handled by the voltage limit/compliance settings, but we handle it just in case.
+                            msg = (f"Voltage {self.value} V could not be set even in the highest current range. Please "
+                                   f"check if the voltage limit is set correctly and if the device is working properly.")
+                            raise ValueError(msg)
+                    # no error raised, the voltage was successfully set, break the loop
+                    break
+
+            else:  # not auto range, just set the voltage and check if it was successful
+                self.set_voltage(float(self.value))
+                if self.has_error():
+                    msg = (f"Device is in error state, likely because the current range is set too low for the set "
+                           f"voltage. Please increase the current range.")
+                    raise ValueError(msg)
 
     def call(self) -> list:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         if self.auto_range:
-            self.set_current_range(5)  # start with the lowest range for auto-ranging
-            voltage, current = self.get_voltage_and_current()
-
-            while True:
-                if self.is_run_stopped():
-                    break
-
-                # if the current is above 90% of the current range limit, switch to the next higher range
-                if abs(current) > 0.9 * self.current_range_limits[self.current_range_index]:
+            voltage, current = float("nan"), float("nan")  # initialize with NaN values
+            while not self.is_run_stopped():
+                try:
+                    voltage, current = self.get_voltage_and_current()
+                except ValueError:  # current range is set too low
                     if self.current_range_index > 1:
-                        self.current_range_index -= 1
+                        self.current_range_index -= 1  # go to next higher range
                         self.set_current_range(self.current_range_index)
-                        voltage, current = self.get_voltage_and_current()
+                        continue  # try to measure again with the new range
                     else:
-                        # the maximum range is reached, stop auto-ranging
+                        # the maximum range is reached, return NaN
                         break
 
-                else:
-                    # Value is within the current range limit, stop auto-ranging
-                    break
+                # voltage and current were successfully measured, check if they are below 10% of the current range
+                if abs(current) < 0.1 * self.current_range_limits[self.current_range_index]:
+                    if self.current_range_index < 5:
+                        self.current_range_index += 1  # go to next lower range to increase accuracy
+                        self.set_current_range(self.current_range_index)
+                        continue  # try to measure again with the new range
+                    else:
+                        # the minimum range is reached, return the measured values
+                        break
+
+                # otherwise the current range is correct
+                break
         else:
             voltage, current = self.get_voltage_and_current()
 
@@ -253,6 +289,8 @@ class Device(EmptyDevice):
             raise ValueError(msg)
 
         self.port.write(f"{self.channel} set range {measure_range_index}")
+        # Query the range to ensure that the device has switched to the new range before continuing
+        _ = self.port.query(f"{self.channel} get range")
 
     def set_oversample_rate(self, oversample_rate_index: int) -> None:
         """Set the oversample rate for the measurement. The OSR index can be 0-19. See manual 5.2.2 for reference."""
@@ -271,6 +309,13 @@ class Device(EmptyDevice):
     def set_voltage(self, voltage: float) -> None:
         """Set the output voltage."""
         self.port.write(f"{self.channel} set voltage {voltage}")
+
+    def has_error(self) -> bool:
+        """Check if the device is in error state."""
+        err = self.port.query(f"{self.channel} get error")
+        if "true" in err.lower():
+            return True
+        return False
 
     def get_identification(self) -> str:
         """Get the device identification."""

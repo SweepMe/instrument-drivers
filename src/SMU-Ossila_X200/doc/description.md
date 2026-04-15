@@ -51,9 +51,13 @@ This driver enables voltage sourcing and simultaneous voltage/current measuremen
   - Adds 10 to the OSR index internally (OSR range becomes 10-19)
   
 - **Range**: Current measurement range
-  - Available ranges: 200 mA, 20 mA, 2 mA, 200 µA, 20 µA
-  - Select appropriate range for your measurement to optimize resolution and accuracy
-  - Maps to range indices 1-5 (see manual section 5.2.4)
+  - **Auto**: Automatically adjusts the current range during measurement to optimize resolution and accuracy
+    - Starts at the highest range (200 mA) to avoid clipping
+    - Switches to lower ranges automatically if the measured current is below 10% of the current range limit
+    - Switches to higher ranges if the device returns an overrange error
+  - **Manual ranges**: 200 mA, 20 mA, 2 mA, 200 µA, 20 µA
+    - Select appropriate range for your measurement to optimize resolution and accuracy
+    - Maps to range indices 1-5 (see manual section 5.2.4)
   
 - **High impedance mode**: Input impedance control
   - When enabled, sets the input to high impedance state
@@ -73,6 +77,9 @@ The driver returns two measurement values:
 
 - The device performs a measurement for each data point, combining the OSR setting with the Average parameter for noise reduction.
 - When using voltage sourcing mode, always set an appropriate compliance value to protect your device under test.
+- **Auto-ranging**: When the "Auto" range option is selected:
+  - During voltage sourcing in the `apply()` step, the driver automatically increases the range if the set voltage cannot be applied in the current range.
+  - During measurements in the `call()` step, the driver automatically switches to the most appropriate range for the measured current.
 - The driver does not use the hard reset command to avoid disconnecting communication during operation.
 
 ---
