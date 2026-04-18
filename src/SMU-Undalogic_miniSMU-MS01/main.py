@@ -279,6 +279,12 @@ class Device(EmptyDevice):
                     timeout_count = 0
 
                     current_response = "".join(response_buffer)
+
+                    # Only attempt expensive json.loads when braces/brackets
+                    # are balanced, avoiding redundant parsing on every chunk.
+                    if not self._is_likely_complete_json(current_response):
+                        continue
+
                     try:
                         json.loads(current_response)
                         return current_response
@@ -521,8 +527,22 @@ class Device(EmptyDevice):
             # Execute hardware sweep
             self._send_command(f"SOUR{self.channel}:SWEEP:EXECUTE")
 
-            # Poll for completion
+            # Poll for completion with timeout
+            # Timeout = generous estimate based on sweep parameters plus overhead
+            expected_duration_s = (self.listsweep_points * self.listsweep_dwell_ms) / 1000.0
+            timeout_s = expected_duration_s + 30.0
+            start_time = time.time()
+
             while True:
+                elapsed = time.time() - start_time
+                if elapsed > timeout_s:
+                    msg = (
+                        f"Hardware I-V sweep timed out after {elapsed:.1f} s "
+                        f"(expected ~{expected_duration_s:.1f} s). "
+                        f"Device may be unresponsive."
+                    )
+                    raise Exception(msg)
+
                 status_str = self._send_command(f"SOUR{self.channel}:SWEEP:STATUS?")
                 parts = status_str.split(",")
                 status = parts[0] if parts else "IDLE"
@@ -539,9 +559,15 @@ class Device(EmptyDevice):
         else:
             # Normal point-by-point measurement
             response = self._send_command(f"MEAS{self.channel}:VOLT:CURR?")
-            voltage, current = response.split(",")
-            self._measured_voltage = float(voltage)
-            self._measured_current = float(current)
+            parts = response.split(",")
+            if len(parts) != 2:
+                msg = (
+                    f"Unexpected measurement response format: '{response}'. "
+                    f"Expected 'voltage,current'."
+                )
+                raise Exception(msg)
+            self._measured_voltage = float(parts[0])
+            self._measured_current = float(parts[1])
 
     def call(self) -> list:
         """Return measured data.
@@ -558,8 +584,16 @@ class Device(EmptyDevice):
 
             # Parse the JSON response.  The chunked JSON reader in
             # _read_response guarantees we receive the complete object.
-            sweep_json = json.loads(raw_data)
+            try:
+                sweep_json = json.loads(raw_data)
+            except (json.JSONDecodeError, TypeError) as e:
+                msg = f"Failed to parse sweep data response: {e}"
+                raise Exception(msg) from e
+
             data_points = sweep_json.get("data", [])
+            if not data_points:
+                msg = "Sweep data response contains no data points."
+                raise Exception(msg)
 
             timestamps = np.array([float(p["t"]) / 1000.0 for p in data_points])  # ms to s
             voltages = np.array([float(p["v"]) for p in data_points])
@@ -574,6 +608,80 @@ class Device(EmptyDevice):
             return [self._measured_voltage, self._measured_current]
 
     # --- Convenience wrapper functions -----------------------------------------
+
+    def set_source_mode(self, channel: int, mode: str) -> None:
+        """Set the source mode on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+            mode: Source mode ("FVMI" or "FIMV").
+        """
+        self._send_command(f"SOUR{channel}:{mode} ENA")
+
+    def set_sweep_parameters(
+        self, channel: int, start: float, end: float, points: int, dwell_ms: int,
+    ) -> None:
+        """Configure hardware sweep parameters on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+            start: Start voltage in volts.
+            end: End voltage in volts.
+            points: Number of sweep points (1-1000).
+            dwell_ms: Dwell time per point in milliseconds.
+        """
+        self._send_command(f"SOUR{channel}:SWEEP:VOLT:START {start}")
+        self._send_command(f"SOUR{channel}:SWEEP:VOLT:END {end}")
+        self._send_command(f"SOUR{channel}:SWEEP:POINTS {points}")
+        self._send_command(f"SOUR{channel}:SWEEP:DWELL {dwell_ms}")
+        self._send_command(f"SOUR{channel}:SWEEP:AUTO:ENA")
+        self._send_command(f"SOUR{channel}:SWEEP:FORMAT JSON")
+
+    def execute_sweep(self, channel: int) -> None:
+        """Start a hardware sweep on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+        """
+        self._send_command(f"SOUR{channel}:SWEEP:EXECUTE")
+
+    def get_sweep_status(self, channel: int) -> str:
+        """Query the sweep status on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+
+        Returns:
+            Status string (e.g. "RUNNING,50,100,..." or "COMPLETED").
+        """
+        return self._send_command(f"SOUR{channel}:SWEEP:STATUS?")
+
+    def get_sweep_data(self, channel: int) -> str:
+        """Retrieve the sweep data from a completed hardware sweep.
+
+        Args:
+            channel: Channel number (1 or 2).
+
+        Returns:
+            Raw JSON string containing sweep data points.
+        """
+        return self._send_command(f"SOUR{channel}:SWEEP:DATA?")
+
+    def enable_output(self, channel: int) -> None:
+        """Enable the output on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+        """
+        self._send_command(f"OUTP{channel} ON")
+
+    def disable_output(self, channel: int) -> None:
+        """Disable the output on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+        """
+        self._send_command(f"OUTP{channel} OFF")
 
     def get_identification(self) -> str:
         """Query the device identification string.
@@ -615,8 +723,14 @@ class Device(EmptyDevice):
             Tuple of (voltage in V, current in A).
         """
         response = self._send_command(f"MEAS{channel}:VOLT:CURR?")
-        voltage, current = response.split(",")
-        return float(voltage), float(current)
+        parts = response.split(",")
+        if len(parts) != 2:
+            msg = (
+                f"Unexpected measurement response format: '{response}'. "
+                f"Expected 'voltage,current'."
+            )
+            raise Exception(msg)
+        return float(parts[0]), float(parts[1])
 
     def set_compliance(self, channel: int, value: float, source_mode: str) -> None:
         """Set the protection/compliance limit for a channel.

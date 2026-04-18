@@ -26,21 +26,23 @@ print(f"Connected to: {identity}")
 
 # Configure the sweep: 0 V to 1 V, 100 points, 50 ms dwell per point
 channel = 1
-smu._send_command(f"SOUR{channel}:FVMI ENA")
-smu._send_command(f"SOUR{channel}:SWEEP:VOLT:START 0.0")
-smu._send_command(f"SOUR{channel}:SWEEP:VOLT:END 1.0")
-smu._send_command(f"SOUR{channel}:SWEEP:POINTS 100")
-smu._send_command(f"SOUR{channel}:SWEEP:DWELL 50")
-smu._send_command(f"SOUR{channel}:SWEEP:AUTO:ENA")
-smu._send_command(f"SOUR{channel}:SWEEP:FORMAT JSON")
+smu.set_source_mode(channel, "FVMI")
+smu.set_sweep_parameters(channel, start=0.0, end=1.0, points=100, dwell_ms=50)
 
 # Execute the sweep
 print("Starting I-V sweep...")
-smu._send_command(f"SOUR{channel}:SWEEP:EXECUTE")
+smu.execute_sweep(channel)
 
-# Poll for completion
+# Poll for completion with timeout
+timeout_s = 30.0
+start_time = time.time()
+
 while True:
-    status_str = smu._send_command(f"SOUR{channel}:SWEEP:STATUS?")
+    if time.time() - start_time > timeout_s:
+        print("Sweep timed out!")
+        break
+
+    status_str = smu.get_sweep_status(channel)
     parts = status_str.split(",")
     status = parts[0]
     if status == "COMPLETED":
@@ -55,7 +57,7 @@ while True:
     time.sleep(0.5)
 
 # Retrieve and display results
-raw_data = smu._send_command(f"SOUR{channel}:SWEEP:DATA?")
+raw_data = smu.get_sweep_data(channel)
 sweep_json = json.loads(raw_data)
 data_points = sweep_json.get("data", [])
 
