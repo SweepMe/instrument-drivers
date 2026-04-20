@@ -226,4 +226,4 @@ class Device(EmptyDevice):
 
     def simulate_voltage(self, applied_voltage: float) -> float:
         """Simulate the measured voltage including some noise depending on the measurement speed."""
-        return applied_voltage + random.random() * 1e-2 / self.speedvalues[self.speed]
+        return applied_voltage + (random.random() - 0.5) * 1e-2 / self.speedvalues[self.speed]
