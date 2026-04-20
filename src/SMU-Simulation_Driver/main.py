@@ -171,7 +171,9 @@ class Device(EmptyDevice):
             self.i = float(np.mean(measured_currents))
 
         elif self.source.startswith("Current"):
-            self.stop_Measurement("Current sourcing is not implemented in this simulation driver.")
+            self.stop_Measurement(
+                "Current sourcing is not implemented in this simulation driver."
+            )
 
         return [float(self.v), float(self.i)]
 
@@ -179,20 +181,11 @@ class Device(EmptyDevice):
 
     def simulate_current(self, applied_voltage: float) -> float:
         """Simulate the current of a diode with linear leakage and some resolution noise."""
-        if applied_voltage == 0:
-            return 0 - self.photocurrent
         # equilibrium current (no hysteresis)
         equilibrium = (
             (
                 self.saturation_current
-                * (
-                    np.exp(
-                        applied_voltage
-                        / self.ideality_factor
-                        / self.v_t
-                    )
-                    - 1
-                )
+                * (np.exp(applied_voltage / self.ideality_factor / self.v_t) - 1)
                 + applied_voltage / 1e10 * (10**self.leakage - 1)
                 + (random.random() - 0.5) / 1e11 * (10**self.noise - 1)
             )
@@ -219,6 +212,9 @@ class Device(EmptyDevice):
         else:
             current = equilibrium
 
+        if applied_voltage == 0:
+            current = 0 - self.photocurrent
+
         # Compliance clipping
         if current > self.protection:
             current = self.protection
@@ -229,4 +225,7 @@ class Device(EmptyDevice):
 
     def simulate_voltage(self, applied_voltage: float) -> float:
         """Simulate the measured voltage including some noise depending on the measurement speed."""
-        return applied_voltage + (random.random() - 0.5) * 1e-2 / self.speedvalues[self.speed]
+        return (
+            applied_voltage
+            + (random.random() - 0.5) * 1e-2 / self.speedvalues[self.speed]
+        )
