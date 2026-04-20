@@ -1,7 +1,7 @@
 Simulation Diode
 ===============
 
-This driver provides a short simulation of a diode exhibiting space-charge-limited current (SCLC)-like behavior, as often seen in organic diode devices. The implementation combines a small exponential diode term, a linear leakage term and random noise. The measurement loop also includes a current-dependent effective voltage change (delta_v ∝ sqrt(|I|)) to emulate SCLC-related voltage dynamics during the measurement.
+This driver provides a short simulation of a diode exhibiting space-charge-limited current (SCLC)-like behavior, as often seen in organic diode devices. The implementation combines a small exponential diode term, a linear leakage term and random noise. The measurement loop also includes a current-dependent effective voltage change (delta_v ~ sqrt(|I|)) to emulate SCLC-related voltage dynamics during the measurement.
 
 Important differences to the standard `SMU-Simulation_Driver`, which also simulates a diode but with a more detailed classical diode model:
 
