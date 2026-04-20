@@ -28,7 +28,7 @@ Where:
 - V_t: thermal voltage (V)
 - R_leak_linear: internal representation of linear leakage; in the code
   implemented as V / 1e10 * (10**leakage - 1)
-- noise_term: resolution noise implemented as (rand() - 1)/1e11 * (10**noise - 1)
+- noise_term: resolution noise implemented as (rand() - 0.5)/1e11 * (10**noise - 1)
 - I_photo: photocurrent (A)
 - R_shunt: parallel shunt resistance (Ohm)
 
