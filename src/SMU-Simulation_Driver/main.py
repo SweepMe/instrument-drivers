@@ -98,6 +98,7 @@ class Device(EmptyDevice):
         self.shunt_resistance: float = float("inf")
         self.leakage: float = 1.0
         self.hysteresis: float = 0.0  # time constant (a.u.). 0 = no hysteresis
+        self.v_t: float = 0.025
 
         # Measurement state / last setpoint
         self.value: float = (
