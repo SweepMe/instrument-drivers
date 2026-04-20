@@ -191,7 +191,7 @@ class Device(EmptyDevice):
                     - 1
                 )
                 + applied_voltage / 1e10 * (10**self.leakage - 1)
-                + (random.random() - 1) / 1e11 * (10**self.noise - 1)
+                + (random.random() - 0.5) / 1e11 * (10**self.noise - 1)
             )
             - self.photocurrent
         ) + applied_voltage / self.shunt_resistance
