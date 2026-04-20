@@ -165,6 +165,7 @@ class Device(EmptyDevice):
             for _ in range(self.average):
                 measured_current = self.simulate_current(self.value)
                 measured_currents.append(measured_current)
+                self.i = measured_current
             self.v = self.simulate_voltage(self.value)
             # store mean as float
             self.i = float(np.mean(measured_currents))
