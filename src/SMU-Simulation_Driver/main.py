@@ -183,7 +183,7 @@ class Device(EmptyDevice):
             (
                 self.saturation_current
                 * (
-                    np.exp(
+                    math.exp(
                         applied_voltage
                         / self.ideality_factor
                         / (self.k * self.temperature / self.q)  # Thermal voltage
