@@ -151,6 +151,7 @@ class Device(EmptyDevice):
         self.saturation_current = float(self.saturation_current)
         self.ideality_factor = float(self.ideality_factor)
         self.temperature = float(self.temperature)
+        self.v_t = self.k * self.temperature / self.q
         self.photocurrent = float(self.photocurrent)
         self.noise = float(self.noise)
         self.shunt_resistance = proof_shunt(self.shunt_resistance)
