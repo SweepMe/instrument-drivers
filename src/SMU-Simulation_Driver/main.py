@@ -168,7 +168,7 @@ class Device(EmptyDevice):
             self.i = float(np.mean(measured_currents))
 
         elif self.source.startswith("Current"):
-            pass
+            self.stop_Measurement("Current sourcing is not implemented in this simulation driver.")
 
         return [float(self.v), float(self.i)]
 
