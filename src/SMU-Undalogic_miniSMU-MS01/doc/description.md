@@ -7,9 +7,7 @@ This driver controls the Undalogic miniSMU MS01, a dual-channel SMU supporting v
 The miniSMU supports two connection methods:
 
 - **USB:** Select the corresponding COM port from the Port dropdown. No additional configuration is needed.
-- **WiFi:** Select or enter a SOCKET port in the format `TCPIP0::<ip>::3333::SOCKET`, replacing `<ip>` with the device IP address. The TCP port defaults to **3333** and can be omitted (it will be added automatically).
-
-A template entry is provided in the Port dropdown for WiFi connections.
+- **WiFi:** Select the TCPIP port type and enter a VISA resource string in the format `TCPIP0::<ip>::3333::SOCKET`, replacing `<ip>` with the device IP address. The miniSMU firmware listens on TCP port **3333**.
 
 ## Sweep modes
 

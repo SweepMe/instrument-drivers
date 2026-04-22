@@ -56,23 +56,6 @@ class Device(EmptyDevice):
     I-V sweeps, 4-wire Kelvin sensing, and both USB and WiFi connectivity.
     """
 
-    description = """
-        <h3>Undalogic miniSMU MS01</h3>
-        <p>2-channel Source Measure Unit with FVMI/FIMV modes.</p>
-        <p><b>Connection:</b> USB (COM port) or WiFi (SOCKET port)</p>
-        <p><b>Features:</b></p>
-        <ul>
-            <li>Force Voltage / Measure Current (FVMI)</li>
-            <li>Force Current / Measure Voltage (FIMV)</li>
-            <li>Hardware-accelerated I-V sweep (up to 1000 points)</li>
-            <li>4-wire Kelvin sensing mode</li>
-            <li>5 current measurement ranges (1 uA to 180 mA)</li>
-            <li>Configurable oversampling (0-15)</li>
-        </ul>
-        <p>For WiFi connections, select the SOCKET port corresponding to the
-        device IP address and port (default TCP port: 3333).</p>
-    """
-
     def __init__(self) -> None:
         super().__init__()
 
@@ -84,17 +67,16 @@ class Device(EmptyDevice):
         self.savetype = [True, True]
 
         self.port_manager = True
-        self.port_types = ["COM", "SOCKET"]
+        self.port_types = ["COM", "TCPIP"]
         self.port_properties = {
             "timeout": 1,
             "baudrate": 115200,
             "EOL": "\n",
-            # The miniSMU firmware TCP command parser uses strcmp() and does NOT
-            # strip newlines, so commands must be sent without a trailing EOL.
-            # Responses do include \n terminators over both USB and TCP.
-            "SOCKET_EOLwrite": "",
-            "SOCKET_EOLread": "\n",
-            "SOCKET_timeout": 5,
+            # Firmware TCP parser uses strcmp() without stripping, so writes must
+            # carry no terminator. Responses still include \n over both transports.
+            "TCPIP_EOLwrite": "",
+            "TCPIP_EOLread": "\n",
+            "TCPIP_timeout": 5,
         }
 
         # Source mode command mapping
@@ -135,7 +117,6 @@ class Device(EmptyDevice):
         self.oversampling: int = 0
         self.four_wire: bool = False
         self.four_wire_was_enabled: bool = False
-        self.output_on: bool = False
 
         # List sweep state
         self.use_list_sweep: bool = False
@@ -220,7 +201,7 @@ class Device(EmptyDevice):
     def _send_command(self, command: str) -> str:
         """Send a command to the device and return the response.
 
-        Uses the SweepMe! port manager for both USB (COM) and WiFi (SOCKET)
+        Uses the SweepMe! port manager for both USB (COM) and WiFi (TCPIP)
         connections. The port manager handles EOL differences between the two
         transports via the port_properties configured in __init__.
 
@@ -251,8 +232,10 @@ class Device(EmptyDevice):
         """
         initial_response = self.port.read()
 
-        # Simple non-JSON responses can be returned immediately
-        if not initial_response.startswith("{") and not initial_response.startswith("["):
+        # Simple non-JSON responses can be returned immediately. Account for any
+        # leading whitespace the transport may introduce so JSON is not missed.
+        stripped_initial = initial_response.lstrip()
+        if not stripped_initial.startswith("{") and not stripped_initial.startswith("["):
             return initial_response
 
         # JSON response - may need to accumulate chunks
@@ -271,17 +254,23 @@ class Device(EmptyDevice):
         timeout_count = 0
 
         while timeout_count < max_timeout_iterations:
+            if self.is_run_stopped():
+                return "".join(response_buffer)
+
             try:
                 chunk = self.port.read()
                 if chunk:
-                    if chunk.strip() and self._is_valid_chunk(chunk):
+                    # Append every non-empty chunk. Whitespace (including inter-
+                    # chunk newlines) is part of the payload structure and
+                    # dropping it can silently corrupt the reassembled JSON.
+                    if self._is_valid_chunk(chunk):
                         response_buffer.append(chunk)
                     timeout_count = 0
 
                     current_response = "".join(response_buffer)
 
-                    # Only attempt expensive json.loads when braces/brackets
-                    # are balanced, avoiding redundant parsing on every chunk.
+                    # Only attempt json.loads when braces/brackets balance,
+                    # avoiding redundant parsing on every chunk.
                     if not self._is_likely_complete_json(current_response):
                         continue
 
@@ -289,12 +278,16 @@ class Device(EmptyDevice):
                         json.loads(current_response)
                         return current_response
                     except json.JSONDecodeError:
+                        # Only run the cleanup pass once structure looks complete
+                        # but parsing still fails - a known-corruption signature.
                         cleaned = self._clean_json_response(current_response)
-                        try:
-                            json.loads(cleaned)
-                            return cleaned
-                        except json.JSONDecodeError:
-                            continue
+                        if cleaned != current_response:
+                            try:
+                                json.loads(cleaned)
+                                return cleaned
+                            except json.JSONDecodeError:
+                                pass
+                        continue
                 else:
                     timeout_count += 1
             except Exception:
@@ -302,22 +295,27 @@ class Device(EmptyDevice):
 
         # Final attempt
         final_response = "".join(response_buffer)
-        if final_response.startswith("{") or final_response.startswith("["):
+        stripped_final = final_response.lstrip()
+        if stripped_final.startswith("{") or stripped_final.startswith("["):
             try:
                 json.loads(final_response)
                 return final_response
             except json.JSONDecodeError:
                 cleaned = self._clean_json_response(final_response)
-                try:
-                    json.loads(cleaned)
-                    return cleaned
-                except json.JSONDecodeError:
-                    pass
+                if cleaned != final_response:
+                    try:
+                        json.loads(cleaned)
+                        return cleaned
+                    except json.JSONDecodeError:
+                        pass
 
         return final_response
 
     def _is_likely_complete_json(self, text: str) -> bool:
-        """Check if a JSON string appears complete by counting braces/brackets.
+        """Check if a JSON string appears structurally complete.
+
+        Scans the text character-by-character so braces and brackets that appear
+        inside string literals (including escaped quotes) don't skew the count.
 
         Args:
             text: Text to check.
@@ -329,12 +327,36 @@ class Device(EmptyDevice):
             return False
 
         text = text.strip()
-        if text.startswith("{"):
-            return text.count("{") == text.count("}") and text.count("}") > 0
-        elif text.startswith("["):
-            return text.count("[") == text.count("]") and text.count("]") > 0
+        if not text or text[0] not in "{[":
+            return True
 
-        return True
+        brace_depth = 0
+        bracket_depth = 0
+        in_string = False
+        escape = False
+
+        for ch in text:
+            if escape:
+                escape = False
+                continue
+            if in_string:
+                if ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+            elif ch == "{":
+                brace_depth += 1
+            elif ch == "}":
+                brace_depth -= 1
+            elif ch == "[":
+                bracket_depth += 1
+            elif ch == "]":
+                bracket_depth -= 1
+
+        return not in_string and brace_depth == 0 and bracket_depth == 0
 
     def _is_valid_chunk(self, chunk: str) -> bool:
         """Validate that a data chunk contains reasonable text.
@@ -390,18 +412,10 @@ class Device(EmptyDevice):
 
     # --- Connection management -------------------------------------------------
 
-    def find_ports(self) -> list[str]:
-        """Provide a SOCKET port template with the default miniSMU TCP port.
-
-        The miniSMU firmware listens on TCP port 3333. This template lets the
-        user replace only the IP address without needing to remember the port.
-        """
-        return ["TCPIP0::<ip>::3333::SOCKET"]
-
     def connect(self) -> None:
         """Open a connection to the miniSMU and verify the device identity.
 
-        The SweepMe! port manager handles both USB (COM) and WiFi (SOCKET)
+        The SweepMe! port manager handles both USB (COM) and WiFi (TCPIP)
         connections automatically based on the user's port selection.
         """
         identity = self.get_identification()
@@ -439,12 +453,10 @@ class Device(EmptyDevice):
                 raise Exception(msg)
 
         # Set source mode
-        mode_cmd = self.source_modes[self.source]
-        self._send_command(f"SOUR{self.channel}:{mode_cmd} ENA")
+        self.set_source_mode(self.channel, self.source_modes[self.source])
 
         # Configure voltage range
-        range_cmd = self.voltage_ranges[self.voltage_range]
-        self._send_command(f"SOUR{self.channel}:VOLT:RANGE {range_cmd}")
+        self.set_voltage_range_cmd(self.channel, self.voltage_ranges[self.voltage_range])
 
         # Configure current range
         range_idx = self.current_ranges[self.current_range]
@@ -452,16 +464,13 @@ class Device(EmptyDevice):
             self._send_command(f"CH{self.channel}:AUTORANGE:ENA")
         else:
             self._send_command(f"CH{self.channel}:AUTORANGE:DIS")
-            self._send_command(f"CH{self.channel}:IRANGE {range_idx}")
+            self.set_current_range_cmd(self.channel, range_idx)
 
         # Set oversampling ratio
-        self._send_command(f"MEAS{self.channel}:OSR {self.oversampling}")
+        self.set_oversampling(self.channel, self.oversampling)
 
         # Set compliance / protection limits
-        if self.source == "Voltage in V":
-            self._send_command(f"SOUR{self.channel}:CURR:PROT {self.compliance}")
-        else:
-            self._send_command(f"SOUR{self.channel}:VOLT:PROT {self.compliance}")
+        self.set_compliance(self.channel, self.compliance, self.source)
 
         # Enable 4-wire Kelvin mode if requested
         if self.four_wire:
@@ -486,26 +495,21 @@ class Device(EmptyDevice):
         For list sweep mode, uploads the hardware sweep configuration to the device.
         """
         if self.use_list_sweep:
-            ch = self.channel
-            self._send_command(f"SOUR{ch}:SWEEP:VOLT:START {self.listsweep_start}")
-            self._send_command(f"SOUR{ch}:SWEEP:VOLT:END {self.listsweep_end}")
-            self._send_command(f"SOUR{ch}:SWEEP:POINTS {self.listsweep_points}")
-            self._send_command(f"SOUR{ch}:SWEEP:DWELL {self.listsweep_dwell_ms}")
-            self._send_command(f"SOUR{ch}:SWEEP:AUTO:ENA")
-            # Use JSON format so the chunked JSON reader can accumulate the full
-            # multi-packet response.  CSV is line-delimited and the USB reader
-            # returns after the first line, which causes only 1 point to be stored.
-            self._send_command(f"SOUR{ch}:SWEEP:FORMAT JSON")
+            self.set_sweep_parameters(
+                self.channel,
+                self.listsweep_start,
+                self.listsweep_end,
+                self.listsweep_points,
+                self.listsweep_dwell_ms,
+            )
 
     def poweron(self) -> None:
         """Enable the output of the selected channel."""
-        self._send_command(f"OUTP{self.channel} ON")
-        self.output_on = True
+        self.enable_output(self.channel)
 
     def poweroff(self) -> None:
         """Disable the output of the selected channel."""
-        self._send_command(f"OUTP{self.channel} OFF")
-        self.output_on = False
+        self.disable_output(self.channel)
 
     def apply(self) -> None:
         """Apply the current sweep value to the source.
@@ -514,8 +518,10 @@ class Device(EmptyDevice):
         Not called during list sweep mode.
         """
         if not self.use_list_sweep:
-            cmd = self.source_commands[self.source]
-            self._send_command(f"SOUR{self.channel}:{cmd} {self.value}")
+            if self.source == "Voltage in V":
+                self.set_voltage(self.channel, self.value)
+            else:
+                self.set_current(self.channel, self.value)
 
     def measure(self) -> None:
         """Trigger a measurement or execute a hardware sweep.
@@ -524,16 +530,18 @@ class Device(EmptyDevice):
         In list sweep mode, executes the onboard sweep and polls until complete.
         """
         if self.use_list_sweep:
-            # Execute hardware sweep
-            self._send_command(f"SOUR{self.channel}:SWEEP:EXECUTE")
+            self.execute_sweep(self.channel)
 
-            # Poll for completion with timeout
-            # Timeout = generous estimate based on sweep parameters plus overhead
+            # Poll for completion with a generous timeout derived from sweep
+            # parameters plus overhead.
             expected_duration_s = (self.listsweep_points * self.listsweep_dwell_ms) / 1000.0
             timeout_s = expected_duration_s + 30.0
             start_time = time.time()
 
             while True:
+                if self.is_run_stopped():
+                    return
+
                 elapsed = time.time() - start_time
                 if elapsed > timeout_s:
                     msg = (
@@ -543,9 +551,9 @@ class Device(EmptyDevice):
                     )
                     raise Exception(msg)
 
-                status_str = self._send_command(f"SOUR{self.channel}:SWEEP:STATUS?")
+                status_str = self.get_sweep_status(self.channel)
                 parts = status_str.split(",")
-                status = parts[0] if parts else "IDLE"
+                status = parts[0] if parts else ""
 
                 if status == "COMPLETED":
                     break
@@ -555,19 +563,12 @@ class Device(EmptyDevice):
                 elif status == "RUNNING":
                     time.sleep(0.1)
                 else:
-                    break
+                    msg = f"Unexpected sweep status '{status}' (full response: '{status_str}')."
+                    raise Exception(msg)
         else:
-            # Normal point-by-point measurement
-            response = self._send_command(f"MEAS{self.channel}:VOLT:CURR?")
-            parts = response.split(",")
-            if len(parts) != 2:
-                msg = (
-                    f"Unexpected measurement response format: '{response}'. "
-                    f"Expected 'voltage,current'."
-                )
-                raise Exception(msg)
-            self._measured_voltage = float(parts[0])
-            self._measured_current = float(parts[1])
+            voltage, current = self.get_voltage_and_current(self.channel)
+            self._measured_voltage = voltage
+            self._measured_current = current
 
     def call(self) -> list:
         """Return measured data.
@@ -580,7 +581,7 @@ class Device(EmptyDevice):
             List of measurement values matching the defined variables.
         """
         if self.use_list_sweep:
-            raw_data = self._send_command(f"SOUR{self.channel}:SWEEP:DATA?")
+            raw_data = self.get_sweep_data(self.channel)
 
             # Parse the JSON response.  The chunked JSON reader in
             # _read_response guarantees we receive the complete object.

@@ -15,7 +15,8 @@ driver_name = os.path.dirname(os.path.dirname(os.path.abspath(__file__))).split(
 driver_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # For USB: use the COM port, e.g. "COM3"
-# For WiFi: use "TCPIP0::<ip>::3333::SOCKET", e.g. "TCPIP0::192.168.1.100::3333::SOCKET"
+# For WiFi: use a VISA TCPIP resource string pointing at the miniSMU's TCP port 3333,
+# e.g. "TCPIP0::192.168.1.100::3333::SOCKET"
 port_string = "COM3"
 
 smu = pysweepme.get_driver(driver_name, driver_path, port_string)
