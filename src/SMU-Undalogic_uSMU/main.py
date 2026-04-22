@@ -46,25 +46,6 @@ class Device(EmptyDevice):
     range locking.
     """
 
-    description = """
-        <h3>Undalogic uSMU</h3>
-        <p>Single-channel USB Source Measure Unit for force-voltage,
-        measure-current operation.</p>
-        <p><b>Connection:</b> USB (COM port, 9600 baud)</p>
-        <p><b>Features:</b></p>
-        <ul>
-            <li>Force Voltage / Measure Current (FVMI)</li>
-            <li>Atomic set-voltage-and-measure command</li>
-            <li>Adjustable current compliance</li>
-            <li>Adjustable oversampling (averaged samples per measurement)</li>
-            <li>Automatic current ranging</li>
-        </ul>
-        <p>This driver targets the uSMU Python library command set
-        (<code>CH1:VOL</code>, <code>CH1:CUR</code>, <code>CH1:MEA:VOL</code>, ...).
-        For the 2-channel model with WiFi and hardware sweep support, use the
-        miniSMU MS01 driver instead.</p>
-    """
-
     # Command processing delay (seconds) inserted after every write. The uSMU
     # firmware needs a short settling window between consecutive serial commands;
     # the reference Python library (usmu_py) uses the same 50 ms default.
@@ -89,9 +70,13 @@ class Device(EmptyDevice):
         }
 
         # State
+        self.source: str = "Voltage in V"
         self.compliance: float = 0.02  # 20 mA default compliance (in amperes)
         self.oversampling: int = 25
-        self.output_on: bool = False
+        self.port_string: str = ""
+
+        # Staged sweep value written in apply(), consumed in measure()
+        self._pending_voltage: float = 0.0
 
         # Measurement buffer
         self._measured_voltage: float = 0.0
@@ -150,6 +135,32 @@ class Device(EmptyDevice):
         self._write(command)
         return self._sanitize(self.port.read())
 
+    def _parse_measurement(self, response: str) -> tuple[float, float]:
+        """Parse a ``voltage,current`` response into a numeric tuple.
+
+        Shared by :meth:`measure` and :meth:`set_voltage_and_measure` so the
+        response format only has to be maintained in one place.
+        """
+        parts = response.split(",")
+        if len(parts) != 2:
+            msg = (
+                f"Unexpected measurement response format: {response!r}. "
+                f"Expected 'voltage,current'."
+            )
+            raise Exception(msg)
+
+        try:
+            return float(parts[0]), float(parts[1])
+        except ValueError as exc:
+            msg = f"Could not parse measurement response {response!r}: {exc}"
+            raise Exception(msg) from exc
+
+    def _validate_oversampling(self, value: int) -> None:
+        """Raise if ``value`` is outside the firmware-accepted OSR range."""
+        if not 1 <= value <= 255:
+            msg = "Oversampling (Average) must be between 1 and 255."
+            raise Exception(msg)
+
     # --- Connection management -------------------------------------------------
 
     def connect(self) -> None:
@@ -168,15 +179,8 @@ class Device(EmptyDevice):
 
     def initialize(self) -> None:
         """Configure the uSMU for the selected operating mode."""
-        if not 1 <= self.oversampling <= 255:
-            msg = "Oversampling (Average) must be between 1 and 255."
-            raise Exception(msg)
-
-        # Set oversampling rate
-        self._write(f"CH1:OSR {self.oversampling}")
-
-        # Set current compliance (device expects mA)
-        self._write(f"CH1:CUR {self.compliance * 1000.0}")
+        self.set_oversample_rate(self.oversampling)
+        self.set_current_limit(self.compliance)
 
     def deinitialize(self) -> None:
         """Return the uSMU to a safe state.
@@ -187,13 +191,11 @@ class Device(EmptyDevice):
 
     def poweron(self) -> None:
         """Enable the output."""
-        self._write("CH1:ENA")
-        self.output_on = True
+        self.enable_output()
 
     def poweroff(self) -> None:
         """Disable the output (high impedance)."""
-        self._write("CH1:DIS")
-        self.output_on = False
+        self.disable_output()
 
     def apply(self) -> None:
         """Stage the requested sweep value.
@@ -206,23 +208,9 @@ class Device(EmptyDevice):
 
     def measure(self) -> None:
         """Apply the staged voltage and record the measured V and I."""
-        voltage = getattr(self, "_pending_voltage", 0.0)
-        response = self._query(f"CH1:MEA:VOL {voltage}")
-
-        parts = response.split(",")
-        if len(parts) != 2:
-            msg = (
-                f"Unexpected measurement response format: {response!r}. "
-                f"Expected 'voltage,current'."
-            )
-            raise Exception(msg)
-
-        try:
-            self._measured_voltage = float(parts[0])
-            self._measured_current = float(parts[1])
-        except ValueError as exc:
-            msg = f"Could not parse measurement response {response!r}: {exc}"
-            raise Exception(msg) from exc
+        voltage, current = self.set_voltage_and_measure(self._pending_voltage)
+        self._measured_voltage = voltage
+        self._measured_current = current
 
     def call(self) -> list:
         """Return the most recent (voltage, current) measurement."""
@@ -264,22 +252,19 @@ class Device(EmptyDevice):
             Tuple of (measured voltage in V, measured current in A).
         """
         response = self._query(f"CH1:MEA:VOL {voltage}")
-        parts = response.split(",")
-        if len(parts) != 2:
-            msg = (
-                f"Unexpected measurement response format: {response!r}. "
-                f"Expected 'voltage,current'."
-            )
-            raise Exception(msg)
-        return float(parts[0]), float(parts[1])
+        return self._parse_measurement(response)
 
-    def set_current_limit(self, current_mA: float) -> None:
-        """Set the source/sink current limit in milliamps.
+    def set_current_limit(self, current_A: float) -> None:
+        """Set the source/sink current limit in amperes.
+
+        The uSMU firmware's ``CH1:CUR`` command expects milliamps, but the
+        SweepMe! convention across SMU drivers is to express currents in
+        amperes, so the conversion is done here.
 
         Args:
-            current_mA: Current limit in milliamps (e.g. 20.0 for 20 mA).
+            current_A: Current limit in amperes (e.g. 0.02 for 20 mA).
         """
-        self._write(f"CH1:CUR {current_mA}")
+        self._write(f"CH1:CUR {current_A * 1000.0}")
 
     def set_oversample_rate(self, oversample: int) -> None:
         """Set the measurement oversampling rate.
@@ -287,9 +272,7 @@ class Device(EmptyDevice):
         Args:
             oversample: Number of samples averaged per measurement (1-255).
         """
-        if not 1 <= oversample <= 255:
-            msg = "Oversampling rate must be between 1 and 255."
-            raise Exception(msg)
+        self._validate_oversampling(oversample)
         self._write(f"CH1:OSR {oversample}")
 
     def set_dac(self, value: int) -> None:

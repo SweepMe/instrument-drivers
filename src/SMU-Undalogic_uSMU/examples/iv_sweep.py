@@ -31,7 +31,7 @@ step = (end_voltage - start_voltage) / (points - 1) if points > 1 else 0.0
 voltages = [start_voltage + i * step for i in range(points)]
 
 # Configure the channel
-smu.set_current_limit(20.0)   # 20 mA compliance
+smu.set_current_limit(0.02)   # 20 mA compliance, in amperes (SweepMe! convention)
 smu.set_oversample_rate(25)
 
 smu.enable_output()

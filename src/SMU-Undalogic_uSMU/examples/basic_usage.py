@@ -22,7 +22,7 @@ identity = smu.get_identification()
 print(f"Connected to: {identity}")
 
 # Configure the channel: 20 mA compliance, oversampling = 25
-smu.set_current_limit(20.0)
+smu.set_current_limit(0.02)  # 20 mA, in amperes (SweepMe! convention)
 smu.set_oversample_rate(25)
 
 # Enable output and apply a voltage
