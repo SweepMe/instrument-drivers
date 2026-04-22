@@ -63,3 +63,7 @@ The CSV file must follow this structure:
 
 - **Timestamp** [s]: Time of each measurement point
 - **Measured voltage** [V]: Voltage measured at each point
+
+## Segmented Arbitrary Waveform Generation
+
+- For more complex sequences with a complete Waveform Builder GUI, use the CustomFunction Module with the Pulse_Builder_WGFMU function. 
