@@ -540,6 +540,13 @@ class Device(EmptyDevice):
 
             while True:
                 if self.is_run_stopped():
+                    # Tell the device to stop so the next sweep starts from a
+                    # clean state; otherwise a half-finished run can leave stale
+                    # data in the onboard buffer.
+                    try:
+                        self.abort_sweep(self.channel)
+                    except Exception:
+                        pass
                     return
 
                 elapsed = time.time() - start_time
@@ -645,6 +652,14 @@ class Device(EmptyDevice):
             channel: Channel number (1 or 2).
         """
         self._send_command(f"SOUR{channel}:SWEEP:EXECUTE")
+
+    def abort_sweep(self, channel: int) -> None:
+        """Abort an in-progress hardware sweep on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+        """
+        self._send_command(f"SOUR{channel}:SWEEP:ABORT")
 
     def get_sweep_status(self, channel: int) -> str:
         """Query the sweep status on a channel.
