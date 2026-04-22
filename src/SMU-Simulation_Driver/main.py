@@ -119,9 +119,9 @@ class Device(EmptyDevice):
             "Temperature in K": 300,
             "Parallel Shunt in Ohm": [float("inf"), 100, 1000, 1e4, 1e5],
             "Photocurrent in A": 0.0,
-            "Random Noise in a.u.": 1.0,
-            "Linear Leakage in a.u.": 1.0,
-            "Hysteresis time constant in a.u.": 0.0,
+            "Random Noise factor": 1.0,
+            "Linear Leakage factor": 1.0,
+            "Hysteresis time constant": 0.0,
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -130,14 +130,14 @@ class Device(EmptyDevice):
         self.protection = parameter.get("Compliance")
         self.speed = parameter.get("Speed")
         self.average = parameter.get("Average")
-        self.saturation_current = parameter.get("Saturation Current in A")
-        self.ideality_factor = parameter.get("Ideality Factor")
-        self.temperature = parameter.get("Temperature in K")
-        self.photocurrent = parameter.get("Photocurrent in A")
-        self.noise = parameter.get("Random Noise in a.u.")
-        self.shunt_resistance = parameter.get("Parallel Shunt in Ohm")
-        self.leakage = parameter.get("Linear Leakage in a.u.")
-        self.hysteresis = parameter.get("Hysteresis time constant in a.u.")
+        self.saturation_current = parameter.get("Saturation Current in A", 1e-15)
+        self.ideality_factor = parameter.get("Ideality Factor", 1)
+        self.temperature = parameter.get("Temperature in K", 300)
+        self.photocurrent = parameter.get("Photocurrent in A", 0)
+        self.noise = parameter.get("Random Noise factor", 1.0)
+        self.shunt_resistance = parameter.get("Parallel Shunt in Ohm", float("inf"))
+        self.leakage = parameter.get("Linear Leakage factor", 1.0)
+        self.hysteresis = parameter.get("Hysteresis time constant", 0.0)
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
