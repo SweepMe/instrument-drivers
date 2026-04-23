@@ -67,7 +67,8 @@ class Device(EmptyDevice):
 
         # Sequence parameters
         self.csv_file_path: str = "Path to file"
-        self.measure_events: list[tuple[float, int, float]] = []  # list of tuples (measure_start, points, interval)
+        # list of (measure_start, points, interval, average)
+        self.measure_events: list[tuple[float, int, float, float]] = []
         # list of (start_time, CurrentMeasurementRange) — only applied in current measure mode
         self.range_events: list[tuple[float, wgfmu.CurrentMeasurementRange]] = []
         self.time_increments_s: np.ndarray = np.array([])
@@ -219,7 +220,7 @@ class Device(EmptyDevice):
 
         # Add measurement events
         for number, measurement_event in enumerate(self.measure_events):
-            measure_start, points, interval = measurement_event
+            measure_start, points, interval, average = measurement_event
             event_name = f"Event_{self.channel}_{number}"
             wgfmu.set_measure_event(
                 pattern_name,
@@ -227,7 +228,7 @@ class Device(EmptyDevice):
                 start_time=measure_start,
                 points=points,
                 interval=interval,
-                average=0,
+                average=average,
                 mode="average",
             )
 
@@ -303,12 +304,13 @@ class Device(EmptyDevice):
         """Read the csv file and extract measurement events, range events, time stamps and voltage values.
 
         The file is ``;``-delimited with up to three sections, identified by their
-        header rows. The ``range_start`` section is optional and only consumed in
+        header rows. The measure-event averaging column is optional (defaults to
+        0.0). The ``range_start`` section is optional and only consumed in
         current measurement mode:
 
-            measure_start;points;interval
-            0.001;10;0.00001
-            range_start;current_range     <- optional
+            measure_start;points;interval;averaging   <- averaging column optional
+            0.001;10;0.00001;0
+            range_start;current_range                 <- section optional
             0.0005;1 uA
             time in s;voltage in V
             0;0
@@ -354,8 +356,15 @@ class Device(EmptyDevice):
                         raise ValueError(msg)
                     self.range_events.append((float(start_str), range_map[range_str]))
                 else:  # default to measure-events section for backwards compatibility
-                    measure_start, points, interval = next_line.split(";")
-                    self.measure_events.append([float(measure_start), int(points), float(interval)])
+                    parts = [p.strip() for p in next_line.split(";")]
+                    if len(parts) < 3:
+                        msg = f"Measure-event row needs at least 3 columns, got: '{next_line}'."
+                        raise ValueError(msg)
+                    measure_start, points, interval = parts[0], parts[1], parts[2]
+                    average = parts[3] if len(parts) >= 4 and parts[3] else "0"
+                    self.measure_events.append(
+                        (float(measure_start), int(points), float(interval), float(average)),
+                    )
 
         data = np.genfromtxt(self.csv_file_path, delimiter=";", skip_header=number_of_header_lines)
         self.time_increments_s = data[:, 0]
