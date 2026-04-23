@@ -136,7 +136,7 @@ def get_error_summary_size() -> int:
     return int(c_size.value)
 
 
-def handle_error(status_code: int, function_name: str == "") -> None:
+def handle_error(status_code: int, function_name: str = "") -> None:
     """Check the status code returned by a DLL function and raise an exception if it indicates an error."""
     if status_code != 0:
         error_summary = get_error_summary()
