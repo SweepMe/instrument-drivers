@@ -32,7 +32,6 @@
 from __future__ import annotations
 
 import struct
-import time
 
 from typing import Any
 
@@ -68,7 +67,7 @@ class Device(EmptyDevice):
             "bytesize": 8,
             "parity": "N",
             "stopbits": 1,
-            "timeout": 1,
+            "timeout": 0.1,
         }
         self.modbus_address: int = 1
 
@@ -134,7 +133,7 @@ class Device(EmptyDevice):
         register = 0x5352 if enable else 0x5353  # 21330 = enter manual, 21331 = enter automatic
         cmd = self.generate_write_register_command(int(self.modbus_address), register, 1)
         self.port.port.write(cmd)
-        self.port.port.read(32)
+        self.port.port.read(8)  # FC 0x06 response is exactly 8 bytes
 
     def set_output_percent(self, value: float) -> None:
         """Set the manual output power level in %."""
@@ -144,7 +143,7 @@ class Device(EmptyDevice):
             register_value=value,
         )
         self.port.port.write(cmd)
-        self.port.port.read(32)
+        self.port.port.read(8)  # FC 0x10 response is exactly 8 bytes
 
     def set_setpoint(self, setpoint: float) -> None:
         """Set the controller setpoint."""
@@ -154,7 +153,7 @@ class Device(EmptyDevice):
             register_value=setpoint,
         )
         self.port.port.write(cmd)
-        self.port.read_raw(32)  # Read response to clear the buffer
+        self.port.port.read(8)  # FC 0x10 response is exactly 8 bytes
 
     def read_registers(self) -> None:
         """Read the 4 relevant 4-byte float values from the device and store them in instance variables."""
@@ -166,8 +165,9 @@ class Device(EmptyDevice):
         )
         self.port.port.write(cmd)  # write bytes directly to the port
         # TODO: use minimalmodbus read function instead of manually writing and reading bytes
-        # TODO: read only required byte length and validate the response
-        response = self.port.port.read(32)  # read up to 32 bytes
+        # TODO: validate the CRC of the response
+        # FC 0x03 response: slave(1) + fc(1) + byte_count(1) + data(16) + crc(2) = 21 bytes
+        response = self.port.port.read(21)
 
         # Extract the data payload (skip address, function code, byte count)
         data_start = 3

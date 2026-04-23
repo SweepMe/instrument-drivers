@@ -58,7 +58,7 @@ class Device(EmptyDevice):
 
         # Modbus RTU configuration
         self.port_properties = {
-            "timeout": 1,
+            "timeout": 0.1,
             "baudrate": 38400,
             "stopbits": 1,
             "parity": "N",
@@ -122,12 +122,11 @@ class Device(EmptyDevice):
             num_registers=1,  # read 1 register (16-bit value)
         )
         self.port.port.write(cmd)
-        # TODO: test with correct response length (7) and validate CRC16
-        response = self.port.port.read(32)
-
-        # Validate response length
         # Response structure: [slave_addr][func_code][byte_count][data...][CRC_low][CRC_high]
         # For 1 register: [addr][0x04][0x02][high_byte][low_byte][CRC][CRC] = 7 bytes
+        response = self.port.port.read(7)
+        # TODO: validate CRC16 of the response
+
         if len(response) < 5:
             msg = f"Invalid response length: {len(response)} bytes, expected at least 5"
             raise ValueError(msg)
