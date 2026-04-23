@@ -68,6 +68,8 @@ class Device(EmptyDevice):
         # Sequence parameters
         self.csv_file_path: str = "Path to file"
         self.measure_events: list[tuple[float, int, float]] = []  # list of tuples (measure_start, points, interval)
+        # list of (start_time, CurrentMeasurementRange) — only applied in current measure mode
+        self.range_events: list[tuple[float, wgfmu.CurrentMeasurementRange]] = []
         self.time_increments_s: np.ndarray = np.array([])
         self.voltages: np.ndarray = np.array([])
 
@@ -229,6 +231,17 @@ class Device(EmptyDevice):
                 mode="average",
             )
 
+        # Range events are only valid in current measurement mode. Without them the WGFMU stays on its default (least
+        # sensitive) current range
+        if measure_mode == "Current":
+            for number, (start_time, range_enum) in enumerate(self.range_events):
+                wgfmu.set_range_event(
+                    pattern_name,
+                    event=f"Range_{self.channel}_{number}",
+                    start_time=start_time,
+                    range=range_enum,
+                )
+
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
         if self.communication_dict.get("wgfmu_master_channel", -1) == self.channel:
@@ -287,27 +300,60 @@ class Device(EmptyDevice):
     # Helper functions
 
     def read_csv(self) -> None:
-        """Read the csv file and extract measurement events, time stamps and voltage values."""
+        """Read the csv file and extract measurement events, range events, time stamps and voltage values.
+
+        The file is ``;``-delimited with up to three sections, identified by their
+        header rows. The ``range_start`` section is optional and only consumed in
+        current measurement mode:
+
+            measure_start;points;interval
+            0.001;10;0.00001
+            range_start;current_range     <- optional
+            0.0005;1 uA
+            time in s;voltage in V
+            0;0
+            0.001;1
+        """
         self.measure_events = []
+        self.range_events = []
 
         if not self.csv_file_path or self.csv_file_path == "Path to file" or not Path(self.csv_file_path).is_file():
             msg = f"CSV file path is not set or file does not exist: '{self.csv_file_path}'."
             raise ValueError(msg)
 
+        range_map = {
+            "1 uA": wgfmu.CurrentMeasurementRange.RANGE_1uA,
+            "10 uA": wgfmu.CurrentMeasurementRange.RANGE_10uA,
+            "100 uA": wgfmu.CurrentMeasurementRange.RANGE_100uA,
+            "1 mA": wgfmu.CurrentMeasurementRange.RANGE_1mA,
+            "10 mA": wgfmu.CurrentMeasurementRange.RANGE_10mA,
+        }
+
         with open(self.csv_file_path, "r", encoding="utf-8") as fh:
             number_of_header_lines = 0
+            section: str | None = None
 
             while True:
                 next_line = fh.readline().strip()
                 number_of_header_lines += 1
 
                 if next_line.startswith("measure_start"):
+                    section = "measure"
                     continue
-
-                elif next_line.startswith("time in s"):
+                if next_line.startswith("range_start"):
+                    section = "range"
+                    continue
+                if next_line.startswith("time in s"):
                     break
 
-                else:
+                if section == "range":
+                    start_str, range_str = next_line.split(";")
+                    range_str = range_str.strip()
+                    if range_str not in range_map:
+                        msg = f"Unknown current range '{range_str}'. Valid: {list(range_map)}."
+                        raise ValueError(msg)
+                    self.range_events.append((float(start_str), range_map[range_str]))
+                else:  # default to measure-events section for backwards compatibility
                     measure_start, points, interval = next_line.split(";")
                     self.measure_events.append([float(measure_start), int(points), float(interval)])
 
