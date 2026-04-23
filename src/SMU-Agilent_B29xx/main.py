@@ -437,15 +437,12 @@ class Device(EmptyDevice):
         if self.pulse:
             # releasing the pulse trigger, just at the moment when the measurement should be performed
             self.port.write(":INIT (@%s)" % self.channel)
-        else:
-            # taking a measurement during constant DC output
-            self.port.write(":MEAS? (@%s)" % self.channel)
 
     def call(self):
-        
+
         if self.pulse:
             opcounter = 0  # set counter for operation register request loop back to zero
-                
+
             while True:
                 self.port.write(":STAT:OPER:COND?")  # query SMU for the status of the operation register
                 opstatus = self.port.read()
@@ -465,8 +462,11 @@ class Device(EmptyDevice):
 
             # get measured values taken during pulse release out of the memory
             self.port.write(":FETC:ARR? (@%s)" % self.channel)
-
-        answer = self.port.read()
+            answer = self.port.read()
+        else:
+            # Query and read the measurement in the same phase to allow measurements with multiple instances of this
+            # driver, e.g. for multichannel
+            answer = self.port.query(":MEAS? (@%s)" % self.channel)
 
         values = answer.split(",")
 
