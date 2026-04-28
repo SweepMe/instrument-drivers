@@ -133,3 +133,12 @@ class Device(EmptyDevice):
         phase = time.perf_counter() * self.frequency_end
         return np.array((np.sin(np.arange(array_length) / 5 - phase)) ** 2 + (
             np.cos(np.arange(array_length) / 5)) ** 2 * 1j, dtype=complex)
+
+    def find_calibrations(self, *args, **kwargs) -> list:
+        """Called by the SweepMe NetworkAnalyser module returns available calibrations on ZNL at default driectory."""
+        if args:
+            print(f"find_calibrations called with args: {args}")
+        if kwargs:
+            print(f"find_calibrations called with kwargs: {kwargs}")
+
+        return ["Calibration1", "Calibration2", "Calibration3"]
