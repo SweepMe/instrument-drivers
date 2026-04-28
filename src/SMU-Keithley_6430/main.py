@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -65,6 +66,9 @@ class Device(EmptyDevice):
         # Communication Parameters
         self.port_string: str = ""
         self.port_manager = True
+        self.port_properties = {
+            "timeout": 5,  # seconds
+        }
         self.port_types = ["GPIB", "COM", "TCPIP"]
 
         # Measurement parameters
@@ -80,6 +84,7 @@ class Device(EmptyDevice):
         self.averages: int = 1
         self.measured_current: float = 0.0
         self.measured_voltage: float = 0.0
+        self.time_stamps: list[float] = []
 
         # Current range
         self.current_measurement_ranges: dict[str, float] = {"Auto": 0.0}
@@ -101,6 +106,18 @@ class Device(EmptyDevice):
         }
         self.voltage_measurement_range: str = "Auto"
 
+        # List Mode
+        self.list_mode: bool = False
+        self.list_type: str = "Sweep"
+        self.list_start: float = 0.0
+        self.list_end: float = 1.0
+        self.list_step_points_type: str = "Step width:"
+        self.list_step_points_value: float = 0.0
+        self.list_custom_values: str = ""  # comma separated list of values for custom list mode
+        self.list_hold_time: float = 0.1
+        self.list_delay_time: float = 0.1
+        self.list_expected_time: float = 0.0  # estimated sweep duration in seconds, set in configure_list_mode
+
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
         del parameters
@@ -111,6 +128,18 @@ class Device(EmptyDevice):
             "RangeVoltage": list(self.voltage_measurement_ranges.keys()),
             "Speed": list(self.speeds.keys()),
             "Average": 1,
+
+            # List Mode Parameters
+            "ListSweepCheck": False,
+            "ListSweepType": ["Sweep", "Custom"],
+            "ListSweepStart": 0.5,
+            "ListSweepEnd": 1.0,
+            "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
+            "ListSweepStepPointsValue": 0.1,
+            "ListSweepCustomValues": "",
+            # "ListSweepDual": False,
+            "ListSweepHoldtime": 0.1,
+            "ListSweepDelaytime": 0.1,
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
@@ -130,11 +159,48 @@ class Device(EmptyDevice):
 
         self.averages = int(float(parameters.get("Average", 1)))
 
+        # Reset return variables
+        self.variables = ["Voltage", "Current"]
+        self.units = ["V", "A"]
+        self.plottype = [True, True]
+        self.savetype = [True, True]
+
+        self.list_mode = False
+
+        if parameters.get("SweepValue", "") == "List sweep":
+            self.list_mode = True
+            self.list_type = parameters.get("ListSweepType", "Sweep")
+
+            if self.list_type == "Sweep":
+                self.list_start = parameters.get("ListSweepStart", 0.0)
+                self.list_end = parameters.get("ListSweepEnd", 1.0)
+                self.list_step_points_type = parameters.get("ListSweepStepPointsType", "Step width:")
+                self.list_step_points_value = parameters.get("ListSweepStepPointsValue", 0.)
+
+            else:  # Custom"
+                self.list_custom_values = parameters.get("ListSweepCustomValues", "")
+
+            self.list_hold_time = parameters.get("ListSweepHoldtime", 0.1)
+            self.list_delay_time = parameters.get("ListSweepDelaytime", 0.1)
+
+            # Use a short 1 s port timeout so the polling loop in wait_for_list_complete can cycle every second
+            # without blocking the whole program. The loop handles the overall timeout itself.
+            self.port_properties["timeout"] = 1
+
+            self.variables.append("Timestamp")
+            self.units.append("s")
+            self.plottype.append(True)
+            self.savetype.append(True)
+
+        else:
+            self.port_properties["timeout"] = 5
+
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
         self.port.write("*RST")          # reset instrument state
         self.port.write(":SYSTem:CLEar") # clear error queue
         self.port.write(":OUTPut:STATe OFF")  # explicit safety
+        self.port.write("SYSTem:BEEPer:STATe OFF")  # turn off beeper
 
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
@@ -146,27 +212,27 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        self.port.write("SYSTem:BEEPer:STATe OFF")  # turn off beeper
-
         # set compliance, range and speed
         if self.sweep_mode.startswith("Voltage"):
             self.set_compliance_current(self.compliance)
             self.set_current_measurement_range(self.current_measurement_range)
-            self.set_measurement_speed("CURR", self.speed)
-
-            self.port.write("SOURce:VOLTage:MODE FIXed")  # Alternative: list, sweep
+            if not self.list_mode:
+                self.port.write("SOURce:VOLTage:MODE FIXed")  # Alternative: list, sweep
 
         elif self.sweep_mode.startswith("Current"):
             self.set_compliance_voltage(self.compliance)
             self.set_voltage_measurement_range(self.voltage_measurement_range)
-            self.set_measurement_speed("VOLT", self.speed)
 
-            self.port.write("SOURce:CURRent:MODE FIXed")  # Alternative: list, sweep
+            if not self.list_mode:
+                self.port.write("SOURce:CURRent:MODE FIXed")  # Alternative: list, sweep
+
+        self.set_measurement_speed("CURR", self.speed)
+        self.set_measurement_speed("VOLT", self.speed)
 
         self.port.write("SENSe:FUNCtion:OFF:ALL")  # reset measurement functions
         self.set_measurement_functions(["VOLT", "CURR"])
 
-        self.port.query(":SENSe:FUNCtion:ON?")
+        # self.port.query(":SENSe:FUNCtion:ON?")
 
         if self.averages < 1 or self.averages > 100:
             msg = f"Invalid average: {self.averages}. Averages must be between 1 and 100"
@@ -178,8 +244,72 @@ class Device(EmptyDevice):
         else:
             self.port.write(":SENSe:AVERage:STATe OFF")
 
+        if self.list_mode:
+            self.configure_list_mode()
+
+    def configure_list_mode(self) -> None:
+        """Configure list mode parameters."""
+        source_type = "VOLT" if self.sweep_mode.startswith("Voltage") else "CURR"
+
+        if self.list_type == "Sweep":
+            # Type conversions
+            self.list_start = float(self.list_start)
+            self.list_end = float(self.list_end)
+            self.list_step_points_value = float(self.list_step_points_value)
+
+            self.port.write(f"SOURce:{source_type}:MODE SWEep")
+            self.port.write(f":SOURce:{source_type}:STARt {self.list_start}")
+            self.port.write(f":SOURce:{source_type}:STOP {self.list_end}")
+
+            if self.list_step_points_type == "Step width:":
+                self.port.write(f":SOURce:{source_type}:STEP {self.list_step_points_value}")
+            else:  # Linear or logarithmic points
+                spacing = "LINear" if self.list_step_points_type == "Points (lin.):" else "LOGarithmic"
+                self.port.write(f":SOURce:SWEep:SPACing {spacing}")
+                self.port.write(f":SOURce:SWEep:POINts {self.list_step_points_value}")
+
+            number_of_points = int(self.port.query(f":SOURce:SWEep:POINts?"))
+
+        else:  # self.list_type == "Custom"
+            self.port.write(f":SOURce:{source_type}:MODE LIST")
+            # ensure that custom values are formatted as comma-separated list
+            custom_values_list = [v.strip() for v in self.list_custom_values.split(",")]
+            for value in custom_values_list:
+                try:
+                    float(value)  # validate that each value can be parsed as float
+                except ValueError:
+                    raise ValueError(f"Invalid custom list value: '{value}' is not a number")
+
+            number_of_points = len(custom_values_list)
+            if number_of_points > 100:
+                msg = f"Too many points in custom list: {number_of_points}. Maximum is 100."
+                # TODO: more than 100 points can be set by appending to an existing list
+                raise ValueError(msg)
+
+            self.port.write(f":SOURce:LIST:{source_type} {self.list_custom_values}")
+
+        # Source ranging
+        self.port.write(f":SOURce:SWEep:RANGing AUTO")
+
+        # Number of triggers
+        self.port.write(f"TRIGger:COUNt {number_of_points}")
+
+        # Source delay
+        self.port.write(f":SOURce:DELay {float(self.list_delay_time)}")
+
+        # Trigger delay
+        trigger_delay = float(self.list_hold_time) if self.list_hold_time else "AUTO"
+        self.port.write(f":TRIGger:DELay {trigger_delay}")
+
+        # Store expected sweep duration for the timeout guard in wait_for_list_complete.
+        # speed / 50 converts NPLC to approximate measurement time in seconds (50 Hz line frequency).
+        self.list_expected_time = number_of_points * (self.list_hold_time + self.list_delay_time + self.speed / 50.0)
+
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        if self.list_mode:
+            return
+
         if self.sweep_mode.startswith("Voltage"):
             self.set_voltage(self.value)
         elif self.sweep_mode.startswith("Current"):
@@ -191,46 +321,64 @@ class Device(EmptyDevice):
 
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
-        # self.port.write("TRIGger:INITiate:IMMediate")
-        self.port.write("INIT")
+        if self.list_mode:
+            # INIT starts the full list/sweep; completion is polled in request_result before FETCh? is sent.
+            self.port.write("INIT")
+        else:
+            # READ? = ABORt; INIT; FETCh? — triggers and waits for measurement completion before buffering the
+            # result. Avoids the race where FETCh? could return the previous reading while INIT is in progress.
+            self.port.write("READ?")
 
     def request_result(self) -> None:
         """Write command to ask the instrument to send measured data."""
-        self.port.write("FETCh?")
-        # self.port.write("READ?")
+        if self.list_mode:
+            # Poll until the sweep finishes, then request the buffered results.
+            self.wait_for_list_complete()
+            self.port.write("FETCh?")
 
     def read_result(self) -> None:
         """Read the measured data from a buffer that was requested during 'request_result'."""
         # When using FETCh?, the response is a comma-separated list of values:
         # voltage, current, resistance, time_stamp, status code
-        results = self.port.read()
-        values = results.split(",")
-        self.measured_voltage = float(values[0])
-        self.measured_current = float(values[1])
+        if self.list_mode:
+            results = self.port.read()
+            # the results should be multiples of 5 values (voltage, current, resistance, time_stamp, status code)
+            values = [float(res) for res in results.split(",")]
+            self.measured_voltage = values[0::5]
+            self.measured_current = values[1::5]
+            self.time_stamps = values[3::5]
 
-        if self.measured_voltage >= 9.9E37:
-            self.measured_voltage = float("nan")
-        if self.measured_current >= 9.9E37:
-            self.measured_current = float("nan")
+        else:
+            results = self.port.read()
+            values = results.split(",")
+            self.measured_voltage = float(values[0])
+            self.measured_current = float(values[1])
 
-        status_int = int(float(values[4]))
-        # Extract 24 bits
-        bits = [(status_int >> i) & 1 for i in range(24)]
-        status_bits = {
-            0: "Over range",
-            # 1: "Filter enabled",  # no error
-            3: "In compliance",  # 2 is not used
-            4: "Over voltage protection reached",
-            16: "In range compliance"
-        }
-        for bit_index, description in status_bits.items():
-            if bits[bit_index]:
-                print(f"Measurement status: {description}")
+            if self.measured_voltage >= 9.9E37:
+                self.measured_voltage = float("nan")
+            if self.measured_current >= 9.9E37:
+                self.measured_current = float("nan")
 
-    def call(self) -> list[float]:
+            status_int = int(float(values[4]))
+            # Extract 24 bits
+            bits = [(status_int >> i) & 1 for i in range(24)]
+            status_bits = {
+                0: "Over range",
+                # 1: "Filter enabled",  # no error
+                3: "In compliance",  # 2 is not used
+                4: "Over voltage protection reached",
+                16: "In range compliance"
+            }
+            for bit_index, description in status_bits.items():
+                if bits[bit_index]:
+                    print(f"Measurement status: {description}")
+
+    def call(self) -> list[float] | list[list[float]]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
+        if self.list_mode:
+            return [self.measured_voltage, self.measured_current, self.time_stamps]
         return [self.measured_voltage, self.measured_current]
-    
+
     # Wrapped Functions
 
     def get_identification(self) -> str:
@@ -339,3 +487,27 @@ class Device(EmptyDevice):
     def wait_for_complete(self) -> None:
         """Waits for the operation queue to be completed."""
         self.port.query("*OPC?")
+
+    def wait_for_list_complete(self) -> None:
+        """Poll *OPC? with 1 s port timeout intervals until the list sweep finishes or the run is stopped.
+
+        Sending *OPC? causes the instrument to respond with "1" only after all pending operations are done.
+        With a 1 s port timeout, each poll attempt either returns quickly (sweep done) or raises a timeout
+        exception (sweep still running). This loop avoids blocking the whole program for the entire sweep
+        duration while still detecting a true instrument error if the elapsed time greatly exceeds the
+        expected sweep duration.
+        """
+        start_time = time.monotonic()
+        max_wait = self.list_expected_time * 3 + 30  # allow 3x expected time plus a fixed 30 s margin
+
+        while not self.is_run_stopped():
+            try:
+                self.port.query("*OPC?")
+                return  # instrument confirmed all operations complete
+            except Exception:
+                elapsed = time.monotonic() - start_time
+                if elapsed > max_wait:
+                    raise TimeoutError(
+                        f"List sweep did not complete within {max_wait:.0f} s "
+                        f"(expected ~{self.list_expected_time:.1f} s)"
+                    )
