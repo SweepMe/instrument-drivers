@@ -1,0 +1,97 @@
+"""
+Example code for controlling a Thorlabs NanoTrak device using the Kinesis .NET API via Python.NET (clr).
+The code is taken from the Thorlabs Kinesis .NET API Documentation (Page Modular Rack (MMR601) and adapted for Python.
+The code has been tested with Kinesis simulator and a real NanoTrak device in a Modular Rack.
+"""
+import clr
+import sys
+import time
+
+kinesis_path = r"C:\Program Files\Thorlabs\Kinesis"
+if kinesis_path not in sys.path:
+    sys.path.insert(0, kinesis_path)
+
+clr.AddReference("Thorlabs.MotionControl.DeviceManagerCLI")
+clr.AddReference("Thorlabs.MotionControl.Benchtop.NanoTrakCLI")
+import Thorlabs.MotionControl.DeviceManagerCLI as DeviceManagerCLI
+import Thorlabs.MotionControl.GenericNanoTrakCLI as GenericNanoTrakCLI
+import Thorlabs.MotionControl.Benchtop.NanoTrakCLI as BenchtopNanoTrakCLI
+
+# Initialize simulations
+DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
+
+# Build device list
+DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
+device_list = DeviceManagerCLI.DeviceManagerCLI.GetDeviceList()
+print(f"Found devices: {[str(serial_num) for serial_num in device_list]}")
+
+serial_number = "22000001"
+device = BenchtopNanoTrakCLI.BenchtopNanoTrak.CreateBenchtopNanoTrak(serial_number)
+device.Connect(serial_number)
+
+# Wait for device settings to initialize (timeout 5000 ms)
+if not device.IsSettingsInitialized():
+    try:
+        device.WaitForSettingsInitialized(5000)
+        print("Settings initialized.")
+    except Exception as e:
+        print("Settings failed to initialize:", e)
+
+# Start polling
+device.StartPolling(250)
+time.sleep(0.5)  # Wait for polling to start
+
+# Enable the device
+device.EnableDevice()
+time.sleep(0.5)  # Wait for device to be enabled
+
+print("Device is initialized, polling, and enabled.")
+
+# Configure the device
+DeviceSettingsUseOptionType = DeviceManagerCLI.DeviceConfiguration.DeviceSettingsUseOptionType
+nanoTrakConfiguration = device.GetNanoTrakConfiguration(serial_number, DeviceSettingsUseOptionType.UseConfiguredSettings)
+currentDeviceSettings = device.NanoTrakDeviceSettings
+device.SetSettings(currentDeviceSettings, False)
+device.GetSettings(currentDeviceSettings)
+
+# How to set frequency, closed/open loop, loop gain, and channel?
+circle_parameter = device.GetCircleParams()
+circle_parameter.set_SamplesPerRev(100)
+device.SetCircleParams(circle_parameter)
+
+device.SetGain(250)
+
+# Set feedback source to BNC 10V
+NanoTrakStatusBase = GenericNanoTrakCLI.NanoTrakStatusBase
+device.SetMode(NanoTrakStatusBase.OperatingModes.Tracking)
+
+# Set to Tracking mode
+NanoTrakFeedbackSource = GenericNanoTrakCLI.Settings.IOSettingsSettings.FeedbackSources
+device.SetFeedbackSource(NanoTrakFeedbackSource.BNC_10V)
+
+# Set Home Position and Home the circle
+HVPosition = GenericNanoTrakCLI.HVPosition
+device.SetCircleHomePosition(HVPosition(5, 5))
+device.HomeCircle()
+time.sleep(1)
+
+# Loop to set circle diameter from 1 to 3 in increments of 0.5
+for diameter in [round(x * 0.5, 2) for x in range(2, 7)]:  # 1.0, 1.5, 2.0, 2.5, 3.0
+    device.SetCircleDiameter(diameter)
+    print(f"Set circle diameter to {diameter}")
+    time.sleep(1)  # Optional: wait for device to update
+
+# Set to Latch mode and get a reading
+device.SetMode(NanoTrakStatusBase.OperatingModes.Latch)
+TIAOddOrEven = GenericNanoTrakCLI.TIAOddOrEven
+TIARangeModes = GenericNanoTrakCLI.TIARangeModes
+device.SetTIARangeMode(TIARangeModes.AutoRangeAtSelected, TIAOddOrEven.All)
+time.sleep(0.5)
+
+reading = device.GetReading()
+print("Absolute Reading:", reading.AbsoluteReading)
+print("UnderOrOverRead:", reading.UnderOrOverRead)
+
+# Stop polling and disconnect
+device.StopPolling()
+device.DisableDevice()
