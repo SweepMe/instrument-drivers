@@ -111,8 +111,6 @@ class Device(EmptyDevice):
             },
         }
 
-        self.device_communication_key: str = ""
-
         # Feedback sources
         nano_trak_feedback_source = GenericNanoTrakCLI.Settings.IOSettingsSettings.FeedbackSources
         self.feedback_sources = {
@@ -255,10 +253,6 @@ class Device(EmptyDevice):
             else:
                 break
 
-        self.device_communication_key = f"NanoTrak_{self.serial_number}"
-        if self.device_communication_key not in self.device_communication:
-            self.device_communication[self.device_communication_key] = self
-
     def device_manager_connect(self, connecting_element, timeout_s=10):
         """Connect to the device manager with a timeout.
 
@@ -290,9 +284,6 @@ class Device(EmptyDevice):
 
         if self.is_simulation:
             self.set_simulation_mode(False)
-
-        if self.device_communication_key and self.device_communication_key in self.device_communication:
-            del self.device_communication[self.device_communication_key]
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
