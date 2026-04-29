@@ -30,6 +30,7 @@
 # * Instrument: Simulation Spectrometer
 
 
+import math
 import os
 import random
 import time
@@ -65,9 +66,19 @@ class Device(EmptyDevice):
         self.trigger_mode: str = "Software"
         self.trigger_delay: float = 0.0
 
+        # Silicon-photonics simulation parameters (only used when port_string == "Spectrometer4")
+        self.siph_wl_start: float = 1480.0
+        self.siph_wl_stop: float = 1580.0
+        self.siph_n_points: int = 501
+        self.siph_peak_wl: float = 1530.0
+        self.siph_peak_height_db: float = -3.0
+        self.siph_peak_floor_db: float = -25.0
+        self.siph_peak_fwhm_nm: float = 4.0
+        self.siph_noise_std_db: float = 0.5
+
     def find_ports(self) -> list[str]:
         """Return a list of strings with possible port items."""
-        return ["Spectrometer1", "Spectrometer2", "Spectrometer3"]
+        return ["Spectrometer1", "Spectrometer2", "Spectrometer3", "Spectrometer4"]
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
@@ -102,17 +113,24 @@ class Device(EmptyDevice):
     def call(self) -> list:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         wavelengths = self.get_wavelengths()
+
+        if self.port_string == "Spectrometer4":
+            self.siph_peak_wl += 3
+            return [wavelengths, self.get_intensities(), self.integration_time]
+
         intensities = self.get_intensities()
         for _ in range(self.average - 1):
             intensities += self.get_intensities()
 
         intensities = intensities / self.average
         intensities_per_second = intensities / self.integration_time
-
         return [wavelengths, intensities_per_second, self.integration_time]
 
     def get_wavelengths(self) -> np.array:
         """Return a list of all wavelengths at which the spectrum is measured."""
+        if self.port_string == "Spectrometer4":
+            return np.linspace(self.siph_wl_start, self.siph_wl_stop, int(self.siph_n_points))
+
         # must return a list of all wavelengths at which the spectrum is measured
         spectrum_file = os.path.dirname(os.path.abspath(__file__)) + os.sep + "test_spectrum.txt"
         spectrum = np.loadtxt(spectrum_file, skiprows=3)
@@ -124,6 +142,15 @@ class Device(EmptyDevice):
 
     def get_intensities(self) -> np.array:
         """Return the measured intensities."""
+        if self.port_string == "Spectrometer4":
+            wavelengths = self.get_wavelengths()
+            sigma = self.siph_peak_fwhm_nm / (2.0 * math.sqrt(2.0 * math.log(2.0)))
+            gauss = np.exp(-((wavelengths - self.siph_peak_wl) ** 2) / (2.0 * sigma ** 2))
+            transmission_db = self.siph_peak_floor_db + (self.siph_peak_height_db - self.siph_peak_floor_db) * gauss
+            rng = np.random.default_rng()
+            transmission_db = transmission_db + rng.normal(0.0, self.siph_noise_std_db, len(wavelengths))
+            return np.array(transmission_db)
+
         intensities = np.array([])
         if self.port_string == "Spectrometer2":
             # Simulate Raman spectrum
