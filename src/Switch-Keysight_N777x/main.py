@@ -64,6 +64,10 @@ class Device(EmptyDevice):
                     <li>Wavelength Unit: Choose between nm, µm, mm, m, and pm.</li>
                     <li>The scan speed can only be set to discrete values depending on your device type. Check the
                     manual or the device interface for available speed values.</li>
+                    <li>Manage laser key: if enabled, the driver unlocks the laser key with the configured password
+                    at the start of the run and re-locks it at the end. Leave disabled to control the key manually.
+                    Enabling this option is a possible safety risk &mdash; only use it if you are aware of the laser
+                    safety implications.</li>
                 </ul>
                 """
 
@@ -132,6 +136,10 @@ class Device(EmptyDevice):
         self.list_step: float = 10  # step size in nm
         self.scan_speed: float = 10.0  # Scan speed in nm/s
 
+        # Laser key management (opt-in: leave the key alone unless the user enables it)
+        self.manage_laser_key: bool = False
+        self.laser_key_password: str = "1234"
+
         self.debug_mode: bool = False  # Debug errors and warnings
 
     def update_gui_parameters(self, parameters: dict) -> dict:
@@ -143,6 +151,7 @@ class Device(EmptyDevice):
             "Wavelength unit": list(self.wavelength_conversions.keys()),
             "SweepMode": ["None", "Wavelength", "Power"],
             "Mode": ["Single", "List"],
+            "Manage laser key": False,
         }
 
         if "List" in parameters.get("Mode", "Single"):
@@ -159,6 +168,9 @@ class Device(EmptyDevice):
                 del new_parameters["Wavelength unit"]
         else:
             new_parameters["Trigger"] = list(self.trigger_modes.keys())
+
+        if parameters.get("Manage laser key", False):
+            new_parameters["Laser key password"] = "1234"
 
         return new_parameters
 
@@ -186,6 +198,9 @@ class Device(EmptyDevice):
             self.list_mode = False
             trigger_mode_str = parameters.get("Trigger", "Default")
             self.trigger_config = self.trigger_modes.get(trigger_mode_str, "DEF")
+
+        self.manage_laser_key = bool(parameters.get("Manage laser key", False))
+        self.laser_key_password = str(parameters.get("Laser key password", "1234"))
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -254,11 +269,15 @@ class Device(EmptyDevice):
 
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
+        if self.manage_laser_key:
+            self.turn_key(0, self.laser_key_password)
         self.set_laser_on()
 
     def poweroff(self) -> None:
         """Turn off the device when leaving a sequencer branch."""
         self.set_laser_off()
+        if self.manage_laser_key:
+            self.turn_key(1, self.laser_key_password)
 
     def apply(self) -> None:
         """This function is called if the set value has changed. Applies the new value available as self.value.
@@ -435,7 +454,7 @@ class Device(EmptyDevice):
 
         return self.wln_min, self.wln_max
 
-    def turn_key(self, onoff=0, password=1234):
+    def turn_key(self, onoff: int = 0, password: str | int = 1234) -> None:
         """Change the state of the laser safety key. WARNING: THIS IS A POSSIBLE SAFETY RISK!"""
         self.port.write(f":LOCK {onoff},{password}")
 
