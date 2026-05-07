@@ -92,7 +92,7 @@ class Device(EmptyDevice):
         for prefix in ["m", "µ", "n", "p"]:
             for number in [100, 10, 1]:
                 exponent = {"m": -3, "µ": -6, "n": -9, "p": -12}[prefix]
-                value = number * 10**exponent
+                value = number * 10 ** exponent
                 key = f"{number} {prefix}A"
                 self.current_measurement_ranges[key] = value
         self.current_measurement_range: str = "Auto"
@@ -183,22 +183,15 @@ class Device(EmptyDevice):
             self.list_hold_time = parameters.get("ListSweepHoldtime", 0.1)
             self.list_delay_time = parameters.get("ListSweepDelaytime", 0.1)
 
-            # Use a short 1 s port timeout so the polling loop in wait_for_list_complete can cycle every second
-            # without blocking the whole program. The loop handles the overall timeout itself.
-            self.port_properties["timeout"] = 1
-
             self.variables.append("Timestamp")
             self.units.append("s")
             self.plottype.append(True)
             self.savetype.append(True)
 
-        else:
-            self.port_properties["timeout"] = 5
-
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
-        self.port.write("*RST")          # reset instrument state
-        self.port.write(":SYSTem:CLEar") # clear error queue
+        self.port.write("*RST")  # reset instrument state
+        self.port.write(":SYSTem:CLEar")  # clear error queue
         self.port.write(":OUTPut:STATe OFF")  # explicit safety
         self.port.write("SYSTem:BEEPer:STATe OFF")  # turn off beeper
 
@@ -257,9 +250,14 @@ class Device(EmptyDevice):
             self.list_end = float(self.list_end)
             self.list_step_points_value = float(self.list_step_points_value)
 
+            # Some devices take longer than 1s to set up the list parameters
+            # Add some queries to prevent stacking commands surpass the timeout
             self.port.write(f"SOURce:{source_type}:MODE SWEep")
+            self.wait_for_complete()
+
             self.port.write(f":SOURce:{source_type}:STARt {self.list_start}")
             self.port.write(f":SOURce:{source_type}:STOP {self.list_end}")
+            self.wait_for_complete()
 
             if self.list_step_points_type == "Step width:":
                 self.port.write(f":SOURce:{source_type}:STEP {self.list_step_points_value}")
@@ -294,16 +292,25 @@ class Device(EmptyDevice):
         # Number of triggers
         self.port.write(f"TRIGger:COUNt {number_of_points}")
 
-        # Source delay
-        self.port.write(f":SOURce:DELay {float(self.list_delay_time)}")
-
-        # Trigger delay
-        trigger_delay = float(self.list_hold_time) if self.list_hold_time else "AUTO"
-        self.port.write(f":TRIGger:DELay {trigger_delay}")
-
         # Store expected sweep duration for the timeout guard in wait_for_list_complete.
         # speed / 50 converts NPLC to approximate measurement time in seconds (50 Hz line frequency).
-        self.list_expected_time = number_of_points * (self.list_hold_time + self.list_delay_time + self.speed / 50.0)
+        expected_time_per_point = self.speed / 50.0
+
+        # Source delay
+        if self.list_delay_time:
+            self.list_delay_time = float(self.list_delay_time)
+            self.port.write(f":SOURce:DELay {self.list_delay_time}")
+            expected_time_per_point += self.list_delay_time
+
+        # Trigger delay
+        if self.list_hold_time:
+            self.list_hold_time = float(self.list_hold_time)
+            self.port.write(f":TRIGger:DELay {self.list_hold_time}")
+            expected_time_per_point += self.list_hold_time
+        else:
+            self.port.write(":TRIGger:DELay AUTO")
+
+        self.list_expected_time = number_of_points * expected_time_per_point
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
@@ -325,7 +332,7 @@ class Device(EmptyDevice):
             # INIT starts the full list/sweep; completion is polled in request_result before FETCh? is sent.
             self.port.write("INIT")
         else:
-            # READ? = ABORt; INIT; FETCh? — triggers and waits for measurement completion before buffering the
+            # READ? = ABORt; INIT; FETCh?. triggers and waits for measurement completion before buffering the
             # result. Avoids the race where FETCh? could return the previous reading while INIT is in progress.
             self.port.write("READ?")
 
