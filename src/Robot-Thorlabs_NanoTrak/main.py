@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -276,7 +276,7 @@ class Device(EmptyDevice):
             return
 
         self.nanotrak.StopPolling()
-        # self.nanotrak.DisableDevice()
+        # self.nanotrak.DisableDevice()  # this command seems to have no effect, but sometimes results in an error
         if self.is_modular_rack:
             self.rack.Disconnect(True)
         else:
@@ -486,9 +486,9 @@ class Device(EmptyDevice):
             modular_rack = self.kinesis_client.Rack.ModularRack
             self.rack = modular_rack.CreateModularRack(type_id, serial_number)
 
-            # Could also be rack[1] or rack[bay]
+            # Unsure why, but when using a modular rack, there is a difference between rack.GetNanoTrakChannel and rack[bay].
+            # rack[bay] works more reliably
             self.nanotrak = self.rack[int(self.bay)]
-            # self.nanotrak = self.rack.GetNanoTrakChannel(int(self.bay))
 
         else:
             msg = f"Unknown nanotrak type for serial number {self.serial_number}. Supported prefixes (first two numbers) are: {', '.join(self.device_prefixes.values())}."
@@ -499,7 +499,6 @@ class Device(EmptyDevice):
     def determine_nanotrak_type(self, serial_number: str) -> str:
         """Determine the device type based on the serial number prefix."""
         if self.is_modular_rack:
-            # TODO: Add prefix
             return "modular_rack"
 
         for supported_type, prefix in self.device_prefixes.items():
@@ -652,10 +651,6 @@ class Device(EmptyDevice):
             mode = self.nanotrak_channel.NanoTrakDeviceSettings.ControlMode.NanoTrakControlModeTypes.CloseLoop
 
         self.nanotrak_channel.NanoTrakDeviceSettings.ControlMode.set_ControlMode(mode)
-
-        # control_mode = self.nanotrak_channel.NanoTrakDeviceSettings.ControlMode
-        # control_mode.set_ControlMode(mode)
-        # # TODO: does not work yet
 
     def debug(self, message: str) -> None:
         """Print the message if 'debug while tracking' is activated."""
