@@ -56,6 +56,7 @@ SKIPPED_DRIVERS = {
     "Logger-ArtifexEngineering_OPM150": "Driver requires installed manufacturer software",
     "Logger-ArtifexEngineering_TZA500": "Driver requires installed manufacturer software",
     "Switch-AMF_LSPone-Series": "Driver requires installed manufacturer software",
+    "Robot-Thorlabs_NanoTrak": "Driver requires installed manufacturer software",
 }
 
 
