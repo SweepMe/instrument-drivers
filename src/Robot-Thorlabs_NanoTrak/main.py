@@ -54,7 +54,7 @@ try:
     clr.AddReference("Thorlabs.MotionControl.GenericNanoTrakCLI")
 
     from Thorlabs.MotionControl import DeviceManagerCLI, GenericNanoTrakCLI
-except:
+except Exception:
     pass
 else:
     kinesis_imported = True
@@ -313,9 +313,9 @@ class Device(EmptyDevice):
     def configure(self) -> None:
         """Configure the device. This function is called only once at the start of the measurement."""
         DeviceSettingsUseOptionType = DeviceManagerCLI.DeviceConfiguration.DeviceSettingsUseOptionType
-        nanoTrakConfiguration = self.nanotrak_channel.GetNanoTrakConfiguration(
+        self.nanotrak_channel.GetNanoTrakConfiguration(
             self.serial_number,
-           DeviceSettingsUseOptionType.UseConfiguredSettings
+            DeviceSettingsUseOptionType.UseConfiguredSettings
         )
 
         NanoTrakStatusBase = GenericNanoTrakCLI.NanoTrakStatusBase
@@ -331,7 +331,7 @@ class Device(EmptyDevice):
         # If the gain is empty, do not update the gain
         if self.gain:
             try:
-                gain = int(self.gain)
+                gain = int(float(self.gain))
             except ValueError as e:
                 msg = f"Invalid gain: {self.gain}. Expected an integer value."
                 raise ValueError(msg) from e
@@ -347,7 +347,12 @@ class Device(EmptyDevice):
         # Home Position. If none is given, do not update the home position
         if self.go_home_at_start:
             if self.home_position_string:
-                home_pos1, home_pos2 = map(float, self.home_position_string.split(","))
+                try:
+                    home_pos1, home_pos2 = map(float, self.home_position_string.split(","))
+                except ValueError:
+                    msg = (f"Invalid home position: {self.home_position_string}. Expected two float values separated "
+                           f"by a comma, e.g. '1.0,1.0'.")
+                    raise ValueError(msg)
                 self.set_home_and_go_home(home_pos1, home_pos2)
             else:
                 self.go_home()
@@ -355,14 +360,14 @@ class Device(EmptyDevice):
     def apply(self) -> None:
         """Apply the axis movements, but do not move if the value is out of range (0-10). Start tracking if activated."""
         current_horizontal_position, current_vertical_position = self.get_current_position()
-        if "Horizontal" in self.sweepvalues and self.sweepvalues["Horizontal"]:
+        if "Horizontal" in self.sweepvalues and self.sweepvalues["Horizontal"] is not None:
             horizontal_value = float(self.sweepvalues["Horizontal"])
             if horizontal_value < 0 or horizontal_value > 10:
                 horizontal_value = current_horizontal_position
         else:
             horizontal_value = current_horizontal_position
 
-        if "Vertical" in self.sweepvalues and self.sweepvalues["Vertical"]:
+        if "Vertical" in self.sweepvalues and self.sweepvalues["Vertical"] is not None:
             vertical_value = float(self.sweepvalues["Vertical"])
             if vertical_value < 0 or vertical_value > 10:
                 vertical_value = current_vertical_position
