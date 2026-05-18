@@ -205,14 +205,14 @@ class Device(EmptyDevice):
                 msg = f"Unknown rate unit '{unit}'. Use one of {list(PUMP_RATE_UNITS)}."
                 raise Exception(msg)
             unit = PUMP_RATE_UNITS[unit]
-        self._write_command(f"{self.address}RAT{rate:.1f}{unit}")
+        self._write_command(f"{self.address}RAT{self._format_float(rate)}{unit}")
 
     def set_syringe_diameter(self, diameter: float) -> None:
         """Set the inner syringe diameter in mm (maximum 50 mm)."""
         if not 0.0 < diameter <= MAX_SYRINGE_DIAMETER_MM:
             msg = f"Syringe diameter {diameter} mm out of range (0 < d <= 50)."
             raise Exception(msg)
-        self._write_command(f"{self.address}DIA{diameter:.2f}")
+        self._write_command(f"{self.address}DIA{self._format_float(diameter)}")
 
     def set_low_noise_mode(self, low_noise: bool) -> None:
         """Set low noise mode (True or False)."""
@@ -234,6 +234,30 @@ class Device(EmptyDevice):
         self.port.port.write(b"\x02\x08SAF0\x55\x43\x03")
 
     # --- Low level framing -----------------------------------------------------------------------
+
+    @staticmethod
+    def _format_float(value: float) -> str:
+        """Format a float for the NE-500 (max 4 digits plus 1 decimal point, max 3 decimals)."""
+        ne500_max_digits = 4
+        ne500_max_decimals = 3
+
+        if not -1000 < value < 1000:
+            msg = f"Value {value} is outside the NE-500 number format (max 4 digits)."
+            raise Exception(msg)
+
+        decimals = min(ne500_max_decimals, ne500_max_digits - len(str(int(abs(value)))))
+        text = f"{value:.{decimals}f}"
+
+        # rounding may add an integer digit (e.g. 999.95 -> '1000.0'); shrink the decimals
+        while decimals > 0 and sum(c.isdigit() for c in text) > ne500_max_digits:
+            decimals -= 1
+            text = f"{value:.{decimals}f}"
+
+        if sum(c.isdigit() for c in text) > ne500_max_digits:
+            msg = f"Value {value} cannot be represented in the NE-500 number format (max 4 digits)."
+            raise Exception(msg)
+
+        return text
 
     def _write_command(self, command: str) -> tuple[str, str, str]:
         """Send an addressed command and validate the framed response."""
