@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,7 +31,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 # must be done before 'import propar' to make sure libs folder is added to PATH
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme import FolderManager as FoMa
@@ -44,7 +44,7 @@ import propar
 class Device(EmptyDevice):
     """Driver for Bronkhorst Propar devices such as EL-Flow, ES-Flow, (mini) CORI-FLOW, IQ+FLOW, and EL-PRESS."""
 
-    GAS_INDEX: dict[str, int] = {
+    GAS_INDEX: ClassVar[dict[str, int]] = {
         "N2": 0,
         "Air": 1,
         "O2": 2,
@@ -54,38 +54,6 @@ class Device(EmptyDevice):
         "CH4": 6,
         "CO2": 7,
     }
-
-    description =   """
-                    <p><strong>Bronkhorst Propar<br /><br /></strong></p>
-                    <p>This device class can be used to connect to different devices such as&nbsp;EL-Flow, ES-Flow,
-                     (mini) CORI-FLOW, IQ+FLOW, and others), Pressure Meters and Controllers (EL-PRESS).</p>
-                    <p>&nbsp;</p>
-                    <p><strong>Handling:</strong></p>
-                    <ul>
-                    <li>Flow is a value 0 and 100 with unit %.</li>
-                    <li>Choose between RS-232 or FLOW-BUS. In case of FLOW-BUS that is based on RS-485, please select
-                     the corresponding address your controller unit has.</li>
-                    <li>The baudrate is only used for communication via RS-232. Otherwise, the default value is used.
-                    </li>
-                    </ul>
-                    <p><strong>Custom unit:</strong></p>
-                    <ul>
-                    <li>Calculating a custom unit can be activated by entering a unit, e.g. 'l/min'.</li>
-                    <li>If a custom unit is given, please enter a float-type conversion factor.</li>
-                    <li>The conversion factor has the unit 'custom unit per %'.</li>
-                    <li>If a custom unit is used, the sweep mode "Flow in custom unit" can be used.&nbsp;</li>
-                    </ul>
-                    <p><strong>Information:</strong></p>
-                    <ul>
-                    <li>Not all devices are tested yet and returned variables might have to be adapted later to certain
-                     types of controllers.</li>
-                    </ul>
-                    <p>&nbsp;</p>
-                    <p><strong>Acknowledgement:</strong></p>
-                    <p>This device class is based on the python package bronkhorst-propar<br />
-                    <a href="https://pypi.org/project/bronkhorst-propar/"> https://pypi.org/project/bronkhorst-propar/
-                    </a><br />that has been released under MIT license by Bronkhorst.</p>
-                    """
 
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters.
@@ -154,7 +122,7 @@ class Device(EmptyDevice):
 
         new_parameters.update({
             " ": None,  # empty line
-            "Gas type": ["Do not set", "Read only"] + list(self.GAS_INDEX.keys()),
+            "Gas type": ["Do not set", "Read only", *self.GAS_INDEX],
             "Measure capacity": False,
             "Measure valve output": False,
             "Measure inlet pressure": False,
@@ -466,11 +434,11 @@ class Device(EmptyDevice):
 
     def get_inlet_pressure(self) -> float:
         """Get the inlet pressure in bar."""
-        return self.flow_controller.read(34, 0, 65)
+        return float(self.flow_controller.read(34, 0, 65))
 
     def get_outlet_pressure(self) -> float:
         """Get the outlet pressure in bar."""
-        return self.flow_controller.read(35, 0, 65)
+        return float(self.flow_controller.read(35, 0, 65))
 
     def get_valve_output(self) -> float:
         """Get the valve output signal in % ."""
