@@ -27,9 +27,9 @@
 
 # SweepMe! driver
 # * Module: Switch
-# * Instrument: New Era NE-500 OEM syringe pump
+# * Instrument: New Era NE-50x OEM syringe pump
 
-"""SweepMe! driver for New Era NE-500 OEM syringe pumps (RS-232, basic mode)."""
+"""SweepMe! driver for New Era NE-50x OEM syringe pumps (RS-232, basic mode)."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ ETX = "\x03"
 
 MAX_SYRINGE_DIAMETER_MM = 50.0
 
-# Rate unit -> NE-500 RAT command suffix
+# Rate unit -> NE-50x RAT command suffix
 PUMP_RATE_UNITS: dict[str, str] = {
     "ul/h": "UH",
     "ul/min": "UM",
@@ -50,13 +50,13 @@ PUMP_RATE_UNITS: dict[str, str] = {
     "ml/min": "MM",
 }
 
-# GUI direction -> NE-500 DIR command argument
+# GUI direction -> NE-50x DIR command argument
 PUMP_DIRECTIONS: dict[str, str] = {
     "Infuse": "INF",
     "Withdraw": "WDR",
 }
 
-# Status prompt character -> human readable meaning
+# Status prompt character -> human-readable meaning
 PUMP_STATUS_PROMPTS: dict[str, str] = {
     "I": "Infusing",
     "W": "Withdrawing",
@@ -67,7 +67,7 @@ PUMP_STATUS_PROMPTS: dict[str, str] = {
     "X": "Purging",
 }
 
-# Error token returned in the response data field -> human readable meaning
+# Error token returned in the response data field -> human-readable meaning
 PUMP_ERROR_LIST: dict[str, str] = {
     "?": "command not recognized",
     "?NA": "command currently not applicable",
@@ -78,7 +78,7 @@ PUMP_ERROR_LIST: dict[str, str] = {
 
 
 class Device(EmptyDevice):
-    """Driver for the New Era NE-500 OEM syringe pump using the basic RS-232 protocol."""
+    """Driver for the New Era NE-50x OEM syringe pump using the basic RS-232 protocol."""
 
     # Error tokens checked longest-first so '?OOR' is not shadowed by '?'.
     _ERROR_TOKENS: ClassVar[list[str]] = ["?OOR", "?COM", "?IGN", "?NA", "?"]
@@ -237,12 +237,12 @@ class Device(EmptyDevice):
 
     @staticmethod
     def _format_float(value: float) -> str:
-        """Format a float for the NE-500 (max 4 digits plus 1 decimal point, max 3 decimals)."""
+        """Format a float for the NE-50x (max 4 digits plus 1 decimal point, max 3 decimals)."""
         ne500_max_digits = 4
         ne500_max_decimals = 3
 
         if not -1000 < value < 1000:
-            msg = f"Value {value} is outside the NE-500 number format (max 4 digits)."
+            msg = f"Value {value} is outside the NE-50x number format (max 4 digits)."
             raise Exception(msg)
 
         decimals = min(ne500_max_decimals, ne500_max_digits - len(str(int(abs(value)))))
@@ -254,7 +254,7 @@ class Device(EmptyDevice):
             text = f"{value:.{decimals}f}"
 
         if sum(c.isdigit() for c in text) > ne500_max_digits:
-            msg = f"Value {value} cannot be represented in the NE-500 number format (max 4 digits)."
+            msg = f"Value {value} cannot be represented in the NE-50x number format (max 4 digits)."
             raise Exception(msg)
 
         return text
@@ -283,7 +283,7 @@ class Device(EmptyDevice):
             token = core[question_pos:]
             for key in self._ERROR_TOKENS:
                 if token.startswith(key):
-                    msg = f"NE-500 pump error {key}: {PUMP_ERROR_LIST[key]}"
+                    msg = f"NE-50x pump error {key}: {PUMP_ERROR_LIST[key]}"
                     raise Exception(msg)
 
         pump_address = core[0:2]
