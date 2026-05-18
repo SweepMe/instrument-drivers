@@ -1,12 +1,11 @@
-import importlib.util
 import unittest
 from pathlib import Path
 
+from pysweepme import load_source
+
 # Import the communication interface
 file_path = Path(__file__).resolve().parent.parent / "libraries" / "prevac_protocol.py"
-spec = importlib.util.spec_from_file_location("prevac_protocol", file_path)
-prevac_protocol = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(prevac_protocol)
+prevac_protocol = load_source("prevac_protocol", str(file_path))
 
 SendingDataFrame = prevac_protocol.SendingDataFrame
 ReceiverDataFrame = prevac_protocol.ReceivingDataFrame

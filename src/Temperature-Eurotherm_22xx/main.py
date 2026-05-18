@@ -32,9 +32,11 @@
 
 from ErrorMessage import error, debug
 
-import imp
 import os
-EurothermBaseClass22xxe = imp.load_source("Eurotherm22xxeBaseClass", os.path.dirname(os.path.abspath(__file__)) + os.sep + "EurothermBaseClass.py")
+
+from pysweepme import load_source
+
+EurothermBaseClass22xxe = load_source("Eurotherm22xxeBaseClass", os.path.dirname(os.path.abspath(__file__)) + os.sep + "EurothermBaseClass.py")
 #from EurothermBaseClass import Eurotherm
 
 

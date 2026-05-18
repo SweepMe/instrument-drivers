@@ -41,15 +41,12 @@ addFolderToPATH()
 
 # standard import
 # import accretech_uf
-# importlib.reload(accretech_uf)
 
-# direct import by path
-import importlib.util
+# direct import by path via pysweepme's load_source helper
+from pysweepme import load_source
 
 _accretech_uf_path = os.path.dirname(os.path.abspath(__file__)) + os.sep + r"libs\accretech_uf.py"
-_spec = importlib.util.spec_from_file_location("accretech_uf_temperature", _accretech_uf_path)
-accretech_uf = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(accretech_uf)
+accretech_uf = load_source("accretech_uf_temperature", _accretech_uf_path)
 
 # this is needed as a fallback solutions as pysweepme.UserInterface is not available for all 1.5.5 update versions
 try:
