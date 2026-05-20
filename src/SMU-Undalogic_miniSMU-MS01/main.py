@@ -132,6 +132,14 @@ class Device(EmptyDevice):
         self._sweep_currents: np.ndarray = np.array([])
         self._sweep_timestamps: np.ndarray = np.array([])
 
+        # After OUTP ON the source sits at 0; the first apply produces a large
+        # step that the firmware autoranger needs several MEAS calls to
+        # converge across (it advances at most one current range per call) and
+        # that the output stage needs time to slew through. Without an explicit
+        # settle pass on the first apply, the first 1-2 sweep points report
+        # clipped/transient values. Reset in poweron() so every run is fresh.
+        self._needs_first_apply_settle: bool = True
+
     # --- GUI interaction -------------------------------------------------------
 
     def set_GUIparameter(self) -> dict:
@@ -506,6 +514,7 @@ class Device(EmptyDevice):
     def poweron(self) -> None:
         """Enable the output of the selected channel."""
         self.enable_output(self.channel)
+        self._needs_first_apply_settle = True
 
     def poweroff(self) -> None:
         """Disable the output of the selected channel."""
@@ -517,11 +526,38 @@ class Device(EmptyDevice):
         Sets the voltage or current depending on the selected sweep mode.
         Not called during list sweep mode.
         """
-        if not self.use_list_sweep:
-            if self.source == "Voltage in V":
-                self.set_voltage(self.channel, self.value)
-            else:
-                self.set_current(self.channel, self.value)
+        if self.use_list_sweep:
+            return
+
+        if self.source == "Voltage in V":
+            self.set_voltage(self.channel, self.value)
+        else:
+            self.set_current(self.channel, self.value)
+
+        if self._needs_first_apply_settle:
+            self._settle_after_initial_step()
+            self._needs_first_apply_settle = False
+
+    def _settle_after_initial_step(self) -> None:
+        """Absorb the initial step transient on the first apply of a run.
+
+        The firmware autoranger advances by at most one current range per MEAS
+        call, so a jump from idle into a range several steps away returns
+        clipped data until enough discard reads have walked it to the correct
+        range. The reads also give the output stage time to slew. Sized for
+        the worst case of crossing the full 1 uA -> 180 mA span.
+        """
+        SETTLE_DELAY_S = 0.1
+        WARMUP_READS = 2
+
+        time.sleep(SETTLE_DELAY_S)
+        for _ in range(WARMUP_READS):
+            if self.is_run_stopped():
+                return
+            try:
+                self.get_voltage_and_current(self.channel)
+            except Exception:
+                return
 
     def measure(self) -> None:
         """Trigger a measurement or execute a hardware sweep.
@@ -530,6 +566,17 @@ class Device(EmptyDevice):
         In list sweep mode, executes the onboard sweep and polls until complete.
         """
         if self.use_list_sweep:
+            # Prime the source and the firmware autoranger before EXECUTE.
+            # The onboard sweep starts measuring at point 0 immediately, with
+            # no margin for the autoranger to walk up from idle (it advances
+            # by at most one current range per MEAS). Manually setting the
+            # start voltage and burning a few discard reads gets both the
+            # output and the autoranger to the correct state, so point 0
+            # captures clean data instead of the transient/clipped values
+            # seen otherwise.
+            self.set_voltage(self.channel, self.listsweep_start)
+            self._settle_after_initial_step()
+
             self.execute_sweep(self.channel)
 
             # Poll for completion with a generous timeout derived from sweep
