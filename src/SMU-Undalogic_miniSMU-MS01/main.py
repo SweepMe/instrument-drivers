@@ -628,7 +628,7 @@ class Device(EmptyDevice):
         """Return measured data.
 
         In normal mode, returns [voltage, current].
-        In list sweep mode, retrieves JSON sweep data from the device and returns
+        In list sweep mode, retrieves CSV sweep data from the device and returns
         [voltage_array, current_array, timestamp_array].
 
         Returns:
@@ -636,27 +636,33 @@ class Device(EmptyDevice):
         """
         if self.use_list_sweep:
             raw_data = self.get_sweep_data(self.channel)
+            
+            timestamps: list[float] = []
+            voltages: list[float] = []
+            currents: list[float] = []
+            for line in raw_data.splitlines():
+                parts = line.strip().split(",")
+                if len(parts) != 3:
+                    # CSV is line-framed, so a malformed line only loses one
+                    # point; skip and keep parsing rather than aborting.
+                    continue
+                try:
+                    t = float(parts[0]) / 1000.0
+                    v = float(parts[1])
+                    i = float(parts[2])
+                except ValueError:
+                    continue
+                timestamps.append(t)
+                voltages.append(v)
+                currents.append(i)
 
-            # Parse the JSON response.  The chunked JSON reader in
-            # _read_response guarantees we receive the complete object.
-            try:
-                sweep_json = json.loads(raw_data)
-            except (json.JSONDecodeError, TypeError) as e:
-                msg = f"Failed to parse sweep data response: {e}"
-                raise Exception(msg) from e
-
-            data_points = sweep_json.get("data", [])
-            if not data_points:
-                msg = "Sweep data response contains no data points."
+            if not timestamps:
+                msg = "Sweep data response contained no parseable points."
                 raise Exception(msg)
 
-            timestamps = np.array([float(p["t"]) / 1000.0 for p in data_points])  # ms to s
-            voltages = np.array([float(p["v"]) for p in data_points])
-            currents = np.array([float(p["i"]) for p in data_points])
-
-            self._sweep_voltages = voltages
-            self._sweep_currents = currents
-            self._sweep_timestamps = timestamps
+            self._sweep_voltages = np.array(voltages)
+            self._sweep_currents = np.array(currents)
+            self._sweep_timestamps = np.array(timestamps)
 
             return [self._sweep_voltages, self._sweep_currents, self._sweep_timestamps]
         else:
@@ -690,7 +696,13 @@ class Device(EmptyDevice):
         self._send_command(f"SOUR{channel}:SWEEP:POINTS {points}")
         self._send_command(f"SOUR{channel}:SWEEP:DWELL {dwell_ms}")
         self._send_command(f"SOUR{channel}:SWEEP:AUTO:ENA")
-        self._send_command(f"SOUR{channel}:SWEEP:FORMAT JSON")
+        # CSV (one "timestamp_us,voltage,current" line per point) instead of
+        # JSON: the firmware's JSON serializer can drop bytes mid-stream on
+        # large responses (observed ~23700 chars in), and the single missing
+        # byte poisons the whole document. CSV is line-framed, so a damaged
+        # row only loses one point. Switch back to JSON once the firmware
+        # serializer is fixed.
+        self._send_command(f"SOUR{channel}:SWEEP:FORMAT CSV")
 
     def execute_sweep(self, channel: int) -> None:
         """Start a hardware sweep on a channel.
@@ -722,13 +734,32 @@ class Device(EmptyDevice):
     def get_sweep_data(self, channel: int) -> str:
         """Retrieve the sweep data from a completed hardware sweep.
 
+        The response is multi-line CSV with one "timestamp_us,voltage,current"
+        line per point. We bypass _send_command (which only returns the first
+        line) and instead read exactly self.listsweep_points lines, then
+        return them joined with newlines.
+
         Args:
             channel: Channel number (1 or 2).
 
         Returns:
-            Raw JSON string containing sweep data points.
+            Newline-separated CSV string, one line per sweep point.
         """
-        return self._send_command(f"SOUR{channel}:SWEEP:DATA?")
+        self.port.write(f"SOUR{channel}:SWEEP:DATA?")
+
+        lines = []
+        for _ in range(self.listsweep_points):
+            if self.is_run_stopped():
+                break
+            try:
+                line = self.port.read()
+            except Exception:
+                break
+            if not line:
+                break
+            lines.append(line.strip())
+
+        return "\n".join(lines)
 
     def enable_output(self, channel: int) -> None:
         """Enable the output on a channel.
