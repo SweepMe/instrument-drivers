@@ -8,7 +8,7 @@ times or duration.
 
 ## Requirements
 
-Install the WGFMU istrument library https://www.keysight.com/us/en/lib/software-detail/driver/b1530a-wgfmu-instrument-library--sample-programs-2117445.html
+This driver requires the wgfmu.dll, which is installed via the Keysight WGFMU instrument library https://www.keysight.com/us/en/lib/software-detail/driver/b1530a-wgfmu-instrument-library--sample-programs-2117445.html
 
 ## Usage
 
