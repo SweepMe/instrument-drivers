@@ -1,0 +1,10 @@
+measure_start;points;interval in s;averaging in s
+0.001;10;0.00001;0
+0.002;2;0.00001;0
+range_start;current_range
+0;1 uA
+time in s;voltage in V
+0;0
+0.001;1
+0.001;1
+0.001;0
