@@ -41,6 +41,9 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
     """Driver for the JUMO diraTRON."""
 
+    # Number of times to re-issue a Modbus request if the device does not answer.
+    _MODBUS_MAX_ATTEMPTS = 3
+
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
         super().__init__()
@@ -67,7 +70,7 @@ class Device(EmptyDevice):
             "bytesize": 8,
             "parity": "N",
             "stopbits": 1,
-            "timeout": 0.1,
+            "timeout": 1,
         }
         self.modbus_address: int = 1
 
@@ -132,8 +135,7 @@ class Device(EmptyDevice):
         """Switch controller to manual mode (True) or automatic mode (False)."""
         register = 0x5352 if enable else 0x5353  # 21330 = enter manual, 21331 = enter automatic
         cmd = self.generate_write_register_command(int(self.modbus_address), register, 1)
-        self.port.port.write(cmd)
-        self.port.port.read(8)  # FC 0x06 response is exactly 8 bytes
+        self._modbus_transact(cmd, 8)  # FC 0x06 response is exactly 8 bytes
 
     def set_output_percent(self, value: float) -> None:
         """Set the manual output power level in %."""
@@ -142,8 +144,7 @@ class Device(EmptyDevice):
             register_address=0x5354,  # 21332 = manual output level
             register_value=value,
         )
-        self.port.port.write(cmd)
-        self.port.port.read(8)  # FC 0x10 response is exactly 8 bytes
+        self._modbus_transact(cmd, 8)  # FC 0x10 response is exactly 8 bytes
 
     def set_setpoint(self, setpoint: float) -> None:
         """Set the controller setpoint."""
@@ -152,8 +153,7 @@ class Device(EmptyDevice):
             register_address=8468,  # register for the temperature setpoint
             register_value=setpoint,
         )
-        self.port.port.write(cmd)
-        self.port.port.read(8)  # FC 0x10 response is exactly 8 bytes
+        self._modbus_transact(cmd, 8)  # FC 0x10 response is exactly 8 bytes
 
     def read_registers(self) -> None:
         """Read the 4 relevant 4-byte float values from the device and store them in instance variables."""
@@ -163,11 +163,15 @@ class Device(EmptyDevice):
             register_address=28688,  # starting register for setpoint, other values follow
             num_registers=8,  # read 8 registers to get all 4 float values (2 registers per float)
         )
-        self.port.port.write(cmd)  # write bytes directly to the port
+        # FC 0x03 response: slave(1) + fc(1) + byte_count(1) + data(16) + crc(2) = 21 bytes
         # TODO: use minimalmodbus read function instead of manually writing and reading bytes
         # TODO: validate the CRC of the response
-        # FC 0x03 response: slave(1) + fc(1) + byte_count(1) + data(16) + crc(2) = 21 bytes
-        response = self.port.port.read(21)
+        expected_length = 21
+        response = self._modbus_transact(cmd, expected_length)
+
+        if len(response) < expected_length:
+            msg = f"Invalid Modbus response length: {len(response)} bytes, expected {expected_length}"
+            raise ValueError(msg)
 
         # Extract the data payload (skip address, function code, byte count)
         data_start = 3
@@ -190,6 +194,21 @@ class Device(EmptyDevice):
         self.temperature_difference = values[2]
         self.temperature_setpoint = values[0]
         self.output_power_percent = values[3]
+
+    def _modbus_transact(self, cmd: bytes, response_length: int) -> bytes:
+        """Send a Modbus RTU frame and read exactly ``response_length`` bytes back.
+
+        The whole transaction is retried up to ``_MODBUS_MAX_ATTEMPTS`` times if the response
+        comes back short.
+        """
+        response = b""
+        for _ in range(self._MODBUS_MAX_ATTEMPTS):
+            self.port.port.reset_input_buffer()
+            self.port.port.write(cmd)
+            response = self.port.port.read(response_length)
+            if len(response) == response_length:
+                return response
+        return response  # caller decides what to do with a still-short response
 
     def generate_write_register_command(self, slave_address: int, register_address: int, register_value: int) -> bytes:
         """Generate a Modbus FC 0x06 write single register command for BOOL16/INT16/UINT16 values."""

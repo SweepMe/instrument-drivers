@@ -39,6 +39,9 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
     """Driver for the Waveshare AI."""
 
+    # Number of times to re-issue a Modbus request if the device does not answer.
+    _MODBUS_MAX_ATTEMPTS = 3
+
     def __init__(self) -> None:
         """Initialize the driver class and the instrument parameters."""
         super().__init__()
@@ -58,7 +61,7 @@ class Device(EmptyDevice):
 
         # Modbus RTU configuration
         self.port_properties = {
-            "timeout": 0.1,
+            "timeout": 1,
             "baudrate": 38400,
             "stopbits": 1,
             "parity": "N",
@@ -121,10 +124,9 @@ class Device(EmptyDevice):
             register_address=register_address,
             num_registers=1,  # read 1 register (16-bit value)
         )
-        self.port.port.write(cmd)
         # Response structure: [slave_addr][func_code][byte_count][data...][CRC_low][CRC_high]
         # For 1 register: [addr][0x04][0x02][high_byte][low_byte][CRC][CRC] = 7 bytes
-        response = self.port.port.read(7)
+        response = self._modbus_transact(cmd, 7)
         # TODO: validate CRC16 of the response
 
         if len(response) < 5:
@@ -135,6 +137,21 @@ class Device(EmptyDevice):
         word = response[3:5]
         value = int.from_bytes(word, byteorder='big')
         return value / 1000  # Convert from mV to V
+
+    def _modbus_transact(self, cmd: bytes, response_length: int) -> bytes:
+        """Send a Modbus RTU frame and read exactly ``response_length`` bytes back.
+
+        The whole transaction is retried up to ``_MODBUS_MAX_ATTEMPTS`` times if the response
+        comes back short.
+        """
+        response = b""
+        for _ in range(self._MODBUS_MAX_ATTEMPTS):
+            self.port.port.reset_input_buffer()
+            self.port.port.write(cmd)
+            response = self.port.port.read(response_length)
+            if len(response) == response_length:
+                return response
+        return response  # caller decides what to do with a still-short response
 
     def generate_read_command(self, slave_address: int, function_code: int, register_address: int,
                               num_registers: int) -> bytes:
