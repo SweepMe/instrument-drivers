@@ -76,7 +76,7 @@ class Device(EmptyDevice):
         """Return the GUI parameter options of the driver."""
         return {
             "Sparameters": "S11",
-            "SourcePower": "0.0",
+            "SourcePower": "0.0",  # max 10dbm
 
             "FrequencyStart": "1e6",
             "FrequencyEnd": "215e6",
