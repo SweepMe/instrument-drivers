@@ -89,7 +89,7 @@ class Device(EmptyDevice):
         self.power_setpoint: float = 0.0
         self.phase_deg: float = 0.0
         self.modulation: str = "NONE"
-        self.trigger: str = "BY_PC"
+        self.trigger: str = "INTERNAL"
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
         """Return the GUI parameter options of the driver."""
@@ -106,7 +106,7 @@ class Device(EmptyDevice):
             "DelayPhaseValue": 0.0,
 
             # "Modulation": list(self.MODULATION_MODE),
-            # "Trigger": list(self.TRIGGER_MODE),
+            "Trigger": list(self.TRIGGER_MODE),
         }
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
@@ -114,13 +114,13 @@ class Device(EmptyDevice):
         self.sweepmode = parameters.get("SweepMode", "Frequency in Hz")
         self.channel = parameters.get("Channel", "1")
 
-        self.frequency_hz = float(parameters.get("PeriodFrequencyValue", "100e6"))
+        self.frequency_hz = parameters.get("PeriodFrequencyValue", "100e6")
         self.power_unit = parameters.get("AmplitudeHiLevel", "Power in dBm")
         self.power_setpoint = float(parameters.get("AmplitudeHiLevelValue", "0.0"))
         self.phase_deg = float(parameters.get("DelayPhaseValue", "0.0"))
 
         self.modulation = parameters.get("Modulation", "NONE")
-        self.trigger = parameters.get("Trigger", "BY_PC")
+        self.trigger = parameters.get("Trigger", "INTERNAL")
 
         self.variables = ["Frequency", "Output power", "Input power", "Temperature"]
         self.units = ["Hz", "dBm", "dBm", "°C"]
@@ -138,6 +138,8 @@ class Device(EmptyDevice):
             msg = "BSG0302: channel 2 selected but this device only has channel 1."
             raise Exception(msg)
 
+        self.frequency_hz = float(self.frequency_hz)
+
     def configure(self) -> None:
         """Set the output modes and the static setpoints not driven by the sweep."""
         self.set_frequency_output_mode(self.channel, "FREQUENCY_GENERATOR")
@@ -148,11 +150,13 @@ class Device(EmptyDevice):
 
         if self.sweepmode != "Frequency in Hz":
             self.set_frequency(self.channel, self.frequency_hz / 1e6)
+
         if self.sweepmode not in ("Power in dBm", "Power in W"):
             if self.power_unit == "Power in dBm":
                 self.set_output_power_dbm(self.channel, self.power_setpoint)
             elif self.power_unit == "Power in W":
                 self.set_output_power_watt(self.channel, self.power_setpoint)
+
         if self.sweepmode != "Phase in deg":
             self.set_signal_phase(self.channel, self.phase_deg)
 
