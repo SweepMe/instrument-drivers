@@ -61,12 +61,14 @@ class Device(EmptyDevice):
         # Measurement Parameters
         self.voltage_channels: list[int] = []
         self.current_channels: list[int] = []
+        self.noise_level: float = 0.0
 
     def set_GUIparameter(self) -> dict[str, str]:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
         return {
             "Voltage Channels": "1,2",
             "Current Channels": "3,4",
+            "Noise level in %": "0.1",
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -82,6 +84,8 @@ class Device(EmptyDevice):
         for channel in self.current_channels:
             self.variables.append(f"Current CH{channel}")
             self.units.append("A")
+
+        self.noise_level = float(parameter["Noise level in %"])
 
         # Update plottype and savetype
         self.plottype = []
@@ -107,18 +111,14 @@ class Device(EmptyDevice):
 
         return simulated_values
 
-    @staticmethod
-    def simulate_voltage(channel: int) -> float:
+    def simulate_voltage(self, channel: int) -> float:
         """Simulate the voltage measurement."""
         voltage = channel * 1.0
-        # 50mV noise
-        noise = random.uniform(-0.05, 0.05)  # noqa: S311
+        noise = random.uniform(-1, 1) * self.noise_level * voltage
         return voltage + noise
 
-    @staticmethod
-    def simulate_current(channel: int) -> float:
+    def simulate_current(self, channel: int) -> float:
         """Simulate the current measurement."""
         current = channel * 0.1
-        # 5mA noise
-        noise = random.uniform(-0.005, 0.005)  # noqa: S311
+        noise = random.uniform(-1, 1) * self.noise_level * current
         return current + noise
