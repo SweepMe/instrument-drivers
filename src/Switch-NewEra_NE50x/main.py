@@ -162,10 +162,14 @@ class Device(EmptyDevice):
             raise Exception(msg)
 
         self.set_flowrate(value)
+        self.run()
 
     def unconfigure(self) -> None:
         """Stop the pump at the end of the branch."""
-        self.stop_pump()
+        try:
+            self.stop_pump()
+        except:
+            pass
 
     def call(self) -> float:
         """Return the applied flow rate and the live pump status."""
@@ -190,7 +194,7 @@ class Device(EmptyDevice):
         """Query the pump and return the current flow rate in the set unit."""
         _, _, data = self._query("RAT")
         try:
-            return float(data)
+            return float(data[:-2])  # drop the unit suffix
         except ValueError:
             msg = f"Invalid flow rate response '{data}'. Check pump address, baud rate and cabling."
             raise Exception(msg)
@@ -216,7 +220,7 @@ class Device(EmptyDevice):
 
     def set_low_noise_mode(self, low_noise: bool) -> None:
         """Set low noise mode (True or False)."""
-        self._write_command(f"{self.address}LNM{low_noise:d}")
+        self._write_command(f"{self.address}LN{low_noise:d}")
 
     def set_pump_direction(self, direction: str) -> None:
         """Set the pumping direction ('Infuse' or 'Withdraw')."""
