@@ -75,6 +75,8 @@ class Device(EmptyDevice):
             "ValueBias": 1,
             "Average": "1",
 
+            "Noise level": 0.05,
+
             # List Sweep Parameters
             "ListSweepCheck": True,
             "ListSweepType": ["Sweep"],  # , "Custom"],
@@ -95,6 +97,7 @@ class Device(EmptyDevice):
         self.bias_mode = parameter["ValueTypeBias"]
         self.bias = float(parameter["ValueBias"])
         self.average = int(float(parameter["Average"]))
+        self.noise_level = float(parameter["Noise level"])
 
         # List Mode
         self.use_list_sweep = parameter.get("SweepValue", "None") == "List sweep"

@@ -58,6 +58,7 @@ class Device(EmptyDevice):
         }
 
         # Measurement parameters
+        self.port_string: str = "Simulated Spectrum"
         self.frequency_center: float = 5000
         self.frequency_span: float = 5000
         self.frequency_min: float = 5000
@@ -85,7 +86,7 @@ class Device(EmptyDevice):
     @staticmethod
     def find_ports() -> list[str]:
         """Find available ports."""
-        return ["Simulated Port"]
+        return ["Port 1: Simulated Spectrum", "Port 2: No Noise"]
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Set the GUI parameters."""
@@ -105,6 +106,7 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Handle GUI inputs."""
+        self.port_string = parameter["Port"]
         self.handle_frequency_input(parameter)
 
         self.reference_level = float(parameter["Reference level in dBm"])
@@ -185,6 +187,7 @@ class Device(EmptyDevice):
         rng = np.random.default_rng()
         noise_level = 0
         noise = rng.normal(noise_level, 3, len(frequency))
-        amplitude += noise
+        if not "No Noise" in self.port_string:
+            amplitude += noise
 
         return amplitude

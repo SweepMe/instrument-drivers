@@ -66,7 +66,7 @@ class Device(EmptyDevice):
         self.trigger_mode: str = "Software"
         self.trigger_delay: float = 0.0
 
-        # Silicon-photonics simulation parameters (only used when port_string == "Spectrometer4")
+        # Silicon-photonics simulation parameters (only used when port_string == "Silicon Photonics")
         self.siph_wl_start: float = 1480.0
         self.siph_wl_stop: float = 1580.0
         self.siph_n_points: int = 501
@@ -78,7 +78,7 @@ class Device(EmptyDevice):
 
     def find_ports(self) -> list[str]:
         """Return a list of strings with possible port items."""
-        return ["Spectrometer1", "Spectrometer2", "Spectrometer3", "Spectrometer4"]
+        return ["Test spectrum.txt", "Raman Spectrum", "Background Spectrum", "Silicon Photonics", "No Noise"]
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
@@ -114,7 +114,7 @@ class Device(EmptyDevice):
         """Return the measurement results. Must return as many values as defined in self.variables."""
         wavelengths = self.get_wavelengths()
 
-        if self.port_string == "Spectrometer4":
+        if self.port_string == "Silicon Photonics":
             self.siph_peak_wl += 3
             return [wavelengths, self.get_intensities(), self.integration_time]
 
@@ -128,7 +128,7 @@ class Device(EmptyDevice):
 
     def get_wavelengths(self) -> np.array:
         """Return a list of all wavelengths at which the spectrum is measured."""
-        if self.port_string == "Spectrometer4":
+        if self.port_string == "Silicon Photonics":
             return np.linspace(self.siph_wl_start, self.siph_wl_stop, int(self.siph_n_points))
 
         # must return a list of all wavelengths at which the spectrum is measured
@@ -142,7 +142,7 @@ class Device(EmptyDevice):
 
     def get_intensities(self) -> np.array:
         """Return the measured intensities."""
-        if self.port_string == "Spectrometer4":
+        if self.port_string == "Silicon Photonics":
             wavelengths = self.get_wavelengths()
             sigma = self.siph_peak_fwhm_nm / (2.0 * math.sqrt(2.0 * math.log(2.0)))
             gauss = np.exp(-((wavelengths - self.siph_peak_wl) ** 2) / (2.0 * sigma ** 2))
@@ -152,7 +152,7 @@ class Device(EmptyDevice):
             return np.array(transmission_db)
 
         intensities = np.array([])
-        if self.port_string == "Spectrometer2":
+        if self.port_string in ("Raman Spectrum", "No Noise"):
             # Simulate Raman spectrum
             wavelengths = self.get_wavelengths()
 
@@ -162,7 +162,7 @@ class Device(EmptyDevice):
 
             intensities = peak_amplitude * self.calculate_gaussian_peak(peak_position, peak_width)
             intensities += self.calculate_background_spectrum()
-        elif self.port_string == "Spectrometer3":
+        elif self.port_string == "Background Spectrum":
             # Simulate background spectrum
             intensities = self.calculate_background_spectrum()
         else:
@@ -175,7 +175,8 @@ class Device(EmptyDevice):
         intensities = intensities * self.integration_time
 
         # Add noise
-        intensities += self.calculate_noise()
+        if not self.port_string == "No Noise":
+            intensities += self.calculate_noise()
 
         return np.array(intensities)
 
