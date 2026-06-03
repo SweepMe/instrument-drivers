@@ -27,9 +27,9 @@
 
 # SweepMe! driver
 # * Module: NetworkAnalyzer
-# * Instrument: Belektronig BSG0302
+# * Instrument: BELEKTRONIG BSG0302
 
-"""SweepMe! network-analyzer driver for Belektronig BSG0302 S-parameter scans."""
+"""SweepMe! network-analyzer driver for BELEKTRONIG BSG0302 S-parameter scans."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ VALID_SPARAMETERS = ("S11", "S12", "S21", "S22")
 
 
 class Device(EmptyDevice):
-    """Driver for Belektronig BSG0302 reflection/transmission S-parameter scans."""
+    """Driver for BELEKTRONIG BSG0302 reflection/transmission S-parameter scans."""
 
     def __init__(self) -> None:
         """Initialize the device class and the communication parameters."""

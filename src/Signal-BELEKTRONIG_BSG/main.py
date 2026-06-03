@@ -27,9 +27,9 @@
 
 # SweepMe! driver
 # * Module: Signal
-# * Instrument: Belektronig BSG0302
+# * Instrument: BELEKTRONIG BSG0302
 
-"""SweepMe! signal-generator driver for the Belektronig BSG0302 RF source."""
+"""SweepMe! signal-generator driver for the BELEKTRONIG BSG0302 RF source."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ PHASE_MAX_DEG = 180.0
 
 
 class Device(EmptyDevice):
-    """Driver for the Belektronig BSG0302 two-channel RF signal generator."""
+    """Driver for the BELEKTRONIG BSG0302 two-channel RF signal generator."""
 
     FREQUENCY_OUTPUT_MODE: ClassVar[dict[str, int]] = {
         "INPUT_POWER_METER": 0,
