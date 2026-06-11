@@ -143,7 +143,8 @@ class Device(EmptyDevice):
             # Deterministic linear ramp at RAMP_RATE K/s — clamped at the setpoint.
             # Round to 0.01 K so sub-step timing jitter does not change the readout.
             distance = self.set_temperature - self.temperature
-            max_step = Device.RAMP_RATE * time_elapsed
+            time_rounded = round(time_elapsed, 1)
+            max_step = Device.RAMP_RATE * time_rounded
             if abs(distance) <= max_step:
                 self.temperature = round(self.set_temperature, 2)
             else:
