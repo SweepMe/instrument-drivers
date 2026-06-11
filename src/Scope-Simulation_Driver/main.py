@@ -107,8 +107,8 @@ class Device(EmptyDevice):
 
         self.channel1 = parameter["Channel1"]
         if self.channel1:
-            self.channel1_range = float(parameter["Channel1_Range"])
-            self.channel1_offset = float(parameter["Channel1_Offset"])
+            self.channel1_range = parameter["Channel1_Range"]
+            self.channel1_offset = parameter["Channel1_Offset"]
 
             self.variables += [parameter["Channel1_Name"]]
             self.units += ["V"]
@@ -117,13 +117,23 @@ class Device(EmptyDevice):
 
         self.channel2 = parameter["Channel2"]
         if self.channel2:
-            self.channel2_range = float(parameter["Channel2_Range"])
-            self.channel2_offset = float(parameter["Channel2_Offset"])
+            self.channel2_range = parameter["Channel2_Range"]
+            self.channel2_offset = parameter["Channel2_Offset"]
 
             self.variables += [parameter["Channel2_Name"]]
             self.units += ["V"]
             self.plottype += [True]  # True to plot data
             self.savetype += [True]  # True to save data
+
+    def initialize(self) -> None:
+        """Convert GUI parameters to their destination formats."""
+        if self.channel1:
+            self.channel1_range = float(self.channel1_range)
+            self.channel1_offset = float(self.channel1_offset)
+
+        if self.channel2:
+            self.channel2_range = float(self.channel2_range)
+            self.channel2_offset = float(self.channel2_offset)
 
     def configure(self) -> None:
         """Configure the device."""
