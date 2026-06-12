@@ -56,10 +56,11 @@ class Device(EmptyDevice):
         # self.port_types = ["COM", "GPIB", "USB"]
 
         self.current_wafer: str = ""
-        self.current_die: str = ""
+        self.current_die: str = "0,0"
         self.current_die_x: int = 0
         self.current_die_y: int = 0
         self.current_subsite: str = ""
+        self.is_contacted: bool = False
 
     def find_ports(self) -> list[str]:
         """Find available ports and return them as a list of strings."""
@@ -128,6 +129,29 @@ class Device(EmptyDevice):
     def step_to_subsite(self, subsite: int | str) -> None:
         """Move to given subsite. It is called when the 'Step to subsite' action of the Subsite table is performed."""
         self.current_subsite = str(subsite)
+
+    def contact(self) -> None:
+        """Lower the chuck so the probes contact the wafer.
+
+        Implementing this function enables the 'Contact' button in the wafer-map panel.
+        """
+        print("Contacting wafer...")
+        self.is_contacted = True
+
+    def separate(self) -> None:
+        """Raise the chuck so the probes separate from the wafer.
+
+        Implementing this function enables the 'Separate' button in the wafer-map panel.
+        """
+        print("Separating wafer...")
+        self.is_contacted = False
+
+    def get_contact_state(self) -> bool:
+        """Return True if the probes are currently in contact with the wafer.
+
+        Implementing this function enables the contact-state indicator in the wafer-map panel.
+        """
+        return self.is_contacted
 
     # here functions start that are called by SweepMe! during a measurement
 

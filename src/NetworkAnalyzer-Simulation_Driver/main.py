@@ -61,6 +61,8 @@ class Device(EmptyDevice):
         self.terminals: list[int] = []
         self.s_parameter: str = ""
 
+        self.power: float = 0.0  # dbm
+
     def find_ports(self) -> list[str]:
         """This function is called whenever the user presses 'Find ports' button.
 
@@ -73,6 +75,7 @@ class Device(EmptyDevice):
         return {
             "Terminals": "1,2",
             "Sparameters": "",
+            "SourcePower": 0.0,
 
             # All frequencies in Hz
             "FrequencyStart": 1e9,
@@ -88,7 +91,8 @@ class Device(EmptyDevice):
         self.frequency_type = parameter["FrequencyStepPointsType"]
         self.f_steps_points = float(parameter["FrequencyStepPoints"])
 
-        self.terminals = list(map(int, parameter["Terminals"].strip(" ").replace(",,", ",").split(",")))
+        if parameter["Terminals"]:
+            self.terminals = list(map(int, parameter["Terminals"].strip(" ").replace(",,", ",").split(",")))
 
         # Reset return parameters
         self.variables = ["Frequency"]
@@ -110,6 +114,8 @@ class Device(EmptyDevice):
         self.plottype += [False] * (len(self.variables) - 1)
         self.savetype += [True] * (len(self.variables) - 1)
 
+        self.power = float(parameter.get("SourcePower", 0.0))
+
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         # simulate frequencies
@@ -121,15 +127,26 @@ class Device(EmptyDevice):
             frequencies = np.arange(1E9, 5E9, 1E8)
         results = [frequencies]
 
-        # S-parameter
-        simulated_parameter = self.simulate_s_parameter(len(frequencies))
-        for _var in self.variables[1:]:
+        # S-parameters simulation
+        for counter, _var in enumerate(self.variables[1:]):
+            simulated_parameter = self.simulate_s_parameter(len(frequencies), phase=counter)
             results.append(simulated_parameter)
 
         return results
 
-    def simulate_s_parameter(self, array_length: int) -> np.array:
+    def simulate_s_parameter(self, array_length: int, phase: float) -> np.array:
         """Simulate s parameter result of length array_length."""
-        phase = time.perf_counter() * self.frequency_end
-        return np.array((np.sin(np.arange(array_length) / 5 - phase)) ** 2 + (
+        power_scaling = 10 ** (self.power / 20)  # Convert dBm to linear scale
+        s_param = np.array((np.sin(np.arange(array_length) / 5 - phase)) ** 2 + (
             np.cos(np.arange(array_length) / 5)) ** 2 * 1j, dtype=complex)
+        return s_param * power_scaling
+
+
+    def find_calibrations(self, *args, **kwargs) -> list:
+        """Called by the SweepMe NetworkAnalyser module returns available calibrations on ZNL at default driectory."""
+        if args:
+            print(f"find_calibrations called with args: {args}")
+        if kwargs:
+            print(f"find_calibrations called with kwargs: {kwargs}")
+
+        return ["Calibration1", "Calibration2", "Calibration3"]

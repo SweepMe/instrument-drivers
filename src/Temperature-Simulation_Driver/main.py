@@ -40,6 +40,7 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
     """Device class to implement functionalities of a simulated temperature controller."""
     TIME_CONSTANT = 5.0
+    RAMP_RATE = 0.5  # K/s — deterministic ramp used in 'No Noise' mode
 
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters."""
@@ -53,6 +54,11 @@ class Device(EmptyDevice):
         self.savetype = [True]  # True to save data
 
         self.port_manager = False
+        self.sensor: str = "Realistic"  #
+        """
+        Realistic: exponential settle with TIME_CONSTANT plus measurement noise 
+        No Noise:  jump straight to the setpoint and skip the noise. fast and fully reproducible.
+        """
 
     @property
     def temperature(self) -> float:
@@ -102,12 +108,19 @@ class Device(EmptyDevice):
         return {
             "SweepMode": ["None", "Temperature"],
             "TemperatureUnit": ["°C"],
-            "Port": "0"
+            "Port": "0",
+            "Sensor": ["Realistic", "No Noise"],
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.port = parameter["Port"]
+        self.sensor = parameter.get("Sensor", "Realistic")
+
+    def initialize(self):
+        """In no noise mode, reset the temperature to 25°C."""
+        if self.sensor == "No Noise":
+            self.temperature = 25.0
 
     def poweroff(self) -> None:
         """Turn off the device."""
@@ -119,16 +132,34 @@ class Device(EmptyDevice):
         self.last_time = time.time()
 
     def measure(self) -> None:
-        """Calculate the current temperature based on the elapsed time and the time constant."""
-        if self.last_time and self.set_temperature and self.set_temperature != self.temperature:
-            new_time = time.time()
-            time_elapsed = new_time - self.last_time
+        """Advance the current temperature towards the setpoint based on elapsed wall-clock time."""
+        if not self.last_time or self.set_temperature is None or self.set_temperature == self.temperature:
+            return
+
+        new_time = time.time()
+        time_elapsed = new_time - self.last_time
+
+        if self.sensor == "No Noise":
+            # Deterministic linear ramp at RAMP_RATE K/s — clamped at the setpoint.
+            # Round to 0.01 K so sub-step timing jitter does not change the readout.
+            distance = self.set_temperature - self.temperature
+            time_rounded = round(time_elapsed, 1)
+            max_step = Device.RAMP_RATE * time_rounded
+            if abs(distance) <= max_step:
+                self.temperature = round(self.set_temperature, 2)
+            else:
+                self.temperature = round(self.temperature + math.copysign(max_step, distance), 2)
+        else:
+            # Exponential settle with TIME_CONSTANT.
             fraction = math.exp(-time_elapsed / Device.TIME_CONSTANT)
             self.temperature = fraction * self.temperature + (1 - fraction) * self.set_temperature
-            self.last_time = new_time
+
+        self.last_time = new_time
 
     def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
+        if self.sensor == "No Noise":
+            return round(self.temperature, 2)
         # add some noise to the temperature
         return self.temperature + 0.005 * (2 * random() - 1)
 

@@ -64,7 +64,7 @@ class Device(EmptyDevice):
             "SweepMode": ["Voltage in V"],
             "Compliance": 1e-3,
             "Average": 1,
-            "Speed": ["Fast", "Medium", "Slow"],
+            "Speed": ["Fast", "Medium", "Slow", "No Noise"],
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -123,7 +123,8 @@ class Device(EmptyDevice):
         if applied_voltage == 0:
             return 0
 
-        current = 1e-15 * (np.exp(applied_voltage / 1.4 / 0.025) - 1) + applied_voltage / 1e9 + random.random() / 1e10
+        noise = 0 if self.speed == "No Noise" else random.random() / 1e10
+        current = 1e-15 * (np.exp(applied_voltage / 1.4 / 0.025) - 1) + applied_voltage / 1e9 + noise
 
         if current > self.protection:
             current = self.protection
@@ -134,5 +135,7 @@ class Device(EmptyDevice):
 
     def simulate_voltage(self, applied_voltage: float) -> float:
         """Simulate the measured voltage including some noise depending on the measurement speed."""
+        if self.speed not in self.speedvalues:
+            return applied_voltage
         return applied_voltage + random.random() * 1e-2 / self.speedvalues[self.speed]
 
