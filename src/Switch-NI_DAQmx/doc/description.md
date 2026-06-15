@@ -1,7 +1,7 @@
 # SweepMe! instrument driver: Switch-NI_DAQ
 
 This driver integrates **National Instruments DAQ (NI-DAQmx)** analog output channels into the SweepMe! **Switch** module.  
-It allows you to set and sweep voltages on NI DAQ analog output (AO) channels..
+It allows you to set and sweep voltages on NI DAQ analog output (AO) channels.
 
 ---
 
