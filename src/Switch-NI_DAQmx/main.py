@@ -112,11 +112,10 @@ class Device(EmptyDevice):
         )
 
     def unconfigure(self):
-        # changing voltage back to zero
-        # could be done based on a GUI parameter
-        self.task_ao.write(0.0)
-
         if self.task_ao:
+            # changing voltage back to zero
+            # could be done based on a GUI parameter
+            self.task_ao.write(0.0)
             self.task_ao.close()
             self.task_ao = None
 
