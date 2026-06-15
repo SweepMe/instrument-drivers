@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,8 +28,7 @@
 
 # SweepMe! instrument driver
 # * Module: Switch
-# * Instrument: NI DAQ
-
+# * Instrument: NI DAQmx
 
 
 import nidaqmx
@@ -58,7 +57,6 @@ class Device(EmptyDevice):
         # Get all connected devices
         try:
             devices = system.devices
-            print(devices)
         except nidaqmx.errors.DaqNotFoundError:
             # TODO: add message box to inform user
             raise
@@ -89,7 +87,6 @@ class Device(EmptyDevice):
         # Get all connected devices
         try:
             devices = system.devices
-            print(devices)
         except nidaqmx.errors.DaqNotFoundError:
             raise
 
