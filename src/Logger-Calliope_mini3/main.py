@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2024-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -45,6 +45,7 @@ class Device(EmptyDevice):
 <li>Acceleration (x,y,z)</li>
 <li>Magnetic field (x, y, z)</li>
 <li>Rotation (pitch, roll)</li>
+<li>Button A and B</li>
 </ul>
 <p>&nbsp;</p>
 <p><strong>Usage:</strong></p>
@@ -74,9 +75,11 @@ class Device(EmptyDevice):
                           "Magnetic force x",
                           "Magnetic force y",
                           "Magnetic force z",
+                          "Button A",
+                          "Button B",
                           ]
 
-        self.units = ["", "", "°C", "mg", "mg", "mg", "°", "°", "µT", "µT", "µT"]
+        self.units = ["", "", "°C", "mg", "mg", "mg", "°", "°", "µT", "µT", "µT", "", ""]
         
         self.port_manager = True
         self.port_types = ["COM"]
@@ -91,11 +94,16 @@ class Device(EmptyDevice):
 
     def call(self):
         answer = self.port.read()
+        
+        results = answer.split(",")
 
         try:
-            light, sound, t, acc_x, acc_y, acc_z, rot_p, rot_r, mag_x, mag_y, mag_z = map(float, answer.split(","))
+            light, sound, t, acc_x, acc_y, acc_z, rot_p, rot_r, mag_x, mag_y, mag_z = map(float, results[0:-2])
         except ValueError:
             msg = ("Unable to interprete values. Please make sure Calliope Mini is disconnected in online editor.")
             raise ValueError(msg)
-        
-        return light, sound, t, acc_x, acc_y, acc_z, rot_p, rot_r, mag_x, mag_y, mag_z 
+            
+        button_a = results[-2] == "true"
+        button_b = results[-1] == "true"
+                    
+        return light, sound, t, acc_x, acc_y, acc_z, rot_p, rot_r, mag_x, mag_y, mag_z, button_a, button_b

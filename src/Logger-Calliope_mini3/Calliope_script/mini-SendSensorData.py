@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2024,2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -46,7 +46,11 @@ def send_data():
     serial.write_string(str(input.magnetic_force(Dimension.Y)))
     serial.write_string(delimiter)
     serial.write_string(str(input.magnetic_force(Dimension.Z)))
-
+    serial.write_string(delimiter)
+    serial.write_string(str(input.button_is_pressed(Button.A)))
+    serial.write_string(delimiter)
+    serial.write_string(str(input.button_is_pressed(Button.B)))
+      
     serial.write_string("\n")
 
 def on_data_received():
