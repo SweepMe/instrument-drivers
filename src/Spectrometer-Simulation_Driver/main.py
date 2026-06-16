@@ -42,6 +42,22 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
     """Device class to implement functionalities of a simulated spectrometer."""
+
+    description = """
+        <h3>Simulated Spectrometer</h3>
+        <p>The <b>Port</b> field is reused to select which spectrum the simulation returns:</p>
+        <ul>
+        <li><b>Test spectrum.txt</b>: replays the bundled <i>test_spectrum.txt</i> file.</li>
+        <li><b>Raman Spectrum</b>: a Gaussian Raman peak on a simulated background.</li>
+        <li><b>Background Spectrum</b>: the background only, without the Raman peak.</li>
+        <li><b>Silicon Photonics</b>: a Gaussian transmission dip in dB that drifts during the run.</li>
+        <li><b>No Noise</b>: the Raman spectrum without random noise for reproducible tests.</li>
+        </ul>
+        """
+
+    # Initial silicon-photonics peak wavelength in nm; reset in initialize() so it does not drift across runs.
+    SIPH_PEAK_WL_START: float = 1530.0
+
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters."""
         super().__init__()
@@ -70,7 +86,7 @@ class Device(EmptyDevice):
         self.siph_wl_start: float = 1480.0
         self.siph_wl_stop: float = 1580.0
         self.siph_n_points: int = 501
-        self.siph_peak_wl: float = 1530.0
+        self.siph_peak_wl: float = self.SIPH_PEAK_WL_START
         self.siph_peak_height_db: float = -3.0
         self.siph_peak_floor_db: float = -25.0
         self.siph_peak_fwhm_nm: float = 4.0
@@ -98,6 +114,10 @@ class Device(EmptyDevice):
         self.trigger_mode = parameter["Trigger"]
         self.trigger_delay = float(parameter["TriggerDelay"])
         self.port_string = parameter["Port"]
+
+    def initialize(self) -> None:
+        """Reset the silicon-photonics peak so it does not drift out of range across runs."""
+        self.siph_peak_wl = self.SIPH_PEAK_WL_START
 
     def measure(self) -> None:
         """Trigger acquisition of new data."""

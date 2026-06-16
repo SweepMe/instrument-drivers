@@ -117,8 +117,10 @@ class Device(EmptyDevice):
         self.port = parameter["Port"]
         self.sensor = parameter.get("Sensor", "Realistic")
 
-    def initialize(self):
-        """In no noise mode, reset the temperature to 25°C."""
+    def initialize(self) -> None:
+        """Reset the ramp timer (and, in no-noise mode, the temperature) at the start of each run."""
+        # Drop any stale timestamp so the first measure() does not see a huge elapsed time.
+        self.last_time = None
         if self.sensor == "No Noise":
             self.temperature = 25.0
 
@@ -141,10 +143,9 @@ class Device(EmptyDevice):
 
         if self.sensor == "No Noise":
             # Deterministic linear ramp at RAMP_RATE K/s — clamped at the setpoint.
-            # Round to 0.01 K so sub-step timing jitter does not change the readout.
+            # Use the raw elapsed time; rounding it could give a 0 K step and stall the ramp.
             distance = self.set_temperature - self.temperature
-            time_rounded = round(time_elapsed, 1)
-            max_step = Device.RAMP_RATE * time_rounded
+            max_step = Device.RAMP_RATE * time_elapsed
             if abs(distance) <= max_step:
                 self.temperature = round(self.set_temperature, 2)
             else:

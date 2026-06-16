@@ -85,7 +85,8 @@ class Device(EmptyDevice):
             self.variables.append(f"Current CH{channel}")
             self.units.append("A")
 
-        self.noise_level = float(parameter["Noise level in %"])
+        # GUI value is a percentage; divide by 100 to use it as a fractional multiplier.
+        self.noise_level = float(parameter["Noise level in %"]) / 100
 
         # Update plottype and savetype
         self.plottype = []

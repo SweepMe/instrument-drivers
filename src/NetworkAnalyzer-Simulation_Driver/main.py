@@ -40,6 +40,9 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
     """Device class to implement a simulated network analyzer."""
 
+    # Complex S-parameter noise standard deviation at 0 dBm source power.
+    REFERENCE_NOISE_STD: float = 0.01
+
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters."""
         super().__init__()
@@ -61,7 +64,8 @@ class Device(EmptyDevice):
         self.terminals: list[int] = []
         self.s_parameter: str = ""
 
-        self.power: float = 0.0  # dbm
+        self.power: float = 0.0  # dBm
+        self.no_noise: bool = False
 
     def find_ports(self) -> list[str]:
         """This function is called whenever the user presses 'Find ports' button.
@@ -75,7 +79,7 @@ class Device(EmptyDevice):
         return {
             "Terminals": "1,2",
             "Sparameters": "",
-            "SourcePower": 0.0,
+            "SourcePower": ["0", "10", "20", "-10", "-20", "No Noise"],
 
             # All frequencies in Hz
             "FrequencyStart": 1e9,
@@ -91,8 +95,8 @@ class Device(EmptyDevice):
         self.frequency_type = parameter["FrequencyStepPointsType"]
         self.f_steps_points = float(parameter["FrequencyStepPoints"])
 
-        if parameter["Terminals"]:
-            self.terminals = list(map(int, parameter["Terminals"].strip(" ").replace(",,", ",").split(",")))
+        # Strip spaces and drop empty tokens so blank, whitespace-only, or trailing-comma input is handled.
+        self.terminals = [int(t) for t in parameter["Terminals"].replace(" ", "").split(",") if t]
 
         # Reset return parameters
         self.variables = ["Frequency"]
@@ -114,7 +118,10 @@ class Device(EmptyDevice):
         self.plottype += [False] * (len(self.variables) - 1)
         self.savetype += [True] * (len(self.variables) - 1)
 
-        self.power = float(parameter.get("SourcePower", 0.0))
+        # SourcePower is a dropdown of dBm levels plus "No Noise"; the power sets the SNR/noise floor.
+        source_power = parameter.get("SourcePower", "0")
+        self.no_noise = source_power == "No Noise"
+        self.power = 0.0 if self.no_noise else float(source_power)
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
@@ -134,12 +141,25 @@ class Device(EmptyDevice):
 
         return results
 
-    def simulate_s_parameter(self, array_length: int, phase: float) -> np.array:
-        """Simulate s parameter result of length array_length."""
-        power_scaling = 10 ** (self.power / 20)  # Convert dBm to linear scale
-        s_param = np.array((np.sin(np.arange(array_length) / 5 - phase)) ** 2 + (
-            np.cos(np.arange(array_length) / 5)) ** 2 * 1j, dtype=complex)
-        return s_param * power_scaling
+    def simulate_s_parameter(self, array_length: int, phase: float) -> np.ndarray:
+        """Simulate an S-parameter trace of length *array_length*.
+
+        S-parameters are dimensionless wave ratios and do not scale with the source power.
+        A higher source power instead improves the SNR, so the additive measurement noise
+        floor shrinks as the power increases. In "No Noise" mode the clean trace is returned
+        for reproducible tests.
+        """
+        indices = np.arange(array_length)
+        s_param = np.sin(indices / 5 - phase) ** 2 + 1j * np.cos(indices / 5) ** 2
+
+        if self.no_noise:
+            return s_param
+
+        # Source power sets the noise floor: higher power -> higher SNR -> smaller noise.
+        noise_std = self.REFERENCE_NOISE_STD * 10 ** (-self.power / 20)
+        rng = np.random.default_rng()
+        noise = rng.normal(0.0, noise_std, array_length) + 1j * rng.normal(0.0, noise_std, array_length)
+        return s_param + noise
 
 
     def find_calibrations(self, *args, **kwargs) -> list:

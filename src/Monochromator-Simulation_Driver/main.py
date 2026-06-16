@@ -105,6 +105,9 @@ class Device(EmptyDevice):
 
     def _to_wavelength_nm(self, value: float) -> float:
         """Convert the current sweep value to wavelength in nm regardless of sweep mode."""
+        if value <= 0:
+            msg = f"Sweep value must be positive, got {value}."
+            raise ValueError(msg)
         if self.sweep_mode in ("Wavelength in eV", "Energy in eV"):
             return 1239.84 / value
         if self.sweep_mode == "Wavelength in cm-1":

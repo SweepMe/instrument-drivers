@@ -38,7 +38,11 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
     description = """
         <h3>Simulated Spectrum Analyzer</h3>
-        <p>---Modify this description text later to guide your users---</p>
+        <p>The <b>Port</b> field is reused to select the simulation mode:</p>
+        <ul>
+        <li><b>Port 1: Simulated Spectrum</b>: three Gaussian peaks with additive random noise.</li>
+        <li><b>Port 2: No Noise</b>: the same spectrum without noise for reproducible tests.</li>
+        </ul>
     """
 
     def __init__(self) -> None:

@@ -91,10 +91,16 @@ class Device(EmptyDevice):
     def apply(self) -> None:
         """Move each axis to the target value provided by the Robot module."""
         for axis in self.position:
-            if axis in self.sweepvalues:
-                value = self.sweepvalues[axis]
-                if value not in (None, "", "nan"):
-                    self.position[axis] = float(value)
+            if axis not in self.sweepvalues:
+                continue
+            value = self.sweepvalues[axis]
+            if value is None:
+                continue
+            # str() also catches a float nan, which would slip past the literal "nan" check.
+            text = str(value).strip()
+            if text.lower() in ("", "nan"):
+                continue
+            self.position[axis] = float(text)
 
     def call(self) -> list[float]:
         """Return the simulated current position of each axis."""
