@@ -1,2 +1,1 @@
-mido==1.3.0
-python-rtmidi==1.5.7
+pygame-ce==2.5.7
