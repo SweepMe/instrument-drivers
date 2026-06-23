@@ -1,0 +1,28 @@
+Metadata-Version: 2.1
+Name: ethernetip
+Version: 1.1.2
+Summary: Basic EtherNet/IP scanner
+Home-page: https://codeberg.org/paperwork/python-ethernetip
+Author: Sebastian Block
+Author-email: sebastian.block@world-wi.de
+License: MIT
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Natural Language :: English
+Classifier: Programming Language :: Python :: 2.7
+Classifier: Programming Language :: Python :: 3.5
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+License-File: LICENSE
+Requires-Dist: dpkt
+
+python_ethernetip
+=================
+
+basic Ethernet/IP implementation for python 3
