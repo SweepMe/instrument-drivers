@@ -35,18 +35,16 @@ def is_compatible(driver_name: str) -> bool:
         f"{python_version}-{bitness}",
     }
     config = ConfigParser()
-    config.read(Path("src") / driver_name / "info.ini")
-    # get the architecture from the run section, and if it does not exist from the info section. This is
-    # the same order the server checks in uploaded drivers.
-    # If no architecture is found at all, use the default "any" (as a quoted string)
-    architecture_str = json.loads(
-        config.get("run", "architecture", fallback=config.get("info", "architecture", fallback='"any"')),
-    )
+    config_ini = Path("src") / driver_name / "config.ini"
+    architecture_str = "any"
+    if config_ini.is_file():
+        config.read(config_ini)
+        architecture_str = json.loads(
+            config.get("config", "architecture", fallback='"any"'),
+        )
     architecture = {a.strip() for a in architecture_str.split(",")}
     # compatibility is given if the two sets have non-empty intersection
-    if architecture & compatibility_flags:
-        return True
-    return False
+    return bool(architecture & compatibility_flags)
 
 
 # Driver name and reason for skipping
