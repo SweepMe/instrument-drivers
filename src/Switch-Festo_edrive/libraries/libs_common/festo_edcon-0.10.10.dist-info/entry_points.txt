@@ -1,0 +1,3 @@
+[console_scripts]
+festo-edcon = edcon.cli.cli:main
+

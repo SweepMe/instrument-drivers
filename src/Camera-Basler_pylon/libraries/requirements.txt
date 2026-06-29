@@ -1,1 +1,1 @@
-pypylon==3.0.1
+pypylon==26.5.0
