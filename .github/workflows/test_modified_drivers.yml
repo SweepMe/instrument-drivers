@@ -10,14 +10,24 @@ permissions:
 jobs:
   test_modified_drivers:
     name: Test Modified Drivers
-    runs-on: windows-2022
+    runs-on: windows-2025
+
+    strategy:
+      matrix:
+        include:
+          - python-version: "3.9"
+            requirements-file: ".\\.github\\requirements_39.txt"
+          - python-version: "3.14"
+            requirements-file: ".\\requirements.txt"
+
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Python 3.9
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v3
         with:
-          python-version: "3.9"
+          python-version: ${{ matrix.python-version }}
+          architecture: "x64"
       - name: Test Modified Drivers
         shell: pwsh
         run: |
-          .\.github\Test-ModifiedDrivers.ps1 -TargetBranch ${{ github.base_ref }}
+          .\.github\Test-ModifiedDrivers.ps1 -TargetBranch ${{ github.base_ref }} -RequirementsFile "${{ matrix.requirements-file }}"

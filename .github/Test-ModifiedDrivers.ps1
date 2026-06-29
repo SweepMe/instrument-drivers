@@ -1,6 +1,9 @@
 Param(
     [Parameter(Mandatory)]
-    [string]$TargetBranch
+    [string]$TargetBranch,
+
+    [Parameter(Mandatory=$false)]
+    [string]$RequirementsFile = ".\requirements.txt"
 )
 
 git fetch origin $TargetBranch
@@ -32,9 +35,9 @@ function Import-Driver {
 if ($ChangedDrivers) {
     Write-Host "Following drivers were modified:"
     Write-Host $ChangedDrivers -Separator "`n"
-    Write-Host "Installing python requirements"
+    Write-Host "Installing python requirements from $RequirementsFile"
     python -m pip install --upgrade pip
-    pip install --upgrade -r .\requirements.txt
+    pip install --upgrade -r $RequirementsFile
     $ChangedDrivers | % { Import-Driver -DriverName $_ }
 }
 else {
