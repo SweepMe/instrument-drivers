@@ -125,8 +125,13 @@ class Device(EmptyDevice):
             self.plottype += [True]  # True to plot data
             self.savetype += [True]  # True to save data
 
-    def initialize(self) -> None:
-        """Convert GUI parameters to their destination formats."""
+    def configure(self) -> None:
+        """Configure the device and convert GUI parameters to their destination formats.
+
+        The conversions live here rather than in initialize() so they are redone on
+        every reconfigure() (e.g. a live Control Widget change), where
+        get_GUIparameter() has just re-read these values as raw strings.
+        """
         if self.channel1:
             self.channel1_range = float(self.channel1_range)
             self.channel1_offset = float(self.channel1_offset)
@@ -135,8 +140,6 @@ class Device(EmptyDevice):
             self.channel2_range = float(self.channel2_range)
             self.channel2_offset = float(self.channel2_offset)
 
-    def configure(self) -> None:
-        """Configure the device."""
         # If the Signal-Simulation driver is used in the sequencer, use its signal
         self.use_simulated_signal = "Simulated signal" in self.device_communication
 
