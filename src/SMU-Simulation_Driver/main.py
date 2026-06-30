@@ -157,7 +157,11 @@ class Device(EmptyDevice):
         self.average = proof_average(self.average)
         self.saturation_current = float(self.saturation_current)
         self.ideality_factor = float(self.ideality_factor)
+        if self.ideality_factor <= 0:
+            self.stop_Measurement("Ideality factor must be greater than 0.")
         self.temperature = float(self.temperature)
+        if self.temperature <= 0:
+            self.stop_Measurement("Temperature must be greater than 0 K.")
         self.v_t = self.k * self.temperature / self.q
         self.photocurrent = float(self.photocurrent)
         self.noise = float(self.noise)
