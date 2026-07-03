@@ -139,18 +139,29 @@ class Device(EmptyDevice):
         self.leakage = parameter.get("Linear Leakage factor", 1.0)
         self.hysteresis = parameter.get("Hysteresis time constant", 0.0)
 
-    def initialize(self) -> None:
-        """Initialize the device. This function is called only once at the start of the measurement."""
+    def configure(self) -> None:
+        """Validate and type-convert the GUI parameters.
+
+        This runs at the start of a measurement and again on every reconfigure()
+        (e.g. when a Control Widget changes a value during a running loop). Doing
+        the conversion here - rather than in initialize(), which is called only
+        once - ensures the values stay correctly typed after each live update,
+        when get_GUIparameter() has re-read them as raw strings.
+        """
+        self.protection = float(self.protection)
         max_compliance = 1.0
-        if float(self.protection) > max_compliance:
+        if self.protection > max_compliance:
             self.stop_Measurement(
                 f"Compliance {self.protection} is higher than the maximum compliance of {max_compliance}."
             )
         self.average = proof_average(self.average)
-        self.protection = float(self.protection)
         self.saturation_current = float(self.saturation_current)
         self.ideality_factor = float(self.ideality_factor)
+        if self.ideality_factor <= 0:
+            self.stop_Measurement("Ideality factor must be greater than 0.")
         self.temperature = float(self.temperature)
+        if self.temperature <= 0:
+            self.stop_Measurement("Temperature must be greater than 0 K.")
         self.v_t = self.k * self.temperature / self.q
         self.photocurrent = float(self.photocurrent)
         self.noise = float(self.noise)
