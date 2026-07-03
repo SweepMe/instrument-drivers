@@ -275,6 +275,15 @@ class Device(EmptyDevice):
         # Bias voltage must be set after filter settings or a warning will appear on the touch panel.
         self.set_bias(self.use_bias, self.bias_voltage)
 
+    def reconfigure(self, parameters=None, keys=None):
+        """Called whenever an element higher up in the sequencer varies its sweep value, i.e. a parameter in the GUI"""
+        if parameters:
+            self.get_GUIparameter(parameters)
+        if self.sweep_mode != "Sensitivity in A":
+            self.set_range()
+        if self.sweep_mode != "Time constant in s":
+            self.set_timeconstant()
+
     """ the following functions are called for each measurement point """
 
     def apply(self):
@@ -492,7 +501,7 @@ class Device(EmptyDevice):
         if self.lia_lowpass:
             if not (10000 >= self.lia_tc >= 0.0001):
                 raise ValueError(
-                    "Lock-In time constant set to {self.lia_tc}. Must be >= 0.0001 s and <= 10,000 s."
+                    f"Lock-In time constant set to {self.lia_tc}. Must be >= 0.0001 s and <= 10,000 s."
                 )
             self.port.write(f"SENSe{self.slot}:LIA:TIMEconstant {self.lia_tc}")
             self.port.write(f"SENSe{self.slot}:LIA:ROLLoff R{self.lia_rolloff}")
