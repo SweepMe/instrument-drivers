@@ -76,7 +76,6 @@ class Device(EmptyDevice):
             # carry no terminator. Responses still include \n over both transports.
             "TCPIP_EOLwrite": "",
             "TCPIP_EOLread": "\n",
-            "TCPIP_timeout": 5,
         }
 
         # Source mode command mapping
@@ -132,13 +131,21 @@ class Device(EmptyDevice):
         self._sweep_currents: np.ndarray = np.array([])
         self._sweep_timestamps: np.ndarray = np.array([])
 
-        # After OUTP ON the source sits at 0; the first apply produces a large
-        # step that the firmware autoranger needs several MEAS calls to
-        # converge across (it advances at most one current range per call) and
-        # that the output stage needs time to slew through. Without an explicit
-        # settle pass on the first apply, the first 1-2 sweep points report
-        # clipped/transient values. Reset in poweron() so every run is fresh.
+        # The firmware autoranger converges across a large setpoint step over
+        # several MEAS calls (down-steps are debounced to one range per call),
+        # and the output stage needs time to slew. Without an explicit settle
+        # pass, the points right after a large step report the wrong-range
+        # zero floor (~1e-5 A on the 180 mA range) or clipped transients.
+        #
+        # Two triggers cover all observed cases:
+        #  - _needs_first_apply_settle: armed in configure()/poweron() for the
+        #    first apply of a pass.
+        #  - a large jump between consecutive setpoints: SweepMe! repeats
+        #    sweeps with NO lifecycle call in between (apply(2.5) is followed
+        #    directly by apply(0.0)), so the wrap can only be detected from
+        #    the setpoint sequence itself.
         self._needs_first_apply_settle: bool = True
+        self._last_applied_value: float | None = None
 
     # --- GUI interaction -------------------------------------------------------
 
@@ -502,6 +509,11 @@ class Device(EmptyDevice):
 
         For list sweep mode, uploads the hardware sweep configuration to the device.
         """
+        # Re-arm the settle pass for the first apply of this pass, and drop
+        # the setpoint history so the large-step detector starts fresh.
+        self._needs_first_apply_settle = True
+        self._last_applied_value = None
+
         if self.use_list_sweep:
             self.set_sweep_parameters(
                 self.channel,
@@ -515,6 +527,7 @@ class Device(EmptyDevice):
         """Enable the output of the selected channel."""
         self.enable_output(self.channel)
         self._needs_first_apply_settle = True
+        self._last_applied_value = None
 
     def poweroff(self) -> None:
         """Disable the output of the selected channel."""
@@ -529,35 +542,87 @@ class Device(EmptyDevice):
         if self.use_list_sweep:
             return
 
-        if self.source == "Voltage in V":
-            self.set_voltage(self.channel, self.value)
-        else:
-            self.set_current(self.channel, self.value)
+        # A setpoint jump big enough to plausibly cross multiple current
+        # ranges (e.g. the 2.5 V -> 0 V wrap when SweepMe! repeats a sweep
+        # without any lifecycle call, or a +2.5 V -> -2.5 V polarity flip)
+        # needs the same settle pass as the first apply of a run. Normal
+        # sweep steps stay well below this threshold, so mid-sweep timing is
+        # unaffected. In current mode the setpoint never steps this far
+        # (ranges end at 180 mA) and FIMV sets its range from the setpoint
+        # anyway, so the detector is effectively voltage-mode only.
+        LARGE_SETPOINT_STEP = 0.5
 
-        if self._needs_first_apply_settle:
+        value = float(self.value)
+        large_step = (
+            self._last_applied_value is not None
+            and abs(value - self._last_applied_value) >= LARGE_SETPOINT_STEP
+        )
+
+        if self.source == "Voltage in V":
+            self.set_voltage(self.channel, value)
+        else:
+            self.set_current(self.channel, value)
+
+        if self._needs_first_apply_settle or large_step:
             self._settle_after_initial_step()
             self._needs_first_apply_settle = False
 
-    def _settle_after_initial_step(self) -> None:
-        """Absorb the initial step transient on the first apply of a run.
+        self._last_applied_value = value
 
-        The firmware autoranger advances by at most one current range per MEAS
-        call, so a jump from idle into a range several steps away returns
-        clipped data until enough discard reads have walked it to the correct
-        range. The reads also give the output stage time to slew. Sized for
-        the worst case of crossing the full 1 uA -> 180 mA span.
+    def _settle_after_initial_step(self) -> None:
+        """Absorb the source/autorange transient after a large setpoint step.
+
+        The firmware autoranger steps down at most one current range per
+        measurement call and (as of FW 1.4.6) debounces each down-step over
+        several consecutive low readings. After a large downward step - e.g.
+        a repetition starting at 0 V right after the previous sweep ended at
+        high current - the first readings are taken on a too-coarse range and
+        report that range's zero-current floor (~1e-5 A on the 180 mA range)
+        instead of the true current.
+
+        Discard readings until the autoranger has converged. The reading
+        plateaus for a few calls while each down-step debounces, so two
+        similar consecutive reads do NOT mean converged; convergence is "no
+        further drop over the last STABLE_WINDOW reads". Readings below
+        CONVERGED_FLOOR_A count as stable outright: noise at the bottom
+        ranges spans several decades (5e-12..1e-9 A observed), so the
+        relative-improvement test alone would keep "improving" forever
+        there. The floor sits between the range-2 zero offset (~2e-8 A) and
+        the range-1 noise (~5e-10 A), so it can only trigger once the
+        autoranger has reached the bottom ranges, where the reading is
+        honest. Worst case (180 mA range walking down to 1 uA with a
+        debounce of 3) is ~12 walk-down reads plus the confirmation window;
+        readings already on the correct range exit after STABLE_WINDOW + 1
+        reads.
         """
         SETTLE_DELAY_S = 0.1
-        WARMUP_READS = 2
+        MAX_WARMUP_READS = 18
+        STABLE_WINDOW = 4  # must exceed the firmware range-down debounce (3)
+        IMPROVEMENT_FACTOR = 2.0  # drop by more than this = still converging
+        CONVERGED_FLOOR_A = 5e-9  # below this the bottom ranges are reached
 
         time.sleep(SETTLE_DELAY_S)
-        for _ in range(WARMUP_READS):
+
+        lowest = float("inf")
+        stable_reads = 0
+        for _ in range(MAX_WARMUP_READS):
             if self.is_run_stopped():
                 return
             try:
-                self.get_voltage_and_current(self.channel)
+                _, current = self.get_voltage_and_current(self.channel)
             except Exception:
                 return
+
+            magnitude = abs(current)
+            if magnitude >= CONVERGED_FLOOR_A and magnitude < lowest / IMPROVEMENT_FACTOR:
+                # Reading dropped well below anything seen so far: the
+                # autoranger is still walking down through range floors.
+                lowest = magnitude
+                stable_reads = 0
+            else:
+                stable_reads += 1
+                if stable_reads >= STABLE_WINDOW:
+                    return
 
     def measure(self) -> None:
         """Trigger a measurement or execute a hardware sweep.
@@ -568,12 +633,12 @@ class Device(EmptyDevice):
         if self.use_list_sweep:
             # Prime the source and the firmware autoranger before EXECUTE.
             # The onboard sweep starts measuring at point 0 immediately, with
-            # no margin for the autoranger to walk up from idle (it advances
-            # by at most one current range per MEAS). Manually setting the
-            # start voltage and burning a few discard reads gets both the
-            # output and the autoranger to the correct state, so point 0
-            # captures clean data instead of the transient/clipped values
-            # seen otherwise.
+            # no margin for the autoranger to converge (it moves at most one
+            # current range per measurement, and down-steps are debounced).
+            # Manually setting the start voltage and discarding reads until
+            # the reading stabilizes gets both the output and the autoranger
+            # to the correct state, so point 0 captures clean data instead of
+            # the transient/clipped/wrong-range-floor values seen otherwise.
             self.set_voltage(self.channel, self.listsweep_start)
             self._settle_after_initial_step()
 
