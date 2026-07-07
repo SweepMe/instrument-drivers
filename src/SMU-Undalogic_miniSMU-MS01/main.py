@@ -441,10 +441,11 @@ class Device(EmptyDevice):
     # --- Standard semantic functions -------------------------------------------
 
     def initialize(self) -> None:
-        """Configure the miniSMU for the selected operating mode.
+        """Validate settings and set up the operating mode once per run.
 
-        Sets the source mode (FVMI/FIMV), voltage range, current range,
-        oversampling, compliance limits, and optionally enables 4-wire mode.
+        Sets the source mode (FVMI/FIMV) and optionally enables 4-wire mode.
+        Settings that the user can change during a running sequence (ranges,
+        oversampling, compliance) are applied in configure() instead.
         """
         # Validate 4-wire mode constraints
         if self.four_wire and self.channel != 1:
@@ -470,23 +471,6 @@ class Device(EmptyDevice):
         # Set source mode
         self.set_source_mode(self.channel, self.source_modes[self.source])
 
-        # Configure voltage range
-        self.set_voltage_range_cmd(self.channel, self.voltage_ranges[self.voltage_range])
-
-        # Configure current range
-        range_idx = self.current_ranges[self.current_range]
-        if range_idx == -1:
-            self._send_command(f"CH{self.channel}:AUTORANGE:ENA")
-        else:
-            self._send_command(f"CH{self.channel}:AUTORANGE:DIS")
-            self.set_current_range_cmd(self.channel, range_idx)
-
-        # Set oversampling ratio
-        self.set_oversampling(self.channel, self.oversampling)
-
-        # Set compliance / protection limits
-        self.set_compliance(self.channel, self.compliance, self.source)
-
         # Enable 4-wire Kelvin mode if requested
         if self.four_wire:
             response = self._send_command("SYST:4WIR ENA")
@@ -505,14 +489,35 @@ class Device(EmptyDevice):
         self._send_command(f"CH{self.channel}:AUTORANGE:ENA")
 
     def configure(self) -> None:
-        """Configure sweep parameters for the current measurement.
+        """Apply the measurement settings for the current pass.
 
-        For list sweep mode, uploads the hardware sweep configuration to the device.
+        Ranges, oversampling, and compliance live here (not in initialize)
+        so SweepMe! re-applies them whenever they change during a running
+        sequence, e.g. a compliance limit driven by a GUI widget via the
+        parameter syntax. For list sweep mode, additionally uploads the
+        hardware sweep configuration to the device.
         """
         # Re-arm the settle pass for the first apply of this pass, and drop
         # the setpoint history so the large-step detector starts fresh.
         self._needs_first_apply_settle = True
         self._last_applied_value = None
+
+        # Configure voltage range
+        self.set_voltage_range_cmd(self.channel, self.voltage_ranges[self.voltage_range])
+
+        # Configure current range
+        range_idx = self.current_ranges[self.current_range]
+        if range_idx == -1:
+            self._send_command(f"CH{self.channel}:AUTORANGE:ENA")
+        else:
+            self._send_command(f"CH{self.channel}:AUTORANGE:DIS")
+            self.set_current_range_cmd(self.channel, range_idx)
+
+        # Set oversampling ratio
+        self.set_oversampling(self.channel, self.oversampling)
+
+        # Set compliance / protection limits
+        self.set_compliance(self.channel, self.compliance, self.source)
 
         if self.use_list_sweep:
             self.set_sweep_parameters(
