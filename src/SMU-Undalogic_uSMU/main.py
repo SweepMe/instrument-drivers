@@ -190,7 +190,16 @@ class Device(EmptyDevice):
         """
 
     def poweron(self) -> None:
-        """Enable the output."""
+        """Enable the output at a defined 0 V level.
+
+        CH1:ENA only raises the amplifier-enable pin; the DAC keeps whatever
+        voltage the previous run left behind, so that voltage would appear at
+        the terminals until the first sweep point is applied (visible as an
+        LED blink at the start of a run whose predecessor ended at forward
+        bias). Drive the DAC to 0 V before enabling so every run starts from
+        the same state regardless of what ran before.
+        """
+        self.set_voltage(0.0)
         self.enable_output()
 
     def poweroff(self) -> None:
