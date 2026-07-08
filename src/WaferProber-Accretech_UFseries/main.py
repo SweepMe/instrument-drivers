@@ -29,10 +29,10 @@
 # * Module: WaferProber
 # * Instrument: Accretech UF series
 
-import importlib
 from typing import List, Tuple
 import numpy as np
 
+from pysweepme import load_source
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug
 from pysweepme.FolderManager import addFolderToPATH
@@ -41,13 +41,11 @@ addFolderToPATH()
 
 # standard import
 # import accretech_uf
-# importlib.reload(accretech_uf)
 
-# direct import by path
-import imp
+# direct import by path via pysweepme's load_source helper
 import os
-accretech_uf = imp.load_source("accretech_uf", os.path.dirname(os.path.abspath(__file__)) +
-                               os.sep + r"libs\accretech_uf.py")
+_accretech_uf_path = os.path.dirname(os.path.abspath(__file__)) + os.sep + r"libs\accretech_uf.py"
+accretech_uf = load_source("accretech_uf", _accretech_uf_path)
 
 # this is needed as a fallback solutions as pysweepme.UserInterface is not available for all 1.5.5 update versions
 try:
