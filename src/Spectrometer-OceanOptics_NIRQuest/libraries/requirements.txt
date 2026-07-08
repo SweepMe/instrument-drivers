@@ -1,1 +1,1 @@
-seabreeze==2.4.0
+seabreeze==2.11.0

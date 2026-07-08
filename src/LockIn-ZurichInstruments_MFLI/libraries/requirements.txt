@@ -1,1 +1,1 @@
-zhinst==23.10.1
+zhinst-core==26.4.1.6
