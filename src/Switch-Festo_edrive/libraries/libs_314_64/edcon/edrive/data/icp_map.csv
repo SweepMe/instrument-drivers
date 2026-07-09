@@ -1,0 +1,835 @@
+icp_number;name;remedy
+1;The requested telegram is not supported;- Request Only the telegrams supported by the device (see documentation)
+10;Short circuit motor phases/braking resistor;- Check wiring and rectify short circuit
+11;Over-current monitoring;"- Check wiring of motor phases (short circuit?)
+- Check wiring of braking resistor (short circuit?)
+- Check commutation angle"
+12;I²t monitoring: motor warning limit;"- Reduce dynamics of movement orders
+- Check holding brake
+- Motor/mechanism blocked or stiff?"
+13;I²t monitoring: motor error limit;"- Motor/mechanics blocked or stiff?
+- Motor undersized?
+- Power dimensioning Check drive package
+- Check holding brake"
+14;I²t monitoring: output stage warning limit;"- Motor/mechanics blocked or stiff?
+- Motor undersized?
+- Power dimensioning Check drive package
+- Check holding brake"
+15;I²t monitoring: output stage error limit;"- Motor/mechanics blocked or stiff?
+- Motor undersized?
+- Power dimensioning Check drive package
+- Check holding brake"
+16;I²t monitoring: output stage v0 warning limit;"- Reduce set current / set torque
+- Reduce downtime
+- Allow movement >5 Hz electrical rotational frequency"
+17;I²t monitoring: output stage v0 error limit;"- Reduce set current / set torque
+- Reduce downtime
+- Allow movement >5 Hz electrical rotational frequency"
+18;Parameterisation I²t: motor monitoring invalid;"- Check parameterization for I²t limit value (Px.7144)
+- Nominal current (Px.7117) and maximum current (Px.7120) of the Motor plausible?"
+19;Warning: pulse energy monitoring, braking resistor;"- Reduce deceleration dynamics
+- Use braking resistor with higher pulse energy"
+20;Error: pulse energy monitoring, braking resistor;"- Reduce deceleration dynamics
+- Use braking resistor with higher pulse energy"
+21;Parameterisation braking resistor;- Check parameterization of external braking resistor (P0.6510, P0.6511, P0.6512)
+22;Undervoltage in logic supply 24V;- Check power supply.
+23;Overvoltage in logic supply 24V;- Check power supply.
+24;Undervoltage in logic supply 5V;- Check power supply.
+25;Overvoltage in logic supply 5V;- Check power supply.
+26;Undervoltage in logic supply 3.3V;- Check power supply.
+27;Overvoltage in logic supply 3.3V internal;- Check power supply.
+28;Undervoltage in logic supply safety section 3.3V;- Check power supply.
+29;Overvoltage in logic supply safety section 3.3V;- Check power supply.
+30;Overvoltage in DC link;"- Check braking resistor dimensioning, value too high
+- Reduce deceleration dynamics
+- Check limit value for DC link switch-off (P0.4812)"
+31;Undervoltage in DC link;"- Check power supply
+- Couple DC links, if technically permissible
+- Check DC link voltage (measure)
+- Check undervoltage monitoring (threshold value) (P0.4814)"
+32;DC link warning threshold reached;- None (info only)
+33;DC link voltage too low following power failure;"- Check power supply (break-ins?)
+- Check wiring (loose contact?)"
+34;DC link precharge time exceeded;"- Check DC link coupling
+- Check value of the connected braking resistor
+- Braking resistor Wiring interrupted?
+- Check value for Lower limit value DC link voltage (P0. 4814).
+- Device defective?"
+35;Rapid discharge not possible;"- Check braking resistor connection 
+- Resistance value too high
+- DC voltage supply activated (P0.5113))"
+36;No load voltage;"- Check power supply
+- Power failure detection correctly parameterized (P0.493)"
+37;Load voltage interruption detected;"- Check Power supply
+- When using a line choke, distortion of the mains voltage may occur. The sensitivity of the mains voltage monitoring can be adjusted (Px.281520). Increasing the value reduces the sensitivity."
+38;Undervoltage in load voltage;"- Check power supply
+- Power failure detection correctly parameterized (P0.493)"
+39;Overvoltage in load voltage;"- Check power supply
+- Power failure detection correctly parameterized (P0.494)"
+40;Phase failure in load voltage;- Check Power supply
+41;Mains voltage signal shape not as configured;"- DC voltage supply activated (P0.5113)
+- Check power supply"
+42;Encoder supply voltage monitoring thresholds;"- Check encoder wiring
+- Parameterization Encoder voltage supply
+- Service case"
+43;Supply voltage correction, encoder;"- Check encoder wiring
+- Parameterization Encoder voltage supply
+- Service case"
+44;Warning threshold: Insufficient temperature in device;"- Check ambient conditions
+- Check parameterization warning threshold (P0.9312)"
+45;Temperature in device too low;"- Check ambient conditions
+- Check parameterization of switch-off threshold (P0.9313)"
+46;Warning threshold: Device overtemperature;"- Check parameterization warning threshold (P0.9310)
+- Unit fan defective?
+- Device overloaded?
+- Check installation conditions, filter of control cabinet fan dirty?
+- Check drive dimensioning (possible overload in continuous operation)"
+47;Device overtemperature;"- Check parameterization warning threshold (P0.9311)
+- Unit fan defective?
+- Device overloaded?
+- Check installation conditions, filter of control cabinet fan dirty?
+- Check drive dimensioning (possible overload in continuous operation)"
+48;Warning threshold: Insufficient temperature in power unit;"- Check ambient conditions
+- Check parameterization warning threshold (P0.9316)"
+49;Insufficient temperature in power unit;"- Check ambient conditions
+- Check parameterization of switch-off threshold (P0.9317)"
+50;Warning threshold: Power unit overtemperature;"- Check parameterization warning threshold (P0.9314)
+- Unit fan defective?
+- Device overloaded?
+- Check installation conditions, filter of control cabinet fan dirty?
+- Check drive dimensioning (possible overload in continuous operation)"
+51;Power unit overtemperature;"- Check parameterization warning threshold (P0.9315)
+- Unit fan defective?
+- Device overloaded?
+- Check installation conditions, filter of control cabinet fan dirty?
+- Check drive dimensioning (possible overload in continuous operation)"
+52;Warning threshold: Insufficient temperature in motor;"- Check ambient conditions
+- Check parameterization warning threshold (Px.945)"
+53;Insufficient temperature in motor;"- Check ambient conditions
+- Check parameterization of switch-off threshold (Px.947)"
+54;Warning threshold: Motor overtemperature;"- Motor overloaded
+- Sensor defective or incorrectly parameterized?
+- Cable break?
+- Parameterization current controller, check current limit values
+- Check parameter adjustment of the sensor or the sensor characteristic curve
+- Device defective"
+55;Motor overtemperature;"- Motor overloaded
+- Sensor defective or incorrectly parameterized?
+- Cable break?
+- Parameterization current controller, check current limit values
+- Check parameter adjustment of the sensor or the sensor characteristic curve
+- Device defective"
+56;Configuration of homing run invalid;- Move to hardware limit switch (limit switch configured)
+57;Homing: Timeout;"- Check timeout for homing (Px.842)
+- At end stop: Check parameters for standstill window (Px.8415) and limit monitoring (Px8414)
+- At stop: Check parameters for standstill window (Px.4627) and limit monitoring (Px4626)
+- Increase dynamic values for homing"
+58;Homing: Search path exceeded;"- Check arrangement slide to limit switch / end stop
+- Parameterization search path (Px.8412, Px.8413) "
+59;Positioning command invalid;- Check parameterization motion task or record
+60;Motion task not known;- Check order, record number or step-on condition
+61;Task ignored controller enable failed;"- Set release CTRL-EN
+- Controller enable via fieldbus missing "
+62;Task ignored as safety function requested;- Check inputs of safety function for correct logic level
+63;Calculation of braking distance failed;- Check jerk (Px.12111) and deceleration (Px.12101) Stop ramp
+64;Task ignored as DC link coupling not ready;"- Check mains voltage for present
+- Check the DC voltage when the DC Power supply Is activated
+- Check braking resistor for presence, if required"
+65;Task ignored due to motion task error;"- Cancel current movement order with a stop
+- Wait for MC for the current movement order "
+66;Task ignored as encoder not ready;"- Check encoder cable
+- Check voltage supply for the encoder"
+67;Task ignored as referencing missing;- Reference drive
+68;Task ignored as reinitialisation is required;- Performing Reinitialization
+69;Task ignored as restart is required;- Save configuration and restart the device
+70;Invalid record table parameter;- Check record table parameters
+71;Trajectory generator error;- Check parameterization order or block (complete? unrealistic values?)
+72;Invalid position preset of trajectory generator;- Change position specification to the valid range, see documentation
+73;Invalid velocity value of trajectory generator;- Change speed default to the valid range, see documentation
+74;Invalid acceleration value of trajectory generator;- Change deceleration setting to the valid range, see documentation
+75;Invalid deceleration value of trajectory generator;- Change acceleration default to the valid range, see documentation
+76;Invalid jerk value of trajectory generator;- Change jerk setting to the valid range, see documentation
+77;Trajectory generator error;- Adjust dynamic values for the movement order
+78;Stop ramp: Timeout;- Check parameterization of standstill monitoring (Px.4610, Px.468)
+79;Torque increase ramp invalid;- Change parameters for the torque rise ramp to the valid range
+80;Simultaneous negative/positive directional lock;- Check HW limit switch logic
+81;Controller operating mode invalid;- Check the parameterization of the controller (Px.4001, Px.4005, Px.40069
+82;Notch filter frequency invalid;- Check parameterization notch filter frequency, notch filter frequency is greater than half the sampling frequency (Px.40.0.x)
+83;Record table incorrect;- Check motion record number
+84;Parameterisation switching frequency;"- Check parameter set, matches the device?
+- Check parameterization PWM frequency (P0.670)"
+85;Digital I/O configuration invalid;- Check configuration of the digital I/O for double function assignment
+86;Sign limits;- Check torque and current limitations, signs and limitations must match (symmetrical?)
+87;Velocity control limitation invalid;- Check configuration of control limitation (Px.850, Px.851)
+88;Torque control limitation invalid;- Check configuration of control limitation (Px.852, Px.853)
+89;Current control limitation invalid;- Check configuration of control limitation (Px.854, Px.855)
+90;Maximum peak current control limitation invalid;- Check configuration of control limitation (Px.856)
+91;Parameterisation of currents;- Check parameterization for rated current (Px.7117) and maximum current (Px.7120) (consistency)
+92;Motor change detected, commutation angle invalid;- Run commutation angle finding and homing and save
+93;Motor change detected, zero point offset invalid;- Perform homing and save parameter set
+94;Commutation angle in encoder invalid;- Perform commutation angle determination
+95;Encoder type plate invalid;- Service case
+96;Encoder type plate (user defined) invalid;- Reconfigure using the commissioning tool
+97;Parameter set not found;- Check selection of parameter set
+98;Parameter set invalid;- Overwrite (save) parameter set
+99;Parameter set incompatible;"- Delete parameter set
+- Overwrite (save) parameter set"
+100;Parameter not found;"- Delete parameter set
+- Overwrite (save) parameter set"
+101;Parameter read-only;"- Delete parameter set
+- Overwrite (save) parameter set"
+102;Transmission error in parameter set;"- Repeat transmission
+- Check connection"
+103;Parameter set: store failed;"- Repeat saving
+- Service case"
+104;Parameter set: delete failed;"- Parameter set available?
+- Repeat deletion
+- Service case"
+105;Factory parameter not found;- None (info only)
+106;Factory parameter set invalid;- None (info only)
+107;Factory parameter set not found;- None (info only)
+108;Factory parameter set incompatible;- None (info only)
+109;Negative software limit position;"- Check movement trajectory (close to end stop)?
+- Check values for software end positions (Px.4629, Px.4630)
+- Check whether automatic braking is active (Px.4631)
+- Parameters of stop ramp (Px.12101, Px.12111) lower than trajectory parameters, increase stop ramp parameters"
+110;Positive software limit position;"- Check movement trajectory (close to end position)?
+- Check values for software end positions (Px.4630)
+- Check whether automatic braking is active (Px.4631)
+- Parameters of stop ramp (Px.12101, Px.12111) lower than trajectory parameters, increase stop ramp parameters"
+111;Limitation negative direction;- Check movement order
+112;Limitation positive direction;- Check movement order
+113;Parameterisation of software limit positions;- Check values for software end positions (consistency, negative Px.4629 < positive end position Px4630)
+114;Negative hardware limit switch reached;- Check movement order
+115;Positive hardware limit switch reached;- Check movement order
+116;Limitation by negative hardware limit switch;- Check movement order
+117;Limitation by positive hardware limit switch;- Check movement order
+118;Error: both hardware limit switches activated;"- Check parameterization
+- Check Wiring
+- Device restart"
+119;Negative stroke limit reached;"- Check movement order
+- Check parameterization stroke limit (Px.10368)"
+120;Positive stroke limit reached;"- Check movement order
+- Check parameterization stroke limit (Px.10369)"
+121;Target position reached;- None (info only)
+122;Target velocity reached;- None (info only)
+123;Target torque reached;- None (info only)
+124;Standstill reached;- None (info only)
+125;Standstill reached and in standstill window;- None (info only)
+126;Position: following error;"- Investigate causes of contouring errors (Trace)
+- Reduce dynamic values
+- Check error window (Px.463)"
+127;Velocity: following error;"- Investigate causes of contouring errors (Trace)
+- Reduce dynamic values
+- Check error window (Px.464)"
+128;Velocity too high;"- Check maximum velocity configuration (Px.4660)
+- Reduce set velocity
+- Check offset angle, perform commutation angle determination"
+129;Out of target range;"- Check target range window and settling time (Px.4665 ... Px.4667)
+- Monitoring makes sense for application? Possibly deactivate monitoring (Px.4669)"
+130;Reverse feed monitoring;"- Check parameterization (Px.4663, Px.4664)
+- Monitoring makes sense for application? Possibly deactivate monitoring (Px.4671)"
+131;Residual distance too low;- None (info only)
+132;Trajectory completed;- None (info only)
+133;Position difference encoder 1 to encoder 2 too large;"- Calibrate feed constant encoder 1 to encoder 2, see documentation
+- Check error threshold (Px.4642, Px.4643)
+- Check encoder cable"
+134;Voltage limitation active;"- Reduce velocity
+- Reduce torque"
+135;Limit for velocity or current active;"- Reduce dynamic values for the motion task
+- Check parameters for velocity limitation (Px.850, Px.851)
+- Check parameters for current limitation (Px.854 ... Px.856)"
+136;Commutation finding failed;"-Check encoder (valid values / connected)
+- For vertical axes with load: reduce load mass
+- Enlarge monitoring window (Px.6693)
+- Reduce step size (Px.664)
+- Reduce dynamic values (Px.669, Px.6691, Px.6692)"
+137;Commutation finding direction error;"- Motor shaft freewheeling?
+- Increase current injection for commutation angle finding (Px.270)
+- Axle jammed?
+- Adjust dynamic values for commutation angle finding (Px.669, Px.6691, Px.6692)
+- Check whether the direction of rotation of the encoder (P0.1171.0.0) and that of the motor (Px.1172) match."
+138;Analogue setpoint specification limit exceeded;"- Check limit values (Px.998, Px.999)
+- Check scaling (Px.995)"
+139;Fieldbus not supported;- Installing a suitable FW-Package for the device
+140;Failure of fieldbus synchronisation signal;"- Check wiring
+- Check PLC configuration"
+141;Invalid process data;- Check mapping of process data
+142;EtherCAT process data invalid;- Check parameterization EtherCAT communication
+143;EtherCAT process data communication failed;- Check communication EtherCAT (connector, master) etc...
+144;Required application class not supported;- Only request the application class supported by the device (see documentation)
+145;Telegram not supported;- request Only the telegrams supported by the device (see documentation)
+146;Safety function requested;- None (info only)
+147;Plausibility check of safety feedback signals;"- Restart device
+- Service case"
+148;STO: Discrepancy time exceeded;"- Timing Check input signals STO
+- Configuration Check discrepancy time (Px.391)"
+149;Plausibility check #STO-A/B;"- Restart device
+- Service case"
+150;Sequence monitoring #STO-A/B;- Timing and sequence Check input signals STO
+151;Plausibility check #SBC-A/B;"- Check holding brake output for short circuit
+- Restart device
+- Service case"
+152;SBC: Discrepancy time exceeded;"- Timing Check input signals SBC
+- Configuration Check discrepancy time (Px.437)"
+153;RTE module cannot be reached;"- Restart device
+- Perform firmware update
+- Service case"
+154;Initialization of RTE module failed;"- Restart device
+- Perform firmware update
+- Service case"
+155;Error: fan faulty;- Fan check, blocked? Check connection
+156;Common error power output stage;"- Restart device
+- Service case"
+157;FPGA does not start up;"- Restart device
+- Perform firmware update
+- Service case"
+158;FPGA version invalid;"- Restart device
+- Perform firmware update
+- Service case"
+159;Data directory memory full;"- Restart device
+- Perform firmware update
+- Service case"
+160;Data directory indexed twice;"- Restart device
+- Perform firmware update
+- Service case"
+161;Overflow diagnostic register;"- Acknowledge messages
+- Remedy causes for currently pending messages"
+162;Overflow buffer diagnostic register;"- Acknowledge messages
+- Remedy causes for currently pending messages"
+163;User unit error;- Perform reinitialization again
+164;Process runtime exceeded;- Service case
+165;Timeout process level 0;- Service case
+166;Timeout process level 1;- Service case
+167;Timeout process level 2;- Service case
+168;Timeout process level 3;- Service case
+169;Timeout process level 4;- Service case
+170;Timeout process level 5;- Service case
+171;Timeout process level 6;- Service case
+172;Timeout process level 7;- Service case
+173;File system faulty;- Service case
+174;File: user file (backup) invalid;"- Restart device
+- Service case"
+175;Creation of user file (backup) not possible;"- Restart device
+- Service case"
+176;CRC error in user file;"- Restart device
+- Contact support"
+177;File: user file invalid;"- Restart device
+- Service case"
+178;New user file has been created;- None (info only)
+179;Writing to user file not possible;"- Restart device
+- Service case"
+180;Unknown user file error;"- Restart device
+- Service case"
+181;Writing of firmware failed;- Repeat transfer of firmware package.
+182;Reading of firmware failed;- Repeat transfer of firmware package.
+183;Firmware invalid;- Repeat transfer of firmware package.
+184;Firmware incompatible;"- Version Check hardware and firmware version
+- Repeat transfer of firmware package"
+185;Firmware save location invalid;"- Restart device
+- Service case"
+186;Firmware save location empty;"- Restart device
+- Service case"
+187;Firmware update not allowed;- Power stage switched off
+188;Firmware package in use;- Repeat transfer of firmware package.
+189;System error during firmware update;"- Repeat transfer of firmware package
+- Service case"
+190;Firmware update failed;"- Repeat transfer of firmware package
+- Service case"
+191;Calibration data incorrect: Safety;- Service case
+192;Device data incorrect;"- Repeat transfer of firmware package
+- Service case"
+193;Device data incorrect: control unit;- Service case
+194;Device data incorrect: communication unit;- Service case
+195;Device data incorrect: Safety;- Service case
+196;Calibration data incorrect: control unit;- Service case
+197;Calibration data incorrect: power unit;- Service case
+198;Device data incorrect: power unit;- Service case
+199;Synchronisation with FPGA failed;"- Restart device
+- Perform firmware update
+- Service case"
+200;Current sensor calibration invalid;- Service case
+201;Device not configured;"- Restart device
+- Service case"
+202;Store device failed;"- Restart device
+- Service case"
+203;Answer to a read request is missing in LibRTE;"- Restart device
+- Service case"
+204;Device initialisation failed;"- Check other diagnosis notifications.
+- Reset device to factory defaults."
+205;Task ignored as reinitialisation not possible;- Reset controller enable
+206;Hardware does not correspond to expected revision status;- Service case
+207;Hardware does not correspond to expected compatibility status;- Service case
+208;Maximum mileage value reached;- None (info only)
+209;Mileage warning threshold reached;- None (info only)
+210;Mileage error threshold reached;- None (info only)
+211;Maximum load change value reached;- None (info only)
+212;Load change warning threshold reached;- None (info only)
+213;Load change error threshold reached;- None (info only)
+214;Message acknowledgment;- None (info only)
+215;Diagnostics log file has invalid format;- None
+216;Loss of messages from diagnostics log;- None
+217;Auto tuning aborted;"- Check whether further error messages are present and correct their cause
+- Start Autotuning again"
+218;Auto tuning movement insufficient or synchronous phase too short;"- Check the position of the carriage. Too close to the end positions?
+- Check move distance of move set (Px.8621)
+- Check the acceleration and braking ramps, if necessary increase the maximum acceleration and deceleration for autotuning, so that the acceleration and braking phases are shorter (Px.8620 ... Px.8625)"
+219;Auto tuning controller parameters invalid;"- Restart autotuning with modified parameter noise intensity (Px.8616)
+- Start autotuning with movement (Px.8619)
+- Evaluate frequency response analysis"
+220;Transmission of auto tuning measured values failed;"- Check if connection exists
+- Restart transmission
+- Start Autotuning again"
+221;CDSB display file faulty;"- Repeat transfer of firmware package
+- Service case"
+222;JSON display description for CDSB too large;- Service case
+223;SPI communication too slow;- Service case
+224;Login completed;- None (info only)
+225;Logout completed;- None (info only)
+226;Login error;- Check password
+227;Encoder identification reports incorrect encoder type;- Check configuration
+228;Common error EnDat 2.1;"- Check encoder type configuration
+- Wiring error (short-circuit in encoder power supply)
+- Encoder defective"
+229;Common error EnDat 2.2;"- Check encoder type configuration
+- Wiring error (short-circuit in encoder power supply)
+- Encoder defective"
+230;Vector length invalid;"- Check wiring (EMC)
+- Input frequency too high, reduce velocity
+- Encoder defective- Encoder defective"
+231;Quadrant invalid;"- Check wiring (EMC)
+- Encoder defective"
+232;Hiperface communication timeout;"- Check wiring (EMC)
+- Encoder defective"
+233;Error in CRC protocol for Hiperface encoder;"- Check wiring (EMC)
+- Encoder defective"
+234;Common error Hiperface;"- Check wiring (EMC)
+- Encoder defective"
+235;Incremental encoder analysis invalid;"- Check encoder cable
+- Restart the device"
+236;Protocol error Nikon-A encoder;"- Check encoder cable
+- Restart the device"
+237;Timeout Nikon-A encoder;"- Check encoder cable
+- Restart the device"
+238;CRC error Nikon-A encoder;"- Check encoder cable
+- Restart the device"
+239;BiSS-C encoder analysis invalid;"- Check encoder cable
+- Restart the device"
+240;Vector length invalid;"- Check wiring (EMC)
+- Input frequency too high, reduce velocity
+- Encoder defective- Encoder defective"
+241;Quadrant invalid;"- Check wiring (EMC)
+- Encoder defective"
+242;Encoder initialisation: Timeout;"- Check wiring (EMC)
+- Encoder defective"
+243;Invalid cycle time;- Check the cycle time is an integer multiple of 1 ms
+244;Communication module supply voltage;"- Check power supply
+- Restart device"
+245;Received PDO outside tolerance window;- Check controller for cyclical synchronization signals
+246;Too many PDOs sent;- Check parameterization EtherCAT communication
+247;Too few PDOs sent;- Check parameterization EtherCAT communication
+248;Motor type is not supported;"- See documentation whether motor is actually supported
+- Check motor configuration data (Px.71432)"
+249;Watchdog error communication module;"- Restart device
+- Perform firmware update
+- Service case"
+250;Invalid mode of operation;- Check requested CiA402 operating mode
+251;Limit value of energy recovery exceeded;"- Check power supply
+- Check parameters for the switch-off threshold (P0.10185)"
+252;Incorrect parameterisation of reactive current braking;- Check parameterization reactive current braking (Px.102108, Px.102109)
+253;Overvoltage in intermediate circuit;"- Check braking resistor dimensioning, value too high
+- Reduce deceleration dynamics
+- Check limit value for DC link switch-off (P0.4812)"
+254;Undervoltage in intermediate circuit;
+255;Intermediate circuit danger threshold reached;- None (info only)
+256;Undervoltage in power supply;"- Check power supply
+- Power failure detection correctly parameterized (P0.493)"
+257;Overvoltage in power supply;"- Check power supply
+- Power failure detection correctly parameterized (P0.494)"
+258;I²t monitoring: motor model warning limit;"- Reduce dynamics of movement orders
+- Check holding brake
+- Motor/mechanism blocked or stiff?"
+259;I²t monitoring: motor model error limit;"- Reduce dynamics of movement orders
+- Check holding brake
+- Motor/mechanism blocked or stiff?"
+271;Reinitialisation failed;"- Check other diagnosis notifications.
+- Reset device to factory defaults."
+272;Resolution of position factorgroup invalid;- Adjust parameterization position factor group (Px.7841 ... Px.7844)
+273;Change of control structure not permissible;"- Wait until current movement order is completed
+- Check movement order"
+274;Motion command not permissible;- Check movement order
+275;Change to closed loop operation not permissible;- Perform commutation angle determination
+276;Error in Hiperface encoder;- Stop load and acknowledge error
+277;Error in SIN/COS encoder;- Stop load and acknowledge error
+278;Task ignored because directional lock active;"- Observe further diagnostic messages and eliminate the cause of the directional lock
+- Carry out movement into the valid work area."
+279;Fixed stop not detected;- Check if workpiece Is in front of the target position
+280;Monitoring window of fixed stop left;- Check if workpiece was not lost
+281;Process data not received at Sync time;- Check connection between process data and Sync time in the controller
+282;Encoder not ready;"- Check whether selection of encoder interface valid
+- Check whether encoder errors are present"
+283;Brake test failed;"- Check brake wear
+- Check monitoring window stroke (Px.103117.x.0)"
+284;Torque failed brake test;"- Check brake wear
+- Check Torque monitoring window (Px103118.x.0)"
+285;Error communication module mailbox;"- Restart device
+- Service case"
+286;DC relay does not open;"- Restart device
+- Service case"
+287;DC relay does not close;"- Restart device
+- Service case"
+288;PROFIdrive test error message 1;- Cancel error test message via PNU
+289;PROFIdrive test error message 2;- Cancel error test message via PNU
+290;Parameter set with older version;- Save parameter set again
+291;Parameter set with newer version;- Save parameter set again
+294;PLC Control is not set;- Set PLC control bit (STW1.Bit10) 
+299;Error Sign of Life;"- Check PROFINET communication
+- Check whether the life sign is sent correctly by the controller (e.g. create trace with STW2.12 ... STW2.15 and trigger signal ZSW1.3).
+- Check the permissible failure rate of the telegrams (PNU 925).
+- Check bus or controller for utilization."
+300;COM module error;"- Restart device
+- Service case"
+301;Number of increments between two zero pulses invalid;"- Check encoder cable
+- Restart the device"
+313;Invalid parameterization variable message function;- Check input parameters for data trigger (Px.1174201 … 1174207)
+318;Status transition error ;- Remove PROFIdrive command from control sequence
+364;Profile velocity = 0;"- Check profile speed (record table / direct operation)
+- Check speed override (Px.1309, Px.11280611)
+- Check application limitation (Px.1304, Px.1310)"
+365;Invalid request Gn_STW1.4...7;- Control word Check PROFIdrive encoder
+366;Function not supported Gn_STW1;- Control word Check PROFIdrive encoder
+367;Axis parking not possible;- Withdraw controller enable before parking
+368;Error reference marks search;- Control word Check PROFIdrive encoder
+369;Error Read Position Reference mark;- Control word Check PROFIdrive encoder
+370;Error measuring on the fly;- Control word Check PROFIdrive encoder
+371;Error Read Position Measure on the fly;- Control word Check PROFIdrive encoder
+372;Error Transfer absolute position to Gn_XIST2;"- Check PROFIdrive encoder control word
+- Use of absolute encoder"
+373;Failure of synchronization signal Fieldbus;"- Check wiring
+- Check PLC configuration"
+382;Invalid configuration Extended process data;- Check mapping of the extended process data
+391;Process data communication failed;- Check communication (connector, master) etc...
+394;Invalid process data;- New configuration of the EtherNet/IP interface (see documentation)
+395;Telegram not supported;- Request Only the telegrams supported by the device (see documentation)
+396;Gear In failed;- Check speed, acceleration and jerk for synchronisation (Px.85604, Px.85605, Px.85606)
+397;Gear Out failed;- Check speed, acceleration and jerk for synchronisation (Px.85614, Px.85615, Px.85616)
+431;Invalid limit value Application limitation;- Check values for limitations (min value < max value)?
+432;Motion job error due to firmware update ;- Wait until firmware update Is completed
+434;Invalid encoder resolution;- Check parameterization. P0.10040 must be smaller than 65536.
+439;Too many invalid login attempts;- Restart device and try again
+440;Maximum write cycles reached;- Service case
+442;Error self-test digital input channel A;"- Restart device
+- Service case"
+443;Error self-test digital input channel B;"- Restart device
+- Service case"
+444;Safety Discrepancy time of digital input Channel A exceeded;"- Check timing of input signals
+- Check configuration discrepancy time"
+445;Safety Discrepancy time of digital input Channel B exceeded;"- Check timing of input signals
+- Check configuration discrepancy time"
+446;Safety Self-test of digital output Channel A failed;"- Check configuration of test pulse
+- Service case"
+447;Safety Self-test of digital output Channel B failed;"- Check configuration of test pulse
+- Service case"
+448;Safety Discrepancy target status 1 digital output Channel A;"- Restart device
+- Service case"
+449;Safety Discrepancy target status 1 digital output Channel B;"- Restart device
+- Service case"
+450;Discrepany requested state off output channel A;"- Restart device
+- Service case"
+451;Discrepany requested state off output channel B;"- Restart device
+- Service case"
+453;Safety Overvoltage Channel A;"- Restart device
+- Service case"
+454;Safety Overvoltage Channel B;"- Restart device
+- Service case"
+455;Safety Undervoltage Channel A;"- Restart device
+- Service case"
+456;Safety Undervoltage Channel B;"- Restart device
+- Service case"
+457;Safety Communication error FSU Channel A;"- Restart device
+- Service case"
+458;Safety Communication error FSU Channel B;"- Restart device
+- Service case"
+459;Safety Error FSU mainswitch Channel A;"- Restart device
+- Service case"
+460;Safety Error FSU Mainswitch Channel B;"- Restart device
+- Service case"
+461;Safety Wrong FSU version Channel A;"- Restart device
+- Service case
+- Check firmware"
+462;Safety Wrong FSU version Channel B;"- Restart device
+- Service case
+- Check firmware"
+463;Safety Internal error FSU Channel A;"- Restart device
+- Service case
+- Check firmware"
+464;Safety Internal error FSU Channel B;"- Restart device
+- Service case
+- Check firmware"
+469;Safety Invalid firmware Channel A;"- Restart device
+- Service case
+- Check firmware"
+470;Safety Invalid firmware Channel B;"- Restart device
+- Service case
+- Check firmware"
+472;Voltage error microprocessor;"- Restart device
+- Service case"
+473;Safety Exception;"- Restart device
+- Service case"
+474;Safety Invalid CRC HCI communication;"- Restart device
+- Service case"
+475;Safety Invalid HCI sequence;"- Restart device
+- Service case"
+476;Safety Invalid HCI header;"- Restart device
+- Service case"
+478;Mismatch of safety destination address;- Check safety destination address configuration
+479;Safety destination address not valid;- Check safety destination address configuration
+480;Safety source address not valid or mismatch;- Check safety source address configuration
+481;Safety watchdog time value is 0 ms;- Check safety watchdog timeout configuration
+482;"Parameter ""F_SIL"" exceeds SIL from specific device application";"- Check SIL of ""F-SIL"" parameter"
+483;"Parameter ""F_CRC_Length"" does not match the generated values";"- Check ""F_CRC_Length"" parameter configuration"
+484;Version of F-Parameter set incorrect;- Check F-Parameter version
+485;Data inconsistent in received F-Parameter block (CRC1 error);"- Check wiring
+- Check hardware"
+486;Device specific or unspecified diagnosis information;- See device specific manual
+487;Save iParameter watchdog time exceeded;"- Check software (firmware update)
+- Check hardware"
+488;Restore iParameter watchdog time exceeded;"- Check software (firmware update)
+- Check hardware"
+489;Inconsistent iParameters (iParCRC error);- Check hardware
+490;F_Block_ID not supported;- Check configuration
+491;Transmission error: data inconsistent (CRC2 error);"- Check wiring
+- Check hardware"
+492;Transmission error: timeout;"- Check wiring
+- Check hardware"
+493;Acknowledge required to enable the channel(s);- Acknowledge channel(s)
+494;BaseID not valid or mismatch of the BaseID;- Check BaseID configuration
+512;Safety Overtemperature Channel A;"- Unit fan defective?
+- Device overloaded?
+- Check installation conditions, filter of control cabinet fan dirty?
+- Check drive dimensioning (possible overload in continuous operation)"
+513;Safety Overtemperature Channel B;"- Unit fan defective?
+- Device overloaded?
+- Check installation conditions, filter of control cabinet fan dirty?
+- Check drive dimensioning (possible overload in continuous operation)"
+514;Safety Undertemperature Channel A;"- Unit fan defective?
+- Device overloaded?
+- Check installation conditions, filter of control cabinet fan dirty?
+- Check drive dimensioning (possible overload in continuous operation)"
+515;Safety Undertemperature Channel B;"- Unit fan defective?
+- Device overloaded?
+- Check installation conditions, filter of control cabinet fan dirty?
+- Check drive dimensioning (possible overload in continuous operation)"
+516;Safety Active CRC1 Channel A invalid;"- Do reinitilization
+- Restart device
+- Service case"
+517;Safety Active CRC1 Channel B invalid;"- Do reinitilization
+- Restart device
+- Service case"
+518;Safety CRC1 Error Channel A;- Redo safety parameterization
+519;Safety CRC1 Error Channel B;- Redo safety parameterization
+520;Safety Overflow Buffer Diagnostic Log Channel A;"- Acknowledge messages
+- Remedy causes for currently pending messages"
+521;Safety Overflow Buffer Diagnostic Log Channel B;"- Acknowledge messages
+- Remedy causes for currently pending messages"
+522;Safety Overflow Diagnostic Log Channel A;"- Acknowledge messages
+- Remedy causes for currently pending messages"
+523;Safety Overflow Diagnostic Log Channel B;"- Acknowledge messages
+- Remedy causes for currently pending messages"
+524;Self test of digital input failed;"- Acknowledge messages
+- Restart device
+- Service case"
+525;Safety Error Acknowledge Channel A;- None
+526;Safety Error Acknowledge Channel B;- None
+527;Safety Time monitoring of brake output channel A;"- Release brake
+- Check timeout parameter"
+528;Safety Time monitoring of brake output channel B;"- Release brake
+- Check timeout parameter"
+531;Device type not correct channel A;- Use compatible parameter set
+532;Device type not correct channel B;- Use compatible parameter set
+536;Safety Compatibility Index is newer channel A;"- Reset device to factory settings
+- Open Engineering Tool and download a valid paramter set"
+537;Safety Compatibility Index is newer channel B;"- Reset device to factory settings
+- Open Engineering Tool and download a valid paramter set"
+538;Safety Compatibility Index is older channel A;"- Reset device to factory settings
+- Open Engineering Tool and download a valid paramter set"
+539;Safety Compatibility Index is older channel B;"- Reset device to factory settings
+- Open Engineering Tool and download a valid paramter set"
+540;Safety Compatibility Index is not set in channel A;"- Reset device to factory settings
+- Open Engineering Tool and download a valid paramter set"
+541;Safety Compatibility Index is not set in channel B;"- Reset device to factory settings
+- Open Engineering Tool and download a valid paramter set"
+542;Safety External cross-circuit BR-EXT channel A;- Check wiring on BR-EXT
+543;Safety External cross-circuit BR-EXT channel B;- Check wiring on BR-EXT
+544;Error communication RTE;"- Update Firmware
+- Service case"
+545;Parameter set stored remanent;- None
+546;Parameter set activated;- None
+550;Safety CRC2 error Channel A;"- Reset device to factory settings
+- Open Engineering Tool and download a valid paramter set"
+551;Safety CRC2 error Channel B;"- Reset device to factory settings
+- Open Engineering Tool and download a valid paramter set"
+552;Safety Error Synchronisation Communication HCI;"- Restart device
+- Service case"
+553;Safety Error Synchronisation Clock HCI;"- Restart device
+- Service case"
+554;Safety Error Parameter HCI;"- Restart device
+- Service case"
+555;Safety Cross comparison Channel A;"- Reset device to factory settings
+- Open Engineering Tool and download a valid paramter set"
+556;Safety Cross comparison Channel B;"- Reset device to factory settings
+- Open Engineering Tool and download a valid paramter set"
+557;Safety Error Reinitialisation Channel A;- Open Engineering Tool, solve the issue and run reinit again
+558;Safety Error Reinitialisation Channel B;- Open Engineering Tool, solve the issue and run reinit again
+559;Frequent A/B signals too high;- reduce motor velocity, Number of increments should be even, execute Reinit
+592;Safety Hard Fault Channel A;"- Device has already restarted automatically.
+- Acknowledge the error to allow the system to continue running (Error reaction is application specific).
+- If the hard fault occurs again, the device must be restarted with power. "
+593;Safety Hard Fault Channel B;"- Device has already restarted automatically.
+- Acknowledge the error to allow the system to continue running (Error reaction is application specific).
+- If the hard fault occurs again, the device must be restarted with power. "
+594;Safety Error Self Test channel A;
+595;Safety Error Self Test channel B;
+596;Safety Error Communication channel B and FSU;
+597;Safety Error communication channel A and FSU;
+598;Safety Incompatible software/hardware versions channel A and FSU;
+599;Safety Incompatible software/hardware versions channel B and FSU;
+600;Safety Reached error memory threshold value Channel A;
+601;Safety Reached error memory threshold value Channel B;
+602;Safety Channel A self-test failed;
+603;Safety Channel B self-test failed;
+606;Safety position discrepancy channel A;
+607;Safety position discrepancy channel B;
+608;Safety velocity discrepancy channel A;
+609;Safety Velocity discrepancy channel B;
+610;Safety Invalid encoder selection channel A;
+611;Safety Invalid encoder selection channel B;
+612;Safety Error encoder voltage monitoring X2 channel A;
+613;Safety Error encoder voltage monitoring X2 channel B;
+614;Safety Error encoder voltage monitoring X3 channel A;
+615;Safety Error encoder voltage monitoring X3 channel B;
+617;Incompatible device configuration PROFINET IRT;- Select MP device in GSDML (CMMT-...-...-MP instead of CMMT-... V1)
+619;Unsupported homing method;- Use different homing method (xxx)
+620;Parameter set stored CRC1 0..63;- None (info only)
+621;Parameter set stored CRC1 64..127;- None (info only)
+622;Parameter set activated CRC2 0..63;- None (info only)
+623;Parameter set activated CRC2 64..127;- None (info only)
+624;Parameter not found Px.y.-.-;"- Delete parameter set
+- Overwrite (save) parameter set"
+625;Parameter not found P-.-.x.y;"- Delete parameter set
+- Overwrite (save) parameter set"
+626;Parameter not writable Px.y.-.-;"- Delete parameter set
+- Overwrite (save) parameter set"
+627;Parameter not writable P-.-.x.y;"- Delete parameter set
+- Overwrite (save) parameter set"
+628;Login completed;- None (info only)
+629;Logout completed;- None (info only)
+630;Safety Hard fault;"- Safe hardfault information
+- Restart device"
+633;BiSS-C Timeout communication;- Increase baud rate value
+634;Velocity difference encoder 1 to encoder 2 too large;"- Set velocity filter
+- Check error threshold
+- Check encoder line"
+635;Safety Timeout Operating Mode change channel A;- None
+636;Safety Timeout Operating Mode change channel B;- None
+637;Incorrect IP address settings;- Change IP address to a valid value
+639;Number of interpolation points exceeded;- None
+640;Safety EnDat invalid cycle sequence channel A;- None
+641;Safety EnDat invalid cycle sequence channel B;- None
+642;Safety EnDat safe position error channel A;- None
+643;Safety EnDat safe position error channel B;- None
+644;Safety EnDat Crc error channel A;- None
+645;Safety EnDat Crc error channel B;- None
+646;Safety EnDat Recovery Time Error channel A;- None
+647;Safety EnDat Recovery Time error channel B;- None
+648;Safety EnDat forced dynamic modification channel A;- None
+649;Safety EnDat Forced Dynamization channel B;- None
+650;Safety EnDat Error Bit channel A;- None
+651;Safety EnDat Error Bit channel B;- None
+658;Acceleration following error ;"- Investigate causes of contouring errors (Trace)
+- Reduce dynamic values
+- Check error window (Px.y)"
+659;Safety STO Safe Torque Off error self-test channel A;
+660;Safety STO Safe Torque Off error self-test channel B;
+661;Safety STO error monitoring Time monitoring STO channel A;
+662;Safety STO error monitoring Time monitoring STO channel B;
+663;Safety STO setpoint Off but voltage detected at output channel A;
+664;Safety STO setpoint status Off but voltage detected at output channel B;
+665;Safety STO setpoint state On but no voltage detected at the output channel A;
+666;Safety STO setpoint On but no voltage detected at output channel B;
+667;Safety STO voltage limit exceeded channel A;
+668;Safety STO voltage limit exceeded channel B;
+669;Safety Internal error STO channel A;
+670;Safety Internal error STO channel B;
+671;Safety SOS parameter invalid channel A;
+672;Safety SOS parameter invalid channel B;
+673;Safety SOS velocity limit violated channel A;
+674;Safety SOS velocity limit violated channel B;
+675;Safety SOS position limit violated channel A;
+676;Safety SOS position limit violated channel B;
+677;Safety EnDat step monitoring error channel A;- None
+678;Safety EnDat step monitoring error channel B;- None
+679;Safety EnDat no safe encoder detected channel A;- None
+680;Safety EnDat no safe encoder detected channel B;- None
+681;Safety EnDat validated and read serial number are different channel A;- None
+682;Safety EnDat validated and read serial number are different channel B;- None
+683;Safety EnDat validated and read zero offset are different channel A;- None
+684;Safety EnDat validated and read zero offset are different channel B;- None
+686;Linearisation table invalid;- None
+687;Safety Error in the initialisation process via the HCI interface;- Validate your parametrization
+688;Cogging compensation invalid;- Restart device
+689;System starts;- None
+693;Error when recording the cogging table;- Repeat identification drive
+698;Invalid LIN Mapping La;- Check mapping of the safety sub-function to the inputs.
+699;Invalid LIN Mapping Lb;- Check mapping of the safety sub-function to the inputs.
+700;BadSafetyFunctionSelector_A;- Check the configuration of the Safety fieldbus interface or I/O device.
+701;BadSafetyFunctionSelector_B;- Check the configuration of the Safety fieldbus interface or I/O device.
+702;Brake resistor not connected;- Check braking resistor connection
+713;diagnosticOptionModuleIncompatible;- Contact Festo service
+714;diagnosticOptionModuleProduction;- Contact Festo service
+727;SMS_SafetyConditionViolated_LA;- Check maximum velocity
+728;SMS_SafetyConditionViolated_LB;- Check maximum velocity
+729;SMS_SpeedLimitViolated_LA;- Check maximum velocity
+730;SMS_SpeedLimitViolated_LB;- Check maximum velocity
+731;SLS_SafetyConditionViolated_LA;- Check maximum velocity
+732;SLS_SafetyConditionViolated_LB;- Check maximum velocity
+733;SLS_BrakeRampViolated_LA;- Check maximum velocity
+734;SLS_BrakeRampViolated_LB;- Check maximum velocity
+735;SLS_SpeedLimitViolated_LA;- Check maximum velocity
+736;SLS_SpeedLimitViolated_LB;- Check maximum velocity
+737;SS1_InputValuesNotValid_La;'- Check encoder
+738;SS1_InputValuesNotValid_Lb;'- Check encoder
+739;SS1_BrakeRampViolated_La;- Check controller setting
+740;SS1_BrakeRampViolated_Lb;- Check controller setting
+741;SS1_SpeedLimitViolated_La;"- Check controller setting
+- Check standstill monitoring"
+742;SS1_SpeedLimitViolated_Lb;"- Check controller setting
+- Check standstill monitoring"
+743;SS2_InputValuesNotValid_La;'- Check encoder
+744;SS2_InputValuesNotValid_Lb;'- Check encoder
+745;SS2_BrakeRampViolated_La;- Check controller setting
+746;SS2_BrakeRampViolated_Lb;- Check controller setting
+747;NetXInternDriverError;- Contact Festo service
+748;Mismatch of safety destination address;- Check safety destination address configuration
+749;Safety destination address not valid;- Check safety destination address configuration
+750;Safety source address not valid or mismatch;- Check safety source address configuration
+751;Safety watchdog time value is 0 ms;- Check safety watchdog timeout configuration
+752;"Parameter ""F_SIL"" exceeds SIL from specific device application";"- Check SIL of ""F-SIL"" parameter"
+753;"Parameter ""F_CRC_Length"" does not match the generated values";"- Check ""F_CRC_Length"" parameter configuration"
+754;Version of F-Parameter set incorrect;- Check F-Parameter version
+755;Data inconsistent in received F-Parameter block (CRC1 error);"- Check wiring
+- Check hardware"
+756;Device specific or unspecified diagnosis information;- See device specific manual
+757;Save iParameter watchdog time exceeded;"- Check software (firmware update)
+- Check hardware"
+758;Restore iParameter watchdog time exceeded;"- Check software (firmware update)
+- Check hardware"
+759;Inconsistent iParameters (iParCRC error);- Check hardware
+760;F_Block_ID not supported;- Check configuration
+761;Transmission error: data inconsistent (CRC2 error);"- Check wiring
+- Check hardware"
+762;Transmission error: timeout;"- Check wiring
+- Check hardware"
+763;Acknowledge required to enable the channel(s);- Acknowledge channel(s)
+764;BaseID not valid or mismatch of the BaseID;- Check BaseID configuration
+765;NoEstimationDoneLevel;- Increase pause time between movements

@@ -31,7 +31,7 @@
 from __future__ import annotations
 
 # Import the communication interface
-from imp import load_source
+from pysweepme import load_source
 from pathlib import Path
 
 from pysweepme.EmptyDeviceClass import EmptyDevice

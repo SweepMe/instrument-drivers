@@ -32,9 +32,11 @@
 
 from ErrorMessage import error, debug
 
-import imp
 import os
-EurothermBaseClass35xx = imp.load_source("Eurotherm35xxBaseClass", os.path.dirname(os.path.abspath(__file__)) + os.sep + "EurothermBaseClass.py")
+
+from pysweepme import load_source
+
+EurothermBaseClass35xx = load_source("Eurotherm35xxBaseClass", os.path.dirname(os.path.abspath(__file__)) + os.sep + "EurothermBaseClass.py")
 
 # class Device(EmptyDevice):
 class Device(EurothermBaseClass35xx.Eurotherm):

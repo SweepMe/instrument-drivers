@@ -37,7 +37,7 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 addFolderToPATH()
 
-from pypylon import pylon
+from pypylon import genicam, pylon
 
 
 class Device(EmptyDevice):
@@ -191,12 +191,26 @@ class Device(EmptyDevice):
         self.set_gamma(self.gamma)
         self.set_roi(self.image_width, self.image_height, self.offset_x, self.offset_y)  # new
 
-        self.camera.BalanceRatioSelector.Value = "Red"
-        self.camera.BalanceRatio.Value = self.balance_ratio_red
-        self.camera.BalanceRatioSelector.Value = "Green"
-        self.camera.BalanceRatio.Value = self.balance_ratio_green
-        self.camera.BalanceRatioSelector.Value = "Blue"
-        self.camera.BalanceRatio.Value = self.balance_ratio_blue
+        self.set_balance_ratio()
+
+    def set_balance_ratio(self) -> None:
+        """Apply per-channel white balance.
+
+        The white-balance nodes exist only on color cameras; mono cameras and the
+        Basler camera emulator do not provide them, so the settings are skipped there.
+        """
+        try:
+            self.camera.BalanceRatioSelector.Value = "Red"
+            self.camera.BalanceRatio.Value = self.balance_ratio_red
+            self.camera.BalanceRatioSelector.Value = "Green"
+            self.camera.BalanceRatio.Value = self.balance_ratio_green
+            self.camera.BalanceRatioSelector.Value = "Blue"
+            self.camera.BalanceRatio.Value = self.balance_ratio_blue
+        except genicam.LogicalErrorException:
+            print(
+                "Basler: this camera has no white-balance control (mono camera or "
+                "emulator); skipping balance ratio settings.",
+            )
 
     def measure(self) -> None:
         """Capture image and save."""

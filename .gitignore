@@ -167,7 +167,11 @@ cython_debug/
 !/src/*/libs/**
 !/src/*/libraries/libs_39_32/**
 !/src/*/libraries/libs_39_64/**
+!/src/*/libraries/libs_314_32/**
+!/src/*/libraries/libs_314_64/**
 # Exception: __pycache__/ we don't even want below libs
 /src/*/libs/**/__pycache__/
 /src/*/libraries/libs_39_32/**/__pycache__/
 /src/*/libraries/libs_39_64/**/__pycache__/
+/src/*/libraries/libs_314_32/**/__pycache__/
+/src/*/libraries/libs_314_64/**/__pycache__/
