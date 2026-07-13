@@ -119,7 +119,6 @@ class Device(EmptyDevice):
         self.lowpass_rolloff: int = 6
         self.highpass_corner: str = "NONE"
         self.highpass_rolloff: int = 6
-        self.freq_range_threshold: float = 0.1
         self.darkmode: bool = False
 
         # Result parameters
@@ -154,7 +153,6 @@ class Device(EmptyDevice):
                 gui_parameters["High pass rolloff"] = list(self.filter_rolloffs.keys())
 
         gui_parameters["  "] = None  # empty line
-        gui_parameters["Frequency range threshold factor of -3 dB"] = 0.1
         gui_parameters["Turn off LED"] = False
         return gui_parameters
 
@@ -201,7 +199,6 @@ class Device(EmptyDevice):
             else:
                 self.highpass_corner = "NONE"
 
-        self.freq_range_threshold = parameters.get("Frequency range threshold factor of -3 dB", 0.1)
         self.darkmode = bool(parameters.get("Turn off LED", False))
 
         self.shortname = f"VM-10 @ M{self.slot}"
@@ -341,20 +338,7 @@ class Device(EmptyDevice):
             self.port.write(f"SENSe{self.slot}:FILTer:HPASs:ATTenuation R{self.highpass_rolloff}")
 
     def set_advanced_settings(self) -> None:
-        """Configure the autorange frequency threshold and dark mode."""
-        try:
-            threshold = float(self.freq_range_threshold)
-        except (ValueError, TypeError) as e:
-            msg = "Please enter a number for the frequency range threshold."
-            raise ValueError(msg) from e
-        if not 0.0 <= threshold <= 1.0:
-            msg = (
-                "The frequency range threshold must be between 0.0 and 1.0. "
-                "It is normalized to the -3 dB bandwidth of the range."
-            )
-            raise ValueError(msg)
-        self.port.write(f"SENSe{self.slot}:FRTHreshold {threshold}")
-
+        """Configure the dark mode of the module LEDs."""
         self.port.write(f"SENSe{self.slot}:DMODe {'1' if self.darkmode else '0'}")
 
     @staticmethod

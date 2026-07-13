@@ -41,7 +41,6 @@ At least one output filter should be enabled for a meaningful lock-in measuremen
 
 - Ranges: 10 V, 1 V, 100 mV, 10 mV, or Auto. The lowest usable range gives the best performance. The VM-10 features seamless range transitions.
 - Restriction: the 10 V and 1 V ranges are not available while the analog input filter is enabled with optimization "Highest reserve". The driver raises an error for this combination.
-- "Frequency range threshold factor" (0.0–1.0): during autorange, a range is chosen such that the signal frequency does not exceed this fraction of the range's -3 dB bandwidth.
 
 ## Input configuration and coupling
 
