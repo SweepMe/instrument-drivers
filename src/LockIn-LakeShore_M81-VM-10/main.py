@@ -118,6 +118,7 @@ class Device(EmptyDevice):
         self.lia_avg_ref_cycles: int = 0  # 0 disables the FIR averaging output filter
         self.lia_phase_mode: str = "Auto"  # "Auto", "As is", or a float as string
         self.lia_phase_shift: float = 0.0
+        self.stored_phase_shift: float = 0.0  # phase read back before PRESet for 'As is'
         self.wait_time_constants: str = "Auto"
         self.wait_time: float = 0.0  # additional settle wait per point in s
         self.filter_on: bool = False
@@ -252,6 +253,11 @@ class Device(EmptyDevice):
             msg = "Please give a correct channel number (M1, M2 or M3)."
             raise ValueError(msg)
         self.check_device()
+        if self.lia_phase_mode.strip().lower() == "as is":
+            # PRESet below resets the reference phase shift to its power-on default.
+            # Remember the phase currently set on the instrument so that
+            # set_lockin_settings() can restore it afterwards.
+            self.stored_phase_shift = float(self.port.query(f"SENSe{self.slot}:LIA:DPHase?"))
         self.port.write(f"SENSe{self.slot}:PRESet")  # reset module to power-on defaults
 
     def configure(self) -> None:
@@ -464,7 +470,9 @@ class Device(EmptyDevice):
             # Note: the measurement should be settled when this command is sent.
             self.port.write(f"SENSe{self.slot}:LIA:DPHase:AUTO")
         elif phase_mode.lower() == "as is":
-            pass  # keep the phase shift currently set on the instrument
+            # Restore the phase shift that was set on the instrument before the run,
+            # because the module preset during initialize() has reset it.
+            self.port.write(f"SENSe{self.slot}:LIA:DPHase {self.stored_phase_shift}")
         else:
             try:
                 self.lia_phase_shift = float(phase_mode.split(" ")[0])
