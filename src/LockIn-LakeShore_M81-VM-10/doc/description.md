@@ -12,6 +12,7 @@
 - **Phase** - phase angle θ of the signal relative to the reference, in degrees
 - **Frequency** - the detected reference frequency, in Hz
 - **Lock-In DC** - DC component of the input signal, in V (only measured when the "High pass digital filter" is ON, otherwise NaN)
+- **Resistance In-Phase / Quadrature / Magnitude** (Ohm) and **Resistance Phase** (°) - the instrument's calculated AC resistance using the selected "Resistance source" (see below); NaN if the pairing is not valid
 
 Special values: **+inf** indicates a range overload, **NaN** indicates that the PLL is unlocked or the value is not available. Choose a larger range (or Auto) on overload.
 
@@ -61,6 +62,16 @@ Note: the datasheet also lists 30 kHz corner frequencies, but the remote interfa
 
 - **High pass digital filter** (Filter1): removes the DC component before the PSD and enables the "Lock-In DC" measurement. Recommended ON.
 - **Reference phase shift**: "Auto" lets the instrument set the phase so that the present, settled signal appears at θ = 0°; "As is" keeps the phase that was set on the instrument before the run started (the driver reads it back before the module preset and restores it afterwards); a numeric value (-360° to +360°) sets it explicitly. "Auto" is executed once during configuration — the reference must already be active and the signal settled at that moment for a correct result.
+
+## Calculated resistance ("Resistance source")
+
+The M81 calculates a resistance by pairing this VM-10 with a current-type module: select the module that drives or measures the current through your sample (e.g. a BCS-10 source or a CM-10 measure module) as "Resistance source" (default: S1, matching the instrument default). The driver always returns **Resistance In-Phase**, **Resistance Quadrature**, **Resistance Magnitude** (all in Ohm), and **Resistance Phase** (in °), calculated by the instrument from time-synchronized readings. If the selected pairing is not valid for your setup, these values are simply NaN and can be ignored.
+
+Notes:
+
+- Selecting a resistance source in lock-in mode also sets the lock-in reference source on the instrument; the driver therefore writes the resistance source first and your "Source" selection afterwards, so the reference you chose always wins.
+- The paired module must use current units; pairing with another voltage module (e.g. VS-10) is incompatible and yields NaN. The values are also NaN when a paired module reports an error or the source amplitude is 0.
+- The driver intentionally does not touch the instrument's resistance excitation type, optimization, or resistance range settings, since these would reconfigure the source module behind the back of the driver controlling it. Configure the source module (sine shape, amplitude, frequency) with its own SweepMe! driver.
 
 ## Sweep modes
 
