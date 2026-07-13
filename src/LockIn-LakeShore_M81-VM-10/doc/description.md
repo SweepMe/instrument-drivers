@@ -61,7 +61,7 @@ Note: the datasheet also lists 30 kHz corner frequencies, but the remote interfa
 ## Digital high pass filter and reference phase
 
 - **High pass digital filter** (Filter1): removes the DC component before the PSD and enables the "Lock-In DC" measurement. Recommended ON.
-- **Reference phase shift**: "Auto" lets the instrument set the phase so that the present, settled signal appears at θ = 0°; "As is" keeps the phase currently stored in the instrument; a numeric value (-360° to +360°) sets it explicitly. "Auto" is executed once during configuration — the reference must already be active and the signal settled at that moment for a correct result.
+- **Reference phase shift**: "Auto" lets the instrument set the phase so that the present, settled signal appears at θ = 0°; "As is" keeps the phase that was set on the instrument before the run started (the driver reads it back before the module preset and restores it afterwards); a numeric value (-360° to +360°) sets it explicitly. "Auto" is executed once during configuration — the reference must already be active and the signal settled at that moment for a correct result.
 
 ## Sweep modes
 
