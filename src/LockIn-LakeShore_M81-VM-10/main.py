@@ -128,7 +128,6 @@ class Device(EmptyDevice):
         self.highpass_corner: str = "NONE"
         self.highpass_rolloff: int = 6
         self.digital_highpass: bool = True
-        self.freq_range_threshold: float = 0.1
         self.darkmode: bool = False
 
         # Result parameters
@@ -185,7 +184,6 @@ class Device(EmptyDevice):
                 "Filter1": ["High pass digital filter ON", "High pass digital filter OFF"],
                 "Lock-In harmonic": 1,
                 "Reference phase shift in degrees": ["Auto", "As is", "0.0 (edit)"],
-                "Frequency range threshold factor of -3 dB": 0.1,
                 "": None,  # empty line
                 "Turn off LED": False,
             }
@@ -240,7 +238,6 @@ class Device(EmptyDevice):
 
         self.digital_highpass = "ON" in str(parameters.get("Filter1", "ON"))
         self.lia_phase_mode = str(parameters.get("Reference phase shift in degrees", "Auto"))
-        self.freq_range_threshold = parameters.get("Frequency range threshold factor of -3 dB", 0.1)
         self.darkmode = bool(parameters.get("Turn off LED", False))
 
         self.shortname = f"VM-10 @ M{self.slot}"
@@ -500,22 +497,8 @@ class Device(EmptyDevice):
         self.port.write(f"SENSe{self.slot}:FILTer:HPASs:ATTenuation R{self.highpass_rolloff}")
 
     def set_advanced_settings(self) -> None:
-        """Configure the digital high pass filter, autorange frequency threshold, and dark mode."""
+        """Configure the digital high pass filter and dark mode."""
         self.port.write(f"SENSe{self.slot}:DIGital:FILTer:HPASs {'1' if self.digital_highpass else '0'}")
-
-        try:
-            threshold = float(self.freq_range_threshold)
-        except (ValueError, TypeError) as e:
-            msg = "Please enter a number for the frequency range threshold."
-            raise ValueError(msg) from e
-        if not 0.0 <= threshold <= 1.0:
-            msg = (
-                "The frequency range threshold must be between 0.0 and 1.0. "
-                "It is normalized to the -3 dB bandwidth of the range."
-            )
-            raise ValueError(msg)
-        self.port.write(f"SENSe{self.slot}:FRTHreshold {threshold}")
-
         self.port.write(f"SENSe{self.slot}:DMODe {'1' if self.darkmode else '0'}")
 
     def request_lockin_snapshot(self) -> None:
