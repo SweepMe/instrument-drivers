@@ -113,6 +113,7 @@ class Device(EmptyDevice):
         self.input_config: str = "AB"
         self.coupling: str = "DC"
         self.include_peaks: bool = False
+        self.resistance_source: str = "S1"  # partner module for calculated resistance (DC mode)
         self.filter_on: bool = False
         self.filter_optimization: str = "NOISe"
         self.lowpass_corner: str = "NONE"
@@ -140,6 +141,11 @@ class Device(EmptyDevice):
         if mode == "AC":
             # Peak detection is only meaningful for AC signals
             gui_parameters["Include peak values"] = False
+        else:
+            # Calculated resistance: pair this VM-10 with a current-type module.
+            # DC excitation requires DC measure mode, so it is only offered here.
+            # The instrument always has a resistance source selected (default S1).
+            gui_parameters["Resistance source"] = ["S1", "S2", "S3", "M1", "M2", "M3"]
 
         gui_parameters[" "] = None  # empty line
         gui_parameters["Analog input filter"] = False
@@ -172,6 +178,8 @@ class Device(EmptyDevice):
         )
         self.coupling = parameters.get("Coupling", "DC")
         self.include_peaks = bool(parameters.get("Include peak values", False))
+        # Calculated DC resistance is only available in DC mode
+        self.resistance_source = str(parameters.get("Resistance source", "S1"))
 
         try:
             self.nplc = float(parameters.get("Averaging time (NPLC)", 1.0))
@@ -211,8 +219,8 @@ class Device(EmptyDevice):
                 self.variables += ["Voltage Positive Peak", "Voltage Negative Peak", "Voltage Peak-Peak"]
                 self.units += ["V", "V", "V"]
         else:
-            self.variables = ["Voltage DC"]
-            self.units = ["V"]
+            self.variables = ["Voltage DC", "Resistance"]
+            self.units = ["V", "Ohm"]
         self.plottype = [True] * len(self.variables)
         self.savetype = [True] * len(self.variables)
 
@@ -234,6 +242,7 @@ class Device(EmptyDevice):
         self.set_analog_filter()  # set filters before range: the range limits depend on them
         self.set_range()
         self.set_nplc(self.nplc)
+        self.set_resistance_source()
         self.set_advanced_settings()
 
     def reconfigure(self, parameters: dict[str, Any] | None = None, keys: list[str] | None = None) -> None:
@@ -255,14 +264,22 @@ class Device(EmptyDevice):
 
     def read_result(self) -> None:
         """Read the acquired values from the instrument."""
+        # The calculated resistance is queried separately and is not part of the READ response
+        expected = len(self.variables) - (1 if self.mode == "DC" else 0)
         response = self.port.read().split(",")
-        if len(response) != len(self.variables):
+        if len(response) != expected:
             msg = (
-                f"Unexpected response length: expected {len(self.variables)} values, "
+                f"Unexpected response length: expected {expected} values, "
                 f"received {len(response)}: '{','.join(response)}'"
             )
             raise ValueError(msg)
         self.results = [self.convert_measurement(value) for value in response]
+
+        if self.mode == "DC":
+            # Calculated DC resistance from this module and the selected resistance source.
+            # Returns NaN if the pairing is incompatible or a module reports an error.
+            resistance = self.port.query(f"CALCulate:SENSe{self.slot}:RESistance:DC?")
+            self.results.append(self.convert_measurement(resistance))
 
     def call(self) -> list[float]:
         """Return the measurement results in the order of self.variables."""
@@ -336,6 +353,24 @@ class Device(EmptyDevice):
         self.port.write(f"SENSe{self.slot}:FILTer:HPASs:FREQuency {self.highpass_corner}")
         if self.highpass_corner != "NONE":
             self.port.write(f"SENSe{self.slot}:FILTer:HPASs:ATTenuation R{self.highpass_rolloff}")
+
+    def set_resistance_source(self) -> None:
+        """Select the partner module for the calculated resistance (R = V/I).
+
+        Only the resistance source is written. The excitation type (ETYPe) is deliberately
+        not set, because it would force the mode of this module and the shape of the source
+        module, interfering with the drivers that control them. The instrument returns NaN
+        for the resistance if the module pairing is incompatible.
+        """
+        if self.mode != "DC":
+            return  # calculated DC resistance is only used in DC mode
+        if self.resistance_source == f"M{self.slot}":
+            msg = (
+                "The resistance source must be a different module than the measuring "
+                "VM-10 itself. Select a current-type module (e.g. BCS-10 or CM-10)."
+            )
+            raise ValueError(msg)
+        self.port.write(f"CALCulate:SENSe{self.slot}:RESistance:SOURce {self.resistance_source}")
 
     def set_advanced_settings(self) -> None:
         """Configure the dark mode of the module LEDs."""

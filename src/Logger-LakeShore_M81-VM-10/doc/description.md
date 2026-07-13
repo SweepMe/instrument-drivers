@@ -6,10 +6,16 @@
 
 ## Modes and returned variables
 
-- **DC mode**: returns **Voltage DC** in V, averaged over the configured averaging time.
+- **DC mode**: returns **Voltage DC** in V, averaged over the configured averaging time, and **Resistance** in Ohm (see "Calculated resistance" below).
 - **AC mode**: returns **Voltage RMS** (total RMS including AC and DC components within the observation window) and **Voltage DC**, both in V. With "Include peak values" enabled, it additionally returns **Voltage Positive Peak**, **Voltage Negative Peak**, and **Voltage Peak-Peak**. All values of one measurement point stem from a single, time-synchronized acquisition.
 
 Special values: **+inf** indicates a range overload, **NaN** indicates that the value is invalid or still settling. Choose a larger range (or Auto) on overload.
+
+## Calculated resistance ("Resistance source", DC mode only)
+
+The M81 calculates a DC resistance by pairing this VM-10 with a current-type module: select the module that drives or measures the current through your sample (e.g. a BCS-10 source or a CM-10 measure module) as "Resistance source" (default: S1, matching the instrument default). In DC mode the driver always returns **Resistance** in Ohm, calculated by the instrument from time-synchronized readings. The value is NaN when the pairing is incompatible (e.g. another voltage module), a paired module reports an error, or the source amplitude is 0 — in that case simply ignore the column. AC excitation resistance requires lock-in mode and is available in the LockIn driver.
+
+The driver intentionally does not touch the instrument's resistance excitation type or optimization settings, since these would reconfigure the source module behind the back of the driver controlling it.
 
 ## Averaging time
 

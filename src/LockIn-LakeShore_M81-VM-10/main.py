@@ -129,6 +129,7 @@ class Device(EmptyDevice):
         self.highpass_rolloff: int = 6
         self.digital_highpass: bool = True
         self.darkmode: bool = False
+        self.resistance_source: str = "S1"  # partner module for calculated AC resistance
 
         # Result parameters
         self.x_lia: float = float("nan")
@@ -137,6 +138,7 @@ class Device(EmptyDevice):
         self.theta_lia: float = float("nan")
         self.freq_lia: float = float("nan")
         self.dc_lia: float = float("nan")
+        self.resistance_results: list[float] = [float("nan")] * 4
 
         self.variables = ["X", "Y", "Magnitude", "Phase", "Frequency", "Lock-In DC"]
         self.units = ["V", "V", "V", "°", "Hz", "V"]
@@ -184,6 +186,9 @@ class Device(EmptyDevice):
                 "Filter1": ["High pass digital filter ON", "High pass digital filter OFF"],
                 "Lock-In harmonic": 1,
                 "Reference phase shift in degrees": ["Auto", "As is", "0.0 (edit)"],
+                # Calculated resistance: pair this VM-10 with a current-type module.
+                # The instrument always has a resistance source selected (default S1).
+                "Resistance source": ["S1", "S2", "S3", "M1", "M2", "M3"],
                 "": None,  # empty line
                 "Turn off LED": False,
             }
@@ -239,8 +244,25 @@ class Device(EmptyDevice):
         self.digital_highpass = "ON" in str(parameters.get("Filter1", "ON"))
         self.lia_phase_mode = str(parameters.get("Reference phase shift in degrees", "Auto"))
         self.darkmode = bool(parameters.get("Turn off LED", False))
+        self.resistance_source = str(parameters.get("Resistance source", "S1"))
 
         self.shortname = f"VM-10 @ M{self.slot}"
+
+        self.variables = [
+            "X",
+            "Y",
+            "Magnitude",
+            "Phase",
+            "Frequency",
+            "Lock-In DC",
+            "Resistance In-Phase",
+            "Resistance Quadrature",
+            "Resistance Magnitude",
+            "Resistance Phase",
+        ]
+        self.units = ["V", "V", "V", "°", "Hz", "V", "Ohm", "Ohm", "Ohm", "°"]
+        self.plottype = [True] * len(self.variables)
+        self.savetype = [True] * len(self.variables)
 
     # --- semantic standard functions called by SweepMe! during a measurement ---
 
@@ -265,6 +287,9 @@ class Device(EmptyDevice):
         self.set_analog_filter()  # set filters before range: the range limits depend on them
         self.set_range()
         self.set_time_constant()
+        # The resistance source must be set before the lock-in settings: in lock-in mode,
+        # writing the resistance source also overwrites the lock-in reference source.
+        self.set_resistance_source()
         self.set_lockin_settings()
         self.set_advanced_settings()
 
@@ -343,9 +368,17 @@ class Device(EmptyDevice):
         else:
             self.dc_lia = float("nan")
 
+        # Calculated AC resistance from this module and the selected resistance source.
+        # The instrument returns NaN if the pairing is incompatible or a module has an error.
+        self.resistance_results = []
+        for quantity in ("INPHase", "QUADrature", "MAGNitude", "PHASe"):
+            response = self.port.query(f"CALCulate:SENSe{self.slot}:RESistance:{quantity}?")
+            self.resistance_results.append(self.convert_measurement(response))
+
     def call(self) -> list[float]:
         """Return the measurement results in the order of self.variables."""
-        return [self.x_lia, self.y_lia, self.r_lia, self.theta_lia, self.freq_lia, self.dc_lia]
+        results = [self.x_lia, self.y_lia, self.r_lia, self.theta_lia, self.freq_lia, self.dc_lia]
+        return results + self.resistance_results
 
     # --- wrapped functions ---
 
@@ -483,6 +516,22 @@ class Device(EmptyDevice):
                 msg = "The reference phase shift must be between -360 and +360 degrees."
                 raise ValueError(msg)
             self.port.write(f"SENSe{self.slot}:LIA:DPHase {self.lia_phase_shift}")
+
+    def set_resistance_source(self) -> None:
+        """Select the partner module for the calculated resistance (R = V/I).
+
+        Only the resistance source is written. The excitation type (ETYPe) is deliberately
+        not set, because it would force the mode of this module and the shape of the source
+        module, interfering with the drivers that control them. The instrument returns NaN
+        for the resistance if the module pairing is incompatible.
+        """
+        if self.resistance_source == f"M{self.slot}":
+            msg = (
+                "The resistance source must be a different module than the measuring "
+                "VM-10 itself. Select a current-type module (e.g. BCS-10 or CM-10)."
+            )
+            raise ValueError(msg)
+        self.port.write(f"CALCulate:SENSe{self.slot}:RESistance:SOURce {self.resistance_source}")
 
     def set_analog_filter(self) -> None:
         """Configure the analog input filter of the VM-10 (hardware high/low pass)."""
