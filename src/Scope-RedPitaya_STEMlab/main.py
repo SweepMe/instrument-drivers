@@ -30,6 +30,7 @@
 # SweepMe! device class
 # Type: Scope
 # Device: Red pitaya STEMlab
+# Red Pitaya OS: 2.05-37
 
 # TODO
 #-> comments
@@ -171,7 +172,7 @@ class Device(EmptyDevice):
 
         self.reset_acquisition()  # Reset Device
 
-        self.port.write("ACQ:DATA:UNITS VOLTS")  # set Units
+        self.port.write("ACQ:DATA:Units VOLTS")  # set Units
         
         self.port.write("ACQ:BUF:SIZE?")  # get buffersize from device
         self.buffersize = int(self.port.read())
@@ -241,14 +242,13 @@ class Device(EmptyDevice):
                 elif time.time()-self.starttime > self.triggertimeout:
                     msg = "Red Pitaya Scope Trigger timeout!"
                     raise Exception(msg)
-                    
-            # https://redpitaya.readthedocs.io/en/latest/appsFeatures/examples/acquisition/acqRF-exm1.html#scpi-code-examples        
+
             # OS 2.00-18 or higher
-            # while True:
-                # self.port.write("ACQ:TRig:FILL?")
-                # buffer_fill = self.port.read()
-                # if buffer_fill == "1":
-                    # break
+            while True:
+                self.port.write("ACQ:TRig:FILL?")
+                buffer_fill = self.port.read()
+                if buffer_fill == "1":
+                    break
 
             # Waiting for the buffer to fill
             # self.sleeptime = self.timerange - self.triggerdelay + self.starttime - time.time()
@@ -279,7 +279,7 @@ class Device(EmptyDevice):
     
     def read_data(self):
         for i in range(len(self.channels)):
-            self.port.write("ACQ:SOUR{0}:DATA:OLD:N? {1}".format(self.channels[i], self.read_samples))
+            self.port.write("ACQ:SOUR{0}:DATA:Old:N? {1}".format(self.channels[i], self.read_samples))    #! Check the intended functionality
             self.buffer = self.port.read()
             try:
                 self.data = list(map(float, self.buffer.strip('{}\n\r').replace("  ", "").split(',')))
@@ -294,7 +294,7 @@ class Device(EmptyDevice):
     def trigger_settings(self):
         # create trigger command
         self.triggersource = self.commands[self.triggermode]
-        if self.triggersource != "NOW" and self.triggersource != "DISABLED":
+        if self.triggersource != "NOW" and self.triggersource != "DISABLED":    #!
             self.triggersource += self.commands[self.triggerslope]
 
         self.triggerdelaysamples = int(self.triggerdelay*self.real_samplerate+self.buffersize*0.5)
@@ -329,31 +329,31 @@ class Device(EmptyDevice):
         # Shows current status of RedPitayas settings
         self.port.write("ACQ:DEC {0}".format(self.decimation))                      # set decimation
         self.port.write("ACQ:AVG {0}".format(self.commands[self.acquisiton]))       # set decimation average
-        self.port.write("ACQ:TRIG {}".format(self.triggersource))                   # set trigger source
+        self.port.write("ACQ:TRig {}".format(self.triggersource))                   # set trigger source
         
         if self.triggersource != "NOW" and self.triggersource != "DISABLED":
-            self.port.write("ACQ:TRIG:LEV {0}".format(self.triggerlevel))           # set trigger level
-            self.port.write("ACQ:TRIG:HYST {0}".format(self.triggerhysteresis))     # set trigger hysteresis
-            self.port.write("ACQ:TRIG:DLY {0}".format(self.triggerdelaysamples))    # set trigger delay
+            self.port.write("ACQ:TRig:LEV {0}".format(self.triggerlevel))           # set trigger level
+            self.port.write("ACQ:TRig:HYST {0}".format(self.triggerhysteresis))     # set trigger hysteresis
+            self.port.write("ACQ:TRig:DLY {0}".format(self.triggerdelaysamples))    # set trigger delay
 
     def settings_status(self):
-        self.port.write("ACQ:DATA:UNITS?")                  # Data units
+        self.port.write("ACQ:DATA:Units?")                  # Data units
         print("Data Units:", self.port.read())
         self.port.write("ACQ:DEC?")                         # Decimation
         print("Decimation:", self.port.read())
         self.port.write("ACQ:AVG?")                         # Decimation averaging
         print("Averaging:", self.port.read())
-        self.port.write("ACQ:TRIG:LEV?")                    # Trigger Level
+        self.port.write("ACQ:TRig:LEV?")                    # Trigger Level
         print("Trigger Level:", self.port.read())
-        self.port.write("ACQ:TRIG:HYST?")                   # Trigger Hysteresis
+        self.port.write("ACQ:TRig:HYST?")                   # Trigger Hysteresis
         print("Trigger Hysteresis:", self.port.read())
-        self.port.write("ACQ:TRIG:DLY?")                    # Trigger Delay
+        self.port.write("ACQ:TRig:DLY?")                    # Trigger Delay
         print("Trigger Delay:", self.port.read())
         self.port.write("ACQ:SOUR1:GAIN?")                  # Channel 1 Gain
         print("Channel 1 Gain:", self.port.read())
         self.port.write("ACQ:SOUR2:GAIN?")                  # Channel 2 Gain
         print("Channel 2 Gain:", self.port.read())
-        self.port.write("ACQ:TRIG:STAT?")                   # Trigger status
+        self.port.write("ACQ:TRig:STAT?")                   # Trigger status
         print("Trigger Status:", self.port.read())
 
     def get_identification(self):
@@ -361,7 +361,7 @@ class Device(EmptyDevice):
         return self.port.read()
 
     def get_system_version(self):
-        self.port.write("SYST:VERS?")
+        self.port.write("SYSTem:VERS?")        #!
         return self.port.read()
         
     def start_acquisition(self):
@@ -382,7 +382,7 @@ class Device(EmptyDevice):
                 -> "TD" if the measurement was triggered
         """
         
-        self.port.write("ACQ:TRIG:STAT?")
+        self.port.write("ACQ:TRig:STAT?")
         return self.port.read()
         
     def set_average(self, state):
