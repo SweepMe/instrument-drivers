@@ -67,7 +67,7 @@ class Device(EmptyDevice):
         self.port_string: str = ""
         self.port_manager = True
         self.port_properties = {
-            "timeout": 5,  # seconds
+            "timeout": 1,  # seconds
         }
         self.port_types = ["GPIB", "COM", "TCPIP"]
 
@@ -356,7 +356,19 @@ class Device(EmptyDevice):
             self.time_stamps = values[3::5]
 
         else:
-            results = self.port.read()
+            timeout = max(self.speed * self.averages * 3, 3)  # seconds, allow 3x expected time plus a fixed 3 s margin
+            time_start = time.monotonic()
+
+            while not self.is_run_stopped() and (time.monotonic() - time_start) < timeout:
+                try:
+                    results = self.port.read()
+                    break
+                except Exception as e:
+                    time.sleep(0.1)
+            else:
+                msg = f"Failed to read result within {timeout:.1f} s (expected ~{self.speed * self.averages:.1f} s)"
+                raise TimeoutError(msg)
+
             values = results.split(",")
             self.measured_voltage = float(values[0])
             self.measured_current = float(values[1])
