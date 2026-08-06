@@ -67,7 +67,10 @@ All commands used by this driver are available since ecosystem 1.04-18, with one
 `ACQ:TRig:FILL?` requires OS 2.00. It is tried once per run. If the instrument does not answer it
 within the port timeout, or answers something unexpected, the driver stops using it and waits for
 the calculated time the second half of the buffer needs instead. That fallback works on every
-ecosystem version tested, down to version 0.98.
+ecosystem version tested, down to version 0.98. On an ecosystem without the query, the first
+acquisition of a run costs one port timeout while the driver finds out that it is not supported.
+
+Tested on OS 2.x (STEMlab 125-14, query used) and on OS 0.98 (STEMlab 125-10, fallback used).
 
 The connection is opened with a receive timeout (`self.port_timeout`, 5 s by default). This is
 essential on older ecosystems: without it, a command the instrument does not know is never
