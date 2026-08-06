@@ -31,21 +31,35 @@
 
 from __future__ import annotations
 
+import json
+import select
+import socket
 from typing import Any
 
 from pysweepme.FolderManager import addFolderToPATH
 addFolderToPATH()
 
+import dobot_alarms
 import dobot_api
-# import importlib 
+# import importlib
 # importlib.reload(dobot_api)
-
-import select
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 DEBUG_MODE: bool = False
+
+
+class DobotConnectionError(Exception):
+    """Raised when the TCP connection to the robot cannot be established or is lost."""
+
+
+class DobotTimeoutError(Exception):
+    """Raised when the robot does not reply to a command within the timeout."""
+
+
+class DobotResponseError(Exception):
+    """Raised when the robot replies to a command with a non-zero error code."""
 
 
 class Device(EmptyDevice):
@@ -165,9 +179,26 @@ class Device(EmptyDevice):
         """Connect to the device. This function is called only once at the start of the measurement."""
         port_api_dashboard = 29999
         port_api_move = 30003
-        
+
         self.api_dashboard = DobotDashboard(self.port_string, port_api_dashboard)
         self.api_move = DobotMove(self.port_string, port_api_move)
+
+        # A robot that is not in remote control mode accepts the TCP connection but does not answer commands.
+        # Check the communication here to give a clear message instead of a timeout at the first real command.
+        try:
+            mode = self.get_robot_mode()
+        except DobotTimeoutError as exc:
+            msg = (
+                f"The robot at {self.port_string} accepted the TCP connection but does not answer commands. "
+                "Connect to the robot with DobotStudioPro and set 'Configuration -> Remote Control -> "
+                "Current Mode' to 'TCP/IP Secondary Development'. If the mode is already set, another program "
+                "might be blocking the robot or the controller needs a restart."
+            )
+            raise DobotConnectionError(msg) from exc
+
+        if DEBUG_MODE:
+            mode_name = dobot_alarms.ROBOT_MODES.get(mode, "unknown")
+            print(f"MG400: connected, robot mode is {mode} ({mode_name})")
 
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
@@ -273,10 +304,24 @@ class Device(EmptyDevice):
 
     def enable_robot(self, *args) -> None:
         response = self.api_dashboard.EnableRobot(args)
-        status = response.split(",")[0]
-        if status == "-1":
-            msg = (f"EnableRobot() failed. Check if 'Remote Control - Mode' was set to 'TCP/IP "
-                   f"Secondary Development' in DobotStudioPro.")
+        try:
+            status = int(response.split(",")[0])
+        except ValueError:
+            msg = f"EnableRobot() returned an unreadable response: {response}"
+            raise Exception(msg) from None
+        if status != 0:
+            msg = (
+                f"EnableRobot() failed with error code {status}: {dobot_alarms.describe_response_error(status)} "
+                "Check if 'Remote Control - Mode' was set to 'TCP/IP Secondary Development' in DobotStudioPro "
+                "and that no emergency stop is active."
+            )
+            try:
+                has_alarm, alarm_message = self.read_alarms()
+            except Exception:
+                has_alarm = False
+                alarm_message = ""
+            if has_alarm:
+                msg += f"\nActive robot alarms:\n{alarm_message}"
             raise Exception(msg)
 
     def disable_robot(self) -> None:
@@ -303,10 +348,11 @@ class Device(EmptyDevice):
     def set_acceleration_linear(self, acc) -> None:
         self.api_dashboard.AccL(int(float(acc)))
 
-    def get_robot_mode(self) -> str:
-        mode = self.api_dashboard.RobotMode()
-        return mode
-        
+    def get_robot_mode(self) -> int:
+        """Read the current robot mode. See dobot_alarms.ROBOT_MODES for the meaning of the values."""
+        response = self.api_dashboard.RobotMode()
+        return int(self.get_response_data(response)[0])
+
     def move_linear(self, x, y, z, r) -> None:
         """Linear move to the given cartesian coordinates.
 
@@ -314,23 +360,38 @@ class Device(EmptyDevice):
         When the robot is controlled remotely, this is only noticed when the next move command is sent and results in a
         timeout. To prevent the timeout, the error state is checked after each movement.
         """
-        self.api_move.MovL(x, y, z, r)  # linear move to home position
-        if self.has_error():
-            msg = f"MoveL({x}, {y}, {z}, {r}) failed. Check if the position is within the robot's working range."
+        self.api_move.MovL(x, y, z, r)
+        has_alarm, alarm_message = self.read_alarms()
+        if has_alarm:
+            msg = (
+                f"MovL({x}, {y}, {z}, {r}) failed. Check if the position is within the robot's working range.\n"
+                f"Robot alarms:\n{alarm_message}"
+            )
             raise Exception(msg)
 
-    def has_error(self) -> bool:
-        """Readout the Error ID and return True if there is an error.
+    def read_alarms(self) -> tuple[bool, str]:
+        """Read the robot alarms via GetErrorID() and return them as human-readable text.
 
-        Experimental implementation, since the error message is not well structured.
-        The error message is quite long string and contains multiple empty lists. The error IDs do not adhere to the
-        error codes from the manual. Therefore, we cannot check the type of error, but only check the length of the
-        error message.
+        Returns:
+            Tuple of a bool indicating whether at least one alarm is active and a string describing all active
+            alarms, one per line.
         """
-        error_code = self.api_dashboard.GetErrorID()
-        if len(error_code) > 51:
-            return True
-        return False
+        response = self.api_dashboard.GetErrorID()
+        # The response has the format "ErrorID,{[[id,...], [id], ...]},GetErrorID();". The first inner list holds
+        # the controller/algorithm alarms, the following lists hold the servo alarms of the individual joints.
+        try:
+            alarm_lists = json.loads(response[response.find("{") + 1 : response.rfind("}")])
+        except (ValueError, json.JSONDecodeError):
+            # Fallback for unknown response formats: a response longer than the empty alarm structure indicates
+            # an alarm, but the ids cannot be extracted.
+            return len(response) > 51, f"The robot alarm response could not be parsed: {response}"
+        has_alarm = any(alarm_id != 0 for alarms in alarm_lists for alarm_id in alarms)
+        return has_alarm, dobot_alarms.describe_alarms(alarm_lists)
+
+    def has_error(self) -> bool:
+        """Readout the robot alarms and return True if at least one alarm is active."""
+        has_alarm, _ = self.read_alarms()
+        return has_alarm
         
     def go_home(self) -> None:
         self.move_linear(350.0, 0.0, 0.0, 0.0)  # linear move to home position
@@ -338,7 +399,23 @@ class Device(EmptyDevice):
         self._last_xyzr = self.get_position()
                 
     def sync(self, timeout=10.0) -> None:
-        self.api_move.Sync(timeout) 
+        """Wait until all queued move commands are finished."""
+        try:
+            self.api_move.Sync(timeout)
+        except DobotTimeoutError as exc:
+            msg = (
+                f"The robot did not finish its movement within {timeout} s. Possible reasons: the movement is "
+                "slow (low speed factor) and needs a larger timeout, the robot is in an alarm state, or the "
+                "motion queue is blocked."
+            )
+            try:
+                has_alarm, alarm_message = self.read_alarms()
+            except Exception:
+                has_alarm = False
+                alarm_message = ""
+            if has_alarm:
+                msg += f"\nRobot alarms:\n{alarm_message}"
+            raise Exception(msg) from exc
         
     def get_pose(self) -> tuple[float, float, float, float]:
         answer = self.api_dashboard.GetPose()  # added function
@@ -361,29 +438,115 @@ class Device(EmptyDevice):
         return data_string.split(",")
 
 
-class DobotDashboard(dobot_api.DobotApiDashboard):
+class DobotSocket:
+    """Mixin that replaces the connection and reply handling of dobot_api with detailed error messages."""
 
-    def is_package_ready(self, timeout = 0.0):
+    connect_timeout: float = 5.0
+
+    def __init__(self, ip: str, port: int) -> None:
+        self.ip = ip
+        self.port = port
+        self.socket_dobot = 0
+        self.text_log = None
+        self.last_command = ""
+        try:
+            self.socket_dobot = socket.create_connection((ip, port), timeout=self.connect_timeout)
+        except socket.timeout as exc:
+            msg = (
+                f"Connecting to the robot at {ip}:{port} timed out after {self.connect_timeout} s. "
+                "Check that the robot is powered on and has finished booting (takes about 1 minute), that the "
+                "Ethernet cable is connected, and that this PC uses a static IP address in the subnet of the "
+                "robot, e.g. 192.168.1.5 with subnet mask 255.255.255.0 when using the first Ethernet port of "
+                "the robot (192.168.1.6)."
+            )
+            raise DobotConnectionError(msg) from exc
+        except ConnectionRefusedError as exc:
+            msg = (
+                f"The robot at {ip}:{port} refused the connection. Possible reasons: another program "
+                "(e.g. DobotStudioPro) is blocking the port, a previous connection was not closed yet, or the "
+                "controller firmware is older than 1.6.0.0, which has a known issue with TCP connections "
+                "(update the robot firmware in this case). Restarting the robot can also help."
+            )
+            raise DobotConnectionError(msg) from exc
+        except OSError as exc:
+            msg = (
+                f"Could not connect to the robot at {ip}:{port} ({exc}). Check the network configuration: this "
+                "PC needs a static IP address in the subnet of the robot, e.g. 192.168.1.5 with subnet mask "
+                "255.255.255.0 when using the first Ethernet port of the robot (192.168.1.6)."
+            )
+            raise DobotConnectionError(msg) from exc
+
+    def is_package_ready(self, timeout: float = 0.0) -> bool:
         ready, _, _ = select.select([self.socket_dobot], [], [], timeout)
         return not not ready  # first "not" makes a bool, second "not" negates the bool to what is needed
 
-    def send_data(self, string):
-        if DEBUG_MODE:
-            self.log(f"Send: {string}")
-        self.socket_dobot.send(str.encode(string, 'utf-8'))
-
-    def wait_reply(self, timeout=3.0):
-        """
-        Read the return value
-        """
-        if self.is_package_ready(timeout=timeout):
-            data = self.socket_dobot.recv(1024)
-            data_str = str(data, encoding="utf-8")
+    def send_data(self, string: str) -> None:
+        # Discard stale replies of earlier commands that ran into a timeout, so that the next reply that is
+        # read belongs to the command sent here.
+        while self.is_package_ready():
+            stale = self.socket_dobot.recv(1024)
             if DEBUG_MODE:
-                self.log(f'Receive: {data_str}')
-            return data_str
-        else:
-            raise Exception("No package returned within timeout.")
+                self.log(f"Discard stale reply: {str(stale, encoding='utf-8')}")
+
+        self.last_command = string
+        if DEBUG_MODE:
+            self.log(f"Send to {self.ip}:{self.port}: {string}")
+        try:
+            self.socket_dobot.send(str.encode(string, "utf-8"))
+        except OSError as exc:
+            msg = (
+                f"Sending '{string}' to the robot at {self.ip}:{self.port} failed ({exc}). "
+                "The connection to the robot was probably lost."
+            )
+            raise DobotConnectionError(msg) from exc
+
+    def wait_reply(self, timeout: float = 3.0, check: bool = True) -> str:
+        """Read the reply of the last sent command and check its error code."""
+        if not self.is_package_ready(timeout=timeout):
+            msg = (
+                f"The robot did not reply to '{self.last_command}' within {timeout} s. Possible reasons: "
+                "the remote control mode is not set to 'TCP/IP Secondary Development' in DobotStudioPro, "
+                "the robot is in an alarm state, or the motion queue is blocked."
+            )
+            raise DobotTimeoutError(msg)
+        data = self.socket_dobot.recv(1024)
+        data_str = str(data, encoding="utf-8")
+        if DEBUG_MODE:
+            self.log(f"Receive from {self.ip}:{self.port}: {data_str}")
+        if check:
+            self.check_response(data_str)
+        return data_str
+
+    def check_response(self, response: str) -> None:
+        """Raise a readable exception if the leading ErrorID of a command response is non-zero."""
+        try:
+            error_id = int(response.split(",", 1)[0])
+        except ValueError:
+            return  # the response does not follow the "ErrorID,{...},Command();" format
+        if error_id != 0:
+            msg = (
+                f"The robot answered '{self.last_command}' with error code {error_id}: "
+                f"{dobot_alarms.describe_response_error(error_id)}"
+            )
+            raise DobotResponseError(msg)
+
+
+class DobotDashboard(DobotSocket, dobot_api.DobotApiDashboard):
+
+    def ClearError(self):
+        """Clear controller alarms. Not checked because it is used to recover from alarm states."""
+        self.send_data("ClearError()")
+        return self.wait_reply(check=False)
+
+    def ResetRobot(self):
+        """Stop the robot. Not checked because it is used to recover from alarm states."""
+        self.send_data("ResetRobot()")
+        return self.wait_reply(check=False)
+
+    def DisableRobot(self):
+        """Disable the robot. Not checked because it is called during shutdown."""
+        self.send_data("DisableRobot()")
+        return self.wait_reply(check=False)
 
     def EnableRobot(self, *args):
         """
@@ -397,9 +560,9 @@ class DobotDashboard(dobot_api.DobotApiDashboard):
             string = "EnableRobot({:f},{:f},{:f},{:f})".format(*tuple(map(float, *args)))
         else:
             raise Exception("EnableRobot() requires 0, 1, or 4 parameters")
-            
+
         self.send_data(string)
-        return self.wait_reply()
+        return self.wait_reply(check=False)  # the error code is evaluated in Device.enable_robot
 
     def GetPose(self):
         """
@@ -440,29 +603,8 @@ class DobotDashboard(dobot_api.DobotApiDashboard):
         return self.wait_reply()
 
 
-class DobotMove(dobot_api.DobotApiMove):
+class DobotMove(DobotSocket, dobot_api.DobotApiMove):
 
-    def is_package_ready(self, timeout = 0.0):
-        ready, _, _ = select.select([self.socket_dobot], [], [], timeout)
-        return not not ready  # first "not" makes a bool, second "not" negates the bool to what is needed
-
-    def send_data(self, string):
-        if DEBUG_MODE:
-            self.log(f"Send move: {string}")
-        self.socket_dobot.send(str.encode(string, 'utf-8'))
-
-    def wait_reply(self, timeout=3.0):
-        """
-        Read the return value
-        """
-        if self.is_package_ready(timeout=timeout):
-            data = self.socket_dobot.recv(1024)
-            data_str = str(data, encoding="utf-8")
-            self.log(f'Receive move: {data_str}')
-            return data_str
-        else:
-            raise Exception("No package returned within timeout.")
-            
     def Sync(self, timeout = 10.0):
         """
         The blocking program executes the queue instruction and returns after all the queue instructions are executed

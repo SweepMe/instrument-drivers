@@ -58,6 +58,36 @@ This driver can be used to control **x, y, z** and **r (rotation)** of a Dobot M
 - The home position is fixed and independent of an individual position set in Dobot Studio Pro. Please check whether **Go home before or after the run** works for you.
 
 
+### Error messages:
+
+- The driver reads the robot alarms via `GetErrorID()` after each movement and reports them with their official
+  Dobot descriptions, e.g. "Controller alarm 17: Inverse kinematics error with no solution" or
+  "Controller alarm 112: Collision detection stop".
+- Command responses are checked for their error code. For example, if the robot is in alarm or emergency-stop
+  state, the driver reports this instead of running into an unexplained timeout.
+- Alarms are cleared automatically at the start of each run. To clear an alarm manually, use DobotStudioPro.
+
+### Troubleshooting connection problems:
+
+If the driver cannot connect at the start of a run, check the following:
+
+1. **Robot still booting**: after power-on, the controller needs about one minute before it accepts TCP
+   connections. Wait and start the run again.
+2. **Remote control mode**: the robot accepts the TCP connection but does not answer commands if
+   Configuration -> Remote Control -> Current Mode is not set to **TCP/IP Secondary Development** in
+   DobotStudioPro.
+3. **Network configuration**: the PC needs a static IP address in the robot's subnet (e.g. `192.168.1.5`,
+   subnet mask `255.255.255.0`, when using the first Ethernet port with the fixed address `192.168.1.6`).
+4. **Port blocked by another program**: only close DobotStudioPro after setting the remote control mode, and
+   make sure no other program (e.g. a Python script) is still connected to ports 29999/30003. A connection
+   that was not closed properly (e.g. after a crash) can block the port until the controller frees it —
+   restarting the robot helps in this case.
+5. **Old firmware**: controller firmware below **1.6.0.0** has a known issue where the TCP ports occasionally
+   fail to connect or accept commands. If connecting fails repeatedly, update the robot firmware.
+
+If a movement does not finish and the driver reports a blocked motion queue, the queue can be reopened by
+sending `ClearError()` and `Continue()` on port 29999, or by restarting the robot.
+
 ### Known Issues
 
 - If DobotStudioPro cannot connect to the robot and displays the message "9090 port is occupied by other processes, DobotLink failed to open":
