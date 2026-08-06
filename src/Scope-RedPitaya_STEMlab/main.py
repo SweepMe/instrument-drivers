@@ -478,7 +478,7 @@ class Device(EmptyDevice):
                 # no answer within the port timeout, the command is not supported
                 self.has_fill_query = False
                 self.clear_port()
-                self.write_Log(
+                self.message_log(
                     "Red Pitaya Scope: 'ACQ:TRig:FILL?' is not supported by this "
                     "instrument, waiting for the calculated buffer fill time instead."
                 )
@@ -489,7 +489,7 @@ class Device(EmptyDevice):
 
             if answer not in ("0", "1"):
                 self.has_fill_query = False
-                self.write_Log(
+                self.message_log(
                     "Red Pitaya Scope: 'ACQ:TRig:FILL?' answered {0!r}, waiting for "
                     "the calculated buffer fill time instead.".format(answer)
                 )
