@@ -147,6 +147,12 @@ class Device(EmptyDevice):
         # This will read out multiple channels in parallel without blocking
         self.use_async_readout: bool = True
 
+        self.identifier_channel_names: str = "Active channel names"
+        """Key under which the names of all active channels of a board are shared via device_communication."""
+
+        self._is_retrieving_data: bool = True
+        """True for the channel that starts the measurement and retrieves the data for all channels of a board."""
+
     @staticmethod
     def find_ports() -> list:
         """Return a list of connected devices."""
@@ -380,24 +386,33 @@ class Device(EmptyDevice):
 
             elif self.list_role not in ("List master", "List creator"):
                 self.list_role = "List receiver"
-                self.device_communication[self.identifier]["List receivers"].append(self.channel_name)
+                # again, 'configure' can be called repeatedly, so the channel must not be registered twice
+                list_receivers = self.device_communication[self.identifier]["List receivers"]
+                if self.channel_name not in list_receivers:
+                    list_receivers.append(self.channel_name)
 
         # handling to read multiple channels in spotwise measurements
-        self.identifier_channel_names = "Active channel names"
-        if self.identifier_channel_names not in self.device_communication[self.identifier]:
-            self.device_communication[self.identifier][self.identifier_channel_names] = []
-
-        if len(self.device_communication[self.identifier][self.identifier_channel_names]) == 0:
-            self._is_retrieving_data = True
-        else:
-            self._is_retrieving_data = False
+        # Registration must be idempotent: SweepMe! can call 'configure' again without a preceding 'unconfigure',
+        # e.g. when a parameter such as the compliance is changed during a measurement. Deriving the role from the
+        # list length would then set '_is_retrieving_data' to False for all channels so that no new measurement is
+        # started and the last results are returned again.
+        active_channel_names = self.device_communication[self.identifier].setdefault(
+            self.identifier_channel_names,
+            [],
+        )
 
         # adding channel name as the SMU gets active
-        self.device_communication[self.identifier][self.identifier_channel_names].append(self.channel.name)
+        if self.channel.name not in active_channel_names:
+            active_channel_names.append(self.channel.name)
+
+        # the first registered channel triggers the measurement and retrieves the data for all channels
+        self._is_retrieving_data = active_channel_names[0] == self.channel.name
 
     def unconfigure(self) -> None:
         """Removing channel name if the SMU is no longer active."""
-        self.device_communication[self.identifier][self.identifier_channel_names].remove(self.channel.name)
+        active_channel_names = self.device_communication[self.identifier].get(self.identifier_channel_names, [])
+        if self.channel.name in active_channel_names:
+            active_channel_names.remove(self.channel.name)
 
     def poweron(self) -> None:
         """Enable the channel."""
