@@ -64,12 +64,11 @@ else:
     kinesis_imported = True
 
 
-def callback_function(value):
+def dummy_callback_function(value):
     """Dummy callback function for the MoveTo command, which is called when the movement is completed.
 
     The function must take the return value of the MoveTo command as an argument.
     """
-    pass
 
 
 class Device(EmptyDevice):
@@ -228,7 +227,7 @@ class Device(EmptyDevice):
         # The MoveTo method can be used in a non-blocking way by providing a callback function that is called when the movement is completed.
         # Create a .NET Action[UInt64] delegate
         action_u_int64 = Action[UInt64]
-        callback_delegate = action_u_int64(callback_function)
+        callback_delegate = action_u_int64(dummy_callback_function)
         self.stage.MoveTo(Decimal(new_position), callback_delegate)
 
         # Wait either 1s or until the status shows that the movement has started
