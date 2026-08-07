@@ -113,6 +113,11 @@ class Device(EmptyDevice):
         }
         self.temperature_unit: str = "C"
         self.measure_temperature: bool = True
+        self.sensors = {
+            "Main": Sensor.MAIN,
+            "PT100A": Sensor.PT100A,
+            "PT100B": Sensor.PT100B,
+        }
         self.sensor: Sensor = Sensor.MAIN
 
     def __del__(self) -> None:
@@ -131,7 +136,7 @@ class Device(EmptyDevice):
             "TemperatureUnit": list(self.temperature_units.keys()),
             "MeasureT": True,
             "ReachT": True,
-            "Sensor": ["Main", "PT100A", "PT100B"],
+            "Sensor": list(self.sensors.keys()),
         }
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
@@ -144,7 +149,7 @@ class Device(EmptyDevice):
 
         self.measure_temperature = bool(parameter["MeasureT"])
 
-        self.sensor = getattr(Sensor, parameter["Sensor"].upper())
+        self.sensor = self.sensors[parameter.get("Sensor", "Main")]
         self.temperature_unit = self.temperature_units[parameter["TemperatureUnit"]]
         self.units = [parameter["TemperatureUnit"]]
 
