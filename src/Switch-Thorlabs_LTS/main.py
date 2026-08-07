@@ -91,7 +91,7 @@ class Device(EmptyDevice):
         self.serial_number: str = ""
 
         # Device Parameters
-        self.stage: LongTravelStage = None  # type: ignore
+        self.stage: LongTravelStage = None
         self.sweep_mode: str = "Absolute position in mm"
         self.velocity: float = 5.0  # in mm/s
         self.timeout: int = 60  # in s, default value, will be updated in apply() based on the distance to travel and the velocity
@@ -129,7 +129,7 @@ class Device(EmptyDevice):
             "Velocity in mm/s": 10.0,
             "Home at start": True,
         }
-        if parameters.get("Home at start", True):
+        if parameters.get("Home at start", False):
             new_parameters["Home velocity in mm/s"] = 10.0
 
         return new_parameters
@@ -198,16 +198,11 @@ class Device(EmptyDevice):
         self.stage.StopImmediate()
 
     def configure(self) -> None:
-        """Configure the device. This function is called every time the device is used in the sequencer."""
+        """Configure the device. This function is called when the device is first activated in a branch."""
         self.set_velocity(float(self.velocity))
 
         if self.home_at_start:
-            # Set homing velocity
-            motor_device_settings = self.stage.MotorDeviceSettings
-            motor_device_settings.Home.set_HomeVel(Decimal(float(self.velocity)))
-            self.stage.SetSettings(motor_device_settings, False)
-
-            self.stage.Home(60000)  # Home with a timeout of 60s
+            self.home()
 
     def start(self) -> None:
         """Preparation before applying a new value."""
@@ -282,7 +277,7 @@ class Device(EmptyDevice):
             raise ValueError(msg)
 
     def calculate_timeout(self, new_position: float) -> int:
-        """Calculate the timeout in ms for the MoveTo command based on the distance to travel and the velocity.
+        """Calculate the timeout in s for the MoveTo command based on the distance to travel and the velocity.
 
         The timeout is set to twice the expected travel time, with a minimum of 60s.
         """
@@ -290,7 +285,7 @@ class Device(EmptyDevice):
         distance = abs(new_position - current_position)
 
         expected_travel_time = distance / float(self.velocity)
-        return max(60, int(expected_travel_time * 2)) * 1000
+        return max(60, int(expected_travel_time * 2))
 
     def get_position_mm(self) -> float:
         """Get the current position in mm."""
@@ -306,3 +301,13 @@ class Device(EmptyDevice):
         velocity_parameters = self.stage.GetVelocityParams()
         velocity_parameters.MaxVelocity = Decimal(velocity)
         self.stage.SetVelocityParams(velocity_parameters)
+
+    def home(self) -> None:
+        """Home the device."""
+        # Set homing velocity
+        motor_device_settings = self.stage.MotorDeviceSettings
+        motor_device_settings.Home.set_HomeVel(Decimal(float(self.home_velocity)))
+        self.stage.SetSettings(motor_device_settings, False)
+
+        # Home with a timeout of 60s
+        self.stage.Home(60000)
