@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -44,7 +44,7 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 kinesis_imported = False
 
 bitness = 64 if sys.maxsize > 2 ** 32 else 32
-kinesis_path = "C:\\Program Files\\Thorlabs\\Kinesis"  # if bitness == 64 else "C:\\Program Files (x86)\\Thorlabs\\Kinesis"
+kinesis_path = "C:\\Program Files\\Thorlabs\\Kinesis" if bitness == 64 else "C:\\Program Files (x86)\\Thorlabs\\Kinesis"
 try:
     if kinesis_path not in sys.path:
         sys.path.insert(0, kinesis_path)
@@ -55,6 +55,8 @@ try:
 
     from Thorlabs.MotionControl import DeviceManagerCLI, ModularRackCLI, GenericMotorCLI
 except:
+    # Silently ignore if the Kinesis dlls are not found, because the error would be raised whenever the driver is selected
+    # The warning will be raised when find ports is called or the measurement is started.
     pass
 else:
     kinesis_imported = True
@@ -229,7 +231,7 @@ class Device(EmptyDevice):
                 "stepper_motor": self.stepper_motor,
             }
 
-    def device_manager_connect(self, timeout_s=10):
+    def device_manager_connect(self, timeout_s=10) -> None:
         """Connect to the device manager with a timeout."""
         starting_time = time.time()
         while not self.rack.IsConnected and not self.is_run_stopped():
@@ -270,11 +272,9 @@ class Device(EmptyDevice):
                 velocity_parameters.MaxVelocity = Decimal(float(self.max_velocity))
             self.stepper_motor.SetVelocityParams(velocity_parameters)
 
-        # homing leads to timeout errors if the device is too far from home, leave it for now
         if self.home_at_start:
-            print("Homing at start")
             self.set_homing_velocity(float(self.home_velocity))
-            self.stepper_motor.Home(self.timeout_ms)  # why no Int32()?
+            self.stepper_motor.Home(self.timeout_ms)
 
     def start(self) -> None:
         """Preparation before applying a new value."""
@@ -300,15 +300,13 @@ class Device(EmptyDevice):
         if self.sweep_mode.startswith("Relative"):
             direction = GenericMotorCLI.MotorDirection.Forward if float(
                 self.value) > 0 else GenericMotorCLI.MotorDirection.Backward
-            self.value = abs(float(self.value))
-            # self.stepper_motor.MoveRelative(direction, Decimal(self.value), Int32(self.timeout_ms))
-            self.timeout_ms = self.calculate_timeout(float(self.value), relative_move=True)
-            self.stepper_motor.MoveRelative(direction, Decimal(self.value), callback_delegate)
+            distance = abs(float(self.value))
+            self.timeout_ms = self.calculate_timeout(distance, relative_move=True)
+            self.stepper_motor.MoveRelative(direction, Decimal(distance), callback_delegate)
             self.relative_movement_done = True
 
         elif self.sweep_mode == "Position":
             self.timeout_ms = self.calculate_timeout(float(self.value))
-            # self.stepper_motor.MoveTo(position, Int32(self.timeout_ms))  # no need for Int32
             self.stepper_motor.MoveTo(Decimal(position), callback_delegate)
 
         # Wait either 1s or until the status shows that the movement has started
@@ -322,8 +320,8 @@ class Device(EmptyDevice):
         """Wait until the device has reached the target position."""
         time_start = time.time()
         while not self.is_run_stopped():
-            if time.time() - time_start > self.timeout_ms * 1000:
-                msg = f"Failed to reach the target position within the timeout period of {self.timeout_ms * 1000} seconds."
+            if time.time() - time_start > self.timeout_ms / 1000:
+                msg = f"Failed to reach the target position within the timeout period of {self.timeout_ms / 1000} seconds."
                 raise TimeoutError(msg)
 
             status = self.stepper_motor.Status
