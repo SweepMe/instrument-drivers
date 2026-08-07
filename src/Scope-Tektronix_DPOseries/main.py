@@ -146,11 +146,19 @@ class Device(EmptyDevice):
         self.channel_offsets = {}
         self.channel_impedances = {}
 
+        # Create list of returned variables
+        self.variables = ["Time"]
+        self.units = ["s"]
+        self.plottype = [True]
+        self.savetype = [True]
+
         for i in range(1, 5):
             if parameter["Channel%i" % i]:
                 self.channels.append(i)
 
-                self.variables.append(self.commands["Channel %i" % i] + " " + parameter["Channel%i_Name" % i])
+                variable_name = self.commands["Channel %i" % i] if parameter["Channel%i_Name" % i] == "" else parameter["Channel%i_Name" % i]
+
+                self.variables.append(variable_name)
                 self.units.append("V")
                 self.plottype.append(True)
                 self.savetype.append(True)
