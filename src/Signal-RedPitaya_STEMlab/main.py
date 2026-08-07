@@ -34,6 +34,7 @@
 
 from __future__ import annotations
 
+import math
 import sys
 from typing import Any
 
@@ -499,7 +500,7 @@ class Device(EmptyDevice):
         if self.dutycyclepulsewidthvalue < 0.0:
             self.dutycycle = 0.0
         elif self.dutycyclepulsewidthvalue > 100.0:
-            self.dutycycle = 100.0
+            self.dutycycle = 1.0
         else:
             self.dutycycle = self.dutycyclepulsewidthvalue / 100.0
 
@@ -513,7 +514,10 @@ class Device(EmptyDevice):
         else:
             self.phase = self.delayphasevalue
         if abs(self.phase) > 360:
-            self.phase = np.sign(self.phase) * (self.phase % 360)
+            # 'math.fmod' keeps the sign of the input, e.g. -450 deg -> -90 deg. Python's '%'
+            # returns a non-negative result for a positive modulus, so multiplying it by the sign
+            # of the input gives the negated angle for negative phases, e.g. -450 deg -> -270 deg.
+            self.phase = math.fmod(self.phase, 360)
 
         # set phase
         self.port.write("SOUR{0}:PHAS {1:1.7f}".format(self.channel, self.phase))

@@ -338,28 +338,34 @@ class Device(EmptyDevice):
             self.start_acquisition()
             self.starttime = time.time()  # set starttime, required for filling buffer
 
-            # Arm the trigger. This must happen after 'ACQ:START', see 'arm_trigger'.
-            self.arm_trigger()
-
-            self.wait_for_trigger()
-
-            self.wait_for_buffer()
-
-            self.read_data()  # reading data
-
-            self.stop_acquisition()
+            try:
+                # Arm the trigger. This must happen after 'ACQ:START', see 'arm_trigger'.
+                self.arm_trigger()
+                self.wait_for_trigger()
+                self.wait_for_buffer()
+                if self.is_run_stopped():  # Do not read data if the run stopped.
+                    return
+                self.read_data()  # reading data
+            finally:  # Stop the acquisition even if an error occured
+                try:
+                    self.stop_acquisition()
+                except OSError:
+                    # never mask the exception that is already propagating
+                    self.message_log(
+                        "Red Pitaya Scope: could not stop the acquisition."
+                    )
 
         for i in range(len(self.channels)):  # average data and add offsets
             self.channel_data[i] /= self.averages
             self.channel_data[i] += self.channel_offsets[self.channels[i]]
 
-        self.stop_acquisition()
-
         # specify time values
+        # The axis is derived from the number of samples that were actually received and from the
+        # sample period, not from an endpoint. 'np.linspace' includes its endpoint, so spanning
+        # N samples over N/real_samplerate would spread them with a period of
+        # 1/real_samplerate * N/(N-1), stretching every trace by one sample period in total.
         self.time_values = (
-            np.linspace(
-                0, self.read_samples / self.real_samplerate, len(self.channel_data[0])
-            )
+            np.arange(len(self.channel_data[0])) / self.real_samplerate
             + self.triggerdelay
             + self.timeoffsetvalue
         )
@@ -536,7 +542,7 @@ class Device(EmptyDevice):
                 self.data = list(
                     map(float, self.buffer.strip("{}\n\r").replace("  ", "").split(","))
                 )
-            except:
+            except ValueError:
                 self.data = list(
                     map(
                         float,
@@ -617,9 +623,15 @@ class Device(EmptyDevice):
             self.port.write(
                 "ACQ:TRIG:HYST {0}".format(self.triggerhysteresis)
             )  # set trigger hysteresis
-            self.port.write(
-                "ACQ:TRIG:DLY {0}".format(self.triggerdelaysamples)
-            )  # set trigger delay
+
+        # The trigger delay is sent for every trigger source, also for the edgeless ones. It
+        # positions the data buffer relative to the trigger event ("pre-trigger vs post-trigger
+        # data") and is therefore meaningful for "Now" as well, which has no level or slope.
+        # Skipping it here would leave the instrument at its previous delay while the driver still
+        # shifts the returned time axis by the configured value.
+        self.port.write(
+            "ACQ:TRIG:DLY {0}".format(self.triggerdelaysamples)
+        )  # set trigger delay
 
     def arm_trigger(self):
         """Set the trigger source, which arms the trigger.
