@@ -159,7 +159,6 @@ class Device(EmptyDevice):
                 variable_name = self.commands["Channel %i" % i] if parameter["Channel%i_Name" % i] == "" else parameter["Channel%i_Name" % i]
 
                 self.variables.append(variable_name)
-                print(self.variables)
                 self.units.append("V")
                 self.plottype.append(True)
                 self.savetype.append(True)
