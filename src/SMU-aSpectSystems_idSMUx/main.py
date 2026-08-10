@@ -150,9 +150,6 @@ class Device(EmptyDevice):
         self.identifier_channel_names: str = "Active channel names"
         """Key under which the names of all active channels of a board are shared via device_communication."""
 
-        self._is_retrieving_data: bool = True
-        """True for the channel that starts the measurement and retrieves the data for all channels of a board."""
-
     @staticmethod
     def find_ports() -> list:
         """Return a list of connected devices."""
@@ -393,9 +390,8 @@ class Device(EmptyDevice):
 
         # handling to read multiple channels in spotwise measurements
         # Registration must be idempotent: SweepMe! can call 'configure' again without a preceding 'unconfigure',
-        # e.g. when a parameter such as the compliance is changed during a measurement. Deriving the role from the
-        # list length would then set '_is_retrieving_data' to False for all channels so that no new measurement is
-        # started and the last results are returned again.
+        # e.g. when a parameter such as the compliance is changed during a measurement. Registering the channel
+        # twice would shift the roles of all channels, see 'is_retrieving_data'.
         active_channel_names = self.device_communication[self.identifier].setdefault(
             self.identifier_channel_names,
             [],
@@ -405,14 +401,20 @@ class Device(EmptyDevice):
         if self.channel.name not in active_channel_names:
             active_channel_names.append(self.channel.name)
 
-        # the first registered channel triggers the measurement and retrieves the data for all channels
-        self._is_retrieving_data = active_channel_names[0] == self.channel.name
-
     def unconfigure(self) -> None:
         """Removing channel name if the SMU is no longer active."""
         active_channel_names = self.device_communication[self.identifier].get(self.identifier_channel_names, [])
         if self.channel.name in active_channel_names:
             active_channel_names.remove(self.channel.name)
+
+    def is_retrieving_data(self) -> bool:
+        """Check whether this channel measures and retrieves the data on behalf of all channels of the board.
+
+        The first registered channel takes this role. The role is derived on demand instead of being stored during
+        'configure' so that it passes on automatically when that channel is unconfigured while others keep measuring.
+        """
+        active_channel_names = self.device_communication[self.identifier].get(self.identifier_channel_names, [])
+        return active_channel_names[:1] == [self.channel.name]
 
     def poweron(self) -> None:
         """Enable the channel."""
@@ -455,7 +457,7 @@ class Device(EmptyDevice):
             return
 
         if self.use_async_readout:
-            if self._is_retrieving_data:
+            if self.is_retrieving_data():
                 active_channel_names = self.device_communication[self.identifier][self.identifier_channel_names]
 
                 self.board_model.set_measurement_modes(MeasurementMode.vsense, active_channel_names)
@@ -484,7 +486,7 @@ class Device(EmptyDevice):
             return
 
         if self.use_async_readout:
-            if self._is_retrieving_data:
+            if self.is_retrieving_data():
                 result_v = self.future_v.get()
                 result_i = self.future_i.get()
 
