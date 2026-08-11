@@ -142,7 +142,7 @@ class Device(EmptyDevice):
         """Reset the device after the measurement."""
         # If no wafer sweep was done or no loader is connected, move to separation without unload
         if self.sweep_mode_wafer == "Current wafer" or not self.loader_is_connected:
-            velox.MoveChuckSeparation()
+            self.separate()
         else:
             self.unload_wafer()
 
@@ -163,14 +163,14 @@ class Device(EmptyDevice):
             self.unload_wafer()
             self.load_wafer(next_wafer, self.load_angle)
 
-        velox.MoveChuckSeparation()
+        self.separate()
         if self.current_die != next_die:
             self.step_to_die(next_die)
 
         if subsite is not None:
             self.step_to_subsite(subsite)
 
-        velox.MoveChuckContact()
+        self.contact()
 
     def call(self) -> tuple[str, str, str]:
         """Return the current wafer, die, and subsite."""
@@ -361,3 +361,17 @@ class Device(EmptyDevice):
         subsite_number = self.subsites[subsite]
         ret = velox.StepNextSubDie(subsite_number)
         self.current_subsite = str(ret)
+
+    def contact(self) -> None:
+        """Lower the chuck so the probes contact the wafer.
+
+        Implementing this function enables the 'Contact' button in the wafer-map panel.
+        """
+        velox.MoveChuckContact()
+
+    def separate(self) -> None:
+        """Raise the chuck so the probes separate from the wafer.
+
+        Implementing this function enables the 'Separate' button in the wafer-map panel.
+        """
+        velox.MoveChuckSeparation()
