@@ -20,6 +20,13 @@ RESPONSE_ERROR_CODES: dict[int, str] = {
     -20000: "The number of parameters in the command is incorrect.",
 }
 
+# Robot modes with a special meaning for the driver
+ROBOT_MODE_DISABLED = 4
+ROBOT_MODE_ENABLED = 5
+ROBOT_MODE_RUNNING = 7
+ROBOT_MODE_ERROR = 9
+ROBOT_MODE_PAUSE = 10
+
 # Values returned by RobotMode()
 ROBOT_MODES: dict[int, str] = {
     1: "initializing",
