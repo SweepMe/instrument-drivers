@@ -46,6 +46,7 @@ addFolderToPATH()
 
 import redpitaya_scpi as scpi
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import debug
 
 
 class Device(EmptyDevice):
@@ -165,7 +166,6 @@ class Device(EmptyDevice):
         if waveform == "Arbitrary":
             new_parameters["ArbitraryWaveformFile"] = self.get_folder("CUSTOMFILES")
 
-        new_parameters[" "] = None  # empty line
         new_parameters["Trigger"] = list(self.triggertypes.keys())
         new_parameters["OperationMode"] = list(self.operationmodes.keys())
 
@@ -221,6 +221,28 @@ class Device(EmptyDevice):
 
         # version = self.get_system_version()
         # print("Version:", version)
+
+    def disconnect(self):
+        """Close the connection to the SCPI server.
+
+        This driver does not use the port manager, so it has to close its socket itself. Without
+        it, the socket is only closed when the driver instance is garbage collected, which can be
+        much later than the end of the run: after an exception the traceback keeps a reference to
+        the frame and therefore to the driver instance. A new instance is created for every run,
+        so unclosed sockets accumulate for as long as SweepMe! is open.
+
+        The output is switched off in 'deinitialize', which the sequencer calls before this
+        function.
+        """
+        if self.port is None:
+            return
+
+        try:
+            self.port.close()
+        except OSError:
+            debug("Signal-RedPitaya_STEMlab: Could not close the connection to the instrument.")
+        finally:
+            self.port = None
 
     def configure(self):
         self.limits = 1.0  # +/- Voltage limit of frequency generator
@@ -281,11 +303,11 @@ class Device(EmptyDevice):
         self.start_generation()
 
     def apply(self):
-        # print("SweepValue:", self.value)
+        value = float(self.value)
         # Frequency or Period SweepMode
         if self.sweep_mode == "Frequency in Hz" or self.sweep_mode == "Period in s":
             self.periodfrequency = self.sweep_mode
-            self.periodfrequencyvalue = self.value
+            self.periodfrequencyvalue = value
             self.set_frequency()
             # 'SOUR<n>:FREQ:FIX' rebuilds the signal, so the generation has to be started again
             self.start_generation()
@@ -303,10 +325,10 @@ class Device(EmptyDevice):
                 or self.sweep_mode == "High level in V"
             ):
                 self.amplitudehilevel = self.sweep_mode
-                self.amplitudehilevelvalue = self.value
+                self.amplitudehilevelvalue = value
             else:
                 self.offsetlolevel = self.sweep_mode
-                self.offsetlolevelvalue = self.value
+                self.offsetlolevelvalue = value
             # Amplitude and offset are applied by the FPGA without rebuilding the signal, so the
             # generation must not be started again here. Doing so would reset the signal to its
             # start phase at every measurement point and destroy the continuous waveform.
@@ -315,7 +337,7 @@ class Device(EmptyDevice):
         # Phase or Delay SweepMode
         elif self.sweep_mode == "Phase in °" or self.sweep_mode == "Delay in s":
             self.delayphase = self.sweep_mode
-            self.delayphasevalue = self.value
+            self.delayphasevalue = value
             self.set_phase()
             # the phase is only taken over when the signal starts from the beginning
             self.start_generation()
@@ -369,7 +391,7 @@ class Device(EmptyDevice):
                 parameters.get("DutyCyclePulseWidthValue", 50)
             )
         except ValueError as e:
-            msg = f"Red Pitaya STEMlab: Please enter numeric values into all number fields. Error is: {e}."
+            msg = f"Signal-RedPitaya_STEMlab: Please enter numeric values into all number fields. Error is: {e}."
             raise ValueError(msg)
 
         if self.operationmode == "Burst":
@@ -378,23 +400,23 @@ class Device(EmptyDevice):
                 self.periodnumber = int(parameters.get("BurstSignalRepetitions", 3))
                 self.burstdelay = float(parameters.get("BurstDelay", 0))
             except ValueError as e:
-                msg = f"Red Pitaya STEMlab: Please enter numeric values for burst mode. Error is: {e}."
+                msg = f"Signal-RedPitaya_STEMlab: Please enter numeric values for burst mode. Error is: {e}."
                 raise ValueError(msg)
 
         if self.channel not in (1, 2):
-            msg = f"Red Pitaya STEMlab: Channel must be 1 or 2, but '{self.channel}' was given."
+            msg = f"Signal-RedPitaya_STEMlab: Channel must be 1 or 2, but '{self.channel}' was given."
             raise ValueError(msg)
 
         if self.waveform not in self.waveforms:
             msg = (
-                f"Red Pitaya STEMlab: Unknown waveform '{self.waveform}'. "
+                f"Signal-RedPitaya_STEMlab: Unknown waveform '{self.waveform}'. "
                 f"Supported waveforms are: {', '.join(self.waveforms)}."
             )
             raise ValueError(msg)
 
         if self.triggertype not in self.triggertypes:
             msg = (
-                f"Red Pitaya STEMlab: Unknown trigger '{self.triggertype}'. "
+                f"Signal-RedPitaya_STEMlab: Unknown trigger '{self.triggertype}'. "
                 f"Supported triggers are: {', '.join(self.triggertypes)}."
             )
             raise ValueError(msg)
@@ -403,28 +425,28 @@ class Device(EmptyDevice):
         # driver offered a 'Stream' mode that is not supported by the SCPI server.
         if self.operationmode not in self.operationmodes:
             msg = (
-                f"Red Pitaya STEMlab: Unsupported operation mode '{self.operationmode}'. "
+                f"Signal-RedPitaya_STEMlab: Unsupported operation mode '{self.operationmode}'. "
                 f"Please select one of: {', '.join(self.operationmodes)}."
             )
             raise ValueError(msg)
 
         if self.periodfrequency == "Period in s" and self.periodfrequencyvalue <= 0.0:
-            msg = "Red Pitaya STEMlab: The period must be larger than 0 s."
+            msg = "Signal-RedPitaya_STEMlab: The period must be larger than 0 s."
             raise ValueError(msg)
 
         if (
             self.periodfrequency == "Frequency in Hz"
             and self.periodfrequencyvalue <= 0.0
         ):
-            msg = "Red Pitaya STEMlab: The frequency must be larger than 0 Hz."
+            msg = "Signal-RedPitaya_STEMlab: The frequency must be larger than 0 Hz."
             raise ValueError(msg)
 
         if self.operationmode == "Burst" and self.periodnumber < 1:
-            msg = "Red Pitaya STEMlab: The number of signal periods per burst must be at least 1."
+            msg = "Signal-RedPitaya_STEMlab: The number of signal periods per burst must be at least 1."
             raise ValueError(msg)
 
         if self.operationmode == "Burst" and self.burstnumber < 1:
-            msg = "Red Pitaya STEMlab: The number of burst repetitions must be at least 1."
+            msg = "Signal-RedPitaya_STEMlab: The number of burst repetitions must be at least 1."
             raise ValueError(msg)
 
     def set_trigger_source(self) -> None:
@@ -564,7 +586,7 @@ class Device(EmptyDevice):
                     self.offset,
                 )
             )
-            self.message_log(msg)
+            debug(msg)
             if not self.limits_message_shown:
                 self.limits_message_shown = True
                 self.message_box(msg)

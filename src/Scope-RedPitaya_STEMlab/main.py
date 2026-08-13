@@ -44,6 +44,7 @@ addFolderToPATH()
 
 import redpitaya_scpi as scpi
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme.ErrorMessage import debug
 
 
 class Device(EmptyDevice):
@@ -152,24 +153,11 @@ class Device(EmptyDevice):
             new_parameters["TriggerLevel"] = 0
             new_parameters["TriggerHysteresis"] = 0.0
 
-        new_parameters[" "] = None  # empty line
         new_parameters["Acquisition"] = [
             "Averaged decimation on",
             "Averaged decimation off",
         ]
-        new_parameters["Average"] = [
-            "1",
-            "2",
-            "4",
-            "8",
-            "16",
-            "32",
-            "64",
-            "128",
-            "256",
-            "512",
-            "1024",
-        ]
+        new_parameters["Average"] = 1
         new_parameters["SamplingRateType"] = ["Samples"]
         new_parameters["SamplingRate"] = [
             "16384",
@@ -181,31 +169,16 @@ class Device(EmptyDevice):
             "256",
         ]
 
-        new_parameters["TimeRange"] = ["Time range in s:"]
-        new_parameters["TimeRangeValue"] = [
+        new_parameters["TimeRange"] = ["Time range:"]
+        new_parameters[
+            "TimeRangeValue"
+        ] = [  # user can enter time range in s, ms, µs, ns
             "131 µs",
-            "262 µs",
-            "524 µs",
-            "1.04 ms",
-            "2.09 ms",
-            "4.19 ms",
-            "8.38 ms",
-            "16.7 ms",
-            "33.5 ms",
-            "67.1 ms",
-            "134 ms",
-            "268 ms",
-            "536 ms",
-            "1.07 s",
-            "2.14 s",
-            "4.29 s",
-            "8.60 s",
         ]
         new_parameters["TimeOffsetValue"] = 0.0
 
         # Channel specific GUI parameters
         for i in (1, 2):
-            new_parameters[f"  Channel {i}"] = None  # empty line
             new_parameters[f"Channel{i}"] = False
             if parameters.get(f"Channel{i}", False):
                 new_parameters[f"Channel{i}_Name"] = f"Ch{i}"
@@ -266,8 +239,24 @@ class Device(EmptyDevice):
         # system_version = self.get_system_version()
         # print("System version:", system_version)
 
-    def initialize(self):
-        pass
+    def disconnect(self):
+        """Close the connection to the SCPI server.
+
+        This driver does not use the port manager, so it has to close its socket itself. Without
+        it, the socket is only closed when the driver instance is garbage collected, which can be
+        much later than the end of the run: after an exception the traceback keeps a reference to
+        the frame and therefore to the driver instance. A new instance is created for every run,
+        so unclosed sockets accumulate for as long as SweepMe! is open.
+        """
+        if self.port is None:
+            return
+
+        try:
+            self.port.close()
+        except OSError:
+            debug("Scope-RedPitaya_STEMlab: Could not close the connection to the instrument.")
+        finally:
+            self.port = None
 
     def configure(self):
         # general settings
@@ -297,8 +286,9 @@ class Device(EmptyDevice):
         # time settings
         self.time_settings()
         if self.triggertimeout < (self.buffersize * self.decimation / self.samplerate):
-            print(
-                "Trigger timeout is to short! This causes trigger issues. Please increase the trigger timeout."
+            debug(
+                "Scope-RedPitaya_STEMlab: The trigger timeout is too short. This can cause trigger "
+                "issues. Please increase the trigger timeout to more than the time range."
             )
 
         # trigger settings
@@ -307,17 +297,16 @@ class Device(EmptyDevice):
         # send settings to RedPitaya
         self.send_settings()
 
-        # print settings
-        # self.settings_status()
-
     def apply(self):
+        value = float(self.value)
+
         if self.sweepmode == "Time range in s":
-            self.timerange = self.value
+            self.timerange = value
             self.time_settings()
             self.send_settings()
 
         elif self.sweepmode == "Trigger delay in s":
-            self.triggerdelay = self.value
+            self.triggerdelay = value
             self.trigger_settings()
             self.send_settings()
 
@@ -325,16 +314,13 @@ class Device(EmptyDevice):
         # creating data list
         self.channel_data = [None for i in self.channels]
 
+        # trigger settings
+        self.trigger_settings()
+
+        # send settings to RedPitaya
+        self.send_settings()
+
         for avg in range(self.averages):
-            # trigger settings
-            self.trigger_settings()
-
-            # send settings to RedPitaya
-            self.send_settings()
-
-            # print settings
-            # self.settings_status()
-
             self.start_acquisition()
             self.starttime = time.time()  # set starttime, required for filling buffer
 
@@ -345,15 +331,13 @@ class Device(EmptyDevice):
                 self.wait_for_buffer()
                 if self.is_run_stopped():  # Do not read data if the run stopped.
                     return
-                self.read_data()  # reading data
+                self.acquire_channel_data()  # reading data
             finally:  # Stop the acquisition even if an error occured
                 try:
                     self.stop_acquisition()
                 except OSError:
                     # never mask the exception that is already propagating
-                    self.message_log(
-                        "Red Pitaya Scope: could not stop the acquisition."
-                    )
+                    debug("Scope-RedPitaya_STEMlab: could not stop the acquisition.")
 
         for i in range(len(self.channels)):  # average data and add offsets
             self.channel_data[i] /= self.averages
@@ -409,31 +393,33 @@ class Device(EmptyDevice):
                 for i in self.channels
             }
         except ValueError:
-            msg = "Red Pitaya STEMlab: Please enter numeric values into all number fields."
+            msg = "Scope-RedPitaya_STEMlab: Please enter numeric values into all number fields."
             raise ValueError(msg)
 
         if not self.channels:
-            msg = "Red Pitaya STEMlab: Please enable at least one channel."
+            msg = "Scope-RedPitaya_STEMlab: Please enable at least one channel."
             raise ValueError(msg)
 
         if self.triggermode not in self.commands:
             msg = (
-                f"Red Pitaya STEMlab: Unknown trigger source '{self.triggermode}'. "
+                f"Scope-RedPitaya_STEMlab: Unknown trigger source '{self.triggermode}'. "
                 "Please select a valid trigger source."
             )
             raise ValueError(msg)
 
         if self.averages < 1:
-            msg = "Red Pitaya STEMlab: The number of averages must be at least 1."
+            msg = "Scope-RedPitaya_STEMlab: The number of averages must be at least 1."
             raise ValueError(msg)
 
         if self.triggertimeout <= 0.0:
-            msg = "Red Pitaya STEMlab: The trigger timeout must be larger than 0 s."
+            msg = (
+                "Scope-RedPitaya_STEMlab: The trigger timeout must be larger than 0 s."
+            )
             raise ValueError(msg)
 
         if self.commands[self.triggermode] == "DISABLED":
             msg = (
-                "Red Pitaya STEMlab: The trigger source 'None' disables the trigger, so the "
+                "Scope-RedPitaya_STEMlab: The trigger source 'None' disables the trigger, so the "
                 "acquisition never completes and runs into the trigger timeout.\n"
                 "Please use 'Now' to acquire immediately, or a channel trigger to acquire on "
                 "a signal edge."
@@ -449,7 +435,7 @@ class Device(EmptyDevice):
 
             if time.time() - self.starttime > self.triggertimeout:
                 msg = (
-                    "Red Pitaya Scope Trigger timeout!\n"
+                    "Scope-RedPitaya_STEMlab: Trigger timeout!\n"
                     "No trigger event was detected within {0} s. Please check the trigger "
                     "source, level and slope, or use the trigger source 'Now'.".format(
                         self.triggertimeout
@@ -477,6 +463,9 @@ class Device(EmptyDevice):
         fill_time = 0.5 * self.buffersize / self.real_samplerate
 
         while self.has_fill_query:
+            if self.is_run_stopped():
+                return
+
             try:
                 self.port.write("ACQ:TRig:FILL?")
                 answer = self.port.read().strip()
@@ -484,8 +473,8 @@ class Device(EmptyDevice):
                 # no answer within the port timeout, the command is not supported
                 self.has_fill_query = False
                 self.clear_port()
-                self.message_log(
-                    "Red Pitaya Scope: 'ACQ:TRig:FILL?' is not supported by this "
+                debug(
+                    "Scope-RedPitaya_STEMlab: 'ACQ:TRig:FILL?' is not supported by this "
                     "instrument, waiting for the calculated buffer fill time instead."
                 )
                 break
@@ -495,21 +484,18 @@ class Device(EmptyDevice):
 
             if answer not in ("0", "1"):
                 self.has_fill_query = False
-                self.message_log(
-                    "Red Pitaya Scope: 'ACQ:TRig:FILL?' answered {0!r}, waiting for "
+                debug(
+                    "Scope-RedPitaya_STEMlab: 'ACQ:TRig:FILL?' answered {0!r}, waiting for "
                     "the calculated buffer fill time instead.".format(answer)
                 )
                 break
 
             if time.time() - self.starttime > fill_time + self.triggertimeout:
                 msg = (
-                    "Red Pitaya Scope: The data buffer was not filled within {0:.1f} s after "
+                    "Scope-RedPitaya_STEMlab: The data buffer was not filled within {0:.1f} s after "
                     "the trigger event.".format(fill_time + self.triggertimeout)
                 )
                 raise Exception(msg)
-
-            if self.is_run_stopped():
-                return
 
         time.sleep(max(fill_time - (time.time() - self.starttime), 0))
 
@@ -530,7 +516,15 @@ class Device(EmptyDevice):
         finally:
             connection.settimeout(timeout)
 
-    def read_data(self):
+    def acquire_channel_data(self):
+        """Read the acquired data of all enabled channels and add it to the channel data.
+
+        The oldest samples of the data buffer are requested for each enabled channel and parsed
+        from the comma separated answer. The values are accumulated in 'self.channel_data', so
+        that 'measure' can call this function once per average and divide by the number of
+        averages afterwards. On the first call the accumulator is still None and is initialised
+        with the first trace.
+        """
         for i in range(len(self.channels)):
             self.port.write(
                 "ACQ:SOUR{0}:DATA:OLD:N? {1}".format(
@@ -543,13 +537,19 @@ class Device(EmptyDevice):
                     map(float, self.buffer.strip("{}\n\r").replace("  ", "").split(","))
                 )
             except ValueError:
+                """If the answer cannot be parsed as numbers, it is parsed again after stripping an 'ERR!'
+                marker, and a message is written to the debug log. The data of that average is kept, so
+                a single faulty readout does not abort the measurement."""
                 self.data = list(
                     map(
                         float,
                         self.buffer.strip("{}ERR!\n\r").replace("  ", "").split(","),
                     )
                 )
-                print("Error in Readout!")
+                debug(
+                    "Scope-RedPitaya_STEMlab: Error while reading the data of channel "
+                    "{0}.".format(self.channels[i])
+                )
             if self.channel_data[i] is None:
                 self.channel_data[i] = np.array(self.data)
             else:
@@ -578,7 +578,11 @@ class Device(EmptyDevice):
                     .replace(" ", "")
                 )
             except:
-                print("Please enter a number for time range. Time range is set to 8.6s")
+                debug(
+                    "Scope-RedPitaya_STEMlab: '{0}' is not a valid time range. Please enter a "
+                    "number, optionally with a unit like s, ms, µs or ns. The time range is set "
+                    "to 8.6 s instead.".format(self.timerange)
+                )
                 self.timerange = 8.6
 
         # calculate decimation factor based on time range
