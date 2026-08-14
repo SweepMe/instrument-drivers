@@ -24,7 +24,7 @@ The averaging time is set in number of power line cycles (NPLC, 0.01 to 600). Th
 ## Range
 
 - Ranges: 10 V, 1 V, 100 mV, 10 mV, or Auto. The lowest usable range gives the best performance. The VM-10 features seamless range transitions.
-- Restriction: the 10 V and 1 V ranges are not available while the analog input filter is enabled with optimization "Highest reserve". The driver raises an error for this combination.
+- Restriction: the 10 V and 1 V ranges are not available while the analog input filter is enabled with optimization "Lowest noise". The driver raises an error for this combination.
 
 ## Input configuration and coupling
 
@@ -35,8 +35,8 @@ The averaging time is set in number of power line cycles (NPLC, 0.01 to 600). Th
 
 The VM-10 contains hardware high pass and low pass filters (corner frequencies 10 Hz to 10 kHz, 6 or 12 dB/oct) in front of the amplifier chain, useful for rejecting large interfering signals:
 
-- **Lowest noise**: gain before the filters; best noise, but large interferers can cause overloads.
-- **Highest reserve**: all gain after the filters; tolerates the largest interference at the cost of higher noise (10 V and 1 V ranges unavailable).
+- **Lowest noise**: gain before the filters; best noise, but large interferers can cause overloads (10 V and 1 V ranges unavailable).
+- **Highest reserve**: all gain after the filters; tolerates the largest interference at the cost of higher noise.
 
 The high pass filter is only offered in AC mode, since it would remove the DC component in DC mode.
 

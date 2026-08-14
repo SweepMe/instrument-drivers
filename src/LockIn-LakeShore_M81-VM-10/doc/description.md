@@ -11,7 +11,7 @@
 - **Magnitude** - R = sqrt(X² + Y²), in V
 - **Phase** - phase angle θ of the signal relative to the reference, in degrees
 - **Frequency** - the detected reference frequency, in Hz
-- **Lock-In DC** - DC component of the input signal, in V (only measured when the "High pass digital filter" is ON, otherwise NaN)
+- **Lock-In DC** - DC component of the input signal, in V (only measured when the "high-pass digital filter" is ON, otherwise NaN)
 - **Resistance In-Phase / Quadrature / Magnitude** (Ohm) and **Resistance Phase** (°) - the instrument's calculated AC resistance using the selected "Resistance source" (see below); NaN if the pairing is not valid
 
 Special values: **+inf** indicates a range overload, **NaN** indicates that the PLL is unlocked or the value is not available. Choose a larger range (or Auto) on overload.
@@ -33,7 +33,7 @@ The driver requests all lock-in values (X, Y, R, θ, frequency) with a single sy
 
 Two output filters act on the phase-sensitive detector (PSD) output:
 
-- **Traditional low pass filter (IIR)**: configured via "TimeConstant" (0.0001 s to 10,000 s) and "Slope" (6/12/18/24 dB/oct). Longer time constants and steeper slopes reduce the equivalent noise bandwidth at the cost of longer settling. Enter a number to enable it, or select "Traditional low pass output filter OFF" to disable it.
+- **Traditional low-pass filter (IIR)**: configured via "TimeConstant" (0.0001 s to 10,000 s) and "Slope" (6/12/18/24 dB/oct). Longer time constants and steeper slopes reduce the equivalent noise bandwidth at the cost of longer settling. Enter a number to enable it, or select "Traditional low-pass output filter OFF" to disable it.
 - **Averaging filter (FIR)**: a moving average over N cycles of the reference frequency, set via "Averaging reference cycles" (0 = off). It strongly rejects the carrier and its harmonics. Note that at low reference frequencies N cycles can take a long time (N / f_ref seconds).
 
 At least one output filter should be enabled for a meaningful lock-in measurement. A good starting point is a time constant of 0.1 s with 12 dB/oct plus 10 averaging reference cycles.
@@ -41,26 +41,26 @@ At least one output filter should be enabled for a meaningful lock-in measuremen
 ## Sensitivity (input range)
 
 - Ranges: 10 V, 1 V, 100 mV, 10 mV, or Auto. The lowest usable range gives the best performance. The VM-10 features seamless range transitions.
-- Restriction: the 10 V and 1 V ranges are not available while the analog input filter is enabled with optimization "Highest reserve". The driver raises an error for this combination.
+- Restriction: the 10 V and 1 V ranges are not available while the analog input filter is enabled with optimization "Lowest noise". The driver raises an error for this combination.
 
 ## Input configuration and coupling
 
 - **Input**: "A-B" (differential), "A" (single-ended vs. measure ground), or "Ground" (input internally grounded, e.g. for offset checks).
-- **Coupling**: DC or AC. AC coupling engages a 0.16 Hz high pass and blocks DC signals; note that the input bias current then causes a small DC offset.
+- **Coupling**: DC or AC. AC coupling engages a 0.16 Hz high-pass and blocks DC signals; note that the input bias current then causes a small DC offset.
 
 ## Analog input filter ("Reserve")
 
-The VM-10 contains hardware high pass and low pass filters (corner frequencies 10 Hz to 10 kHz, 6 or 12 dB/oct) in front of the amplifier chain. They are enabled by selecting a filter optimization:
+The VM-10 contains hardware high-pass and low-pass filters (corner frequencies 10 Hz to 10 kHz, 6 or 12 dB/oct) in front of the amplifier chain. They are enabled by selecting a filter optimization:
 
-- **Lowest noise**: gain before the filters; best noise, but large interferers can cause overloads.
-- **Highest reserve**: all gain after the filters; tolerates the largest interference at the cost of higher noise (10 V and 1 V ranges unavailable).
+- **Lowest noise**: gain before the filters; best noise, but large interferers can cause overloads (10 V and 1 V ranges unavailable).
+- **Highest reserve**: all gain after the filters; tolerates the largest interference at the cost of higher noise.
 - **None**: analog input filter off.
 
 Note: the datasheet also lists 30 kHz corner frequencies, but the remote interface manual only documents corner frequencies up to 10 kHz, so this driver offers up to 10 kHz.
 
-## Digital high pass filter and reference phase
+## Digital high-pass filter and reference phase
 
-- **High pass digital filter** (Filter1): removes the DC component before the PSD and enables the "Lock-In DC" measurement. Recommended ON.
+- **high-pass digital filter** (Filter1): removes the DC component before the PSD and enables the "Lock-In DC" measurement. Recommended ON.
 - **Reference phase shift**: "Auto" lets the instrument set the phase so that the present, settled signal appears at θ = 0°; "As is" keeps the phase that was set on the instrument before the run started (the driver reads it back before the module preset and restores it afterwards); a numeric value (-360° to +360°) sets it explicitly. "Auto" is executed once during configuration — the reference must already be active and the signal settled at that moment for a correct result.
 
 ## Calculated resistance ("Resistance source")
