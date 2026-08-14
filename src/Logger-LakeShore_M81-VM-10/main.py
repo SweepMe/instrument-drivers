@@ -246,10 +246,42 @@ class Device(EmptyDevice):
         self.set_advanced_settings()
 
     def reconfigure(self, parameters: dict[str, Any] | None = None, keys: list[str] | None = None) -> None:
-        """Reapply the configuration when a GUI parameter changes during a run via the {...} parameter system."""
+        """Rewrite only the settings whose GUI parameter changed via the {...} parameter system.
+
+        Only the affected part of the configuration is written instead of resending every
+        command. Changes that alter the measure channel or the returned variables cannot be
+        handled selectively and fall back to a complete configuration.
+        """
         if parameters:
             self.apply_gui_parameters(parameters)
-        self.configure()
+        changed = set(keys or [])
+
+        if not changed or changed & {"Channel", "Mode", "Include peak values"}:
+            self.configure()
+            return
+
+        if changed & {
+            "Analog input filter",
+            "Filter optimization",
+            "Low pass corner frequency",
+            "Low pass rolloff",
+            "High pass corner frequency",
+            "High pass rolloff",
+        }:
+            self.set_analog_filter()
+            changed.add("Range")  # the available ranges depend on the filter optimization
+        if "Input configuration" in changed:
+            self.set_input_configuration(self.input_config)
+        if "Coupling" in changed:
+            self.set_coupling(self.coupling)
+        if "Range" in changed:
+            self.set_range()
+        if "Averaging time (NPLC)" in changed:
+            self.set_nplc(self.nplc)
+        if "Resistance source" in changed:
+            self.set_resistance_source()
+        if "Turn off LED" in changed:
+            self.set_advanced_settings()
 
     def measure(self) -> None:
         """Trigger a new reading; the query returns after settling and the averaging time (NPLC)."""
@@ -322,11 +354,14 @@ class Device(EmptyDevice):
     def set_range(self) -> None:
         """Set the voltage range or enable autorange (self.range == 0.0)."""
         if self.range:
-            if self.filter_on and self.filter_optimization == "REServe" and self.range > 0.1:
-                # The VM-10 does not support this combination. It would quietly reduce the range.
+            if self.filter_on and self.filter_optimization == "NOISe" and self.range > 0.1:
+                # In 'Lowest noise' mode gain is placed before the analog filters, so the
+                # filter stage would be overdriven on the high ranges. The VM-10 does not
+                # support this combination and would quietly reduce the range.
                 msg = (
                     "The 10 V and 1 V ranges cannot be used while the analog input filter "
-                    "is enabled with filter optimization 'Highest reserve'."
+                    "is enabled with filter optimization 'Lowest noise'. "
+                    "Use 'Highest reserve' or a range of 100 mV or below."
                 )
                 raise ValueError(msg)
             self.port.write(f"SENSe{self.slot}:VOLTage:RANGe:AUTO 0")
