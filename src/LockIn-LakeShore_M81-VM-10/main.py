@@ -328,8 +328,8 @@ class Device(EmptyDevice):
             self.apply_gui_parameters(parameters)
         changed = set(keys or [])
 
-        if not changed or "Channel" in changed:
-            # Nothing specified, or the measure channel itself changed: write everything
+        if not changed:
+            # Nothing specified: write everything
             self.configure()
             return
 
