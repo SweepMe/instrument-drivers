@@ -64,7 +64,6 @@ class Device(EmptyDevice):
         self.savetype = [True, True]
 
         # Communication Parameters
-        self.port_string: str = ""
         self.port_manager = True
         self.port_properties = {
             "timeout": 1,  # seconds
@@ -86,7 +85,7 @@ class Device(EmptyDevice):
         self.measured_voltage: float = 0.0
         self.time_stamps: list[float] = []
 
-        # Current range
+        # Current Ranges: Auto, Auto Limited, and fixed are supported
         self.current_measurement_ranges: dict[str, float] = {"Auto": 0.0}
         # Add current ranges from 1 pA to 100 mA for limited and fixed mode
         for prefix in ["m", "µ", "n", "p"]:
@@ -95,6 +94,13 @@ class Device(EmptyDevice):
                 value = number * 10 ** exponent
                 key = f"{number} {prefix}A"
                 self.current_measurement_ranges[key] = value
+
+        self.autorange_limited_prefix = "Auto - Limited "
+        self.current_range_options: list[str] = [
+            "Auto",
+            *[f"{self.autorange_limited_prefix}{key}" for key in self.current_measurement_ranges if key != "Auto"],
+            *[key for key in self.current_measurement_ranges if key != "Auto"],
+        ]
         self.current_measurement_range: str = "Auto"
 
         self.voltage_measurement_ranges: dict[str, float] = {
@@ -120,12 +126,9 @@ class Device(EmptyDevice):
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
-        del parameters
-        return {
+        new_parameters = {
             "SweepMode": ["None", "Voltage in V", "Current in A"],
-            "Compliance": 0.0,
-            "Range": list(self.current_measurement_ranges.keys()),
-            "RangeVoltage": list(self.voltage_measurement_ranges.keys()),
+            "Compliance": "0.0",
             "Speed": list(self.speeds.keys()),
             "Average": 1,
 
@@ -142,10 +145,17 @@ class Device(EmptyDevice):
             "ListSweepDelaytime": 0.1,
         }
 
+        # Measurement ranges can only be set for the non-source parameter
+        selected_sweepmode = parameters.get("SweepMode", "None").lower()
+        if "voltage" in  selected_sweepmode:
+            new_parameters["Range"] = self.current_range_options
+        elif "current" in selected_sweepmode:
+            new_parameters["RangeVoltage"] = list(self.voltage_measurement_ranges.keys())
+
+        return new_parameters
+
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.port_string = parameters.get("Port", "")
-
         self.sweep_mode = parameters.get("SweepMode", "None")
         self.compliance = parameters.get("Compliance", 0.0)
 
@@ -194,6 +204,13 @@ class Device(EmptyDevice):
         self.port.write(":SYSTem:CLEar")  # clear error queue
         self.port.write(":OUTPut:STATe OFF")  # explicit safety
         self.port.write("SYSTem:BEEPer:STATe OFF")  # turn off beeper
+
+        # TODO: remove, only for speed test
+        time_start = time.monotonic()
+        for _ in range(10):
+            self.get_identification()
+        time_for_10_idn = time.monotonic() - time_start
+        print(f"Time for 10 *IDN? queries: {time_for_10_idn:.3f} s, average: {time_for_10_idn / 10:.3f} s")
 
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
@@ -359,23 +376,28 @@ class Device(EmptyDevice):
             timeout = max(self.speed * self.averages * 3, 3)  # seconds, allow 3x expected time plus a fixed 3 s margin
             time_start = time.monotonic()
 
-            while not self.is_run_stopped() and (time.monotonic() - time_start) < timeout:
+            buffer = ""
+            while True:
+                if self.is_run_stopped():
+                    return
                 try:
-                    results = self.port.read()
+                    buffer += self.port.read()
+                except Exception:
+                    pass  # nothing arrived yet, keep polling so the run stays abortable
+                values = buffer.split(",")
+                if len(values) >= 5:  # VOLT, CURR, RES, TIME, STATUS
                     break
-                except Exception as e:
-                    time.sleep(0.1)
-            else:
-                msg = f"Failed to read result within {timeout:.1f} s (expected ~{self.speed * self.averages:.1f} s)"
-                raise TimeoutError(msg)
+                if time.monotonic() - time_start > timeout:
+                    msg = f"Failed to read result within {timeout:.1f} s"
+                    raise TimeoutError(msg)
+                time.sleep(0.1)
 
-            values = results.split(",")
             self.measured_voltage = float(values[0])
             self.measured_current = float(values[1])
 
-            if self.measured_voltage >= 9.9E37:
+            if self.measured_voltage >= 9.9E37 or self.measured_voltage <= -9.9E37:
                 self.measured_voltage = float("nan")
-            if self.measured_current >= 9.9E37:
+            if self.measured_current >= 9.9E37 or self.measured_current <= -9.9E37:
                 self.measured_current = float("nan")
 
             status_int = int(float(values[4]))
@@ -425,13 +447,27 @@ class Device(EmptyDevice):
             self.port.write(f":SENSe:VOLTage:RANGe {self.voltage_measurement_ranges[range_value]}")
 
     def set_current_measurement_range(self, range_value: str = "Auto") -> None:
-        """Set the current measurement range."""
-        if range_value not in self.current_measurement_ranges:
-            msg = f"Invalid current range: {range_value}. Valid ranges are: {list(self.current_measurement_ranges.keys())}"
+        """Set the current measurement range.
+
+        "Auto" autoranges across all ranges, "Auto - Limited <range>" autoranges but never switches
+        below <range>, and any plain range fixes the measurement range.
+        """
+        if range_value not in self.current_range_options:
+            msg = f"Invalid current range: {range_value}. Valid ranges are: {self.current_range_options}"
             raise ValueError(msg)
 
         if range_value == "Auto":
-            self.port.write(f":SENSe:CURRent:RANGe:AUTO ON")
+            self.port.write(":SENSe:CURRent:RANGe:AUTO ON")
+            # Drop a lower limit that an earlier configure() may have left on the instrument.
+            # "Auto" carries a 0.0 placeholder and must not be taken as the lowest range.
+            lowest_range = min(v for k, v in self.current_measurement_ranges.items() if k != "Auto")
+            self.port.write(f":SENSe:CURRent:RANGe:AUTO:LLIMit {lowest_range}")
+
+        elif range_value.startswith(self.autorange_limited_prefix):
+            lowest_range = self.current_measurement_ranges[range_value[len(self.autorange_limited_prefix):]]
+            self.port.write(":SENSe:CURRent:RANGe:AUTO ON")
+            self.port.write(f":SENSe:CURRent:RANGe:AUTO:LLIMit {lowest_range}")
+
         else:
             self.port.write(f":SENSe:CURRent:RANGe {self.current_measurement_ranges[range_value]}")
 
