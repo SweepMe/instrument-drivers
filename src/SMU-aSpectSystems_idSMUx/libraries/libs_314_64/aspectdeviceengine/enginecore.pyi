@@ -51,6 +51,18 @@ class AD5522ChannelModel(AnalogChannelModel):
                  List[float]
                       The measured currents in the unit of volt [V]
         """
+    def perform_autorange(self) -> None:
+        """
+                 Performs the autoranging of the channel
+        
+                 Parameters
+                 ----------
+        
+                 Returns
+                 -------
+                 None
+                      This function does not return any value
+        """
     def print_channel_register(self) -> str:
         """
                  Prints the current state of the channel registers
@@ -381,6 +393,18 @@ class AD5560ChannelModel(AnalogChannelModel):
                  -------
                  List[float]
                       The measured currents in the unit of volt [V]
+        """
+    def perform_autorange(self) -> None:
+        """
+                 Performs the autoranging of the channel
+        
+                 Parameters
+                 ----------
+        
+                 Returns
+                 -------
+                 None
+                      This function does not return any value
         """
     def print_channel_register(self) -> str:
         """
@@ -4360,4 +4384,4 @@ def get_git_version() -> int:
              -------
              int
     """
-__version__: str = '0.9.641'
+__version__: str = '0.9.644'
