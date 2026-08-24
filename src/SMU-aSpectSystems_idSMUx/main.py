@@ -127,6 +127,13 @@ class Device(EmptyDevice):
         self.list_sweep_values: list[float] = []
         self.list_delay_time: int = 100  # in ms
 
+        self.is_list_sweep: bool = False
+        """Whether the user selected 'List sweep' as sweep value for this channel.
+
+        This is only the user's selection taken from the GUI parameters. The resulting role in the list sweep is
+        derived from it in 'initialize', where all channels of the board are known.
+        """
+
         self.list_role: str = "None"
         """The role of the channel in the list sweep. Possible values:
             'List master' : The first channel that registers as list mode. It sets up the list sweep and runs the
@@ -220,8 +227,11 @@ class Device(EmptyDevice):
             # then, "SweepValue" is not defined during set_GUIparameter
             sweep_value = None
 
-        if sweep_value == "List sweep":
-            self.list_role = "List master"
+        # Only the user's selection is stored here. The list role is derived in 'initialize', because
+        # 'get_GUIparameter' is called again on 'reconfigure' while 'initialize' is not. Deriving the role
+        # here would promote a channel that was demoted to 'List creator' back to 'List master'.
+        self.is_list_sweep = sweep_value == "List sweep"
+        if self.is_list_sweep:
             self.handle_list_sweep_parameter(parameter)
 
     def handle_list_sweep_parameter(self, parameter: dict) -> None:
@@ -328,15 +338,19 @@ class Device(EmptyDevice):
         self.channel = self.smu.smu.channels[self.channel_number]
         self.channel.name = self.channel_name
 
+        # The role is derived anew in every run: 'device_communication' is cleared when a run starts, while the
+        # driver instance and thus a role from a previous run survive.
+        self.list_role = "None"
+
         # If this channel should run the list sweep, register it as 'List master'
         # Checking if the list receiver should be used will be done in 'configure' after all channels are initialized
-        if self.list_role == "List master":
+        if self.is_list_sweep:
             if "List master" in self.device_communication[self.identifier]:
                 # If another channel already runs a list sweep, this channel creates it own list config and passes it
-                # Update the role to 'List creator'
                 self.list_role = "List creator"
 
             else:
+                self.list_role = "List master"
                 self.device_communication[self.identifier].update(
                     {
                         "List master": self.channel_name,
