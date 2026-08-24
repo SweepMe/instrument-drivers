@@ -354,18 +354,15 @@ class Device(EmptyDevice):
 
         # Current Range
         if self.current_range == "Auto":
-            self.channel.autorange = True
+            """Do not use internal auto ranging. See explicit autoranging in measure()."""
+            # self.channel.autorange = True
+            pass
         else:
             self.channel.autorange = False
             self.board_model.set_current_ranges(self.current_range, [self.channel.name])
             # self.channel.current_range = self.current_range
-
         # Speed/integration
         self.channel.sample_count = self.speed_options[self.speed]
-
-        # Auto-ranging (can be used to fine-tune auto-ranging)
-        # self.channel.autorange_measurement_count = 100
-        # self.channel.autorange_post_switch_delay = 0
 
         # Get output ranges
         self.v_min, self.v_max, self.i_min, self.i_max = self.channel.output_ranges
@@ -481,6 +478,12 @@ class Device(EmptyDevice):
         if self.list_role in ("List receiver", "List creator"):
             # as list receiver or creator, the measurement is started by the list master
             return
+
+        """Explicit auto ranging before the measurement is taken. Has to be done, because the device does autoranging
+        only, when the set value for the changes. Outside effects that change the current in the device (light, gate
+        voltage, temperature etc.) wouldn't trigger auto ranging."""
+        if self.current_range == "Auto":
+            self.channel.perform_autorange()
 
         if self.use_async_readout:
             if self.is_retrieving_data():
@@ -641,7 +644,6 @@ class Device(EmptyDevice):
         The device automatically switches to voltage compliance when current is forced and vice versa.
         """
         value = float(abs(value))
-        print(type(value))
         self.channel.clamp_high_value = value
         self.channel.clamp_low_value = -value
         self.channel.clamp_enabled = True
