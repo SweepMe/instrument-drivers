@@ -51,6 +51,11 @@ class Device(EmptyDevice):
     MAP_ORIGINS: ClassVar[dict[int, str]] = {1: "upper_left", 2: "upper_right", 3: "lower_left", 4: "lower_right"}
     """Corner that die coordinates are counted from, as returned by GetMapOrientation."""
 
+    CONTACT_HEIGHTS: ClassVar[tuple[str, ...]] = ("C", "O")
+    """Chuck Z heights of ReadChuckStatus().PresetHeight that mean the probes are touching the wafer:
+    C = Contact, O = Overtravel (contact, pressed in further). The others are 0 = Variable,
+    S = Separation, A = Align and T = Search."""
+
     description = """
     <h3>Velox Wafer Prober</h3>
     <p>This driver controls the prober functions of FormFactor Velox wafer probers.</p>
@@ -473,3 +478,19 @@ class Device(EmptyDevice):
         Implementing this function enables the 'Separate' button in the wafer-map panel.
         """
         velox.MoveChuckSeparation()
+
+    def get_contact_state(self) -> bool:
+        """Return whether the probes are currently in contact with the wafer.
+
+        Implementing this function enables the contact-state indicator in the wafer-map panel.
+
+        Read from the chuck's preset Z height, not from the 'IsContactSet' bit of ReadChuckStatus's
+        FlagsMode: that bit only says a contact height has been taught, not that the chuck is at it.
+        """
+        opened_here = self.msg_server is None
+        self.connect_to_velox()
+        try:
+            return str(velox.ReadChuckStatus().PresetHeight).upper() in self.CONTACT_HEIGHTS
+        finally:
+            if opened_here:
+                self.disconnect_from_velox()
