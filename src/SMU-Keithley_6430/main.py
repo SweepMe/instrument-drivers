@@ -36,6 +36,9 @@ from typing import Any
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
+# Power line frequency in Hz, used to convert NPLC into seconds
+LINE_FREQUENCY = 50.0
+
 
 class Device(EmptyDevice):
     """Driver for the Keithley 6430."""
@@ -45,6 +48,9 @@ class Device(EmptyDevice):
                     <p>Setup:</p>
                     <ul>
                     <li>Enable remote control at device</li>
+                    <li>RS-232 only: set MENU &rarr; COMMUNICATION &rarr; RS-232 &rarr; TERMINATOR to
+                    &lt;CR&gt;. The driver reads until &lt;CR&gt;; with &lt;LF&gt; every read runs into
+                    the port timeout instead, which silently slows the measurement down.</li>
                     <li>Current range: -105e-3 - 105e-3 A</li>
                     <li>Voltage range: -210 - 210 V</li>
                     <li>Speed in NPLC (0.01 - 10)</li>
@@ -66,7 +72,15 @@ class Device(EmptyDevice):
         # Communication Parameters
         self.port_manager = True
         self.port_properties = {
+            # Communication timeout only. Waiting for a measurement to finish is handled by the
+            # polling loop in read_result, so that a run stays abortable.
             "timeout": 1,  # seconds
+            # The 6430 terminates what it sends to the controller with <CR>, <CR+LF>, <LF> or
+            # <LF+CR>, selected at MENU -> COMMUNICATION -> RS-232 -> TERMINATOR and not readable
+            # over SCPI (manual 13-17). Reading with the wrong terminator does not fail, it burns a
+            # full timeout on every read. Carriage return covers <CR>, <CR+LF> and <LF+CR>. Only
+            # the read direction is affected; the instrument accepts our commands either way.
+            "EOLread": "\r",
         }
         self.port_types = ["GPIB", "COM", "TCPIP"]
 
@@ -205,13 +219,6 @@ class Device(EmptyDevice):
         self.port.write(":OUTPut:STATe OFF")  # explicit safety
         self.port.write("SYSTem:BEEPer:STATe OFF")  # turn off beeper
 
-        # TODO: remove, only for speed test
-        time_start = time.monotonic()
-        for _ in range(10):
-            self.get_identification()
-        time_for_10_idn = time.monotonic() - time_start
-        print(f"Time for 10 *IDN? queries: {time_for_10_idn:.3f} s, average: {time_for_10_idn / 10:.3f} s")
-
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
         self.output_on()
@@ -311,7 +318,7 @@ class Device(EmptyDevice):
 
         # Store expected sweep duration for the timeout guard in wait_for_list_complete.
         # speed / 50 converts NPLC to approximate measurement time in seconds (50 Hz line frequency).
-        expected_time_per_point = self.speed / 50.0
+        expected_time_per_point = self.speed / LINE_FREQUENCY
 
         # Source delay
         if self.list_delay_time:
@@ -373,7 +380,12 @@ class Device(EmptyDevice):
             self.time_stamps = values[3::5]
 
         else:
-            timeout = max(self.speed * self.averages * 3, 3)  # seconds, allow 3x expected time plus a fixed 3 s margin
+            # self.speed is NPLC, a number of power line cycles, and has to be converted to seconds.
+            # The margin covers the source delay and, with autoranging enabled, the range search,
+            # both of which take seconds on the low current ranges. The loop below returns as soon
+            # as the response is complete, so a generous limit costs nothing in a normal measurement.
+            expected_time = self.speed / LINE_FREQUENCY * self.averages
+            timeout = max(expected_time * 3, 10)  # seconds
             time_start = time.monotonic()
 
             buffer = ""
