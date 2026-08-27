@@ -461,14 +461,14 @@ class Device(EmptyDevice):
         self.current_subsite = str(ret)
 
     def contact(self) -> None:
-        """Lower the chuck so the probes contact the wafer.
+        """Raise the chuck to contact height, so the probes touch the wafer.
 
         Implementing this function enables the 'Contact' button in the wafer-map panel.
         """
         velox.MoveChuckContact()
 
     def separate(self) -> None:
-        """Raise the chuck so the probes separate from the wafer.
+        """Lower the chuck to separation height, so the probes come off the wafer.
 
         Implementing this function enables the 'Separate' button in the wafer-map panel.
         """
