@@ -368,13 +368,15 @@ class Device(EmptyDevice):
 
         # Current Range
         if self.current_range == "Auto":
-            """Do not use internal auto ranging. See explicit autoranging in measure()."""
-            # self.channel.autorange = True
-            pass
+            """The internal auto ranging is not really needed, since explicit autoranging is done in measure().
+            However, the range for the first value of each measurement is not set correctly by explicit autoranging.
+            The reason seems for that seems to lay in asynchronous acquisition, but is not fully understood (08-2026).
+            Enabling internal autoranging here to avoid the issue with a ~10% speed penalty."""
+            self.channel.autorange = True
         else:
             self.channel.autorange = False
             self.board_model.set_current_ranges(self.current_range, [self.channel.name])
-            # self.channel.current_range = self.current_range
+
         # Speed/integration
         self.channel.sample_count = self.speed_options[self.speed]
 
