@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+from pysweepme import debug
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -144,7 +145,9 @@ class Device(EmptyDevice):
         """Set bias and measurement parameters with start values from GUI."""
         self.set_frequency(self.frequency)
         self.set_range(self.measure_range)
-        self.set_zero_on()
+
+        # Setting zero mode to True will measure the baseline and subtract it from the following measurements.
+        self.set_zero_on(False)
         self.set_trigger_mode_and_source(self.trigger)
         self.set_reading_rate(self.reading_rate)
 
@@ -153,9 +156,12 @@ class Device(EmptyDevice):
         self.set_data_format()
 
         self.verify_average_setting()
-        if self.bias_type == "Voltage bias in V":
+
+        if self.sweepmode == "Voltage bias in V" or self.bias_type == "Voltage bias in V":
             self.set_bias_on(True)
-            self.set_voltage(self.bias_value, averaging=self.average)
+
+            if self.bias_type == "Voltage bias in V":
+                self.set_voltage(self.bias_value, averaging=self.average)
 
     def verify_average_setting(self) -> None:
         """Check if average setting is within limits."""
@@ -194,6 +200,16 @@ class Device(EmptyDevice):
         # Answer has format ZTSK 1.23E+0, 4.56E+0, 7.89E+0, values are C, G, V
         answer = answer.split(",")
 
+        prefix = answer[0][0:4]  # Prefix of type ZTPK - page 4-34
+        if prefix[0] != "N":
+            debug("Prefix is not N, but %s" % prefix)  # Zeroed?
+        if prefix[1] != "T":
+            debug("Prefix is not T, but %s" % prefix)  # no triple readout
+        if prefix[2] != "P":
+            debug("Prefix is not P, but %s" % prefix)  # series model
+        if prefix[3] == "D":
+            debug("Prefix is not K, but %s" % prefix)  # disconnected
+
         self.capacitance = float(answer[0][4:])  # Remove prefix of type ZTPK
         self.conductance = float(answer[1])
         self.measured_dc_bias = float(answer[2])
@@ -221,7 +237,7 @@ class Device(EmptyDevice):
             ranges = {
                 "Auto": "R0",
                 "2pF/2uS": "R1",
-                "20pF/20uS": "R2",
+                "20pF": "R2",
                 "200pF/200uS": "R3",
                 "2nF": "R4",
                 "R1 x 10": "R5",
@@ -280,8 +296,17 @@ class Device(EmptyDevice):
             msg = f"Voltage {voltage} is out of range. Choose between -20 V and 20 V."
             raise ValueError(msg)
 
+        # Minimum step size: 0.005
+        voltage = round(voltage, 3)  # round to 3 digits
+
+        if (voltage % 0.005 - 0.005) > 0.0001:  # Handle rounding errors
+            print(voltage % 0.005)
+            msg = f"Voltage {voltage} cannot be set correctly due to minimum step size of 0.005V."
+            debug(msg)
+
         # single voltage
-        command = f"V,,,{voltage},{averaging}X"  # Commas needed to skip start, stop, and step values
+        command = f"V{voltage},,,{voltage},{averaging}X"  # Commas needed to skip start, stop, and step values
+        # print(command)
         self.port.write(command)
 
     def set_bias_on(self, bias_on: bool = True) -> None:
