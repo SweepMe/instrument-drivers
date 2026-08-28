@@ -952,3 +952,106 @@ class Device(EmptyDevice):
         """
         response = self._send_command("SYST:TEMP?")
         return tuple(float(x) for x in response.split(","))
+
+    def get_voltage(self, channel: int) -> float:
+        """Measure only the voltage on a channel.
+
+        Prefer get_voltage_and_current when both quantities are needed - that is a
+        single round trip instead of two.
+
+        Args:
+            channel: Channel number (1 or 2).
+
+        Returns:
+            Measured voltage in volts.
+        """
+        return float(self._send_command(f"MEAS{channel}:VOLT?"))
+
+    def get_current(self, channel: int) -> float:
+        """Measure only the current on a channel.
+
+        Prefer get_voltage_and_current when both quantities are needed - that is a
+        single round trip instead of two.
+
+        Args:
+            channel: Channel number (1 or 2).
+
+        Returns:
+            Measured current in amperes.
+        """
+        return float(self._send_command(f"MEAS{channel}:CURR?"))
+
+    def set_current_autorange(self, channel: int, enabled: bool) -> None:
+        """Enable or disable current autoranging on a channel.
+
+        Autoranging must be disabled before a range set via set_current_range_cmd
+        takes effect.
+
+        Args:
+            channel: Channel number (1 or 2).
+            enabled: True enables autoranging, False disables it.
+        """
+        state = "ENA" if enabled else "DIS"
+        self._send_command(f"CH{channel}:AUTORANGE:{state}")
+
+    def set_four_wire(self, enabled: bool) -> None:
+        """Enable or disable 4-wire (Kelvin) sensing.
+
+        This is a device-wide setting, not a per-channel one: channel 1 forces and
+        channel 2 senses, so 4-wire mode is only meaningful when measuring on
+        channel 1 and requires the sense leads to be connected.
+
+        Args:
+            enabled: True enables 4-wire mode, False returns to 2-wire.
+        """
+        state = "ENA" if enabled else "DIS"
+        self._send_command(f"SYST:4WIR {state}")
+
+    def get_four_wire(self) -> bool:
+        """Query whether 4-wire (Kelvin) sensing is enabled.
+
+        Returns:
+            True if 4-wire mode is enabled, False otherwise. An unrecognised reply
+            is reported as False, so an unexpected response never claims that
+            Kelvin sensing is active.
+        """
+        response = self._send_command("SYST:4WIR?")
+        return response.strip().upper() in ("1", "ENA", "ENABLED", "ON")
+
+    def set_sweep_autorange(self, channel: int, enabled: bool) -> None:
+        """Enable or disable autoranging during a hardware sweep.
+
+        set_sweep_parameters enables it as part of the sweep configuration, so call
+        this afterwards to run a sweep on a fixed range instead.
+
+        Args:
+            channel: Channel number (1 or 2).
+            enabled: True enables autoranging during the sweep, False disables it.
+        """
+        state = "ENA" if enabled else "DIS"
+        self._send_command(f"SOUR{channel}:SWEEP:AUTO:{state}")
+
+    def set_sweep_format(self, channel: int, data_format: str) -> None:
+        """Set the format in which the device returns hardware sweep data.
+
+        set_sweep_parameters selects JSON, which is what get_sweep_data parses.
+        Only change this when reading the raw sweep response yourself.
+
+        Args:
+            channel: Channel number (1 or 2).
+            data_format: "JSON" or "CSV".
+        """
+        self._send_command(f"SOUR{channel}:SWEEP:FORMAT {data_format}")
+
+    def get_wifi_status(self) -> dict:
+        """Query the network status of the device.
+
+        Works over both transports - the status can be read via USB to find out
+        which IP address the device would be reachable at over WiFi.
+
+        Returns:
+            Dict with the keys radio, status, ip_mode, ip, gateway, subnet, dns1,
+            dns2, mac and autoconnect.
+        """
+        response = self._send_command("SYST:WIFI?")
+        return json.loads(self._clean_json_response(response))
