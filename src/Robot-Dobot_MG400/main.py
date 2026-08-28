@@ -25,13 +25,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from __future__ import annotations
-
-from typing import Any
-
 # SweepMe! driver
 # * Module: Robot
 # * Instrument: Dobot MG400
+
+from __future__ import annotations
+
+from typing import Any
 
 from pysweepme.FolderManager import addFolderToPATH
 addFolderToPATH()
@@ -53,19 +53,19 @@ class Device(EmptyDevice):
 
     # needs to be defined for Robot drivers to define the variables and default values for the axes section
     axes = {
-            "x": {
-                "Value": 350.0
-                },
-            "y": {
-                "Value": 0.0
-                },
-            "z": {
-                "Value": 0.0
-                },   
-            "r": {
-                "Value": 0.0
-                },
-            }
+    "x": {
+        "Value": 350.0
+        },
+    "y": {
+        "Value": 0.0
+        },
+    "z": {
+        "Value": 0.0
+        },
+    "r": {
+        "Value": 0.0
+        },
+    }
 
     actions = ["go_home"]
 
@@ -308,7 +308,29 @@ class Device(EmptyDevice):
         return mode
         
     def move_linear(self, x, y, z, r) -> None:
+        """Linear move to the given cartesian coordinates.
+
+        If the position is out of the robot's working range, the robot will beep and go into error state.
+        When the robot is controlled remotely, this is only noticed when the next move command is sent and results in a
+        timeout. To prevent the timeout, the error state is checked after each movement.
+        """
         self.api_move.MovL(x, y, z, r)  # linear move to home position
+        if self.has_error():
+            msg = f"MoveL({x}, {y}, {z}, {r}) failed. Check if the position is within the robot's working range."
+            raise Exception(msg)
+
+    def has_error(self) -> bool:
+        """Readout the Error ID and return True if there is an error.
+
+        Experimental implementation, since the error message is not well structured.
+        The error message is quite long string and contains multiple empty lists. The error IDs do not adhere to the
+        error codes from the manual. Therefore, we cannot check the type of error, but only check the length of the
+        error message.
+        """
+        error_code = self.api_dashboard.GetErrorID()
+        if len(error_code) > 51:
+            return True
+        return False
         
     def go_home(self) -> None:
         self.move_linear(350.0, 0.0, 0.0, 0.0)  # linear move to home position
