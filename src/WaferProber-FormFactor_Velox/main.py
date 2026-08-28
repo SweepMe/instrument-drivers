@@ -31,6 +31,9 @@
 
 from __future__ import annotations
 
+import contextlib
+from typing import Any, ClassVar
+
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.FolderManager import addFolderToPATH
 
@@ -41,20 +44,17 @@ import velox
 class Device(EmptyDevice):
     """Driver class for Velox Wafer Prober Systems."""
 
-    description = """
-    <h3>Velox Wafer Prober</h3>
-    <p>This driver controls the prober functions of FormFactor Velox wafer probers.</p>
-    <h4>Setup</h4>
-    <ul>
-        <li>Requires Velox Installation</li>
-    </ul>
-    <h4>Parameters</h4>
-    <ul>
-        <li>Port: Use 'localhost' when running SweepMe! on the same PC as Velox. For TCP/IP remote control, enter
-         the Velox PCs IP address either as blank string "192.168.XXX.XXX" or containing a specific port 
-         "IP:xxx.xxx.xxx.xxx; Port:xxxx" </li>
-    </ul>
-    """
+    NOTCH_DIRECTIONS: ClassVar[dict[int, str]] = {0: "down", 90: "left", 180: "up", 270: "right"}
+    """Flat/notch orientation. Velox documents this under ':prob:waf:ori' as "0 is bottom, 90 equals left,
+    180 equals top, 270 equals right"; GetWaferMapParams*.FlatAngle uses the same encoding."""
+
+    MAP_ORIGINS: ClassVar[dict[int, str]] = {1: "upper_left", 2: "upper_right", 3: "lower_left", 4: "lower_right"}
+    """Corner that die coordinates are counted from, as returned by GetMapOrientation."""
+
+    CONTACT_HEIGHTS: ClassVar[tuple[str, ...]] = ("C", "O")
+    """Chuck Z heights of ReadChuckStatus().PresetHeight that mean the probes are touching the wafer:
+    C = Contact, O = Overtravel (contact, pressed in further). The others are 0 = Variable,
+    S = Separation, A = Align and T = Search."""
 
     def __init__(self) -> None:
         """Initialize measurement and analysis parameter."""
@@ -102,16 +102,22 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict[str, str]) -> None:  # noqa: N802
         """Handle GUI parameter values."""
-        self.handle_port_string(parameter["Port"])
+        # Read with fallbacks: this also runs before the user has picked a port, and from pysweepme
+        # scripts that hand over only some of the parameters.
+        self.handle_port_string(parameter.get("Port", ""))
         self.load_angle = float(parameter.get("Load angle", "0.0"))
-        self.sweep_mode_wafer = parameter["SweepValueWafer"]
+        self.sweep_mode_wafer = parameter.get("SweepValueWafer", "Wafer table")
 
     def handle_port_string(self, port_string: str) -> None:
         """Extract IP address and socket from port string."""
         port_string = port_string.strip().lower()
         self.target_socket = 1412
 
-        if "localhost" in port_string:
+        if not port_string:
+            # No port chosen yet. Reporting it here would mean raising from get_GUIparameter, which runs
+            # on every parameter edit; connect_to_velox raises a readable error when it is actually needed.
+            self.ip_address = ""
+        elif "localhost" in port_string:
             self.ip_address = "localhost"
         elif "port" in port_string:
             self.ip_address = port_string.split(";")[0].split(":")[1].strip()
@@ -142,7 +148,7 @@ class Device(EmptyDevice):
         """Reset the device after the measurement."""
         # If no wafer sweep was done or no loader is connected, move to separation without unload
         if self.sweep_mode_wafer == "Current wafer" or not self.loader_is_connected:
-            velox.MoveChuckSeparation()
+            self.separate()
         else:
             self.unload_wafer()
 
@@ -163,14 +169,14 @@ class Device(EmptyDevice):
             self.unload_wafer()
             self.load_wafer(next_wafer, self.load_angle)
 
-        velox.MoveChuckSeparation()
+        self.separate()
         if self.current_die != next_die:
             self.step_to_die(next_die)
 
         if subsite is not None:
             self.step_to_subsite(subsite)
 
-        velox.MoveChuckContact()
+        self.contact()
 
     def call(self) -> tuple[str, str, str]:
         """Return the current wafer, die, and subsite."""
@@ -182,12 +188,26 @@ class Device(EmptyDevice):
     def connect_to_velox(self) -> None:
         """Connect to the Velox SDK."""
         if self.msg_server is None:
+            if not self.ip_address:
+                msg = ("No port selected. Click 'Find Ports' and choose 'localhost' if Velox runs on this "
+                       "computer, or enter the address of the Velox PC as 'IP:xxx.xxx.xxx.xxx; Port:xxxx'.")
+                raise Exception(msg)
+
             try:
                 self.msg_server = velox.MessageServerInterface(self.ip_address, self.target_socket).__enter__()
             except Exception as e:
                 # Check if Velox software is running
                 if "The connection to the Velox Message Server was refused." in str(e):
                     msg = "Unable to connect to Velox software. Please start Velox and try again."
+                    raise Exception(msg) from e
+
+                if isinstance(e, OSError):
+                    # Any other socket-level failure, e.g. WinError 10049 for an address that does not
+                    # exist on this machine. On its own that error names neither the address nor the
+                    # Port field, which is the only thing the user can act on.
+                    msg = (f"Unable to reach the Velox message server at '{self.ip_address}:{self.target_socket}'. "
+                           "Check the Port field: use 'localhost' if Velox runs on this computer, or "
+                           "'IP:xxx.xxx.xxx.xxx; Port:xxxx' for a remote Velox PC.")
                     raise Exception(msg) from e
 
                 raise e
@@ -266,6 +286,74 @@ class Device(EmptyDevice):
             subsite_number += 1
 
         return list(self.subsites.keys())
+
+    def get_wafer_geometry(self) -> dict[str, Any]:
+        """Return the physical geometry of the wafer map currently loaded in Velox.
+
+        Lets the wafer map take diameter, die pitch and orientation from the prober instead of having them
+        typed in by hand. Every entry is optional: a value whose command is unsupported by this Velox
+        version, or which the loaded map does not carry, is returned as None instead of raising, so a
+        partial answer is still usable.
+
+        Returns:
+            Dictionary with the keys:
+                diameter_mm:    Wafer diameter in mm. None for a rectangular map.
+                pitch_x_mm:     Die pitch in X (horizontal) in mm.
+                pitch_y_mm:     Die pitch in Y (vertical) in mm.
+                columns:        Number of dies across.
+                rows:           Number of dies down.
+                map_type:       "wafer" for a round wafer, "rectangle" for a rectangular map.
+                notch:          Notch/flat position: "down", "up", "left" or "right". None for a
+                                rectangular map.
+                flat_length_mm: Length of the flat in mm. 0.0 on a wafer that has a notch instead.
+                origin:         Corner the die coordinates count from, e.g. "upper_left".
+        """
+        opened_here = self.msg_server is None
+        self.connect_to_velox()
+        try:
+            geometry: dict[str, Any] = {
+                "diameter_mm": None,
+                "pitch_x_mm": None,
+                "pitch_y_mm": None,
+                "columns": None,
+                "rows": None,
+                "map_type": None,
+                "notch": None,
+                "flat_length_mm": None,
+                "origin": None,
+            }
+
+            with contextlib.suppress(velox.SciException):
+                dims = velox.GetMapDims()
+                geometry["map_type"] = "wafer" if str(dims.MapType).upper().startswith("W") else "rectangle"
+                # Velox reports the die index in micrometres.
+                geometry["pitch_x_mm"] = float(dims.XIndex) / 1000.0
+                geometry["pitch_y_mm"] = float(dims.YIndex) / 1000.0
+                geometry["columns"] = int(dims.Columns)
+                geometry["rows"] = int(dims.Rows)
+
+            if geometry["map_type"] != "rectangle":
+                with contextlib.suppress(velox.SciException):
+                    # GetWaferMapParams2 differs from GetWaferMapParams only in the units of the X/Y offsets,
+                    # which are not used here — so the older command is a fine fallback on older Velox.
+                    params_command = getattr(velox, "GetWaferMapParams2", velox.GetWaferMapParams)
+                    params = params_command()
+                    geometry["diameter_mm"] = float(params.Diameter)
+                    geometry["flat_length_mm"] = float(params.FlatLength)
+                    geometry["notch"] = self.NOTCH_DIRECTIONS.get(int(params.FlatAngle))
+                    if geometry["pitch_x_mm"] is None:
+                        geometry["pitch_x_mm"] = float(params.DieWidth) / 1000.0
+                        geometry["pitch_y_mm"] = float(params.DieHeight) / 1000.0
+
+            with contextlib.suppress(velox.SciException):
+                geometry["origin"] = self.MAP_ORIGINS.get(int(velox.GetMapOrientation().Orientation))
+
+            return geometry
+        finally:
+            # Only hand back the connection if this call was the one that opened it, so calling this
+            # during a run does not tear down the session the measurement is using.
+            if opened_here:
+                self.disconnect_from_velox()
 
     def check_loader_status(self) -> bool:
         """Check if a loader is connected to the Velox software."""
@@ -361,3 +449,33 @@ class Device(EmptyDevice):
         subsite_number = self.subsites[subsite]
         ret = velox.StepNextSubDie(subsite_number)
         self.current_subsite = str(ret)
+
+    def contact(self) -> None:
+        """Raise the chuck to contact height, so the probes touch the wafer.
+
+        Implementing this function enables the 'Contact' button in the wafer-map panel.
+        """
+        velox.MoveChuckContact()
+
+    def separate(self) -> None:
+        """Lower the chuck to separation height, so the probes come off the wafer.
+
+        Implementing this function enables the 'Separate' button in the wafer-map panel.
+        """
+        velox.MoveChuckSeparation()
+
+    def get_contact_state(self) -> bool:
+        """Return whether the probes are currently in contact with the wafer.
+
+        Implementing this function enables the contact-state indicator in the wafer-map panel.
+
+        Read from the chuck's preset Z height, not from the 'IsContactSet' bit of ReadChuckStatus's
+        FlagsMode: that bit only says a contact height has been taught, not that the chuck is at it.
+        """
+        opened_here = self.msg_server is None
+        self.connect_to_velox()
+        try:
+            return str(velox.ReadChuckStatus().PresetHeight).upper() in self.CONTACT_HEIGHTS
+        finally:
+            if opened_here:
+                self.disconnect_from_velox()
