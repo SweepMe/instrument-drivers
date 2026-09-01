@@ -134,6 +134,12 @@ class Device(EmptyDevice):
         self.report_stokes: bool = False
         self.report_diagnostics: bool = False
 
+        # Return values
+        self.variables: list[str] = []
+        self.units: list[str] = []
+        self.plottype: list[bool] = []
+        self.savetype: list[bool] 0 []
+
         # Instrument limits, read during initialize
         self.wavelength_limits_m: tuple[float, float] = (0.0, 0.0)
 
