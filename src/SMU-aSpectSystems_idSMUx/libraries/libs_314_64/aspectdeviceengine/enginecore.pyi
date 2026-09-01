@@ -4384,4 +4384,4 @@ def get_git_version() -> int:
              -------
              int
     """
-__version__: str = '0.9.644'
+__version__: str = '0.9.647'
