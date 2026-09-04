@@ -268,25 +268,18 @@ class Device(EmptyDevice):
 
     def configure(self):
         self.set_mode()
-        self.set_range()
-        self.set_timeconstant()
+        if self.sweep_mode == "Sensitivity in A":
+            self.set_range()
+        if self.sweep_mode != "Time constant in s":
+            self.set_timeconstant()
         self.set_lockin_settings()
         self.set_advanced_settings()
         # Bias voltage must be set after filter settings or a warning will appear on the touch panel.
         self.set_bias(self.use_bias, self.bias_voltage)
 
-    def reconfigure(self, parameters=None, keys=None):
-        """Called whenever an element higher up in the sequencer varies its sweep value, i.e. a parameter in the GUI"""
-        if parameters:
-            self.get_GUIparameter(parameters)
-        if self.sweep_mode != "Sensitivity in A":
-            self.set_range()
-        if self.sweep_mode != "Time constant in s":
-            self.set_timeconstant()
-
     """ the following functions are called for each measurement point """
 
-    def apply(self):
+    def apply(self) -> None:
         """
         Apply a swept value. Accept both GUI label-strings (e.g. "100 mA")
         and numeric values (strings or numbers). For time constant allow
@@ -426,12 +419,16 @@ class Device(EmptyDevice):
     def set_lockin_settings(self):
         """Wrapper function to set configurations specific to Lock-In Amplifier (LIA) mode."""
         # Reference source
-        if not self.lia_ref in ["S1", "S2", "S3"]:
-            if self.lia_ref.lower().startswith("reference"):
-                self.lia_ref = "RIN"  # External Reference Source
+        # The converted value is kept in a local variable. Overwriting self.lia_ref would
+        # make a second call of this function fail, because "RIN" is neither one of the
+        # source channels nor does it start with "reference".
+        reference = self.lia_ref
+        if not reference in ["S1", "S2", "S3"]:
+            if reference.lower().startswith("reference"):
+                reference = "RIN"  # External Reference Source
             else:
                 raise ValueError(f"No valid reference source selected: {self.lia_ref}.")
-        self.port.write(f"SENSe{self.slot}:LIA:RSOurce {self.lia_ref}")
+        self.port.write(f"SENSe{self.slot}:LIA:RSOurce {reference}")
 
         # Reference harmonic
         try:
