@@ -281,7 +281,8 @@ class Device(EmptyDevice):
             status = velox.GetSubDieStatus(subsite_number)
             if status == "E":  # Enabled
                 # Add the number to the label to ensure uniqueness, as Velox allows multiple subsites with the same label
-                self.subsites[f"#{subsite_number} {label}"] = subsite_number
+                # If no label is given, strip the whitespace.
+                self.subsites[f"#{subsite_number} {label}".strip()] = subsite_number
 
             subsite_number += 1
 
