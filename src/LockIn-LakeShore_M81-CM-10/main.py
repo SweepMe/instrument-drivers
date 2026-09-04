@@ -268,8 +268,10 @@ class Device(EmptyDevice):
 
     def configure(self):
         self.set_mode()
-        self.set_range()
-        self.set_timeconstant()
+        if self.sweep_mode == "Sensitivity in A":
+            self.set_range()
+        if self.sweep_mode != "Time constant in s":
+            self.set_timeconstant()
         self.set_lockin_settings()
         self.set_advanced_settings()
         # Bias voltage must be set after filter settings or a warning will appear on the touch panel.
@@ -277,7 +279,7 @@ class Device(EmptyDevice):
 
     """ the following functions are called for each measurement point """
 
-    def apply(self):
+    def apply(self) -> None:
         """
         Apply a swept value. Accept both GUI label-strings (e.g. "100 mA")
         and numeric values (strings or numbers). For time constant allow
@@ -326,7 +328,7 @@ class Device(EmptyDevice):
         if self.wait_time:
             start_time = time.time()
             while (
-                not self.is_run_aborted() and time.time() - start_time < self.wait_time
+                not self.is_run_stopped() and time.time() - start_time < self.wait_time
             ):  # this flag is set True when the user presses 'Stop'
                 time.sleep(min(0.1, self.wait_time))
 
@@ -417,12 +419,16 @@ class Device(EmptyDevice):
     def set_lockin_settings(self):
         """Wrapper function to set configurations specific to Lock-In Amplifier (LIA) mode."""
         # Reference source
-        if not self.lia_ref in ["S1", "S2", "S3"]:
-            if self.lia_ref.lower().startswith("reference"):
-                self.lia_ref = "RIN"  # External Reference Source
+        # The converted value is kept in a local variable. Overwriting self.lia_ref would
+        # make a second call of this function fail, because "RIN" is neither one of the
+        # source channels nor does it start with "reference".
+        reference = self.lia_ref
+        if not reference in ["S1", "S2", "S3"]:
+            if reference.lower().startswith("reference"):
+                reference = "RIN"  # External Reference Source
             else:
                 raise ValueError(f"No valid reference source selected: {self.lia_ref}.")
-        self.port.write(f"SENSe{self.slot}:LIA:RSOurce {self.lia_ref}")
+        self.port.write(f"SENSe{self.slot}:LIA:RSOurce {reference}")
 
         # Reference harmonic
         try:
@@ -492,7 +498,7 @@ class Device(EmptyDevice):
         if self.lia_lowpass:
             if not (10000 >= self.lia_tc >= 0.0001):
                 raise ValueError(
-                    "Lock-In time constant set to {self.lia_tc}. Must be >= 0.0001 s and <= 10,000 s."
+                    f"Lock-In time constant set to {self.lia_tc}. Must be >= 0.0001 s and <= 10,000 s."
                 )
             self.port.write(f"SENSe{self.slot}:LIA:TIMEconstant {self.lia_tc}")
             self.port.write(f"SENSe{self.slot}:LIA:ROLLoff R{self.lia_rolloff}")
