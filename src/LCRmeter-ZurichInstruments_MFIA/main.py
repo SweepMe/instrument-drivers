@@ -31,7 +31,7 @@
 
 import numpy as np
 
-from FolderManager import addFolderToPATH
+from pysweepme.FolderManager import addFolderToPATH
 addFolderToPATH()  # needed to import zhinst from libs folder of this device class
 
 from zhinst import ziPython as ziP
@@ -41,9 +41,9 @@ from collections import OrderedDict
 
 import time
 
-from ErrorMessage import error
+from pysweepme.ErrorMessage import error
 
-from EmptyDeviceClass import EmptyDevice
+from pysweepme.EmptyDeviceClass import EmptyDevice
 
 class Device(EmptyDevice):
 
