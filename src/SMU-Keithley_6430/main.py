@@ -54,6 +54,10 @@ class Device(EmptyDevice):
                     <li>Current range: -105e-3 - 105e-3 A</li>
                     <li>Voltage range: -210 - 210 V</li>
                     <li>Speed in NPLC (0.01 - 10)</li>
+                    <li>Source delay: time the instrument waits after applying a new source level
+                    before it measures. &quot;Auto&quot; scales it with the active current range. On the
+                    low current ranges a fixed value may be needed so that a reading is not taken
+                    before the new level has been applied.</li>
                     </ul>
                 """
 
@@ -95,6 +99,10 @@ class Device(EmptyDevice):
         }
         self.speed: float = 1.0  # NPLC
         self.averages: int = 1
+        self.source_delay: str = "Auto"  # "Auto" or a number of seconds
+        # Source delay in seconds once resolved, 0.0 while the instrument chooses it itself.
+        # Only used to size the read timeout; the instrument is configured from self.source_delay.
+        self.source_delay_seconds: float = 0.0
         self.measured_current: float = 0.0
         self.measured_voltage: float = 0.0
         self.time_stamps: list[float] = []
@@ -145,6 +153,7 @@ class Device(EmptyDevice):
             "Compliance": "0.0",
             "Speed": list(self.speeds.keys()),
             "Average": 1,
+            "Source delay in s": "Auto",
 
             # List Mode Parameters
             "ListSweepCheck": False,
@@ -182,6 +191,7 @@ class Device(EmptyDevice):
             self.speed = float(parameters.get("Speed", 1.0))
 
         self.averages = int(float(parameters.get("Average", 1)))
+        self.source_delay = str(parameters.get("Source delay in s", "Auto"))
 
         # Reset return variables
         self.variables = ["Voltage", "Current"]
@@ -242,6 +252,8 @@ class Device(EmptyDevice):
 
             if not self.list_mode:
                 self.port.write("SOURce:CURRent:MODE FIXed")  # Alternative: list, sweep
+
+        self.set_source_delay(self.source_delay)
 
         self.set_measurement_speed("CURR", self.speed)
         self.set_measurement_speed("VOLT", self.speed)
@@ -381,11 +393,13 @@ class Device(EmptyDevice):
 
         else:
             # self.speed is NPLC, a number of power line cycles, and has to be converted to seconds.
-            # The margin covers the source delay and, with autoranging enabled, the range search,
-            # both of which take seconds on the low current ranges. The loop below returns as soon
-            # as the response is complete, so a generous limit costs nothing in a normal measurement.
-            expected_time = self.speed / LINE_FREQUENCY * self.averages
-            timeout = max(expected_time * 3, 10)  # seconds
+            # The floor has to cover what the instrument needs on its low current ranges: with
+            # autoranging down to 1 pA a single reading was measured taking more than 10 s, so a
+            # smaller limit aborts a sweep that is merely slow. The loop below returns as soon as
+            # the response is complete and checks is_run_stopped() every 100 ms, so a generous
+            # limit neither slows a measurement down nor makes a run harder to abort.
+            expected_time = self.speed / LINE_FREQUENCY * self.averages + self.source_delay_seconds
+            timeout = max(expected_time * 3, 60)  # seconds
             time_start = time.monotonic()
 
             buffer = ""
@@ -482,6 +496,32 @@ class Device(EmptyDevice):
 
         else:
             self.port.write(f":SENSe:CURRent:RANGe {self.current_measurement_ranges[range_value]}")
+
+    def set_source_delay(self, delay: str = "Auto") -> None:
+        """Set the delay between applying a new source level and starting the measurement.
+
+        "Auto" lets the instrument derive the delay from the active current range. A fixed value
+        overrides it, which is what keeps a reading from being taken before the new source level
+        has been applied on the low current ranges.
+        """
+        if str(delay).strip().lower() == "auto":
+            self.source_delay_seconds = 0.0
+            self.port.write(":SOURce:DELay:AUTO ON")
+            return
+
+        try:
+            delay_seconds = float(delay)
+        except ValueError:
+            msg = f"Invalid source delay: {delay!r}. Use 'Auto' or a number of seconds."
+            raise ValueError(msg) from None
+
+        if not 0.0 <= delay_seconds <= 9999.999:
+            msg = f"Source delay must be between 0 and 9999.999 s, got {delay_seconds}"
+            raise ValueError(msg)
+
+        self.source_delay_seconds = delay_seconds
+        self.port.write(":SOURce:DELay:AUTO OFF")
+        self.port.write(f":SOURce:DELay {delay_seconds}")
 
     def set_measurement_speed(self, mode: str, nplc: float) -> None:
         """Set the measurement speed in NPLC."""
