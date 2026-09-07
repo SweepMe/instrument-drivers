@@ -944,29 +944,22 @@ class Device(EmptyDevice):
         """Set the current range of the device. Requires to set the compliance as well.
 
         When the SMU channel is used as a voltage source, the compliance is overwritten when setting the set value.
+        In US mode, the current range must be set as an index instead of the actual value.
         """
-        # Current source mode specified (DI):
-        # = 0 Autorange
-        # = 3 100nA
-        # = 4 1muA range
-        # = 5 10muA
-        # = 6 100muA
-        # = 7 1mA
-        # = 8 10 mA
-        # = 9 100 mA range
         current_range_index = {
-            0.1: 9,
-            0.01: 8,
-            0.001: 7,
-            0.0001: 6,
-            0.00001: 5,
-            0.000001: 4,
-            0.0000001: 3,
+            0.1: 9,  # 100 mA
+            0.01: 8,  # 10 mA
+            0.001: 7,  # 1 mA
+            0.0001: 6,  # 100 uA
+            0.00001: 5,  # 10 uA
+            0.000001: 4,  # 1 uA
+            0.0000001: 3,  # 100 nA
         }
         if current_range in current_range_index:
             current_range = current_range_index[current_range]
         else:
-            print(f"Warning: Current range {current_range} A not supported. Using autorange instead.")
+            debug(f"Warning: Current range {current_range} A not supported. Using autorange instead.")
+            current_range = 0
 
         if self.command_set == "US":
             self.port.write(f"RI {channel}, {current_range}, {compliance}")
