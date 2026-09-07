@@ -793,10 +793,11 @@ class Device(EmptyDevice):
                 voltages = []
                 currents = []
 
+                # The KXCI command to read out measurement values only retrieves a new value if the set voltage or set
+                # current command has been called before. Otherwise, NaN is returned.
                 for _ in range(averages):
+                    self.apply()
                     voltages.append(self.get_voltage(self.card_name[-1]))
-
-                for _ in range(averages):
                     currents.append(self.get_current(self.card_name[-1]))
 
                 self.measured_voltage = np.mean(voltages)
