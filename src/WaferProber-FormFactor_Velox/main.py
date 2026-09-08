@@ -336,7 +336,7 @@ class Device(EmptyDevice):
             if geometry["map_type"] != "rectangle":
                 with contextlib.suppress(velox.SciException):
                     # GetWaferMapParams2 differs from GetWaferMapParams only in the units of the X/Y offsets,
-                    # which are not used here — so the older command is a fine fallback on older Velox.
+                    # which are not used here - so the older command is a fine fallback on older Velox.
                     params_command = getattr(velox, "GetWaferMapParams2", velox.GetWaferMapParams)
                     params = params_command()
                     geometry["diameter_mm"] = float(params.Diameter)
