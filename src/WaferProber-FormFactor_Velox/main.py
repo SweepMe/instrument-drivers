@@ -34,6 +34,7 @@ from __future__ import annotations
 import contextlib
 from typing import Any, ClassVar
 
+from pysweepme import debug
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.FolderManager import addFolderToPATH
 
@@ -73,7 +74,7 @@ class Device(EmptyDevice):
 
         # Position Parameters
         self.loader_is_connected: bool = False
-        self.load_angle: float = 0.
+        self.load_angle: float = 0.0
         """Angle in degrees to rotate the wafer during loading."""
 
         self.subsites: dict = {}
@@ -96,7 +97,7 @@ class Device(EmptyDevice):
     def set_GUIparameter(self) -> dict[str, float]:  # noqa: N802
         """Define standard GUI parameter values."""
         return {
-            "Load angle": 0.,
+            "Load angle": 0.0,
             "SweepValueWafer": ["Wafer table"],  # filled by module
         }
 
@@ -189,9 +190,11 @@ class Device(EmptyDevice):
         """Connect to the Velox SDK."""
         if self.msg_server is None:
             if not self.ip_address:
-                msg = ("No port selected. Click 'Find Ports' and choose 'localhost' if Velox runs on this "
-                       "computer, or enter the address of the Velox PC as 'IP:xxx.xxx.xxx.xxx; Port:xxxx'.")
-                raise Exception(msg)
+                msg = (
+                    "No port selected. Click 'Find Ports' and choose 'localhost' if Velox runs on this "
+                    "computer, or enter the address of the Velox PC as 'IP:xxx.xxx.xxx.xxx; Port:xxxx'."
+                )
+                raise ValueError(msg)
 
             try:
                 self.msg_server = velox.MessageServerInterface(self.ip_address, self.target_socket).__enter__()
@@ -199,16 +202,18 @@ class Device(EmptyDevice):
                 # Check if Velox software is running
                 if "The connection to the Velox Message Server was refused." in str(e):
                     msg = "Unable to connect to Velox software. Please start Velox and try again."
-                    raise Exception(msg) from e
+                    raise ConnectionError(msg) from e
 
                 if isinstance(e, OSError):
                     # Any other socket-level failure, e.g. WinError 10049 for an address that does not
                     # exist on this machine. On its own that error names neither the address nor the
                     # Port field, which is the only thing the user can act on.
-                    msg = (f"Unable to reach the Velox message server at '{self.ip_address}:{self.target_socket}'. "
-                           "Check the Port field: use 'localhost' if Velox runs on this computer, or "
-                           "'IP:xxx.xxx.xxx.xxx; Port:xxxx' for a remote Velox PC.")
-                    raise Exception(msg) from e
+                    msg = (
+                        f"Unable to reach the Velox message server at '{self.ip_address}:{self.target_socket}'. "
+                        "Check the Port field: use 'localhost' if Velox runs on this computer, or "
+                        "'IP:xxx.xxx.xxx.xxx; Port:xxxx' for a remote Velox PC."
+                    )
+                    raise ConnectionError(msg) from e
 
                 raise e
 
@@ -341,13 +346,17 @@ class Device(EmptyDevice):
                     params = params_command()
                     geometry["diameter_mm"] = float(params.Diameter)
                     geometry["flat_length_mm"] = float(params.FlatLength)
-                    geometry["notch"] = self.NOTCH_DIRECTIONS.get(int(params.FlatAngle))
+                    geometry["notch"] = self.NOTCH_DIRECTIONS.get(int(params.FlatAngle), None)
                     if geometry["pitch_x_mm"] is None:
                         geometry["pitch_x_mm"] = float(params.DieWidth) / 1000.0
                         geometry["pitch_y_mm"] = float(params.DieHeight) / 1000.0
 
             with contextlib.suppress(velox.SciException):
                 geometry["origin"] = self.MAP_ORIGINS.get(int(velox.GetMapOrientation().Orientation))
+
+            if all(value is None for value in geometry.values()):
+                msg = "Could not retrieve any wafer map geometry from Velox."
+                raise Exception(msg)
 
             return geometry
         finally:
