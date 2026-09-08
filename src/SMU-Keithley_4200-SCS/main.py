@@ -452,7 +452,8 @@ class Device(EmptyDevice):
     def check_test_parameter(self) -> None:
         """Check if the selected parameters can be run with the selected mode."""
         if "PMU" in self.card_name and not self.pulse_mode:
-            raise Exception("Please activate pulse mode for %s of the 4200-SCS parameter analyzer!" % self.channel)
+            msg = f"Please select pulse mode to use the PMU channel {self.channel}."
+            raise Exception(msg)
 
         if self.pulse_mode:
             if "PMU" not in self.card_name:
@@ -572,6 +573,9 @@ class Device(EmptyDevice):
 
         # Protection
         if self.source == "Voltage in V":
+            # The device raises an error if the current compliance is larger than the current measurement range.
+            # Therefore, we set the current measurement range to auto first, before updating it again later.
+            self.lpt.rangei(self.card_id, 0)  # auto-ranging
             self.lpt.limiti(self.card_id, float(self.protection))  # compliance/protection
         elif self.source == "Current in A":
             self.lpt.limitv(self.card_id, float(self.protection))  # compliance/protection
@@ -592,7 +596,7 @@ class Device(EmptyDevice):
         nplc_value = self.speed_dict[self.speed]
         self.lpt.setmode(self.card_id, self.param.KI_INTGPLC, nplc_value)
 
-        # Current Range
+        # Current measurement Range
         current_range_value = self.current_ranges[self.current_range]
         if "auto" in self.current_range.lower() or "limited" in self.current_range.lower():
             self.lpt.rangei(self.card_id, 0)  # auto-ranging
@@ -605,7 +609,7 @@ class Device(EmptyDevice):
         # self.lpt.lorangev(self.card_id, 1e-1)  # low range voltage
 
         # Range delay off
-        self.lpt.setmode(self.card_id, self.param.KI_RANGE_DELAY, 0.0)  # disable range delay
+        self.lpt.setmode(self.card_id, self.param.KI_RANGE_DELAY, 0.0)
 
     def start(self) -> None:
         """Preparation before applying a new value."""
@@ -652,9 +656,9 @@ class Device(EmptyDevice):
                 self.lpt.forcei(self.card_id, self.value)
 
         elif self.command_set == "US":
-            # These ranges are the source ranges, not the compliance or measurement ranges
+            # These ranges are the source ranges, not the compliance or measurement ranges. Currently, only auto range
+            # is supported for the US command set.
             voltage_source_range = 0  # auto
-            # Currently, the current source range is always set to auto - should issue a warning
             current_source_range = 0  # auto
 
             if self.source == "Voltage in V":
@@ -789,10 +793,11 @@ class Device(EmptyDevice):
                 voltages = []
                 currents = []
 
+                # The KXCI command to read out measurement values only retrieves a new value if the set voltage or set
+                # current command has been called before. Otherwise, NaN is returned.
                 for _ in range(averages):
+                    self.apply()
                     voltages.append(self.get_voltage(self.card_name[-1]))
-
-                for _ in range(averages):
                     currents.append(self.get_current(self.card_name[-1]))
 
                 self.measured_voltage = np.mean(voltages)
@@ -922,15 +927,13 @@ class Device(EmptyDevice):
         self.port.write(f"{mode}")
         return self.read_tcpip_port()
 
-    def get_identifier(self) -> str:
+    def get_identification(self) -> str:
         """Return IDN."""
-        self.port.write("*IDN?")
-        return self.port.read()
+        return self.port.query("*IDN?")
 
     def get_options(self) -> str:
         """Return OPT."""
-        self.port.write("*OPT?")
-        return self.port.read()
+        return self.port.query("*OPT?")
 
     def set_resolution(self, resolution: int) -> str:
         """Set the resolution of the device."""
@@ -942,7 +945,23 @@ class Device(EmptyDevice):
         """Set the current range of the device. Requires to set the compliance as well.
 
         When the SMU channel is used as a voltage source, the compliance is overwritten when setting the set value.
+        In US mode, the current range must be set as an index instead of the actual value.
         """
+        current_range_index = {
+            0.1: 9,  # 100 mA
+            0.01: 8,  # 10 mA
+            0.001: 7,  # 1 mA
+            0.0001: 6,  # 100 uA
+            0.00001: 5,  # 10 uA
+            0.000001: 4,  # 1 uA
+            0.0000001: 3,  # 100 nA
+        }
+        if current_range in current_range_index:
+            current_range = current_range_index[current_range]
+        else:
+            debug(f"Warning: Current range {current_range} A not supported. Using autorange instead.")
+            current_range = 0
+
         if self.command_set == "US":
             self.port.write(f"RI {channel}, {current_range}, {compliance}")
         return self.read_tcpip_port()
