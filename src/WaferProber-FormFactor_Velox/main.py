@@ -327,7 +327,7 @@ class Device(EmptyDevice):
             with contextlib.suppress(velox.SciException):
                 dims = velox.GetMapDims()
                 geometry["map_type"] = "wafer" if str(dims.MapType).upper().startswith("W") else "rectangle"
-                # Velox reports the die index in micrometres.
+                # Velox reports the die index in micrometers.
                 geometry["pitch_x_mm"] = float(dims.XIndex) / 1000.0
                 geometry["pitch_y_mm"] = float(dims.YIndex) / 1000.0
                 geometry["columns"] = int(dims.Columns)
