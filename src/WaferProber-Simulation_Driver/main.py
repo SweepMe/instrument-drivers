@@ -31,7 +31,18 @@
 
 from __future__ import annotations
 
+import math
+from typing import Any
+
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+# Geometry of the simulated wafer. Both the probe plan and get_wafer_geometry() are derived from
+# these numbers, so the wafer map always draws a die grid that matches the geometry it is handed.
+WAFER_DIAMETER_MM = 150.0
+DIE_PITCH_X_MM = 10.0
+DIE_PITCH_Y_MM = 10.0
+EDGE_EXCLUSION_MM = 5.0
+WAFER_NOTCH = "down"
 
 
 class Device(EmptyDevice):
@@ -83,10 +94,59 @@ class Device(EmptyDevice):
         probeplan file. It reads the probeplan from a given file and returns the lists of wafers, dies, and subsites.
         """
         wafers = ["C1W1", "C1W2", "C2W1"]
-        dies = ["1,1", "1, 13", "7,5", "12,8"]
+        dies = self.generate_dies()
         subsites = ["Pos 100, 50", "Pos 75, 150"]
 
         return wafers, dies, subsites
+
+    @staticmethod
+    def generate_dies() -> list[str]:
+        """Return the dies of a round wafer in probing order, as 'column,row' strings.
+
+        The grid is clipped to the usable radius so the wafer map shows a wafer shape rather than a
+        rectangle, and rows alternate direction the way a real probe plan does, so the chuck does not
+        travel back across the wafer at the end of every row.
+        """
+        usable_radius_mm = WAFER_DIAMETER_MM / 2.0 - EDGE_EXCLUSION_MM
+        columns = int(usable_radius_mm // DIE_PITCH_X_MM)
+        rows = int(usable_radius_mm // DIE_PITCH_Y_MM)
+
+        dies = []
+        for row in range(rows, -rows - 1, -1):
+            row_dies = []
+            for column in range(-columns, columns + 1):
+                # Measure to the far corner of the die, so a die counts only if it fits completely.
+                x_mm = abs(column) * DIE_PITCH_X_MM + DIE_PITCH_X_MM / 2.0
+                y_mm = abs(row) * DIE_PITCH_Y_MM + DIE_PITCH_Y_MM / 2.0
+                if math.hypot(x_mm, y_mm) <= usable_radius_mm:
+                    row_dies.append(f"{column},{row}")
+
+            if (rows - row) % 2:
+                row_dies.reverse()
+            dies.extend(row_dies)
+
+        return dies
+
+    def get_wafer_geometry(self) -> dict[str, Any]:
+        """Return the geometry of the simulated wafer.
+
+        Implementing this function lets the WaferProber module fill in the wafer geometry of its Map tab
+        when 'Update' is pressed, instead of the user typing diameter and die pitch by hand.
+        """
+        usable_radius_mm = WAFER_DIAMETER_MM / 2.0 - EDGE_EXCLUSION_MM
+        return {
+            "diameter_mm": WAFER_DIAMETER_MM,
+            "pitch_x_mm": DIE_PITCH_X_MM,
+            "pitch_y_mm": DIE_PITCH_Y_MM,
+            "columns": 2 * int(usable_radius_mm // DIE_PITCH_X_MM) + 1,
+            "rows": 2 * int(usable_radius_mm // DIE_PITCH_Y_MM) + 1,
+            "map_type": "wafer",
+            "notch": WAFER_NOTCH,
+            "flat_length_mm": 0.0,
+            # The simulated dies are counted from the wafer centre, which is none of the four corner
+            # origins - so no convention is reported and the module leaves that setting alone.
+            "origin": None,
+        }
 
     def get_current_wafer(self) -> str:
         """Returns the current wafer.
@@ -131,7 +191,7 @@ class Device(EmptyDevice):
         self.current_subsite = str(subsite)
 
     def contact(self) -> None:
-        """Lower the chuck so the probes contact the wafer.
+        """Raise the chuck to contact height, so the probes touch the wafer.
 
         Implementing this function enables the 'Contact' button in the wafer-map panel.
         """
@@ -139,7 +199,7 @@ class Device(EmptyDevice):
         self.is_contacted = True
 
     def separate(self) -> None:
-        """Raise the chuck so the probes separate from the wafer.
+        """Lower the chuck to separation height, so the probes come off the wafer.
 
         Implementing this function enables the 'Separate' button in the wafer-map panel.
         """
