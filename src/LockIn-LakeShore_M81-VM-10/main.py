@@ -304,61 +304,15 @@ class Device(EmptyDevice):
         self.set_input_configuration(self.input_config)
         self.set_coupling(self.coupling)
         self.set_analog_filter()  # set filters before range: the range limits depend on them
-        self.set_range()
-        self.set_time_constant()
+        if self.sweep_mode == "Sensitivity in V":
+            self.set_range()
+        if self.sweep_mode != "Time constant in s":
+            self.set_time_constant()
         # The resistance source must be set before the lock-in settings: in lock-in mode,
         # writing the resistance source also overwrites the lock-in reference source.
         self.set_resistance_source()
         self.set_lockin_settings()
         self.set_advanced_settings()
-
-    def reconfigure(
-        self, parameters: dict[str, Any] | None = None, keys: list[str] | None = None
-    ) -> None:
-        """Rewrite only the settings whose GUI parameter changed via the {...} parameter system.
-
-        Only the affected part of the configuration is written: rewriting everything would
-        resend all commands and retrigger the automatic phase adjustment on every change.
-
-        A setting that is currently being swept is skipped, because apply() owns it. SweepMe!
-        calls apply() only when the sweep value changes, so overwriting the swept value with
-        the GUI value here would persist for the rest of the branch.
-        """
-        if parameters:
-            self.apply_gui_parameters(parameters)
-        changed = set(keys or [])
-
-        if not changed:
-            # Nothing specified: write everything
-            self.configure()
-            return
-
-        if changed & {"Reserve", "LowPassFilter", "HighPassFilter"}:
-            self.set_analog_filter()
-            changed.add("Sensitivity")  # the available ranges depend on the filter optimization
-        if "Input" in changed:
-            self.set_input_configuration(self.input_config)
-        if "Coupling" in changed:
-            self.set_coupling(self.coupling)
-        if "Sensitivity" in changed and self.sweep_mode != "Sensitivity in V":
-            self.set_range()
-        if (
-            changed & {"TimeConstant", "Slope", "WaitTimeConstants"}
-            and self.sweep_mode != "Time constant in s"
-        ):
-            self.set_time_constant()
-        if "Resistance source" in changed:
-            self.set_resistance_source()
-            changed.add("Source")  # the resistance source overwrites the lock-in reference source
-        if changed & {
-            "Source",
-            "Lock-In harmonic",
-            "Averaging reference cycles",
-            "Reference phase shift in degrees",
-        }:
-            self.set_lockin_settings()
-        if changed & {"Filter1", "Turn off LED"}:
-            self.set_advanced_settings()
 
     def apply(self) -> None:
         """Apply a new sweep value (self.value) according to the selected sweep mode."""
