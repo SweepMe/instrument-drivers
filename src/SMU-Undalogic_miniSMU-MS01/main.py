@@ -76,7 +76,6 @@ class Device(EmptyDevice):
             # carry no terminator. Responses still include \n over both transports.
             "TCPIP_EOLwrite": "",
             "TCPIP_EOLread": "\n",
-            "TCPIP_timeout": 5,
         }
 
         # Source mode command mapping
@@ -131,6 +130,22 @@ class Device(EmptyDevice):
         self._sweep_voltages: np.ndarray = np.array([])
         self._sweep_currents: np.ndarray = np.array([])
         self._sweep_timestamps: np.ndarray = np.array([])
+
+        # The firmware autoranger converges across a large setpoint step over
+        # several MEAS calls (down-steps are debounced to one range per call),
+        # and the output stage needs time to slew. Without an explicit settle
+        # pass, the points right after a large step report the wrong-range
+        # zero floor (~1e-5 A on the 180 mA range) or clipped transients.
+        #
+        # Two triggers cover all observed cases:
+        #  - _needs_first_apply_settle: armed in configure()/poweron() for the
+        #    first apply of a pass.
+        #  - a large jump between consecutive setpoints: SweepMe! repeats
+        #    sweeps with NO lifecycle call in between (apply(2.5) is followed
+        #    directly by apply(0.0)), so the wrap can only be detected from
+        #    the setpoint sequence itself.
+        self._needs_first_apply_settle: bool = True
+        self._last_applied_value: float | None = None
 
     # --- GUI interaction -------------------------------------------------------
 
@@ -426,10 +441,11 @@ class Device(EmptyDevice):
     # --- Standard semantic functions -------------------------------------------
 
     def initialize(self) -> None:
-        """Configure the miniSMU for the selected operating mode.
+        """Validate settings and set up the operating mode once per run.
 
-        Sets the source mode (FVMI/FIMV), voltage range, current range,
-        oversampling, compliance limits, and optionally enables 4-wire mode.
+        Sets the source mode (FVMI/FIMV) and optionally enables 4-wire mode.
+        Settings that the user can change during a running sequence (ranges,
+        oversampling, compliance) are applied in configure() instead.
         """
         # Validate 4-wire mode constraints
         if self.four_wire and self.channel != 1:
@@ -455,23 +471,6 @@ class Device(EmptyDevice):
         # Set source mode
         self.set_source_mode(self.channel, self.source_modes[self.source])
 
-        # Configure voltage range
-        self.set_voltage_range_cmd(self.channel, self.voltage_ranges[self.voltage_range])
-
-        # Configure current range
-        range_idx = self.current_ranges[self.current_range]
-        if range_idx == -1:
-            self._send_command(f"CH{self.channel}:AUTORANGE:ENA")
-        else:
-            self._send_command(f"CH{self.channel}:AUTORANGE:DIS")
-            self.set_current_range_cmd(self.channel, range_idx)
-
-        # Set oversampling ratio
-        self.set_oversampling(self.channel, self.oversampling)
-
-        # Set compliance / protection limits
-        self.set_compliance(self.channel, self.compliance, self.source)
-
         # Enable 4-wire Kelvin mode if requested
         if self.four_wire:
             response = self._send_command("SYST:4WIR ENA")
@@ -490,10 +489,36 @@ class Device(EmptyDevice):
         self._send_command(f"CH{self.channel}:AUTORANGE:ENA")
 
     def configure(self) -> None:
-        """Configure sweep parameters for the current measurement.
+        """Apply the measurement settings for the current pass.
 
-        For list sweep mode, uploads the hardware sweep configuration to the device.
+        Ranges, oversampling, and compliance live here (not in initialize)
+        so SweepMe! re-applies them whenever they change during a running
+        sequence, e.g. a compliance limit driven by a GUI widget via the
+        parameter syntax. For list sweep mode, additionally uploads the
+        hardware sweep configuration to the device.
         """
+        # Re-arm the settle pass for the first apply of this pass, and drop
+        # the setpoint history so the large-step detector starts fresh.
+        self._needs_first_apply_settle = True
+        self._last_applied_value = None
+
+        # Configure voltage range
+        self.set_voltage_range_cmd(self.channel, self.voltage_ranges[self.voltage_range])
+
+        # Configure current range
+        range_idx = self.current_ranges[self.current_range]
+        if range_idx == -1:
+            self._send_command(f"CH{self.channel}:AUTORANGE:ENA")
+        else:
+            self._send_command(f"CH{self.channel}:AUTORANGE:DIS")
+            self.set_current_range_cmd(self.channel, range_idx)
+
+        # Set oversampling ratio
+        self.set_oversampling(self.channel, self.oversampling)
+
+        # Set compliance / protection limits
+        self.set_compliance(self.channel, self.compliance, self.source)
+
         if self.use_list_sweep:
             self.set_sweep_parameters(
                 self.channel,
@@ -506,6 +531,8 @@ class Device(EmptyDevice):
     def poweron(self) -> None:
         """Enable the output of the selected channel."""
         self.enable_output(self.channel)
+        self._needs_first_apply_settle = True
+        self._last_applied_value = None
 
     def poweroff(self) -> None:
         """Disable the output of the selected channel."""
@@ -517,11 +544,90 @@ class Device(EmptyDevice):
         Sets the voltage or current depending on the selected sweep mode.
         Not called during list sweep mode.
         """
-        if not self.use_list_sweep:
-            if self.source == "Voltage in V":
-                self.set_voltage(self.channel, self.value)
+        if self.use_list_sweep:
+            return
+
+        # A setpoint jump big enough to plausibly cross multiple current
+        # ranges (e.g. the 2.5 V -> 0 V wrap when SweepMe! repeats a sweep
+        # without any lifecycle call, or a +2.5 V -> -2.5 V polarity flip)
+        # needs the same settle pass as the first apply of a run. Normal
+        # sweep steps stay well below this threshold, so mid-sweep timing is
+        # unaffected. In current mode the setpoint never steps this far
+        # (ranges end at 180 mA) and FIMV sets its range from the setpoint
+        # anyway, so the detector is effectively voltage-mode only.
+        LARGE_SETPOINT_STEP = 0.5
+
+        value = float(self.value)
+        large_step = (
+            self._last_applied_value is not None
+            and abs(value - self._last_applied_value) >= LARGE_SETPOINT_STEP
+        )
+
+        if self.source == "Voltage in V":
+            self.set_voltage(self.channel, value)
+        else:
+            self.set_current(self.channel, value)
+
+        if self._needs_first_apply_settle or large_step:
+            self._settle_after_initial_step()
+            self._needs_first_apply_settle = False
+
+        self._last_applied_value = value
+
+    def _settle_after_initial_step(self) -> None:
+        """Absorb the source/autorange transient after a large setpoint step.
+
+        The firmware autoranger steps down at most one current range per
+        measurement call and (as of FW 1.4.6) debounces each down-step over
+        several consecutive low readings. After a large downward step - e.g.
+        a repetition starting at 0 V right after the previous sweep ended at
+        high current - the first readings are taken on a too-coarse range and
+        report that range's zero-current floor (~1e-5 A on the 180 mA range)
+        instead of the true current.
+
+        Discard readings until the autoranger has converged. The reading
+        plateaus for a few calls while each down-step debounces, so two
+        similar consecutive reads do NOT mean converged; convergence is "no
+        further drop over the last STABLE_WINDOW reads". Readings below
+        CONVERGED_FLOOR_A count as stable outright: noise at the bottom
+        ranges spans several decades (5e-12..1e-9 A observed), so the
+        relative-improvement test alone would keep "improving" forever
+        there. The floor sits between the range-2 zero offset (~2e-8 A) and
+        the range-1 noise (~5e-10 A), so it can only trigger once the
+        autoranger has reached the bottom ranges, where the reading is
+        honest. Worst case (180 mA range walking down to 1 uA with a
+        debounce of 3) is ~12 walk-down reads plus the confirmation window;
+        readings already on the correct range exit after STABLE_WINDOW + 1
+        reads.
+        """
+        SETTLE_DELAY_S = 0.1
+        MAX_WARMUP_READS = 18
+        STABLE_WINDOW = 4  # must exceed the firmware range-down debounce (3)
+        IMPROVEMENT_FACTOR = 2.0  # drop by more than this = still converging
+        CONVERGED_FLOOR_A = 5e-9  # below this the bottom ranges are reached
+
+        time.sleep(SETTLE_DELAY_S)
+
+        lowest = float("inf")
+        stable_reads = 0
+        for _ in range(MAX_WARMUP_READS):
+            if self.is_run_stopped():
+                return
+            try:
+                _, current = self.get_voltage_and_current(self.channel)
+            except Exception:
+                return
+
+            magnitude = abs(current)
+            if magnitude >= CONVERGED_FLOOR_A and magnitude < lowest / IMPROVEMENT_FACTOR:
+                # Reading dropped well below anything seen so far: the
+                # autoranger is still walking down through range floors.
+                lowest = magnitude
+                stable_reads = 0
             else:
-                self.set_current(self.channel, self.value)
+                stable_reads += 1
+                if stable_reads >= STABLE_WINDOW:
+                    return
 
     def measure(self) -> None:
         """Trigger a measurement or execute a hardware sweep.
@@ -530,6 +636,17 @@ class Device(EmptyDevice):
         In list sweep mode, executes the onboard sweep and polls until complete.
         """
         if self.use_list_sweep:
+            # Prime the source and the firmware autoranger before EXECUTE.
+            # The onboard sweep starts measuring at point 0 immediately, with
+            # no margin for the autoranger to converge (it moves at most one
+            # current range per measurement, and down-steps are debounced).
+            # Manually setting the start voltage and discarding reads until
+            # the reading stabilizes gets both the output and the autoranger
+            # to the correct state, so point 0 captures clean data instead of
+            # the transient/clipped/wrong-range-floor values seen otherwise.
+            self.set_voltage(self.channel, self.listsweep_start)
+            self._settle_after_initial_step()
+
             self.execute_sweep(self.channel)
 
             # Poll for completion with a generous timeout derived from sweep
@@ -581,7 +698,7 @@ class Device(EmptyDevice):
         """Return measured data.
 
         In normal mode, returns [voltage, current].
-        In list sweep mode, retrieves JSON sweep data from the device and returns
+        In list sweep mode, retrieves CSV sweep data from the device and returns
         [voltage_array, current_array, timestamp_array].
 
         Returns:
@@ -589,27 +706,33 @@ class Device(EmptyDevice):
         """
         if self.use_list_sweep:
             raw_data = self.get_sweep_data(self.channel)
+            
+            timestamps: list[float] = []
+            voltages: list[float] = []
+            currents: list[float] = []
+            for line in raw_data.splitlines():
+                parts = line.strip().split(",")
+                if len(parts) != 3:
+                    # CSV is line-framed, so a malformed line only loses one
+                    # point; skip and keep parsing rather than aborting.
+                    continue
+                try:
+                    t = float(parts[0]) / 1000.0
+                    v = float(parts[1])
+                    i = float(parts[2])
+                except ValueError:
+                    continue
+                timestamps.append(t)
+                voltages.append(v)
+                currents.append(i)
 
-            # Parse the JSON response.  The chunked JSON reader in
-            # _read_response guarantees we receive the complete object.
-            try:
-                sweep_json = json.loads(raw_data)
-            except (json.JSONDecodeError, TypeError) as e:
-                msg = f"Failed to parse sweep data response: {e}"
-                raise Exception(msg) from e
-
-            data_points = sweep_json.get("data", [])
-            if not data_points:
-                msg = "Sweep data response contains no data points."
+            if not timestamps:
+                msg = "Sweep data response contained no parseable points."
                 raise Exception(msg)
 
-            timestamps = np.array([float(p["t"]) / 1000.0 for p in data_points])  # ms to s
-            voltages = np.array([float(p["v"]) for p in data_points])
-            currents = np.array([float(p["i"]) for p in data_points])
-
-            self._sweep_voltages = voltages
-            self._sweep_currents = currents
-            self._sweep_timestamps = timestamps
+            self._sweep_voltages = np.array(voltages)
+            self._sweep_currents = np.array(currents)
+            self._sweep_timestamps = np.array(timestamps)
 
             return [self._sweep_voltages, self._sweep_currents, self._sweep_timestamps]
         else:
@@ -643,7 +766,13 @@ class Device(EmptyDevice):
         self._send_command(f"SOUR{channel}:SWEEP:POINTS {points}")
         self._send_command(f"SOUR{channel}:SWEEP:DWELL {dwell_ms}")
         self._send_command(f"SOUR{channel}:SWEEP:AUTO:ENA")
-        self._send_command(f"SOUR{channel}:SWEEP:FORMAT JSON")
+        # CSV (one "timestamp_us,voltage,current" line per point) instead of
+        # JSON: the firmware's JSON serializer can drop bytes mid-stream on
+        # large responses (observed ~23700 chars in), and the single missing
+        # byte poisons the whole document. CSV is line-framed, so a damaged
+        # row only loses one point. Switch back to JSON once the firmware
+        # serializer is fixed.
+        self._send_command(f"SOUR{channel}:SWEEP:FORMAT CSV")
 
     def execute_sweep(self, channel: int) -> None:
         """Start a hardware sweep on a channel.
@@ -675,13 +804,32 @@ class Device(EmptyDevice):
     def get_sweep_data(self, channel: int) -> str:
         """Retrieve the sweep data from a completed hardware sweep.
 
+        The response is multi-line CSV with one "timestamp_us,voltage,current"
+        line per point. We bypass _send_command (which only returns the first
+        line) and instead read exactly self.listsweep_points lines, then
+        return them joined with newlines.
+
         Args:
             channel: Channel number (1 or 2).
 
         Returns:
-            Raw JSON string containing sweep data points.
+            Newline-separated CSV string, one line per sweep point.
         """
-        return self._send_command(f"SOUR{channel}:SWEEP:DATA?")
+        self.port.write(f"SOUR{channel}:SWEEP:DATA?")
+
+        lines = []
+        for _ in range(self.listsweep_points):
+            if self.is_run_stopped():
+                break
+            try:
+                line = self.port.read()
+            except Exception:
+                break
+            if not line:
+                break
+            lines.append(line.strip())
+
+        return "\n".join(lines)
 
     def enable_output(self, channel: int) -> None:
         """Enable the output on a channel.
