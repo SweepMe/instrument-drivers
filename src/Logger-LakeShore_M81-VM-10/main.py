@@ -245,44 +245,6 @@ class Device(EmptyDevice):
         self.set_resistance_source()
         self.set_advanced_settings()
 
-    def reconfigure(self, parameters: dict[str, Any] | None = None, keys: list[str] | None = None) -> None:
-        """Rewrite only the settings whose GUI parameter changed via the {...} parameter system.
-
-        Only the affected part of the configuration is written instead of resending every
-        command. Changes that alter the measure channel or the returned variables cannot be
-        handled selectively and fall back to a complete configuration.
-        """
-        if parameters:
-            self.apply_gui_parameters(parameters)
-        changed = set(keys or [])
-
-        if not changed or changed & {"Channel", "Mode", "Include peak values"}:
-            self.configure()
-            return
-
-        if changed & {
-            "Analog input filter",
-            "Filter optimization",
-            "Low pass corner frequency",
-            "Low pass rolloff",
-            "High pass corner frequency",
-            "High pass rolloff",
-        }:
-            self.set_analog_filter()
-            changed.add("Range")  # the available ranges depend on the filter optimization
-        if "Input configuration" in changed:
-            self.set_input_configuration(self.input_config)
-        if "Coupling" in changed:
-            self.set_coupling(self.coupling)
-        if "Range" in changed:
-            self.set_range()
-        if "Averaging time (NPLC)" in changed:
-            self.set_nplc(self.nplc)
-        if "Resistance source" in changed:
-            self.set_resistance_source()
-        if "Turn off LED" in changed:
-            self.set_advanced_settings()
-
     def measure(self) -> None:
         """Trigger a new reading; the query returns after settling and the averaging time (NPLC)."""
         if self.mode == "AC":
