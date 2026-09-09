@@ -143,11 +143,7 @@ class Device(EmptyDevice):
             "Reserve": list(self.filter_optimizations.keys()),
             "Averaging reference cycles": 0,
             "HighPassFilter": ["None"]
-            + [
-                x + ", " + y
-                for x in list(self.cutoff_frequencies.keys())[1:]
-                for y in self.filter_rolloffs.keys()
-            ],
+            + [x + ", " + y for x in list(self.cutoff_frequencies.keys())[1:] for y in self.filter_rolloffs.keys()],
             "LowPassFilter": ["None"]
             + [
                 x + ", " + y
@@ -229,19 +225,13 @@ class Device(EmptyDevice):
             self.filter_on = False
 
         # Digital filter
-        self.high_digital_filter = (
-            True if "ON" in parameter.get("Filter1", "") else False
-        )
+        self.high_digital_filter = True if "ON" in parameter.get("Filter1", "") else False
 
         # Reference wave
         self.lia_harm = parameter.get("Lock-In harmonic", 0)
-        self.lia_ref_phase_shift = parameter.get(
-            "Reference phase shift in degrees", "Auto"
-        )
+        self.lia_ref_phase_shift = parameter.get("Reference phase shift in degrees", "Auto")
 
-        self.freq_range_threshold = parameter.get(
-            "Frequency range threshold factor of -3 dB", 0.1
-        )
+        self.freq_range_threshold = parameter.get("Frequency range threshold factor of -3 dB", 0.1)
         self.darkmode = parameter.get("Turn off LED", False)
 
         self.shortname = "CM-10 @ M" + self.slot
@@ -309,9 +299,7 @@ class Device(EmptyDevice):
                     self.lia_tc = float(val)
                     self.lia_lowpass = True
                 except (ValueError, TypeError) as e:
-                    raise ValueError(
-                        f"Cannot parse time constant sweep value: {val}"
-                    ) from e
+                    raise ValueError(f"Cannot parse time constant sweep value: {val}") from e
             self.set_timeconstant()
 
     def measure(self):
@@ -335,25 +323,17 @@ class Device(EmptyDevice):
     def read_result(self):
         t_start = time.time()
         while True:
-            if time.time() - t_start > (
-                self.port_properties.get("timeout", 0) + self.wait_time
-            ):
+            if time.time() - t_start > (self.port_properties.get("timeout", 0) + self.wait_time):
                 raise RuntimeError(
                     f'Lock-in did not settle within timeout of {self.port_properties.get("timeout")} seconds.'
                 )
             resp = self.port.read().split(",")
-            if (
-                len(resp) == 6
-            ):  # Catch cases where results of both queries get mixed up.
-                if not bool(
-                    int(resp[5])
-                ):  # If settling is not True, the result is settled
+            if len(resp) == 6:  # Catch cases where results of both queries get mixed up.
+                if not bool(int(resp[5])):  # If settling is not True, the result is settled
                     # Fetch DC separately, because it doesn't support FETCh:MULTIple
                     self.port.write(f"FETCh:SENSe{self.slot}:LIA:DC?")
                     dc_resp = self.port.read().split(",")
-                    if (
-                        len(dc_resp) == 1
-                    ):  # Catch cases where results of both queries get mixed up.
+                    if len(dc_resp) == 1:  # Catch cases where results of both queries get mixed up.
                         self.dc = self.lia_convert(dc_resp[0])
                     else:
                         self.dc = float("nan")
@@ -379,12 +359,8 @@ class Device(EmptyDevice):
     def set_range(self):
         if self.range:
             if self.filter_on and self.filter_type == "REServe":
-                if (
-                    self.range == 0.1
-                ):  # CM-10 does not allow this combination. It would quietly reduce the range.
-                    raise ValueError(
-                        "100 mA range cannot be used with filter optimization 'highest reserve'."
-                    )
+                if self.range == 0.1:  # CM-10 does not allow this combination. It would quietly reduce the range.
+                    raise ValueError("100 mA range cannot be used with filter optimization 'highest reserve'.")
             self.port.write(f"SENSe{self.slot}:CURRent:RANGe:AUTO 0")
             self.port.write(f"SENSe{self.slot}:CURRent:RANGe {self.range}")
         else:
@@ -396,24 +372,19 @@ class Device(EmptyDevice):
             try:
                 self.bias_voltage = float(self.bias_voltage)
             except (ValueError, TypeError):
-                raise ValueError(
-                    "Provide float value for the bias voltage or leave empty for no voltage bias."
-                )
+                raise ValueError("Provide float value for the bias voltage or leave empty for no voltage bias.")
             if voltage == 0:
                 self.port.write(f"SENSe{self.slot}:BIAS:VOLTage 0")
             else:
                 if self.filter_on and self.filter_type == "NOISe":
-                    raise ValueError(
-                        "Bias voltage > 0 cannot be used with 'Lowest noise' filter optimization."
-                    )
+                    raise ValueError("Bias voltage > 0 cannot be used with 'Lowest noise' filter optimization.")
                 self.port.write(f"SENSe{self.slot}:BIAS:VOLTage {voltage}")
 
     def check_device(self):
         model = self.port.query(f"SENSe{self.slot}:MODel?")
         if not "CM-10" in model:
             raise ValueError(
-                f"Device connected on channel M{self.slot} does not match this driver. "
-                f"Found: '{model}'"
+                f"Device connected on channel M{self.slot} does not match this driver. " f"Found: '{model}'"
             )
 
     def set_lockin_settings(self):
@@ -434,9 +405,7 @@ class Device(EmptyDevice):
         try:
             self.lia_harm = int(self.lia_harm)
         except (ValueError, TypeError):
-            raise ValueError(
-                "Please enter a valid positive integer value for the reference harmonic."
-            )
+            raise ValueError("Please enter a valid positive integer value for the reference harmonic.")
         if self.lia_harm < 1:
             raise ValueError("Lock-In harmonic must be >= 1")
         self.port.write(f"SENSe{self.slot}:LIA:DHARmonic {self.lia_harm}")
@@ -446,24 +415,15 @@ class Device(EmptyDevice):
             self.lia_avg_ref_cycles = int(self.lia_avg_ref_cycles)
         except (ValueError, TypeError):
             raise ValueError(
-                "Please enter an integer number of averaging reference cycles. "
-                "'0' disables the PSD output filter."
+                "Please enter an integer number of averaging reference cycles. " "'0' disables the PSD output filter."
             )
         if self.lia_avg_ref_cycles == 0:
-            self.port.write(
-                f"SENSe{self.slot}:LIA:AVERage 0"
-            )  # Disable averaging filter
+            self.port.write(f"SENSe{self.slot}:LIA:AVERage 0")  # Disable averaging filter
         else:
             if not (1000000 >= self.lia_avg_ref_cycles >= 1):
-                raise ValueError(
-                    "Number of reference cycles must be >= 1 and <= 1,000,000."
-                )
-            self.port.write(
-                f"SENSe{self.slot}:LIA:AVERage 1"
-            )  # Enable averaging filter
-            self.port.write(
-                f"SENSe{self.slot}:LIA:REFerence:CYCLes {self.lia_avg_ref_cycles}"
-            )
+                raise ValueError("Number of reference cycles must be >= 1 and <= 1,000,000.")
+            self.port.write(f"SENSe{self.slot}:LIA:AVERage 1")  # Enable averaging filter
+            self.port.write(f"SENSe{self.slot}:LIA:REFerence:CYCLes {self.lia_avg_ref_cycles}")
 
         # Phase shift to lock-in reference source
         if self.lia_ref_phase_shift == "Auto":
@@ -472,9 +432,7 @@ class Device(EmptyDevice):
             try:
                 self.lia_ref_phase_shift = float(self.lia_ref_phase_shift)
                 if not (360 >= self.lia_ref_phase_shift >= -360):
-                    raise ValueError(
-                        "Phase shift given as a float that is out of range (+-360°)."
-                    )
+                    raise ValueError("Phase shift given as a float that is out of range (+-360°).")
             except (ValueError, TypeError) as e:
                 raise ValueError(
                     'Reference phase shift must be a float between -360 and +360 degrees or "Auto".'
@@ -487,19 +445,13 @@ class Device(EmptyDevice):
             try:
                 self.wait_time = float(self.wait_time_constants) * float(self.lia_tc)
             except (ValueError, TypeError):
-                raise ValueError(
-                    "'Settling in time constants' must be 'Auto' or a float."
-                )
+                raise ValueError("'Settling in time constants' must be 'Auto' or a float.")
         # Time constant and rolloff for traditional lowpass filter
         # Enable/Disable Lowpass filter
-        self.port.write(
-            f'SENSe{self.slot}:LIA:LPASs {"1" if self.lia_lowpass else "0"}'
-        )
+        self.port.write(f'SENSe{self.slot}:LIA:LPASs {"1" if self.lia_lowpass else "0"}')
         if self.lia_lowpass:
             if not (10000 >= self.lia_tc >= 0.0001):
-                raise ValueError(
-                    f"Lock-In time constant set to {self.lia_tc}. Must be >= 0.0001 s and <= 10,000 s."
-                )
+                raise ValueError(f"Lock-In time constant set to {self.lia_tc}. Must be >= 0.0001 s and <= 10,000 s.")
             self.port.write(f"SENSe{self.slot}:LIA:TIMEconstant {self.lia_tc}")
             self.port.write(f"SENSe{self.slot}:LIA:ROLLoff R{self.lia_rolloff}")
 
@@ -510,9 +462,7 @@ class Device(EmptyDevice):
         else:
             self.port.write(f"SENSe{self.slot}:FILTer:STATe 0")
         self.port.write(f'SENSe{self.slot}:DMODe {"1" if self.darkmode else "0"}')
-        self.port.write(
-            f'SENSe{self.slot}:DIGital:FILTer:HPASs {"1" if self.high_digital_filter else "0"}'
-        )
+        self.port.write(f'SENSe{self.slot}:DIGital:FILTer:HPASs {"1" if self.high_digital_filter else "0"}')
         # Threshold
         try:
             self.freq_range_threshold = float(self.freq_range_threshold)
@@ -522,26 +472,16 @@ class Device(EmptyDevice):
                     "Threshold value is normalized to the -3 dB bandwith of the range."
                 )
         except (ValueError, TypeError) as e:
-            raise ValueError(
-                "Please enter correct value for frequency range threshold."
-            ) from e
+            raise ValueError("Please enter correct value for frequency range threshold.") from e
         self.port.write(f"SENSe{self.slot}:FRTHreshold {self.freq_range_threshold}")
 
     def set_filters(self):
         self.port.write(f"SENSe{self.slot}:FILTer:STATe 1")
         self.port.write(f"SENSe{self.slot}:FILTer:OPTimization {self.filter_type}")
-        self.port.write(
-            f"SENSe{self.slot}:FILTer:LPASs:FREQuency {self.low_filter_cornerf}"
-        )
-        self.port.write(
-            f"SENSe{self.slot}:FILTer:LPASs:ATTenuation R{self.low_filter_rolloff}"
-        )
-        self.port.write(
-            f"SENSe{self.slot}:FILTer:HPASs:FREQuency {self.high_filter_cornerf}"
-        )
-        self.port.write(
-            f"SENSe{self.slot}:FILTer:HPASs:ATTenuation R{self.high_filter_rolloff}"
-        )
+        self.port.write(f"SENSe{self.slot}:FILTer:LPASs:FREQuency {self.low_filter_cornerf}")
+        self.port.write(f"SENSe{self.slot}:FILTer:LPASs:ATTenuation R{self.low_filter_rolloff}")
+        self.port.write(f"SENSe{self.slot}:FILTer:HPASs:FREQuency {self.high_filter_cornerf}")
+        self.port.write(f"SENSe{self.slot}:FILTer:HPASs:ATTenuation R{self.high_filter_rolloff}")
 
     @staticmethod
     def lia_convert(value_str: str) -> float:
