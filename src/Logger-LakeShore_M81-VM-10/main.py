@@ -173,9 +173,7 @@ class Device(EmptyDevice):
         self.port_string = parameters.get("Port", "")
         self.mode = parameters.get("Mode", "DC")
         self.range = self.voltage_ranges.get(parameters.get("Range", "Auto"), 0.0)
-        self.input_config = self.input_configurations.get(
-            parameters.get("Input configuration", "A-B"), "AB"
-        )
+        self.input_config = self.input_configurations.get(parameters.get("Input configuration", "A-B"), "AB")
         self.coupling = parameters.get("Coupling", "DC")
         self.include_peaks = bool(parameters.get("Include peak values", False))
         # Calculated DC resistance is only available in DC mode
@@ -194,16 +192,12 @@ class Device(EmptyDevice):
             self.lowpass_corner = self.cutoff_frequencies.get(
                 parameters.get("Low pass corner frequency", "None"), "NONE"
             )
-            self.lowpass_rolloff = self.filter_rolloffs.get(
-                parameters.get("Low pass rolloff", "6 dB/oct"), 6
-            )
+            self.lowpass_rolloff = self.filter_rolloffs.get(parameters.get("Low pass rolloff", "6 dB/oct"), 6)
             if self.mode == "AC":
                 self.highpass_corner = self.cutoff_frequencies.get(
                     parameters.get("High pass corner frequency", "None"), "NONE"
                 )
-                self.highpass_rolloff = self.filter_rolloffs.get(
-                    parameters.get("High pass rolloff", "6 dB/oct"), 6
-                )
+                self.highpass_rolloff = self.filter_rolloffs.get(parameters.get("High pass rolloff", "6 dB/oct"), 6)
             else:
                 self.highpass_corner = "NONE"
 
@@ -285,10 +279,7 @@ class Device(EmptyDevice):
         """Verify that the module connected to the selected channel is a VM-10."""
         model = self.port.query(f"SENSe{self.slot}:MODel?")
         if "VM-10" not in model:
-            msg = (
-                f"Device connected on channel M{self.slot} does not match this driver. "
-                f"Found: '{model}'"
-            )
+            msg = f"Device connected on channel M{self.slot} does not match this driver. " f"Found: '{model}'"
             raise ValueError(msg)
 
     def set_mode(self, mode: str) -> None:

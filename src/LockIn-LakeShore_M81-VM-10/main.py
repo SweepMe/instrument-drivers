@@ -118,9 +118,7 @@ class Device(EmptyDevice):
         self.lia_avg_ref_cycles: int = 0  # 0 disables the FIR averaging output filter
         self.lia_phase_mode: str = "Auto"  # "Auto", "As is", or a float as string
         self.lia_phase_shift: float = 0.0
-        self.stored_phase_shift: float = (
-            0.0  # phase read back before PRESet for 'As is'
-        )
+        self.stored_phase_shift: float = 0.0  # phase read back before PRESet for 'As is'
         self.wait_time_constants: str = "Auto"
         self.wait_time: float = 0.0  # additional settle wait per point in s
         self.filter_on: bool = False
@@ -131,9 +129,7 @@ class Device(EmptyDevice):
         self.highpass_rolloff: int = 6
         self.digital_highpass: bool = True
         self.darkmode: bool = False
-        self.resistance_source: str = (
-            "S1"  # partner module for calculated AC resistance
-        )
+        self.resistance_source: str = "S1"  # partner module for calculated AC resistance
 
         # Result parameters
         self.x_lia: float = float("nan")
@@ -213,9 +209,7 @@ class Device(EmptyDevice):
         self.port_string = parameters.get("Port", "")
         self.sweep_mode = parameters.get("SweepMode", "None")
         self.range = self.voltage_ranges.get(parameters.get("Sensitivity", "Auto"), 0.0)
-        self.input_config = self.input_configurations.get(
-            parameters.get("Input", "A-B"), "AB"
-        )
+        self.input_config = self.input_configurations.get(parameters.get("Input", "A-B"), "AB")
         self.coupling = parameters.get("Coupling", "DC")
         self.lia_ref = parameters.get("Source", "S1")
         self.lia_harmonic = parameters.get("Lock-In harmonic", 1)
@@ -238,28 +232,20 @@ class Device(EmptyDevice):
             self.lia_rolloff = 12
 
         # Analog input filter ('Reserve' selects the filter optimization)
-        self.filter_optimization = self.filter_optimizations.get(
-            parameters.get("Reserve", ""), ""
-        )
+        self.filter_optimization = self.filter_optimizations.get(parameters.get("Reserve", ""), "")
         self.filter_on = bool(self.filter_optimization)
         if self.filter_on:
             lowpass = str(parameters.get("LowPassFilter", "None")).split(",")
-            self.lowpass_corner = self.cutoff_frequencies.get(
-                lowpass[0].strip(), "NONE"
-            )
+            self.lowpass_corner = self.cutoff_frequencies.get(lowpass[0].strip(), "NONE")
             if len(lowpass) > 1:
                 self.lowpass_rolloff = self.filter_rolloffs.get(lowpass[1].strip(), 6)
             highpass = str(parameters.get("HighPassFilter", "None")).split(",")
-            self.highpass_corner = self.cutoff_frequencies.get(
-                highpass[0].strip(), "NONE"
-            )
+            self.highpass_corner = self.cutoff_frequencies.get(highpass[0].strip(), "NONE")
             if len(highpass) > 1:
                 self.highpass_rolloff = self.filter_rolloffs.get(highpass[1].strip(), 6)
 
         self.digital_highpass = "ON" in str(parameters.get("Filter1", "ON"))
-        self.lia_phase_mode = str(
-            parameters.get("Reference phase shift in degrees", "Auto")
-        )
+        self.lia_phase_mode = str(parameters.get("Reference phase shift in degrees", "Auto"))
         self.darkmode = bool(parameters.get("Turn off LED", False))
         self.resistance_source = str(parameters.get("Resistance source", "S1"))
 
@@ -293,9 +279,7 @@ class Device(EmptyDevice):
             # PRESet below resets the reference phase shift to its power-on default.
             # Remember the phase currently set on the instrument so that
             # set_lockin_settings() can restore it afterwards.
-            self.stored_phase_shift = float(
-                self.port.query(f"SENSe{self.slot}:LIA:DPHase?")
-            )
+            self.stored_phase_shift = float(self.port.query(f"SENSe{self.slot}:LIA:DPHase?"))
         self.port.write(f"SENSe{self.slot}:PRESet")  # reset module to power-on defaults
 
     def configure(self) -> None:
@@ -347,9 +331,7 @@ class Device(EmptyDevice):
             # Additional wait of N time constants, e.g. after a source module changed its value.
             # Sleep in small steps so the user can stop the run at any time.
             start_time = time.time()
-            while (
-                not self.is_run_stopped() and time.time() - start_time < self.wait_time
-            ):
+            while not self.is_run_stopped() and time.time() - start_time < self.wait_time:
                 time.sleep(min(0.05, self.wait_time))
         self.request_lockin_snapshot()
 
@@ -389,9 +371,7 @@ class Device(EmptyDevice):
         # The instrument returns NaN if the pairing is incompatible or a module has an error.
         self.resistance_results = []
         for quantity in ("INPHase", "QUADrature", "MAGNitude", "PHASe"):
-            response = self.port.query(
-                f"CALCulate:SENSe{self.slot}:RESistance:{quantity}?"
-            )
+            response = self.port.query(f"CALCulate:SENSe{self.slot}:RESistance:{quantity}?")
             self.resistance_results.append(self.convert_measurement(response))
 
     def call(self) -> list[float]:
@@ -412,10 +392,7 @@ class Device(EmptyDevice):
         """Verify that the module connected to the selected channel is a VM-10."""
         model = self.port.query(f"SENSe{self.slot}:MODel?")
         if "VM-10" not in model:
-            msg = (
-                f"Device connected on channel M{self.slot} does not match this driver. "
-                f"Found: '{model}'"
-            )
+            msg = f"Device connected on channel M{self.slot} does not match this driver. " f"Found: '{model}'"
             raise ValueError(msg)
 
     def set_mode(self, mode: str) -> None:
@@ -437,16 +414,9 @@ class Device(EmptyDevice):
         """Set the voltage range or enable autorange (self.range == 0.0)."""
         if self.range:
             if self.range not in self.voltage_ranges.values():
-                msg = (
-                    f"Invalid sensitivity '{self.range}'. "
-                    f"The VM-10 supports 10 V, 1 V, 0.1 V, and 0.01 V."
-                )
+                msg = f"Invalid sensitivity '{self.range}'. " f"The VM-10 supports 10 V, 1 V, 0.1 V, and 0.01 V."
                 raise ValueError(msg)
-            if (
-                self.filter_on
-                and self.filter_optimization == "NOISe"
-                and self.range > 0.1
-            ):
+            if self.filter_on and self.filter_optimization == "NOISe" and self.range > 0.1:
                 # In 'Lowest noise' mode gain is placed before the analog filters, so the
                 # filter stage would be overdriven on the high ranges. The VM-10 does not
                 # support this combination and would quietly reduce the range.
@@ -469,16 +439,12 @@ class Device(EmptyDevice):
             self.wait_time = 0.0
         else:
             try:
-                self.wait_time = float(self.wait_time_constants) * (
-                    self.lia_tc if self.lia_lowpass else 0.0
-                )
+                self.wait_time = float(self.wait_time_constants) * (self.lia_tc if self.lia_lowpass else 0.0)
             except (ValueError, TypeError) as e:
                 msg = "'WaitTimeConstants' must be 'Auto' or a number."
                 raise ValueError(msg) from e
 
-        self.port.write(
-            f"SENSe{self.slot}:LIA:LPASs {'1' if self.lia_lowpass else '0'}"
-        )
+        self.port.write(f"SENSe{self.slot}:LIA:LPASs {'1' if self.lia_lowpass else '0'}")
         if self.lia_lowpass:
             if not 0.0001 <= self.lia_tc <= 10000:
                 msg = f"Lock-In time constant is {self.lia_tc} s. Must be between 0.0001 s and 10,000 s."
@@ -544,10 +510,7 @@ class Device(EmptyDevice):
             try:
                 self.lia_phase_shift = float(phase_mode.split(" ")[0])
             except (ValueError, TypeError) as e:
-                msg = (
-                    "The reference phase shift must be 'Auto', 'As is', "
-                    "or a number between -360 and +360 degrees."
-                )
+                msg = "The reference phase shift must be 'Auto', 'As is', " "or a number between -360 and +360 degrees."
                 raise ValueError(msg) from e
             if not -360 <= self.lia_phase_shift <= 360:
                 msg = "The reference phase shift must be between -360 and +360 degrees."
@@ -568,9 +531,7 @@ class Device(EmptyDevice):
                 "VM-10 itself. Select a current-type module (e.g. BCS-10 or CM-10)."
             )
             raise ValueError(msg)
-        self.port.write(
-            f"CALCulate:SENSe{self.slot}:RESistance:SOURce {self.resistance_source}"
-        )
+        self.port.write(f"CALCulate:SENSe{self.slot}:RESistance:SOURce {self.resistance_source}")
 
     def set_analog_filter(self) -> None:
         """Configure the analog input filter of the VM-10 (hardware high/low-pass)."""
@@ -578,27 +539,15 @@ class Device(EmptyDevice):
             self.port.write(f"SENSe{self.slot}:FILTer:STATe 0")
             return
         self.port.write(f"SENSe{self.slot}:FILTer:STATe 1")
-        self.port.write(
-            f"SENSe{self.slot}:FILTer:OPTimization {self.filter_optimization}"
-        )
-        self.port.write(
-            f"SENSe{self.slot}:FILTer:LPASs:FREQuency {self.lowpass_corner}"
-        )
-        self.port.write(
-            f"SENSe{self.slot}:FILTer:LPASs:ATTenuation R{self.lowpass_rolloff}"
-        )
-        self.port.write(
-            f"SENSe{self.slot}:FILTer:HPASs:FREQuency {self.highpass_corner}"
-        )
-        self.port.write(
-            f"SENSe{self.slot}:FILTer:HPASs:ATTenuation R{self.highpass_rolloff}"
-        )
+        self.port.write(f"SENSe{self.slot}:FILTer:OPTimization {self.filter_optimization}")
+        self.port.write(f"SENSe{self.slot}:FILTer:LPASs:FREQuency {self.lowpass_corner}")
+        self.port.write(f"SENSe{self.slot}:FILTer:LPASs:ATTenuation R{self.lowpass_rolloff}")
+        self.port.write(f"SENSe{self.slot}:FILTer:HPASs:FREQuency {self.highpass_corner}")
+        self.port.write(f"SENSe{self.slot}:FILTer:HPASs:ATTenuation R{self.highpass_rolloff}")
 
     def set_advanced_settings(self) -> None:
         """Configure the digital high pass filter and dark mode."""
-        self.port.write(
-            f"SENSe{self.slot}:DIGital:FILTer:HPASs {'1' if self.digital_highpass else '0'}"
-        )
+        self.port.write(f"SENSe{self.slot}:DIGital:FILTer:HPASs {'1' if self.digital_highpass else '0'}")
         self.port.write(f"SENSe{self.slot}:DMODe {'1' if self.darkmode else '0'}")
 
     def request_lockin_snapshot(self) -> None:
