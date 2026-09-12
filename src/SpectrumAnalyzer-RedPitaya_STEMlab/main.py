@@ -52,23 +52,6 @@ class Device(EmptyDevice):
     acquisitions.
     """
 
-    description = """
-        <h3>Red Pitaya STEMlab as spectrum analyzer</h3>
-        <p>Records the fast analog input IN1 or IN2 through the board's SCPI server and computes
-        the power spectrum by FFT. The maximum frequency selects the decimation (sample rate
-        125 MHz / decimation, up to 62.5 MHz), the resolution bandwidth selects how many FFT
-        segments of the 16384-sample buffer are averaged, the trace mode repeats acquisitions.</p>
-        <ul>
-        <li>Port: the IP address of the board and the SCPI port, e.g. <b>192.168.178.10:5000</b>.
-        Start the SCPI server in the web interface (Development -> SCPI server) first.</li>
-        <li>Reference level: informational. The input range is set by the jumper behind the SMA
-        connector (LV +/-1 V, i.e. +10 dBm into 50 Ohm; HV +/-20 V) and selected under
-        'Input range' so the calibration matches the jumper.</li>
-        <li>Power is in dBm into 'Impedance in Ohm' (50 by default); the inputs themselves are
-        high-impedance, so terminate them for a 50 Ohm source.</li>
-        </ul>
-    """
-
     def __init__(self) -> None:
         EmptyDevice.__init__(self)
 
