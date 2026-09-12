@@ -39,12 +39,6 @@ import sys
 from typing import Any
 
 import numpy as np
-
-from pysweepme.FolderManager import addFolderToPATH
-
-addFolderToPATH()
-
-import redpitaya_scpi as scpi
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug
 
@@ -94,12 +88,19 @@ class Device(EmptyDevice):
             "Delay in s",
         ]
 
-        # Connection
-        self.port: Any = None
-        self.ip_address: str = ""
-
-        # Timeout in s for receiving an answer from the SCPI server
-        self.port_timeout: float = 5.0
+        # The board is addressed through its SCPI server, a plain TCP socket that terminates
+        # every line with CR LF. The port manager opens it, so several driver instances (e.g.
+        # one per output) share one connection. The port is entered as 'ip:5000'.
+        self.port_manager = True
+        self.port_types = ["SOCKET"]
+        self.port_properties = {
+            "SOCKET_EOLwrite": "\r\n",
+            "SOCKET_EOLread": "\r\n",
+            # A timeout is essential: without it an unanswered query blocks the driver forever,
+            # which can happen if the instrument runs an ecosystem that does not know a command.
+            "timeout": 5,
+            "fixed_port": 5000,  # the SCPI server always listens on 5000
+        }
 
         # GUI parameters, exactly as they arrive from the GUI
         self.gui_parameters: dict[str, Any] = {}
@@ -189,7 +190,15 @@ class Device(EmptyDevice):
         """
         self.gui_parameters = dict(parameters)
 
-        self.ip_address = parameters.get("Port", "")
+        # The channel is needed by every phase function, 'deinitialize' included, which a host
+        # driving the driver without 'configure' may call first (e.g. several instances on one
+        # board, one per output). It is therefore taken over here already; 'convert_gui_parameters'
+        # validates it again. An incomplete value while the user is still editing keeps the old one.
+        try:
+            self.channel = int(parameters.get("Channel", self.channel))
+        except (TypeError, ValueError):
+            pass
+
         self.sweep_mode = parameters.get("SweepMode", "None")
 
         if self.sweep_mode == "None":
@@ -206,43 +215,27 @@ class Device(EmptyDevice):
             self.savetype = [True]
 
     def connect(self):
-        # A timeout is essential: without it an unanswered query blocks the driver forever, which
-        # can happen if the instrument runs an ecosystem that does not know a command.
-        self.port = scpi.scpi(self.ip_address, timeout=self.port_timeout)
+        """Check that the SCPI server answers.
 
-        self.port.write = self.port.tx_txt  # redefine scpi-write command
-        self.port.read = self.port.rx_txt  # redefine scpi-read command
-
-        # identification = self.get_identification()
-        # print("Identification:", identification)
-
-        # board_name = self.get_board_name()
-        # print("Board name:", board_name)
-
-        # version = self.get_system_version()
-        # print("Version:", version)
-
-    def disconnect(self):
-        """Close the connection to the SCPI server.
-
-        This driver does not use the port manager, so it has to close its socket itself. Without
-        it, the socket is only closed when the driver instance is garbage collected, which can be
-        much later than the end of the run: after an exception the traceback keeps a reference to
-        the frame and therefore to the driver instance. A new instance is created for every run,
-        so unclosed sockets accumulate for as long as SweepMe! is open.
-
-        The output is switched off in 'deinitialize', which the sequencer calls before this
-        function.
+        The socket itself is opened by the port manager, which hands over no port at all when the
+        board cannot be reached. Querying '*IDN?' here makes a stopped SCPI server fail at
+        connect, with a message, instead of on the first command of the run.
         """
+        hint = (
+            "Start the SCPI server on the board (web interface -> Development -> SCPI server) "
+            "and enter the port as 'ip:5000'."
+        )
         if self.port is None:
-            return
-
+            msg = f"Signal-RedPitaya_STEMlab: The connection to the board could not be opened. {hint}"
+            raise ConnectionError(msg)
         try:
-            self.port.close()
-        except OSError:
-            debug("Signal-RedPitaya_STEMlab: Could not close the connection to the instrument.")
-        finally:
-            self.port = None
+            self.get_identification()
+        except (OSError, TimeoutError) as e:
+            msg = (
+                f"Signal-RedPitaya_STEMlab: No SCPI server answers at "
+                f"{self.port.port_properties['ID']}. {hint} Error is: {e}."
+            )
+            raise ConnectionError(msg) from e
 
     def configure(self):
         self.limits = 1.0  # +/- Voltage limit of frequency generator
@@ -253,54 +246,36 @@ class Device(EmptyDevice):
 
         self.convert_gui_parameters()
 
-        # Reset Generator
-        self.port.write("GEN:RST")
+        self.reset_generator()
 
-        # Set waveform
-        self.port.write(
-            "SOUR{0}:FUNC {1}".format(self.channel, self.waveforms[self.waveform])
-        )  # Set waveform
+        self.set_waveform(self.channel, self.waveforms[self.waveform])
 
-        # set arbitrary waveform
         if self.waveforms[self.waveform] == "ARBITRARY":
-            self.waveformarray = np.loadtxt(self.waveformarray)
-            # 'np.nan' as threshold is not accepted anymore since numpy 1.24, use sys.maxsize instead
-            np.set_printoptions(threshold=sys.maxsize)
-            self.port.write(
-                "SOUR{0}:TRAC:DATA:DATA {1}".format(
-                    self.channel,
-                    np.array2string(self.waveformarray, precision=5, separator=",")[
-                        1:-1
-                    ]
-                    .replace(" ", "")
-                    .replace("\n", ""),
-                )
-            )
+            self.set_arbitrary_waveform(self.channel, np.loadtxt(self.waveformarray))
 
         # Set PWM duty cycle
         if self.waveform == "PWM":
-            self.set_duty_cycle()
+            self._apply_duty_cycle()
 
         # set frequency
-        self.set_frequency()
+        self._apply_frequency()
 
         # convert Delay to Phase
-        self.set_phase()
+        self._apply_phase()
 
         # convert High level, Low level to Amplitude and Offset
-        self.set_amplitude_offset()
+        self._apply_amplitude_offset()
 
         # set trigger source
-        self.set_trigger_source()
+        self._apply_trigger_source()
 
         # set burst mode (after trigger settings!)
-        self.set_burst_mode()
+        self._apply_burst_mode()
 
-        # enable output
-        self.port.write("OUTPUT{0}:STATE ON".format(self.channel))
+        self.set_output_state(self.channel, True)
 
         # start the generation
-        self.start_generation()
+        self._start_generation()
 
     def apply(self):
         value = float(self.value)
@@ -308,9 +283,9 @@ class Device(EmptyDevice):
         if self.sweep_mode == "Frequency in Hz" or self.sweep_mode == "Period in s":
             self.periodfrequency = self.sweep_mode
             self.periodfrequencyvalue = value
-            self.set_frequency()
+            self._apply_frequency()
             # 'SOUR<n>:FREQ:FIX' rebuilds the signal, so the generation has to be started again
-            self.start_generation()
+            self._start_generation()
 
         # Amplitude or Offset SweepMode
         elif (
@@ -332,15 +307,15 @@ class Device(EmptyDevice):
             # Amplitude and offset are applied by the FPGA without rebuilding the signal, so the
             # generation must not be started again here. Doing so would reset the signal to its
             # start phase at every measurement point and destroy the continuous waveform.
-            self.set_amplitude_offset()
+            self._apply_amplitude_offset()
 
         # Phase or Delay SweepMode
         elif self.sweep_mode == "Phase in °" or self.sweep_mode == "Delay in s":
             self.delayphase = self.sweep_mode
             self.delayphasevalue = value
-            self.set_phase()
+            self._apply_phase()
             # the phase is only taken over when the signal starts from the beginning
-            self.start_generation()
+            self._start_generation()
 
     def call(self):
         if self.sweep_mode != "None":
@@ -350,7 +325,7 @@ class Device(EmptyDevice):
 
     def deinitialize(self):
         # print("Disable Frequency Generator Channel {}!".format(self.channel))
-        self.port.write("OUTPUT{0}:STATE OFF".format(self.channel))  # disable output
+        self.set_output_state(self.channel, False)
 
     # Functions
 
@@ -449,20 +424,24 @@ class Device(EmptyDevice):
             msg = "Signal-RedPitaya_STEMlab: The number of burst repetitions must be at least 1."
             raise ValueError(msg)
 
-    def set_trigger_source(self) -> None:
-        """Set the trigger source of the generator.
+    # -- GUI-driven helpers -----------------------------------------------------
+    # They derive the instrument values from the GUI selections and send them through the
+    # communication commands below, always for the channel selected in the GUI.
+
+    def _apply_trigger_source(self) -> None:
+        """Set the trigger source selected in the GUI.
 
         'IMM' is not a trigger source of the Red Pitaya SCPI server. Valid sources are EXT_PE,
         EXT_NE, INT and GATED. The GUI option "Immediately" therefore uses the internal trigger
-        source and relies on the software trigger sent by 'start_generation'.
+        source and relies on the software trigger sent by '_start_generation'.
         """
         trigger_source = self.triggertypes[self.triggertype]
         if trigger_source == "IMM":
             trigger_source = "INT"
 
-        self.port.write("SOUR{0}:TRIG:SOUR {1}".format(self.channel, trigger_source))
+        self.set_trigger_source(self.channel, trigger_source)
 
-    def start_generation(self) -> None:
+    def _start_generation(self) -> None:
         """Start the signal generation for internally triggered signals.
 
         Since Red Pitaya OS 2.00, 'OUTPUT<n>:STATE ON' only supplies the initial voltage
@@ -472,15 +451,12 @@ class Device(EmptyDevice):
         The command resets the FPGA and the signal starts from the beginning. It must therefore
         only be sent when the signal was (re)built, and never at every measurement point of a
         running continuous signal.
-
-        The channel-specific command is used on purpose: the two-channel variant 'SOUR:TRIG:INT'
-        is a documented known issue of the SCPI server and is silently ignored.
         """
         if self.triggertypes[self.triggertype] in ("INT", "IMM"):
-            self.port.write("SOUR{0}:TRIG:INT".format(self.channel))
+            self.trigger(self.channel)
 
-    def set_amplitude_offset(self):
-        # convert Highlevel, LowLevel to Amplitude and Offset
+    def _apply_amplitude_offset(self) -> None:
+        """Convert high level / low level to amplitude and offset, clip them and send them."""
         if (
             self.amplitudehilevel == "High level in V"
             and self.offsetlolevel == "Low level in V"
@@ -508,17 +484,13 @@ class Device(EmptyDevice):
             self.amplitude = self.amplitudehilevelvalue
             self.offset = self.offsetlolevelvalue
 
-        # set limits
-        self.set_limits()
+        self._clip_to_output_range()
 
-        # set amplitude
-        self.port.write("SOUR{0}:VOLT {1:1.7f}".format(self.channel, self.amplitude))
+        self.set_amplitude(self.channel, self.amplitude)
+        self.set_offset(self.channel, self.offset)
 
-        # set offset
-        self.port.write("SOUR{0}:VOLT:OFFS {1:1.7f}".format(self.channel, self.offset))
-
-    def set_duty_cycle(self):
-        # convert duty cycle
+    def _apply_duty_cycle(self) -> None:
+        """Convert the duty cycle in % from the GUI to 0..1 and send it."""
         if self.dutycyclepulsewidthvalue < 0.0:
             self.dutycycle = 0.0
         elif self.dutycyclepulsewidthvalue > 100.0:
@@ -526,11 +498,10 @@ class Device(EmptyDevice):
         else:
             self.dutycycle = self.dutycyclepulsewidthvalue / 100.0
 
-        # set duty cycle
-        self.port.write("SOUR{0}:DCYC {1:1.7f}".format(self.channel, self.dutycycle))
+        self.set_duty_cycle(self.channel, self.dutycycle)
 
-    def set_phase(self):
-        # convert Delay to Phase
+    def _apply_phase(self) -> None:
+        """Convert a delay to a phase if needed and send the phase."""
         if self.delayphase == "Delay in s":
             self.phase = self.frequency * 360 * self.delayphasevalue
         else:
@@ -541,22 +512,18 @@ class Device(EmptyDevice):
             # of the input gives the negated angle for negative phases, e.g. -450 deg -> -270 deg.
             self.phase = math.fmod(self.phase, 360)
 
-        # set phase
-        self.port.write("SOUR{0}:PHAS {1:1.7f}".format(self.channel, self.phase))
+        self.set_phase(self.channel, self.phase)
 
-    def set_frequency(self):
-        # convert period to frequency
+    def _apply_frequency(self) -> None:
+        """Convert a period to a frequency if needed and send the frequency."""
         if self.periodfrequency == "Period in s":
             self.frequency = 1.0 / self.periodfrequencyvalue
         else:
             self.frequency = self.periodfrequencyvalue
 
-        # set frequency
-        self.port.write(
-            "SOUR{0}:FREQ:FIX {1:1.7f}".format(self.channel, self.frequency)
-        )
+        self.set_frequency(self.channel, self.frequency)
 
-    def set_limits(self):
+    def _clip_to_output_range(self) -> None:
         """Clip amplitude and offset to the output range of the instrument.
 
         The sum of the one-way amplitude and the absolute offset must not exceed the output
@@ -591,67 +558,204 @@ class Device(EmptyDevice):
                 self.limits_message_shown = True
                 self.message_box(msg)
 
-    def settings_status(self):
-        print("\nFrequency generator channel {0} settings:".format(self.channel))
-        self.port.write("OUTPUT{0}:STATE?".format(self.channel))
-        print("\tOutput status:", self.port.read())
-        self.port.write("SOUR{0}:FUNC?".format(self.channel))
-        print("\tWaveform:", self.port.read())
-        self.port.write("SOUR{0}:FREQ:FIX?".format(self.channel))
-        print("\tFrequency:", self.port.read())
-        self.port.write("SOUR{0}:PHAS?".format(self.channel))
-        print("\tPhase:", self.port.read())
-        self.port.write("SOUR{0}:VOLT?".format(self.channel))
-        print("\tAmplitude:", self.port.read())
-        self.port.write("SOUR{0}:VOLT:OFFS?".format(self.channel))
-        print("\tOffset:", self.port.read())
-        self.port.write("SOUR{0}:DCYC?".format(self.channel))
-        print("\tDuty cycle:", self.port.read())
-        self.port.write("SOUR{0}:BURS:STAT?".format(self.channel))
-        print("\tBurst status:", self.port.read())
-        self.port.write("SOUR{0}:BURS:NOR?".format(self.channel))
-        print("\tNumber of bursts:", self.port.read())
-        self.port.write("SOUR{0}:BURS:NCYC?".format(self.channel))
-        print("\tNumber of periods in burst:", self.port.read())
-        self.port.write("SOUR{0}:BURS:INT:PER?".format(self.channel))
-        print("\tBurst period:", self.port.read(), "\n")
-
-    def set_burst_mode(self):
-        self.port.write(
-            "SOUR{0}:BURS:STAT {1}".format(
-                self.channel, self.operationmodes[self.operationmode]
-            )
-        )  # set OperationMode
+    def _apply_burst_mode(self) -> None:
+        """Send the operation mode and, for bursts, the burst timing from the GUI."""
+        self.set_burst_state(self.channel, self.operationmodes[self.operationmode])
         if self.operationmodes[self.operationmode] != "CONTINUOUS":
+            # total burst period in us (signal + delay)
             self.burstperiod = 10**6 * (
                 self.periodnumber / self.frequency + self.burstdelay
             )
-            self.port.write(
-                "SOUR{0}:BURS:INT:PER {1}".format(self.channel, self.burstperiod)
-            )  # total burst period in us (signal + delay)
-            self.port.write(
-                "SOUR{0}:BURS:NOR {1}".format(self.channel, self.burstnumber)
-            )  # number of repeated bursts
-            self.port.write(
-                "SOUR{0}:BURS:NCYC {1}".format(self.channel, self.periodnumber)
-            )  # number of periods in one burst
+            self.set_burst_period(self.channel, self.burstperiod)
+            self.set_burst_repetitions(self.channel, self.burstnumber)
+            self.set_burst_cycles(self.channel, self.periodnumber)
 
-    def get_identification(self):
-        self.port.write("*IDN?")
-        return self.port.read()
+    # -- Communication commands -------------------------------------------------
+    # One SCPI command each, with explicit arguments, so that a pysweepme script or an agent can
+    # address every property of the generator directly. 'channel' is the output, 1 or 2. The
+    # SCPI server does not acknowledge set commands, so a set does not read back.
+    # Reference:
+    # https://redpitaya.readthedocs.io/en/latest/appsFeatures/remoteControl/command_list/commands-gen.html
 
-    def get_board_name(self):
-        self.port.write("SYSTem:BRD:Name?")
-        return self.port.read()
+    def reset_generator(self) -> None:
+        """Reset both generator channels to their default settings ('GEN:RST')."""
+        self.port.write("GEN:RST")
 
-    def get_board_id(self):
-        self.port.write("SYSTem:BRD:ID?")
-        return self.port.read()
+    def set_waveform(self, channel: int, waveform: str) -> None:
+        """Set the waveform: SINE, SQUARE, TRIANGLE, SAWU, SAWD, PWM, ARBITRARY or DC.
 
-    def get_system_help(self):
-        self.port.write("SYSTem:Help?")
-        return self.port.read()
+        The GUI names ("Sine", "Saw up", ...) are accepted as well.
+        """
+        waveform = self.waveforms.get(waveform, str(waveform).upper())
+        self.port.write("SOUR{0}:FUNC {1}".format(channel, waveform))
 
-    def get_system_version(self):
-        self.port.write("SYST:VERS?")
-        return self.port.read()
+    def get_waveform(self, channel: int) -> str:
+        """Return the waveform as SCPI name, e.g. 'SINE'."""
+        return self.port.query("SOUR{0}:FUNC?".format(channel))
+
+    def set_arbitrary_waveform(self, channel: int, data: list) -> None:
+        """Upload an arbitrary waveform: 16384 samples normalized to -1..1 ('SOUR<n>:TRAC:DATA:DATA').
+
+        With fewer samples the output frequency is higher than the configured one. The waveform
+        must be selected with set_waveform(channel, "ARBITRARY") to be used.
+        """
+        samples = np.asarray(data, dtype=float).ravel()
+        # 'np.nan' as threshold is not accepted anymore since numpy 1.24, use sys.maxsize instead
+        np.set_printoptions(threshold=sys.maxsize)
+        self.port.write(
+            "SOUR{0}:TRAC:DATA:DATA {1}".format(
+                channel,
+                np.array2string(samples, precision=5, separator=",")[1:-1]
+                .replace(" ", "")
+                .replace("\n", ""),
+            )
+        )
+
+    def set_frequency(self, channel: int, frequency: float) -> None:
+        """Set the frequency in Hz ('SOUR<n>:FREQ:FIX', 1 Hz to 50 MHz, board dependent).
+
+        The instrument rebuilds the signal; with the internal trigger source the generation
+        has to be started again with trigger(channel) afterwards.
+        """
+        self.port.write("SOUR{0}:FREQ:FIX {1:1.7f}".format(channel, float(frequency)))
+
+    def get_frequency(self, channel: int) -> float:
+        """Return the frequency in Hz."""
+        return float(self.port.query("SOUR{0}:FREQ:FIX?".format(channel)))
+
+    def set_phase(self, channel: int, phase: float) -> None:
+        """Set the phase in degrees ('SOUR<n>:PHAS', -360 to 360).
+
+        The phase is only taken over when the signal starts from the beginning, i.e. after
+        trigger(channel).
+        """
+        self.port.write("SOUR{0}:PHAS {1:1.7f}".format(channel, float(phase)))
+
+    def get_phase(self, channel: int) -> float:
+        """Return the phase in degrees."""
+        return float(self.port.query("SOUR{0}:PHAS?".format(channel)))
+
+    def set_amplitude(self, channel: int, amplitude: float) -> None:
+        """Set the one-way amplitude in V ('SOUR<n>:VOLT').
+
+        Amplitude plus absolute offset must stay within the output range (+/- 1 V on STEMlab).
+        The amplitude is applied without restarting the signal.
+        """
+        self.port.write("SOUR{0}:VOLT {1:1.7f}".format(channel, float(amplitude)))
+
+    def get_amplitude(self, channel: int) -> float:
+        """Return the one-way amplitude in V."""
+        return float(self.port.query("SOUR{0}:VOLT?".format(channel)))
+
+    def set_offset(self, channel: int, offset: float) -> None:
+        """Set the DC offset in V ('SOUR<n>:VOLT:OFFS'). Applied without restarting the signal."""
+        self.port.write("SOUR{0}:VOLT:OFFS {1:1.7f}".format(channel, float(offset)))
+
+    def get_offset(self, channel: int) -> float:
+        """Return the DC offset in V."""
+        return float(self.port.query("SOUR{0}:VOLT:OFFS?".format(channel)))
+
+    def set_duty_cycle(self, channel: int, duty_cycle: float) -> None:
+        """Set the duty cycle of the PWM waveform as a fraction 0..1 ('SOUR<n>:DCYC')."""
+        self.port.write("SOUR{0}:DCYC {1:1.7f}".format(channel, float(duty_cycle)))
+
+    def get_duty_cycle(self, channel: int) -> float:
+        """Return the PWM duty cycle as a fraction 0..1."""
+        return float(self.port.query("SOUR{0}:DCYC?".format(channel)))
+
+    def set_trigger_source(self, channel: int, source: str) -> None:
+        """Set the trigger source: INT, EXT_PE, EXT_NE or GATED ('SOUR<n>:TRIG:SOUR')."""
+        self.port.write("SOUR{0}:TRIG:SOUR {1}".format(channel, str(source).upper()))
+
+    def get_trigger_source(self, channel: int) -> str:
+        """Return the trigger source, e.g. 'INT'."""
+        return self.port.query("SOUR{0}:TRIG:SOUR?".format(channel))
+
+    def trigger(self, channel: int) -> None:
+        """Trigger the channel, i.e. (re)start the generation from the start phase ('SOUR<n>:TRIG:INT').
+
+        Required once after set_output_state(channel, True) since Red Pitaya OS 2.00, and again
+        after set_frequency or set_phase, because those rebuild the signal. It resets the FPGA
+        and restarts the signal, so it must not be sent repeatedly into a running continuous
+        signal. The channel-specific command is used on purpose: the two-channel variant
+        'SOUR:TRIG:INT' is a documented known issue of the SCPI server and is silently ignored.
+        """
+        self.port.write("SOUR{0}:TRIG:INT".format(channel))
+
+    def set_burst_state(self, channel: int, state: str) -> None:
+        """Set the operation mode: CONTINUOUS or BURST ('SOUR<n>:BURS:STAT')."""
+        self.port.write("SOUR{0}:BURS:STAT {1}".format(channel, str(state).upper()))
+
+    def get_burst_state(self, channel: int) -> str:
+        """Return the operation mode, 'CONTINUOUS' or 'BURST'."""
+        return self.port.query("SOUR{0}:BURS:STAT?".format(channel))
+
+    def set_burst_cycles(self, channel: int, cycles: int) -> None:
+        """Set the number of signal periods in one burst ('SOUR<n>:BURS:NCYC')."""
+        self.port.write("SOUR{0}:BURS:NCYC {1}".format(channel, int(cycles)))
+
+    def get_burst_cycles(self, channel: int) -> int:
+        """Return the number of signal periods in one burst."""
+        return int(self.port.query("SOUR{0}:BURS:NCYC?".format(channel)))
+
+    def set_burst_repetitions(self, channel: int, repetitions: int) -> None:
+        """Set the number of bursts ('SOUR<n>:BURS:NOR'); 65536 means infinite."""
+        self.port.write("SOUR{0}:BURS:NOR {1}".format(channel, int(repetitions)))
+
+    def get_burst_repetitions(self, channel: int) -> int:
+        """Return the number of bursts."""
+        return int(self.port.query("SOUR{0}:BURS:NOR?".format(channel)))
+
+    def set_burst_period(self, channel: int, period: float) -> None:
+        """Set the burst period in us, i.e. signal plus delay until the next burst ('SOUR<n>:BURS:INT:PER')."""
+        self.port.write("SOUR{0}:BURS:INT:PER {1}".format(channel, int(round(float(period)))))
+
+    def get_burst_period(self, channel: int) -> float:
+        """Return the burst period in us."""
+        return float(self.port.query("SOUR{0}:BURS:INT:PER?".format(channel)))
+
+    def set_output_state(self, channel: int, enabled: bool) -> None:
+        """Switch the output on or off ('OUTPUT<n>:STATE').
+
+        Since OS 2.00 switching on only applies the initial voltage; trigger(channel) starts
+        the signal.
+        """
+        self.port.write("OUTPUT{0}:STATE {1}".format(channel, "ON" if enabled else "OFF"))
+
+    def get_output_state(self, channel: int) -> bool:
+        """Return whether the output is switched on."""
+        answer = self.port.query("OUTPUT{0}:STATE?".format(channel))
+        return answer.strip().upper() in ("ON", "1")
+
+    def get_settings(self, channel: int) -> dict:
+        """Return the current generator settings of a channel as a dictionary."""
+        return {
+            "output": self.get_output_state(channel),
+            "waveform": self.get_waveform(channel),
+            "frequency": self.get_frequency(channel),
+            "phase": self.get_phase(channel),
+            "amplitude": self.get_amplitude(channel),
+            "offset": self.get_offset(channel),
+            "duty_cycle": self.get_duty_cycle(channel),
+            "trigger_source": self.get_trigger_source(channel),
+            "burst_state": self.get_burst_state(channel),
+            "burst_repetitions": self.get_burst_repetitions(channel),
+            "burst_cycles": self.get_burst_cycles(channel),
+            "burst_period": self.get_burst_period(channel),
+        }
+
+    def get_identification(self) -> str:
+        """Return the '*IDN?' string of the board."""
+        return self.port.query("*IDN?")
+
+    def get_board_name(self) -> str:
+        return self.port.query("SYSTem:BRD:Name?")
+
+    def get_board_id(self) -> str:
+        return self.port.query("SYSTem:BRD:ID?")
+
+    def get_system_help(self) -> str:
+        return self.port.query("SYSTem:Help?")
+
+    def get_system_version(self) -> str:
+        return self.port.query("SYST:VERS?")
