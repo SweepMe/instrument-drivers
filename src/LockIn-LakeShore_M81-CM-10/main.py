@@ -440,12 +440,16 @@ class Device(EmptyDevice):
             self.port.write(f"SENSe{self.slot}:LIA:DPHase {self.lia_ref_phase_shift}")
 
     def set_timeconstant(self):
-        # Calculate wait time
-        if not self.wait_time_constants == "Auto":
+        # Additional wait time per measurement point in units of the time constant
+        if self.wait_time_constants.strip().lower() == "auto":
+            # Rely on the instrument's settling flag, no additional wait
+            self.wait_time = 0.0
+        else:
             try:
-                self.wait_time = float(self.wait_time_constants) * float(self.lia_tc)
-            except (ValueError, TypeError):
-                raise ValueError("'Settling in time constants' must be 'Auto' or a float.")
+                self.wait_time = float(self.wait_time_constants) * (self.lia_tc)
+            except (ValueError, TypeError) as e:
+                msg = "'WaitTimeConstants' must be 'Auto' or a number."
+                raise ValueError(msg) from e
         # Time constant and rolloff for traditional lowpass filter
         # Enable/Disable Lowpass filter
         self.port.write(f'SENSe{self.slot}:LIA:LPASs {"1" if self.lia_lowpass else "0"}')
