@@ -288,7 +288,7 @@ class Device(EmptyDevice):
         self.set_input_configuration(self.input_config)
         self.set_coupling(self.coupling)
         self.set_analog_filter()  # set filters before range: the range limits depend on them
-        if self.sweep_mode == "Sensitivity in V":
+        if self.sweep_mode  != "Sensitivity in V":
             self.set_range()
         if self.sweep_mode != "Time constant in s":
             self.set_time_constant()
