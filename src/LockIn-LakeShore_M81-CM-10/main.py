@@ -258,7 +258,7 @@ class Device(EmptyDevice):
 
     def configure(self):
         self.set_mode()
-        if self.sweep_mode == "Sensitivity in A":
+        if self.sweep_mode != "Sensitivity in A":
             self.set_range()
         if self.sweep_mode != "Time constant in s":
             self.set_timeconstant()
