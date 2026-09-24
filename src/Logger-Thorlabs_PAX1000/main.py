@@ -138,7 +138,7 @@ class Device(EmptyDevice):
         self.variables: list[str] = []
         self.units: list[str] = []
         self.plottype: list[bool] = []
-        self.savetype: list[bool] 0 []
+        self.savetype: list[bool] = []
 
         # Instrument limits, read during initialize
         self.wavelength_limits_m: tuple[float, float] = (0.0, 0.0)
@@ -241,11 +241,8 @@ class Device(EmptyDevice):
         self.savetype = [True] * len(variables)
 
     def initialize(self) -> None:
-        """Reset the status reporting, identify the instrument and read out its wavelength limits."""
+        """Reset the status reporting and read out the wavelength limits of this instrument."""
         self.clear_status()
-        identification = self.get_identification()
-        debug(f"PAX1000: connected to {identification}")
-
         self.wavelength_limits_m = self.get_wavelength_limits()
 
     def configure(self) -> None:
@@ -272,13 +269,10 @@ class Device(EmptyDevice):
         # because the allowed scan rate range depends on it.
         self.set_measurement_mode(self.measurement_mode)
 
-        applied_mode, motor_running = self.get_measurement_mode()
-        if applied_mode != self.measurement_mode or not motor_running:
-            msg = (
-                f"PAX1000 did not accept the operating mode: requested {self.measurement_mode}, "
-                f"instrument reports mode {applied_mode} with motor state {int(motor_running)}."
-            )
-            raise RuntimeError(msg)
+        # A rejected command shows up in the error queue right away, so asking here gives the reason
+        # in the instrument's own words instead of waiting for the mode to time out below.
+        self.check_error()
+        self.wait_until_mode_reached()
 
         self.apply_basic_scan_rate()
         self.check_error()
@@ -474,12 +468,40 @@ class Device(EmptyDevice):
                 raise RuntimeError(msg)
             time.sleep(0.2)
 
+    def wait_until_mode_reached(self, timeout_s: float = 20.0) -> None:
+        """Block until the instrument measures in the requested operating mode.
+
+        Setting the mode only requests it. The instrument reports back the mode it is actually
+        measuring in, and that stays 0 (idle, no measurements are taken) until the waveplate motor has
+        spun up from rest and the first measurement of the new mode has completed. Reading the mode
+        immediately after setting it therefore returns 0 even though the command was accepted, which is
+        why this has to wait rather than check once.
+
+        Args:
+            timeout_s: How long to wait for the new mode, which has to cover the motor spin-up.
+
+        Raises:
+            RuntimeError: If the instrument is still not measuring in the requested mode.
+        """
+        deadline = time.monotonic() + timeout_s
+        applied_mode, motor_running = self.get_measurement_mode()
+
+        while applied_mode != self.measurement_mode or not motor_running:
+            if time.monotonic() > deadline:
+                msg = (
+                    f"PAX1000 did not reach the requested operating mode within {timeout_s:.0f} s: "
+                    f"requested {self.measurement_mode}, instrument reports mode {applied_mode} with "
+                    f"motor state {int(motor_running)}."
+                )
+                raise RuntimeError(msg)
+            time.sleep(0.2)
+            applied_mode, motor_running = self.get_measurement_mode()
+
     """ here, communication commands are wrapped into python convenience functions """
 
     def get_identification(self) -> str:
         """Return the identification string of the instrument."""
-        self.port.write("*IDN?")
-        return self.port.read()
+        return self.port.query("*IDN?")
 
     def clear_status(self) -> None:
         """Clear the status registers and the error queue."""
@@ -487,8 +509,7 @@ class Device(EmptyDevice):
 
     def check_error(self) -> None:
         """Raise if the instrument has queued an error."""
-        self.port.write("SYST:ERR?")
-        answer = self.port.read()
+        answer = self.port.query("SYST:ERR?")
 
         code = answer.split(",")[0].strip()
         if code not in ("0", "+0"):
@@ -505,13 +526,11 @@ class Device(EmptyDevice):
 
     def get_wavelength(self) -> float:
         """Return the configured wavelength in meter."""
-        self.port.write("SENS:CORR:WAV?")
-        return float(self.port.read())
+        return float(self.port.query("SENS:CORR:WAV?"))
 
     def get_wavelength_limits(self) -> tuple[float, float]:
         """Return the smallest and largest wavelength this instrument supports, in meter."""
-        self.port.write("SENS:CORR:WAV? MIN;:SENS:CORR:WAV? MAX")
-        minimum, maximum = self.port.read().split(";")
+        minimum, maximum = self.port.query("SENS:CORR:WAV? MIN;:SENS:CORR:WAV? MAX").split(";")
         return float(minimum), float(maximum)
 
     def set_power_range(self, power_w: float) -> None:
@@ -540,8 +559,7 @@ class Device(EmptyDevice):
 
     def get_measurement_mode(self) -> tuple[int, bool]:
         """Return the active operating mode and whether the waveplate motor is running."""
-        self.port.write("SENS:CALC?;:INP:ROT:STAT?")
-        mode, motor_state = self.port.read().split(";")
+        mode, motor_state = self.port.query("SENS:CALC?;:INP:ROT:STAT?").split(";")
         return int(mode), bool(int(motor_state))
 
     def set_basic_scan_rate(self, scan_rate: float) -> None:
@@ -554,19 +572,16 @@ class Device(EmptyDevice):
 
     def get_basic_scan_rate(self) -> float:
         """Return the basic scan rate in 1/s."""
-        self.port.write("INP:ROT:VEL?")
-        return float(self.port.read())
+        return float(self.port.query("INP:ROT:VEL?"))
 
     def get_basic_scan_rate_limits(self) -> tuple[float, float]:
         """Return the basic scan rate limits in 1/s for the active mode and power supply."""
-        self.port.write("INP:ROT:VEL? MIN;:INP:ROT:VEL? MAX")
-        minimum, maximum = self.port.read().split(";")
+        minimum, maximum = self.port.query("INP:ROT:VEL? MIN;:INP:ROT:VEL? MAX").split(";")
         return float(minimum), float(maximum)
 
     def is_motor_settled(self) -> bool:
         """Return whether the waveplate motor has reached its target speed."""
-        self.port.write("INP:ROT:SETT?")
-        return bool(int(self.port.read()))
+        return bool(int(self.port.query("INP:ROT:SETT?")))
 
     def get_latest_scan(self) -> list[float]:
         """Return the fields of the most recently finished scan.
@@ -575,8 +590,7 @@ class Device(EmptyDevice):
             The 13 values of the response, integers first. See the field index constants at the top of
             this file for their meaning.
         """
-        self.port.write("SENS:DATA:LAT?")
-        answer = self.port.read()
+        answer = self.port.query("SENS:DATA:LAT?")
 
         fields = answer.split(",")
         if len(fields) != SCAN_FIELD_COUNT:
