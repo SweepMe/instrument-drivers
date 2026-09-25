@@ -97,7 +97,7 @@ class Device(EmptyDevice):
             "2 mA - id SMU2": CurrentRange.Range_2mA_SMU,
             "70 mA - idSMU2": CurrentRange.Range_70mA_SMU,
             "5 µA - DPS": CurrentRange.Range_5uA,
-            "25 µA - DPS":  CurrentRange.Range_25uA_DPS,
+            "25 µA - DPS": CurrentRange.Range_25uA_DPS,
             "250 µA - DPS": CurrentRange.Range_250uA_DPS,
             "2.5 mA - DPS": CurrentRange.Range_2500uA_DPS,
             "25 mA - DPS": CurrentRange.Range_25mA_DPS,
@@ -106,6 +106,18 @@ class Device(EmptyDevice):
         }
 
         self.current_range: CurrentRange = CurrentRange.Range_70mA_SMU
+
+        # Current ranges of the idSMU2 from small to large: full scale in A, range to set, range reported by the channel
+        self.smu_current_ranges: list[tuple[float, CurrentRange, SmuCurrentRange]] = [
+            (5e-6, CurrentRange.Range_5uA, SmuCurrentRange.Range_5uA),
+            (20e-6, CurrentRange.Range_20uA_SMU, SmuCurrentRange.Range_20uA),
+            (200e-6, CurrentRange.Range_200uA_SMU, SmuCurrentRange.Range_200uA),
+            (2e-3, CurrentRange.Range_2mA_SMU, SmuCurrentRange.Range_2mA),
+            (70e-3, CurrentRange.Range_70mA_SMU, SmuCurrentRange.Range_70mA),
+        ]
+
+        self.select_range_from_value: bool = False
+        """Whether 'apply' selects the current range from the set value, see 'apply_current'."""
 
         # Only 2**n values are allowed
         self.speed_options = {
@@ -127,6 +139,13 @@ class Device(EmptyDevice):
         self.list_sweep_values: list[float] = []
         self.list_delay_time: int = 100  # in ms
 
+        self.is_list_sweep: bool = False
+        """Whether the user selected 'List sweep' as sweep value for this channel.
+
+        This is only the user's selection taken from the GUI parameters. The resulting role in the list sweep is
+        derived from it in 'initialize', where all channels of the board are known.
+        """
+
         self.list_role: str = "None"
         """The role of the channel in the list sweep. Possible values:
             'List master' : The first channel that registers as list mode. It sets up the list sweep and runs the
@@ -146,6 +165,16 @@ class Device(EmptyDevice):
         # Switch on async readout during measure phase
         # This will read out multiple channels in parallel without blocking
         self.use_async_readout: bool = True
+
+        self.identifier_channel_names: str = "Active channel names"
+        """Key under which the names of all active channels of a board are shared via device_communication."""
+
+        self.identifier_autorange_channels: str = "Autorange channels"
+        """Key under which the channels with explicit autoranging are shared via device_communication.
+
+        In async readout, one channel measures all channels of the board. It must autorange all of them before the
+        measurement starts, see 'autorange_active_channels'.
+        """
 
     @staticmethod
     def find_ports() -> list:
@@ -183,7 +212,11 @@ class Device(EmptyDevice):
             "ListSweepType": ["Sweep", "Custom"],
             "ListSweepStart": 0.0,
             "ListSweepEnd": 1.0,
-            "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
+            "ListSweepStepPointsType": [
+                "Step width:",
+                "Points (lin.):",
+                "Points (log.):",
+            ],
             "ListSweepStepPointsValue": 0.1,
             "ListSweepDual": False,
             "ListSweepDelaytime": 0.0,
@@ -213,8 +246,11 @@ class Device(EmptyDevice):
             # then, "SweepValue" is not defined during set_GUIparameter
             sweep_value = None
 
-        if sweep_value == "List sweep":
-            self.list_role = "List master"
+        # Only the user's selection is stored here. The list role is derived in 'initialize', because
+        # 'get_GUIparameter' is called again on 'reconfigure' while 'initialize' is not. Deriving the role
+        # here would promote a channel that was demoted to 'List creator' back to 'List master'.
+        self.is_list_sweep = sweep_value == "List sweep"
+        if self.is_list_sweep:
             self.handle_list_sweep_parameter(parameter)
 
     def handle_list_sweep_parameter(self, parameter: dict) -> None:
@@ -238,7 +274,9 @@ class Device(EmptyDevice):
                 self.list_sweep_values = np.linspace(start, end, int(step_points_value))
 
             elif step_points_type.startswith("Points (log.)"):
-                self.list_sweep_values = np.logspace(np.log10(start), np.log10(end), int(step_points_value))
+                self.list_sweep_values = np.logspace(
+                    np.log10(start), np.log10(end), int(step_points_value)
+                )
 
             else:
                 msg = f"Unknown step points type: {step_points_type}"
@@ -246,7 +284,9 @@ class Device(EmptyDevice):
 
         elif list_sweep_type == "Custom":
             custom_values = parameter["ListSweepCustomValues"]
-            self.list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
+            self.list_sweep_values = np.array(
+                [float(value) for value in custom_values.split(",")]
+            )
 
         else:
             msg = f"Unknown list sweep type: {list_sweep_type}"
@@ -254,7 +294,9 @@ class Device(EmptyDevice):
 
         # Add the returning values in reverse order to the list
         if parameter["ListSweepDual"]:
-            self.list_sweep_values = np.append(self.list_sweep_values, self.list_sweep_values[::-1])
+            self.list_sweep_values = np.append(
+                self.list_sweep_values, self.list_sweep_values[::-1]
+            )
 
         if len(self.list_sweep_values) > 52:
             msg = f"Number of points {len(self.list_sweep_values)} is too high. Maximum is 52."
@@ -291,7 +333,9 @@ class Device(EmptyDevice):
             - "List results": dict[str, list[float], Dictionary with channel name as key and list of measured values as
             value.
         """
-        self.source_mode = "Voltage" if self.source_identifier.startswith("Voltage") else "Current"
+        self.source_mode = (
+            "Voltage" if self.source_identifier.startswith("Voltage") else "Current"
+        )
 
         if self.identifier in self.device_communication:
             self.board_model = self.device_communication[self.identifier]["Board"]
@@ -313,15 +357,19 @@ class Device(EmptyDevice):
         self.channel = self.smu.smu.channels[self.channel_number]
         self.channel.name = self.channel_name
 
+        # The role is derived anew in every run: 'device_communication' is cleared when a run starts, while the
+        # driver instance and thus a role from a previous run survive.
+        self.list_role = "None"
+
         # If this channel should run the list sweep, register it as 'List master'
         # Checking if the list receiver should be used will be done in 'configure' after all channels are initialized
-        if self.list_role == "List master":
+        if self.is_list_sweep:
             if "List master" in self.device_communication[self.identifier]:
                 # If another channel already runs a list sweep, this channel creates it own list config and passes it
-                # Update the role to 'List creator'
                 self.list_role = "List creator"
 
             else:
+                self.list_role = "List master"
                 self.device_communication[self.identifier].update(
                     {
                         "List master": self.channel_name,
@@ -334,33 +382,60 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Set compliance, current range, speed, and list mode."""
+        # The engine resets the clamps to its defaults (±70 mA when forcing voltage, ±10 V when forcing current)
+        # whenever the channel changes between forcing voltage and current, i.e. with the first value set in the
+        # other mode (tested 09-2026). The channel is put into its mode first, so that the compliance set below is
+        # not lost at the first 'apply'. With the output on ('reconfigure' during a run), the mode cannot have
+        # changed and the output must not be touched.
+        if not self.channel.enabled:
+            if self.source_mode == "Voltage":
+                self.channel.voltage = 0.0
+            else:
+                self.channel.current = 0.0
+
         # Protection
         self.set_compliance(self.protection)
 
         # Current Range
-        if self.current_range == "Auto":
-            self.channel.autorange = True
-        else:
-            self.channel.autorange = False
+        # A registered list master makes every channel of the board take part in the list sweep, see below.
+        is_in_list_sweep = "List master" in self.device_communication[self.identifier]
+
+        # The explicit autoranging in 'measure' is skipped for list sweeps, as the sweep runs on the device. The
+        # internal autoranging is the only autoranging in this case. Otherwise it is not needed and is disabled,
+        # as it costs ~10% speed.
+        self.channel.autorange = self.current_range == "Auto" and is_in_list_sweep
+        if self.current_range != "Auto":
             self.board_model.set_current_ranges(self.current_range, [self.channel.name])
-            # self.channel.current_range = self.current_range
+
+        # A current source knows its current before it is measured, so the range is selected in 'apply' instead of
+        # being found by the explicit autoranging in 'measure'.
+        self.select_range_from_value = (
+            self.current_range == "Auto" and not is_in_list_sweep and self.source_mode == "Current"
+        )
+        # On 'reconfigure' during a run, e.g. from a fixed range to 'Auto', 'apply' is not called again as long as the
+        # value does not change, so the range for the present value is selected here. Only with the output on: at
+        # the start of a run, 'self.value' is left from the previous run, possibly in the other unit.
+        if self.select_range_from_value and self.channel.enabled and self.value is not None:
+            self.apply_current(float(self.value))
 
         # Speed/integration
         self.channel.sample_count = self.speed_options[self.speed]
-
-        # Auto-ranging (can be used to fine-tune auto-ranging)
-        # self.channel.autorange_measurement_count = 100
-        # self.channel.autorange_post_switch_delay = 0
 
         # Get output ranges
         self.v_min, self.v_max, self.i_min, self.i_max = self.channel.output_ranges
 
         # If another channel runs a list sweep, this channel must be a list receiver
-        if "List master" in self.device_communication[self.identifier]:
+        if is_in_list_sweep:
             # Set the measurement mode - also for the list master itself
             # Maybe this can be done simpler, but it works
-            measurement_mode = MeasurementMode.isense if self.source_mode == "Voltage" else MeasurementMode.vsense
-            self.board_model.set_measurement_modes(measurement_mode, [self.channel_name])
+            measurement_mode = (
+                MeasurementMode.isense
+                if self.source_mode == "Voltage"
+                else MeasurementMode.vsense
+            )
+            self.board_model.set_measurement_modes(
+                measurement_mode, [self.channel_name]
+            )
 
             if self.list_role == "List creator":
                 # Check if the number of list points matches the list master
@@ -376,28 +451,65 @@ class Device(EmptyDevice):
                 # If another channel runs a list sweep, this channel must provide a list sweep configuration
                 config = ListSweepChannelConfiguration()
                 config.set_force_values(self.list_sweep_values)
-                self.device_communication[self.identifier]["List creators"][self.channel_name] = config
+                self.device_communication[self.identifier]["List creators"][
+                    self.channel_name
+                ] = config
 
             elif self.list_role not in ("List master", "List creator"):
                 self.list_role = "List receiver"
-                self.device_communication[self.identifier]["List receivers"].append(self.channel_name)
+                # again, 'configure' can be called repeatedly, so the channel must not be registered twice
+                list_receivers = self.device_communication[self.identifier][
+                    "List receivers"
+                ]
+                if self.channel_name not in list_receivers:
+                    list_receivers.append(self.channel_name)
 
         # handling to read multiple channels in spotwise measurements
-        self.identifier_channel_names = "Active channel names"
-        if self.identifier_channel_names not in self.device_communication[self.identifier]:
-            self.device_communication[self.identifier][self.identifier_channel_names] = []
-
-        if len(self.device_communication[self.identifier][self.identifier_channel_names]) == 0:
-            self._is_retrieving_data = True
-        else:
-            self._is_retrieving_data = False
+        # Registration must be idempotent: SweepMe! can call 'configure' again without a preceding 'unconfigure',
+        # e.g. when a parameter such as the compliance is changed during a measurement. Registering the channel
+        # twice would shift the roles of all channels, see 'is_retrieving_data'.
+        active_channel_names = self.device_communication[self.identifier].setdefault(
+            self.identifier_channel_names,
+            [],
+        )
 
         # adding channel name as the SMU gets active
-        self.device_communication[self.identifier][self.identifier_channel_names].append(self.channel.name)
+        if self.channel.name not in active_channel_names:
+            active_channel_names.append(self.channel.name)
+
+        # A range can change on 'reconfigure', so the channel is registered or removed each time.
+        # List sweeps rely on the internal autoranging, see above.
+        autorange_channels = self.device_communication[self.identifier].setdefault(
+            self.identifier_autorange_channels,
+            {},
+        )
+        if self.current_range == "Auto" and not is_in_list_sweep and not self.select_range_from_value:
+            autorange_channels[self.channel.name] = self.channel
+        else:
+            autorange_channels.pop(self.channel.name, None)
 
     def unconfigure(self) -> None:
         """Removing channel name if the SMU is no longer active."""
-        self.device_communication[self.identifier][self.identifier_channel_names].remove(self.channel.name)
+        active_channel_names = self.device_communication[self.identifier].get(
+            self.identifier_channel_names, []
+        )
+        if self.channel.name in active_channel_names:
+            active_channel_names.remove(self.channel.name)
+
+        self.device_communication[self.identifier].get(self.identifier_autorange_channels, {}).pop(
+            self.channel.name, None
+        )
+
+    def is_retrieving_data(self) -> bool:
+        """Check whether this channel measures and retrieves the data on behalf of all channels of the board.
+
+        The first registered channel takes this role. The role is derived on demand instead of being stored during
+        'configure' so that it passes on automatically when that channel is unconfigured while others keep measuring.
+        """
+        active_channel_names = self.device_communication[self.identifier].get(
+            self.identifier_channel_names, []
+        )
+        return active_channel_names[:1] == [self.channel.name]
 
     def poweron(self) -> None:
         """Enable the channel."""
@@ -423,11 +535,35 @@ class Device(EmptyDevice):
             if self.value > self.i_max or self.value < self.i_min:
                 msg = f"Current {self.value} A out of range {self.i_min} A to {self.i_max} A"
                 raise ValueError(msg)
-            self.channel.current = float(self.value)
+            if self.select_range_from_value:
+                self.apply_current(self.value)
+            else:
+                self.channel.current = float(self.value)
 
         else:
             msg = "Unknown source mode"
             raise Exception(msg)
+
+    def apply_current(self, current: float) -> None:
+        """Set the current together with the smallest current range that can deliver it.
+
+        With the internal autoranging disabled, setting the current does not change the range. The current would be
+        forced in the range of the previous point until the explicit autoranging in 'measure' corrects it: a too small
+        range clips the current at its full scale, a too large one cannot resolve small currents (several µA instead
+        of 1 µA in the 70 mA range).
+
+        The range is switched before the current is set. The engine rescales the forced current on a range switch
+        (tested 09-2026), so the output stays between the old and the new current meanwhile: a larger range keeps the
+        old current, a smaller one clips it at its full scale. The ranges deliver their full scale and a few percent
+        more, so no margin is needed.
+        """
+        _, new_range, new_smu_range = next(
+            (entry for entry in self.smu_current_ranges if abs(current) <= entry[0]),
+            self.smu_current_ranges[-1],
+        )
+        if self.channel.current_range != new_smu_range:
+            self.board_model.set_current_ranges(new_range, [self.channel.name])
+        self.channel.current = current
 
     def measure(self) -> None:
         """Read the voltage and current from the SMU."""
@@ -440,28 +576,60 @@ class Device(EmptyDevice):
             return
 
         if self.use_async_readout:
-            if self._is_retrieving_data:
-                active_channel_names = self.device_communication[self.identifier][self.identifier_channel_names]
+            if self.is_retrieving_data():
+                active_channel_names = self.device_communication[self.identifier][
+                    self.identifier_channel_names
+                ]
 
-                self.board_model.set_measurement_modes(MeasurementMode.vsense, active_channel_names)
-                self.future_v = self.smu.measure_channels_async(sample_count=self.speed_options[self.speed],
-                                                repetitions=1,
-                                                channel_numbers=active_channel_names,
-                                                wait_for_trigger=False,
-                                                )
+                # The measurement started below covers all channels, so all of them must be autoranged first.
+                self.autorange_active_channels(active_channel_names)
 
-                self.board_model.set_measurement_modes(MeasurementMode.isense, active_channel_names)
-                self.future_i = self.smu.measure_channels_async(sample_count=self.speed_options[self.speed],
-                                                repetitions=1,
-                                                channel_numbers=active_channel_names,
-                                                wait_for_trigger=False,
-                                                )
+                self.board_model.set_measurement_modes(
+                    MeasurementMode.vsense, active_channel_names
+                )
+                self.future_v = self.smu.measure_channels_async(
+                    sample_count=self.speed_options[self.speed],
+                    repetitions=1,
+                    channel_numbers=active_channel_names,
+                    wait_for_trigger=False,
+                )
+
+                self.board_model.set_measurement_modes(
+                    MeasurementMode.isense, active_channel_names
+                )
+                self.future_i = self.smu.measure_channels_async(
+                    sample_count=self.speed_options[self.speed],
+                    repetitions=1,
+                    channel_numbers=active_channel_names,
+                    wait_for_trigger=False,
+                )
         else:
+            # Explicit autoranging, see 'autorange_active_channels'. A current source got its range in 'apply'.
+            if self.current_range == "Auto" and not self.select_range_from_value:
+                self.channel.perform_autorange()
+
             # sleeping is needed as otherwise the GUI thread hardly gets any time to update the GUI
             # this method is not the preferred one but can be used as a workaround or to test things
             time.sleep(0.001)
             self.v = self.channel.voltage
             self.i = self.channel.current
+
+    def autorange_active_channels(self, active_channel_names: list[str]) -> None:
+        """Perform the explicit autoranging for every active channel of the board that uses 'Auto'.
+
+        The explicit autoranging before each measurement is needed, because the internal autoranging of the device
+        switches the range only when the set value changes. Outside effects that change the current (light, gate
+        voltage, temperature etc.) would not trigger it.
+
+        Called by the channel that retrieves the data in async readout. If each channel autoranged itself in its own
+        'measure', all channels but the retrieving one would be autoranged only after the common measurement had
+        started, i.e. be measured in the range of the previous point. At the start of a run, this is the last range
+        of the previous run, which results in a wrong first point (e.g. 70 mA range for a nA current).
+        """
+        autorange_channels = self.device_communication[self.identifier].get(self.identifier_autorange_channels, {})
+        for channel_name in active_channel_names:
+            if channel_name in autorange_channels:
+                autorange_channels[channel_name].perform_autorange()
 
     def read_result(self) -> None:
         """Read the results using either async or normal readout."""
@@ -469,7 +637,7 @@ class Device(EmptyDevice):
             return
 
         if self.use_async_readout:
-            if self._is_retrieving_data:
+            if self.is_retrieving_data():
                 result_v = self.future_v.get()
                 result_i = self.future_i.get()
 
@@ -488,10 +656,17 @@ class Device(EmptyDevice):
                     msg = "idSMUx: Unknown error during measurement"
                     raise Exception(msg)
 
-                self.device_communication[self.identifier]["data"] = [result_v, result_i]
+                self.device_communication[self.identifier]["data"] = [
+                    result_v,
+                    result_i,
+                ]
             else:
-                self.v = self.device_communication[self.identifier]["data"][0].get_float_values(self.channel_name)[0]
-                self.i = self.device_communication[self.identifier]["data"][1].get_float_values(self.channel_name)[0]
+                self.v = self.device_communication[self.identifier]["data"][
+                    0
+                ].get_float_values(self.channel_name)[0]
+                self.i = self.device_communication[self.identifier]["data"][
+                    1
+                ].get_float_values(self.channel_name)[0]
 
     def run_list_sweep(self) -> None:
         """Run the list sweep."""
@@ -536,7 +711,9 @@ class Device(EmptyDevice):
         # Store the results of the other channels in device_communication
         for channel in [*list_receivers, *list_creators.keys()]:
             measurement_results = self.sweep.get_measurement_result(channel)
-            self.device_communication[self.identifier]["List results"][channel] = measurement_results
+            self.device_communication[self.identifier]["List results"][
+                channel
+            ] = measurement_results
 
         self.device_communication[self.identifier]["Time stamp"] = self.sweep.timecode
         self.t = self.sweep.timecode * 1e-6
@@ -548,7 +725,9 @@ class Device(EmptyDevice):
 
         if self.list_role != "None":
             # As list receiver/creator, the measurement data is read out by the List master
-            results = self.device_communication[self.identifier]["List results"][self.channel_name]
+            results = self.device_communication[self.identifier]["List results"][
+                self.channel_name
+            ]
             time_stamp = self.device_communication[self.identifier]["Time stamp"]
 
             # Currently, the list mode reads only one parameter, so the source value is used for the other parameter
@@ -578,7 +757,7 @@ class Device(EmptyDevice):
 
         The device automatically switches to voltage compliance when current is forced and vice versa.
         """
-        value = abs(value)
+        value = float(abs(value))
         self.channel.clamp_high_value = value
         self.channel.clamp_low_value = -value
         self.channel.clamp_enabled = True
