@@ -107,6 +107,18 @@ class Device(EmptyDevice):
 
         self.current_range: CurrentRange = CurrentRange.Range_70mA_SMU
 
+        # Current ranges of the idSMU2 from small to large: full scale in A, range to set, range reported by the channel
+        self.smu_current_ranges: list[tuple[float, CurrentRange, SmuCurrentRange]] = [
+            (5e-6, CurrentRange.Range_5uA, SmuCurrentRange.Range_5uA),
+            (20e-6, CurrentRange.Range_20uA_SMU, SmuCurrentRange.Range_20uA),
+            (200e-6, CurrentRange.Range_200uA_SMU, SmuCurrentRange.Range_200uA),
+            (2e-3, CurrentRange.Range_2mA_SMU, SmuCurrentRange.Range_2mA),
+            (70e-3, CurrentRange.Range_70mA_SMU, SmuCurrentRange.Range_70mA),
+        ]
+
+        self.select_range_from_value: bool = False
+        """Whether 'apply' selects the current range from the set value, see 'apply_current'."""
+
         # Only 2**n values are allowed
         self.speed_options = {
             "Very fast": 2**0,  # 1
@@ -156,6 +168,13 @@ class Device(EmptyDevice):
 
         self.identifier_channel_names: str = "Active channel names"
         """Key under which the names of all active channels of a board are shared via device_communication."""
+
+        self.identifier_autorange_channels: str = "Autorange channels"
+        """Key under which the channels with explicit autoranging are shared via device_communication.
+
+        In async readout, one channel measures all channels of the board. It must autorange all of them before the
+        measurement starts, see 'autorange_active_channels'.
+        """
 
     @staticmethod
     def find_ports() -> list:
@@ -363,19 +382,41 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Set compliance, current range, speed, and list mode."""
+        # The engine resets the clamps to its defaults (±70 mA when forcing voltage, ±10 V when forcing current)
+        # whenever the channel changes between forcing voltage and current, i.e. with the first value set in the
+        # other mode (tested 09-2026). The channel is put into its mode first, so that the compliance set below is
+        # not lost at the first 'apply'. With the output on ('reconfigure' during a run), the mode cannot have
+        # changed and the output must not be touched.
+        if not self.channel.enabled:
+            if self.source_mode == "Voltage":
+                self.channel.voltage = 0.0
+            else:
+                self.channel.current = 0.0
+
         # Protection
         self.set_compliance(self.protection)
 
         # Current Range
-        if self.current_range == "Auto":
-            """The internal auto ranging is not really needed, since explicit autoranging is done in measure().
-            However, the range for the first value of each measurement is not set correctly by explicit autoranging.
-            The reason seems for that seems to lay in asynchronous acquisition, but is not fully understood (08-2026).
-            Enabling internal autoranging here to avoid the issue with a ~10% speed penalty."""
-            self.channel.autorange = True
-        else:
-            self.channel.autorange = False
+        # A registered list master makes every channel of the board take part in the list sweep, see below.
+        is_in_list_sweep = "List master" in self.device_communication[self.identifier]
+
+        # The explicit autoranging in 'measure' is skipped for list sweeps, as the sweep runs on the device. The
+        # internal autoranging is the only autoranging in this case. Otherwise it is not needed and is disabled,
+        # as it costs ~10% speed.
+        self.channel.autorange = self.current_range == "Auto" and is_in_list_sweep
+        if self.current_range != "Auto":
             self.board_model.set_current_ranges(self.current_range, [self.channel.name])
+
+        # A current source knows its current before it is measured, so the range is selected in 'apply' instead of
+        # being found by the explicit autoranging in 'measure'.
+        self.select_range_from_value = (
+            self.current_range == "Auto" and not is_in_list_sweep and self.source_mode == "Current"
+        )
+        # On 'reconfigure' during a run, e.g. from a fixed range to 'Auto', 'apply' is not called again as long as the
+        # value does not change, so the range for the present value is selected here. Only with the output on: at
+        # the start of a run, 'self.value' is left from the previous run, possibly in the other unit.
+        if self.select_range_from_value and self.channel.enabled and self.value is not None:
+            self.apply_current(float(self.value))
 
         # Speed/integration
         self.channel.sample_count = self.speed_options[self.speed]
@@ -384,7 +425,7 @@ class Device(EmptyDevice):
         self.v_min, self.v_max, self.i_min, self.i_max = self.channel.output_ranges
 
         # If another channel runs a list sweep, this channel must be a list receiver
-        if "List master" in self.device_communication[self.identifier]:
+        if is_in_list_sweep:
             # Set the measurement mode - also for the list master itself
             # Maybe this can be done simpler, but it works
             measurement_mode = (
@@ -436,6 +477,17 @@ class Device(EmptyDevice):
         if self.channel.name not in active_channel_names:
             active_channel_names.append(self.channel.name)
 
+        # A range can change on 'reconfigure', so the channel is registered or removed each time.
+        # List sweeps rely on the internal autoranging, see above.
+        autorange_channels = self.device_communication[self.identifier].setdefault(
+            self.identifier_autorange_channels,
+            {},
+        )
+        if self.current_range == "Auto" and not is_in_list_sweep and not self.select_range_from_value:
+            autorange_channels[self.channel.name] = self.channel
+        else:
+            autorange_channels.pop(self.channel.name, None)
+
     def unconfigure(self) -> None:
         """Removing channel name if the SMU is no longer active."""
         active_channel_names = self.device_communication[self.identifier].get(
@@ -443,6 +495,10 @@ class Device(EmptyDevice):
         )
         if self.channel.name in active_channel_names:
             active_channel_names.remove(self.channel.name)
+
+        self.device_communication[self.identifier].get(self.identifier_autorange_channels, {}).pop(
+            self.channel.name, None
+        )
 
     def is_retrieving_data(self) -> bool:
         """Check whether this channel measures and retrieves the data on behalf of all channels of the board.
@@ -479,11 +535,35 @@ class Device(EmptyDevice):
             if self.value > self.i_max or self.value < self.i_min:
                 msg = f"Current {self.value} A out of range {self.i_min} A to {self.i_max} A"
                 raise ValueError(msg)
-            self.channel.current = float(self.value)
+            if self.select_range_from_value:
+                self.apply_current(self.value)
+            else:
+                self.channel.current = float(self.value)
 
         else:
             msg = "Unknown source mode"
             raise Exception(msg)
+
+    def apply_current(self, current: float) -> None:
+        """Set the current together with the smallest current range that can deliver it.
+
+        With the internal autoranging disabled, setting the current does not change the range. The current would be
+        forced in the range of the previous point until the explicit autoranging in 'measure' corrects it: a too small
+        range clips the current at its full scale, a too large one cannot resolve small currents (several µA instead
+        of 1 µA in the 70 mA range).
+
+        The range is switched before the current is set. The engine rescales the forced current on a range switch
+        (tested 09-2026), so the output stays between the old and the new current meanwhile: a larger range keeps the
+        old current, a smaller one clips it at its full scale. The ranges deliver their full scale and a few percent
+        more, so no margin is needed.
+        """
+        _, new_range, new_smu_range = next(
+            (entry for entry in self.smu_current_ranges if abs(current) <= entry[0]),
+            self.smu_current_ranges[-1],
+        )
+        if self.channel.current_range != new_smu_range:
+            self.board_model.set_current_ranges(new_range, [self.channel.name])
+        self.channel.current = current
 
     def measure(self) -> None:
         """Read the voltage and current from the SMU."""
@@ -495,17 +575,14 @@ class Device(EmptyDevice):
             # as list receiver or creator, the measurement is started by the list master
             return
 
-        """Explicit auto ranging before the measurement is taken. Has to be done, because the device does autoranging
-        only, when the set value for the changes. Outside effects that change the current in the device (light, gate
-        voltage, temperature etc.) wouldn't trigger auto ranging."""
-        if self.current_range == "Auto":
-            self.channel.perform_autorange()
-
         if self.use_async_readout:
             if self.is_retrieving_data():
                 active_channel_names = self.device_communication[self.identifier][
                     self.identifier_channel_names
                 ]
+
+                # The measurement started below covers all channels, so all of them must be autoranged first.
+                self.autorange_active_channels(active_channel_names)
 
                 self.board_model.set_measurement_modes(
                     MeasurementMode.vsense, active_channel_names
@@ -527,11 +604,32 @@ class Device(EmptyDevice):
                     wait_for_trigger=False,
                 )
         else:
+            # Explicit autoranging, see 'autorange_active_channels'. A current source got its range in 'apply'.
+            if self.current_range == "Auto" and not self.select_range_from_value:
+                self.channel.perform_autorange()
+
             # sleeping is needed as otherwise the GUI thread hardly gets any time to update the GUI
             # this method is not the preferred one but can be used as a workaround or to test things
             time.sleep(0.001)
             self.v = self.channel.voltage
             self.i = self.channel.current
+
+    def autorange_active_channels(self, active_channel_names: list[str]) -> None:
+        """Perform the explicit autoranging for every active channel of the board that uses 'Auto'.
+
+        The explicit autoranging before each measurement is needed, because the internal autoranging of the device
+        switches the range only when the set value changes. Outside effects that change the current (light, gate
+        voltage, temperature etc.) would not trigger it.
+
+        Called by the channel that retrieves the data in async readout. If each channel autoranged itself in its own
+        'measure', all channels but the retrieving one would be autoranged only after the common measurement had
+        started, i.e. be measured in the range of the previous point. At the start of a run, this is the last range
+        of the previous run, which results in a wrong first point (e.g. 70 mA range for a nA current).
+        """
+        autorange_channels = self.device_communication[self.identifier].get(self.identifier_autorange_channels, {})
+        for channel_name in active_channel_names:
+            if channel_name in autorange_channels:
+                autorange_channels[channel_name].perform_autorange()
 
     def read_result(self) -> None:
         """Read the results using either async or normal readout."""
