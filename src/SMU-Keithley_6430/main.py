@@ -39,6 +39,13 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 # Power line frequency in Hz, used to convert NPLC into seconds
 LINE_FREQUENCY = 50.0
 
+# Upper bound on how many source-delay-plus-measure cycles one reading can cost. Autoranging
+# repeats the whole cycle, source delay included, once per range it steps through, so the worst
+# case scales with the number of current ranges rather than with the measurement time alone.
+# Measured on a 6430 sweeping into the pA ranges: at a 1 s source delay a single reading took up
+# to 19 s, and at 5 s it exceeded 60 s. Raise this if a slow but healthy sweep still times out.
+MAX_CYCLES_PER_READING = 20
+
 
 class Device(EmptyDevice):
     """Driver for the Keithley 6430."""
@@ -393,13 +400,13 @@ class Device(EmptyDevice):
 
         else:
             # self.speed is NPLC, a number of power line cycles, and has to be converted to seconds.
-            # The floor has to cover what the instrument needs on its low current ranges: with
-            # autoranging down to 1 pA a single reading was measured taking more than 10 s, so a
-            # smaller limit aborts a sweep that is merely slow. The loop below returns as soon as
-            # the response is complete and checks is_run_stopped() every 100 ms, so a generous
-            # limit neither slows a measurement down nor makes a run harder to abort.
-            expected_time = self.speed / LINE_FREQUENCY * self.averages + self.source_delay_seconds
-            timeout = max(expected_time * 3, 60)  # seconds
+            # A fixed source delay is paid again on every cycle of an autorange search, so the
+            # timeout has to scale with it instead of with the measurement time alone. The loop
+            # below returns as soon as the response is complete and checks is_run_stopped() every
+            # 100 ms, so a generous limit neither slows a measurement down nor makes a run harder
+            # to abort; it only keeps a slow sweep from being killed.
+            cycle_time = self.speed / LINE_FREQUENCY * self.averages + self.source_delay_seconds
+            timeout = max(cycle_time * MAX_CYCLES_PER_READING, 60)  # seconds
             time_start = time.monotonic()
 
             buffer = ""
