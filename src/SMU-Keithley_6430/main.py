@@ -268,6 +268,9 @@ class Device(EmptyDevice):
         self.port.write("SENSe:FUNCtion:OFF:ALL")  # reset measurement functions
         self.set_measurement_functions(["VOLT", "CURR"])
 
+        if not self.list_mode:
+            self.configure_measurement_buffer()
+
         # self.port.query(":SENSe:FUNCtion:ON?")
 
         if self.averages < 1 or self.averages > 100:
@@ -375,9 +378,16 @@ class Device(EmptyDevice):
             # INIT starts the full list/sweep; completion is polled in request_result before FETCh? is sent.
             self.port.write("INIT")
         else:
-            # READ? = ABORt; INIT; FETCh?. triggers and waits for measurement completion before buffering the
-            # result. Avoids the race where FETCh? could return the previous reading while INIT is in progress.
-            self.port.write("READ?")
+            # READ? is ABORt; INIT; FETCh?, and its fetch does not in fact wait for the source-measure
+            # cycle to finish. On the low current ranges that produced replies assembled from two
+            # acquisitions, one element carried over from the previous reading and one new, so a point
+            # was measured twice at the same source level and every later row carried the previous
+            # setvalue. Storing into the buffer instead lets read_result wait for a reading that has
+            # actually been stored rather than trust the timing of the fetch.
+            self.port.write(":ABORt")  # back to idle, so that arming the buffer below takes effect
+            self.port.write(":TRACe:CLEar")
+            self.port.write(":TRACe:FEED:CONTrol NEXT")  # store the next reading, then stop
+            self.port.write(":INITiate")
 
     def request_result(self) -> None:
         """Write command to ask the instrument to send measured data."""
@@ -408,6 +418,20 @@ class Device(EmptyDevice):
             cycle_time = self.speed / LINE_FREQUENCY * self.averages + self.source_delay_seconds
             timeout = max(cycle_time * MAX_CYCLES_PER_READING, 60)  # seconds
             time_start = time.monotonic()
+
+            # measure() cleared the buffer before triggering, so a stored reading can only be one
+            # taken after the new source level was applied.
+            while True:
+                if self.is_run_stopped():
+                    return
+                if self.get_stored_reading_count() >= 1:
+                    break
+                if time.monotonic() - time_start > timeout:
+                    msg = f"No reading was stored within {timeout:.1f} s"
+                    raise TimeoutError(msg)
+                time.sleep(0.1)
+
+            self.port.write(":TRACe:DATA?")
 
             buffer = ""
             while True:
@@ -503,6 +527,28 @@ class Device(EmptyDevice):
 
         else:
             self.port.write(f":SENSe:CURRent:RANGe {self.current_measurement_ranges[range_value]}")
+
+    def configure_measurement_buffer(self) -> None:
+        """Prepare the one-reading buffer that measure() stores into.
+
+        The feed cannot be changed while storage is active (manual 17-101), so storage is disabled
+        first.
+        """
+        self.port.write(":TRACe:FEED:CONTrol NEVer")
+        self.port.write(":TRACe:FEED SENSe1")  # store raw readings, not Calc results
+        self.port.write(":TRACe:POINts 1")
+        self.port.write(":TRACe:CLEar")
+
+    def get_stored_reading_count(self) -> int:
+        """Return how many readings the buffer holds, or 0 if the instrument did not answer.
+
+        An unanswered query is not an error here: the caller polls until the reading appears or
+        until its own timeout expires.
+        """
+        try:
+            return int(float(self.port.query(":TRACe:POINts:ACTual?")))
+        except Exception:
+            return 0
 
     def set_source_delay(self, delay: str = "Auto") -> None:
         """Set the delay between applying a new source level and starting the measurement.
