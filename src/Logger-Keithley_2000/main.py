@@ -4,19 +4,19 @@
 # find those in the corresponding folders or contact the maintainer.
 #
 # MIT License
-# 
-# Copyright (c) 2020 Axel Fischer (sweep-me.net)
-# 
+#
+# Copyright (c) 2020-2026 SweepMe! GmbH (sweep-me.net)
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -25,224 +25,245 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# SweepMe! driver
+# * Module: Logger
+# * Instrument: Keithley 2000
 
-# SweepMe! device class
-# Type: Logger
-# Device: Keithley 2000
+"""SweepMe! driver for the Keithley 2000 digital multimeter."""
 
+from __future__ import annotations
 
-from EmptyDeviceClass import EmptyDevice
+from typing import Any
+
+from pysweepme.EmptyDeviceClass import EmptyDevice
+
 
 class Device(EmptyDevice):
+    """Driver for the Keithley 2000 digital multimeter."""
 
-    description = """
-                <p>This driver is now in state 'beta'. It can be used for simple logging purposes and only a couple of options are supported.</p>
-                <p>&nbsp;</p>
-                <p><strong>Range<br /></strong>At the moment, auto range is set for all measurement modes</p>
-                <p><strong>NPLC<br /></strong>Number of power line cycles can be set between "Fast (0.1)" to "Slow (10.0)".</p>
-                <p><strong>Temperature unit</strong><br />The temperature unit can be &deg;C, K, or &deg;F</p>
-                <p><strong>Display</strong><br />The display can be switched off during the measurement which can lead to faster measurements.</p>
-                <p><strong>Known issues</strong><br />Measurement modes such as "Voltage AC", "Current AC", or "Resistance" leads to errors and further bugfixing is needed. When display is switched off, it sometimes does not switch on again although an appropriate command is sent.</p>
-                  """
-
-    def __init__(self):
-        
+    def __init__(self) -> None:
+        """Initialize the driver class and the instrument parameters."""
         EmptyDevice.__init__(self)
-        
+
         self.shortname = "Keithley2000"
-        
+
         self.port_manager = True
         self.port_types = ["COM", "GPIB"]
-        
-        self.port_properties = { 
-                                    "timeout": 2,
-                                    "EOL": "\r", 
-                                    "baudrate": 9600, # factory default
-                                }
-                                 
-        
+
+        self.port_properties = {
+            # AC functions with slow rate need 1.2 s per reading, auto range can need several readings
+            "timeout": 10,
+            "EOL": "\r",
+            "baudrate": 9600,  # factory default
+        }
+
         # this dictionary connects modes to commands. The modes will be displayed to the user in the field 'Mode'
         self.modes = {
-                        "Voltage DC":   "VOLT:DC",   
-                        "Voltage AC":   "VOLT:AC",  
-                        "Current DC":   "CURR:DC",  
-                        "Current AC":   "CURR:AC", 
-                        "Resistance":   "RES",     
-                        "FResistance":  "FRES",    
-                        "Frequency":    "FREQ",    
-                        "Period":       "PER",     
-                        "Temperature":  "TEMP",     
-                        "Diode":        "DIOD",
-                        "Continuity":   "CONT",    
-                        
-                        }
-                     
-        # this dictionary sets the unit of each mode
-        self.mode_units = {
-                        "Voltage DC":   "V", 
-                        "Voltage AC":   "V", 
-                        "Current DC":   "A", 
-                        "Current AC":   "A", 
-                        "Resistance":   "Ohm", 
-                        "FResistance":  "Ohm", 
-                        "Frequency":    "Hz",
-                        "Period":       "s",
-                        "Temperature":  "K", 
-                        "Continuity":   "", 
-                        "Diode":        "",
-                        }
-          
-        # a list of available resolutions as they can be sent to the instrument
-        self.resolutions = [
-                            "0.1",      # i.e., 100.0 V (3½ digits)
-                            "0.01",     # i.e., 10.00 V (3½ digits)
-                            "0.001",    # i.e., 1.000 V (3½ digits)
-                            "0.0001",   # i.e., 1.0000 V (4½ digits)
-                            "0.00001",  # i.e., 1.00000 V (5½ digits)
-                            "0.000001", # i.e., 1.000000 V (6½ digits)
-                            ]
-                 
-        # a dictionary of trigger types and their corresponding commands. The trigger types will be shown in the GUI field 'Trigger'
-        self.trigger_types =    {
-                                "Immediate": "IMM",
-                                # "Timer":     "TIM",
-                                # "Manual":    "MAN", 
-                                "Internal":  "BUS",
-                                # "External":  "EXT",
-                                }
-                                
-        self.nplc_types = {
-                                "Fastest (0.01)": 0.01,
-                                "Fast (0.1)"  : 0.1,
-                                "Medium (1.0)": 1.0,
-                                "Slow (10.0)" : 10.0,
-                            }   
-                            
-                                
-                                                                 
-    def set_GUIparameter(self):
-        
-        GUIparameter = {
-                        "Mode" : list(self.modes.keys()),
-                        #"Resolution": self.resolutions,
-                        # "Range": ["1", "2"],
-                        #"Channel": ["%i-%02d" % (S, CH) for S in range(1,3,1) for CH in range(1,11,1)],
-                        #"Trigger": list(self.trigger_types.keys()),
-                        #"Average": "1",
-                        
-                        "NPLC": list(self.nplc_types.keys()),
-                        "Range": ["Auto"],
-                        "Display": ["On", "Off"],
-                        
-                        "Temperature unit": ["°C", "K", "°F"],
-                        }
-                        
-        return GUIparameter
-                                 
-    def get_GUIparameter(self, parameter = {}):
-    
-        #print()
-        #print(parameter)
-    
-        self.mode = parameter['Mode']
-        #self.resolution = parameter['Resolution']
-        #self.clist = parameter['Channel'].replace(" ", "").replace("-", "").split(",")
-        #self.trigger_type = parameter['Trigger']
-            
-        self.range = parameter['Range']
-        self.nplc = parameter['NPLC'].replace("(", "").replace(")", "").split()[-1]
-        self.display = parameter['Display']
-        
-        self.temperature_unit = str(parameter["Temperature unit"])
-        
-        self.port_string = parameter["Port"]
-        
-        #average = int(parameter['Average'])            
+            "Voltage DC": "VOLT:DC",
+            "Voltage AC": "VOLT:AC",
+            "Current DC": "CURR:DC",
+            "Current AC": "CURR:AC",
+            "Resistance": "RES",
+            "FResistance": "FRES",
+            "Frequency": "FREQ",
+            "Period": "PER",
+            "Temperature": "TEMP",
+            "Diode": "DIOD",
+            "Continuity": "CONT",
+        }
 
-        # here, the variables and units are defined, based on the selection of the user
-        # we have as many variables as channels are selected
-        self.variables = [self.mode]  # we add the channel name to each variable, e.g "Voltage DC@1-03"
-        
-        if "Temperature" in self.mode:
+        # this dictionary sets the unit of each mode, the temperature unit is chosen by the user
+        self.mode_units = {
+            "Voltage DC": "V",
+            "Voltage AC": "V",
+            "Current DC": "A",
+            "Current AC": "A",
+            "Resistance": "Ohm",
+            "FResistance": "Ohm",
+            "Frequency": "Hz",
+            "Period": "s",
+            "Diode": "V",
+            "Continuity": "Ohm",
+        }
+
+        # the integration time cannot be set for frequency, period, diode test, and continuity
+        self.nplc_modes = [
+            "Voltage DC",
+            "Voltage AC",
+            "Current DC",
+            "Current AC",
+            "Resistance",
+            "FResistance",
+            "Temperature",
+        ]
+
+        # auto range is only available for voltage, current, and resistance
+        self.autorange_modes = ["Voltage DC", "Voltage AC", "Current DC", "Current AC", "Resistance", "FResistance"]
+
+        self.nplc_types = {
+            "Fastest (0.01)": 0.01,
+            "Fast (0.1)": 0.1,
+            "Medium (1.0)": 1.0,
+            "Slow (10.0)": 10.0,
+        }
+
+        self.temperature_units = ["°C", "K", "°F"]
+
+        # GUI parameters
+        self.port_string: str = ""
+        self.mode: str = "Voltage DC"
+        self.nplc: float = 1.0
+        self.display: str = "On"
+        self.temperature_unit: str = "°C"
+
+        # measured value
+        self.value_measured: float = float("nan")
+
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        """Return the GUI parameters and their options depending on the current selection."""
+        mode = parameters.get("Mode", "Voltage DC")
+
+        new_parameters: dict[str, Any] = {
+            "Mode": list(self.modes.keys()),
+        }
+
+        if mode in self.nplc_modes:
+            new_parameters["NPLC"] = list(self.nplc_types.keys())
+
+        new_parameters.update(
+            {
+                "Range": ["Auto"],
+                "Display": ["On", "Off"],
+            },
+        )
+
+        if mode == "Temperature":
+            new_parameters["Temperature unit"] = self.temperature_units
+
+        return new_parameters
+
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Store the GUI parameters selected by the user and update the returned variables."""
+        self.port_string = parameters.get("Port", "")
+        self.mode = parameters.get("Mode", "Voltage DC")
+        if self.mode in self.nplc_modes:
+            self.nplc = self.nplc_types.get(parameters.get("NPLC", "Medium (1.0)"), 1.0)
+        self.display = parameters.get("Display", "On")
+
+        self.variables = [self.mode]
+
+        if self.mode == "Temperature":
+            self.temperature_unit = parameters.get("Temperature unit", "°C")
             self.units = [self.temperature_unit]
         else:
             self.units = [self.mode_units[self.mode]]
-            
-        self.plottype =  [True]  # True to plot data
-        self.savetype =  [True]  # True to save data
 
-                
-    def initialize(self):
-    
-        #self.port.write("*IDN?")
-        #print(self.port.read())
-    
-        # once at the beginning of the measurement
-        self.port.write("*RST")
-        
-        self.port.write("*CLS") # reset all values
-        
-        self.port.write("SYST:BEEP:STAT OFF")     # control-Beep off
+        self.plottype = [True]
+        self.savetype = [True]
 
-        ## does not seem to work although it should: results in error -113 undefined header
-        #if self.port_string.startswith("COM"):
-        #     self.port.write(":SYST:RWL")
+    def initialize(self) -> None:
+        """Reset the instrument once at the beginning of the measurement."""
+        self.reset()
+        self.clear_status()
+        self.set_beeper(False)
 
-    def deinitialize(self):
-            
-        self.port.write("SYST:BEEP:STAT ON")     # control-Beep on
+        # no instance has configured a measurement function yet
+        self.device_communication[self.port_string] = {"mode": None}
 
-        ## does not seem to work although it should: results in error -113 undefined header
-        #if self.port_string.startswith("COM"):
-        #    self.port.write("SYST:LOC")  # RS-232/COM-port only
+    def deinitialize(self) -> None:
+        """Restore the front panel settings at the end of the measurement."""
+        if self.display == "Off":
+            self.set_display(True)
+        self.set_beeper(True)
 
-    def configure(self):
-        
-        # range = "0"
-        # channels = "(@" + ",".join(self.clist) + ")"        
-        # print("Channels:", channels)
-        
-        ## Mode
-        self.port.write(":SENS:FUNC \"%s\"" % self.modes[self.mode])
-            
-        ## Temperature unit
+    def configure(self) -> None:
+        """Configure the measurement function and the trigger."""
+        self.configure_mode()
+
+        if self.display == "Off":
+            self.set_display(False)
+
+        # needed to use the "READ?" command
+        self.set_continuous_initiation(False)
+
+    def unconfigure(self) -> None:
+        """Switch the display on again if it was switched off."""
+        if self.display == "Off":
+            self.set_display(True)
+
+    def measure(self) -> None:
+        """Trigger a measurement and read the result.
+
+        Triggering and reading are done in the same phase, so that several driver instances sharing the same
+        instrument cannot interleave their requests.
+        """
+        # another driver instance on the same instrument might have changed the measurement function
+        if self.device_communication[self.port_string]["mode"] != self.mode:
+            self.configure_mode()
+
+        self.value_measured = self.read_value()
+
+    def call(self) -> list[float]:
+        """Return the measured value."""
+        return [self.value_measured]
+
+    def configure_mode(self) -> None:
+        """Set the measurement function including its temperature unit, integration time, and range."""
+        self.set_function(self.modes[self.mode])
+
         if self.mode == "Temperature":
-            self.port.write(":UNIT:TEMP %s" % self.temperature_unit.replace("°", ""))
+            self.set_temperature_unit(self.temperature_unit.replace("°", ""))
 
-        ## Speed    
-        self.port.write(":SENS:%s:NPLC %s" % (self.modes[self.mode], str(self.nplc)))
-        
-        ## Range
-        if not self.mode in ["Temperature", "Continuity", "Diode"]:
-            self.port.write(":SENS:%s:RANG:AUTO ON" % (self.modes[self.mode]))
+        if self.mode in self.nplc_modes:
+            self.set_nplc(self.modes[self.mode], self.nplc)
 
-        ## Display
-        if self.display == "Off":
-            self.port.write(":DISP:ENAB OFF")
-            
-        ## Trigger
-        #print("Configuring trigger")
-        self.port.write("INIT:CONT OFF")  # needed to use "READ?" command
-        #self.port.write("TRIG:SOUR %s" % self.trigger_types[self.trigger_type])
-        
-        ## Average
-        # to be added
-        
-     
-    def unconfigure(self):
-        if self.display == "Off":
-            self.port.write(":DISP:ENAB ON")  # We switch Display on again if it was switched off
-     
-            
-    def measure(self): 
-        self.port.write("READ?")  # triggers a new measurement                      
+        if self.mode in self.autorange_modes:
+            self.set_autorange(self.modes[self.mode], True)
 
-    def call(self):
-        answer = self.port.read()  # here we read the response from the "READ?" request in 'measure'
-        #print("Response to READ? command:", answer)
+        self.device_communication[self.port_string]["mode"] = self.mode
 
-        return [float(answer)] 
-        
-        
-    """
-    """
+    """ here, communication commands are wrapped into python convenience functions """
+
+    def get_identification(self) -> str:
+        """Return the identification string of the instrument."""
+        return str(self.port.query("*IDN?"))
+
+    def reset(self) -> None:
+        """Reset the instrument to its default settings."""
+        self.port.write("*RST")
+
+    def clear_status(self) -> None:
+        """Clear the status registers and the error queue."""
+        self.port.write("*CLS")
+
+    def set_beeper(self, state: bool) -> None:
+        """Switch the beeper on or off."""
+        self.port.write(f"SYST:BEEP:STAT {'ON' if state else 'OFF'}")
+
+    def set_display(self, state: bool) -> None:
+        """Switch the front panel display on or off."""
+        self.port.write(f":DISP:ENAB {'ON' if state else 'OFF'}")
+
+    def set_function(self, function: str) -> None:
+        """Set the measurement function, e.g. 'VOLT:DC'."""
+        self.port.write(f':SENS:FUNC "{function}"')
+
+    def set_temperature_unit(self, unit: str) -> None:
+        """Set the temperature unit, i.e. 'C', 'K', or 'F'."""
+        self.port.write(f":UNIT:TEMP {unit}")
+
+    def set_nplc(self, function: str, nplc: float) -> None:
+        """Set the integration time in number of power line cycles for the given function."""
+        self.port.write(f":SENS:{function}:NPLC {nplc}")
+
+    def set_autorange(self, function: str, state: bool) -> None:
+        """Switch auto range on or off for the given function."""
+        self.port.write(f":SENS:{function}:RANG:AUTO {'ON' if state else 'OFF'}")
+
+    def set_continuous_initiation(self, state: bool) -> None:
+        """Switch continuous initiation of the trigger model on or off."""
+        self.port.write(f"INIT:CONT {'ON' if state else 'OFF'}")
+
+    def read_value(self) -> float:
+        """Trigger a single measurement and return the reading."""
+        return float(self.port.query("READ?"))
