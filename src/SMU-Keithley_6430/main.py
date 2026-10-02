@@ -231,6 +231,10 @@ class Device(EmptyDevice):
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
+        # A run that failed mid-exchange can leave an unread answer in the input buffer, which
+        # would then be handed to the first read of this run. Start from a known-empty buffer.
+        self.port.clear()
+
         self.port.write("*RST")  # reset instrument state
         self.port.write(":SYSTem:CLEar")  # clear error queue
         self.port.write(":OUTPut:STATe OFF")  # explicit safety
@@ -416,38 +420,23 @@ class Device(EmptyDevice):
             # 100 ms, so a generous limit neither slows a measurement down nor makes a run harder
             # to abort; it only keeps a slow sweep from being killed.
             cycle_time = self.speed / LINE_FREQUENCY * self.averages + self.source_delay_seconds
-            timeout = max(cycle_time * MAX_CYCLES_PER_READING, 60)  # seconds
-            time_start = time.monotonic()
+            deadline = time.monotonic() + max(cycle_time * MAX_CYCLES_PER_READING, 60)
 
             # measure() cleared the buffer before triggering, so a stored reading can only be one
             # taken after the new source level was applied.
             while True:
-                if self.is_run_stopped():
-                    return
-                if self.get_stored_reading_count() >= 1:
+                stored = self.query_and_wait(":TRACe:POINts:ACTual?", deadline)
+                if stored is None:
+                    return  # run was stopped
+                if int(float(stored)) >= 1:
                     break
-                if time.monotonic() - time_start > timeout:
-                    msg = f"No reading was stored within {timeout:.1f} s"
-                    raise TimeoutError(msg)
                 time.sleep(0.1)
 
-            self.port.write(":TRACe:DATA?")
+            reply = self.query_and_wait(":TRACe:DATA?", deadline, min_fields=5)
+            if reply is None:
+                return  # run was stopped
 
-            buffer = ""
-            while True:
-                if self.is_run_stopped():
-                    return
-                try:
-                    buffer += self.port.read()
-                except Exception:
-                    pass  # nothing arrived yet, keep polling so the run stays abortable
-                values = buffer.split(",")
-                if len(values) >= 5:  # VOLT, CURR, RES, TIME, STATUS
-                    break
-                if time.monotonic() - time_start > timeout:
-                    msg = f"Failed to read result within {timeout:.1f} s"
-                    raise TimeoutError(msg)
-                time.sleep(0.1)
+            values = reply.split(",")  # VOLT, CURR, RES, TIME, STATUS
 
             self.measured_voltage = float(values[0])
             self.measured_current = float(values[1])
@@ -539,16 +528,35 @@ class Device(EmptyDevice):
         self.port.write(":TRACe:POINts 1")
         self.port.write(":TRACe:CLEar")
 
-    def get_stored_reading_count(self) -> int:
-        """Return how many readings the buffer holds, or 0 if the instrument did not answer.
+    def query_and_wait(self, command: str, deadline: float, min_fields: int = 1) -> str | None:
+        """Send a query once and wait for a complete answer. Returns None if the run was stopped.
 
-        An unanswered query is not an error here: the caller polls until the reading appears or
-        until its own timeout expires.
+        The query is deliberately not re-sent while an answer is still outstanding. The instrument
+        answers every copy of a query it receives, so re-sending one that is merely slow leaves the
+        extra answers queued, and a later read then returns one of them instead of what it asked
+        for - which is how a ':TRACe:DATA?' came back as '1' and broke the parsing.
+
+        Only the read is retried, so a run stays abortable while the instrument is busy with a long
+        source-delay-plus-measure cycle, during which it does not answer queries at all.
         """
-        try:
-            return int(float(self.port.query(":TRACe:POINts:ACTual?")))
-        except Exception:
-            return 0
+        self.port.write(command)
+
+        answer = ""
+        while not self.is_run_stopped():
+            try:
+                answer += self.port.read()
+            except Exception:
+                pass  # not answered yet; waiting is correct here, re-sending is not
+
+            if answer.strip() and answer.count(",") >= min_fields - 1:
+                return answer
+
+            if time.monotonic() > deadline:
+                msg = f"No complete answer to '{command}' within the timeout"
+                raise TimeoutError(msg)
+            time.sleep(0.1)
+
+        return None
 
     def set_source_delay(self, delay: str = "Auto") -> None:
         """Set the delay between applying a new source level and starting the measurement.
