@@ -1,0 +1,31 @@
+{
+  "description": "EXAMPLE FILE, do not use it for a measurement. Polarization change of a fiber, calculated from three reference states. The transformation matrix M = S_Ist * S_Soll^-1 maps a normalized Stokes vector (S1, S2, S3) at the instrument output onto the one at the fiber end: s_fiber_end = M * s_instrument. The instrument is set to M^-1 * s_target. Required keys are 'calibrations' and, per calibration, 'wavelength_nm' and 'transformation_matrix'. All other keys are optional information.",
+  "created": "2026-10-01T08:00:00",
+  "calibrations": [
+    {
+      "wavelength_nm": 1550.0,
+      "transformation_matrix": [
+        [0.402382951, -0.859777369, -0.315957955],
+        [0.659844874, 0.510341296, -0.550070008],
+        [0.63458073, 0.018293089, 0.773041756]
+      ],
+      "points": [
+        {
+          "setpoint": [1.0, 0.0, 0.0],
+          "measured": [0.402383, 0.659845, 0.634581],
+          "dop_percent": 99.6
+        },
+        {
+          "setpoint": [0.0, 1.0, 0.0],
+          "measured": [-0.859777, 0.510341, 0.018293],
+          "dop_percent": 99.7
+        },
+        {
+          "setpoint": [0.0, 0.0, 1.0],
+          "measured": [-0.315958, -0.55007, 0.773042],
+          "dop_percent": 99.3
+        }
+      ]
+    }
+  ]
+}
