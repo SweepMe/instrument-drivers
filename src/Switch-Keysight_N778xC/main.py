@@ -31,12 +31,22 @@
 
 from __future__ import annotations
 
+import datetime
+import json
 import math
 import time
+from pathlib import Path
 from typing import Any
 
+import numpy as np
 from pysweepme import debug
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+# Maximum deviation between the wavelength of a correction file and the wavelength set in the GUI
+CORRECTION_WAVELENGTH_TOLERANCE_NM = 0.5
+
+# A warning is printed to the Debug widget if the correction file is older than this
+CORRECTION_MAXIMUM_AGE = datetime.timedelta(days=1)
 
 
 class Device(EmptyDevice):
@@ -77,17 +87,44 @@ class Device(EmptyDevice):
         # Maximum deviation between the requested and the read back Stokes parameters
         self.sop_tolerance: float = 1e-3
 
-    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+        # Correction of the polarization change of the fiber between the instrument and the device under test.
+        # The transformation matrix M maps a Stokes vector at the instrument output onto the Stokes vector at the
+        # fiber end: s_fiber_end = M * s_instrument. None means that no correction is applied.
+        self.correction: str = "None"
+        self.correction_file: str = ""
+        self.transformation_matrix: np.ndarray | None = None
+        self.inverse_matrix: np.ndarray | None = None
+
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
-        return {
+        gui_parameters: dict[str, Any] = {
             "SweepMode": ["SOP", "Waveguide Relative"],
             "Wavelength in nm": "1550.0",
+            "Correction": ["None", "From file"],
         }
+
+        if parameters.get("Correction", "None") == "From file":
+            # The file dialog starts at the example file, which documents the expected format
+            default_file = Path(self.get_folder("SELF")) / "examples" / "correction_example.json"
+            gui_parameters["Correction file"] = Path(parameters.get("Correction file") or default_file)
+
+        return gui_parameters
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.mode = parameters.get("SweepMode", "SOP")
         self.wavelength = float(parameters.get("Wavelength in nm", "1550.0"))
+        self.correction = parameters.get("Correction", "None")
+        self.correction_file = str(parameters.get("Correction file", ""))
+
+        # With a correction, the SOP at the fiber end is returned and additionally the SOP set at the instrument
+        if self.correction == "From file":
+            self.variables = ["SOP", "Applied SOP"]
+        else:
+            self.variables = ["SOP"]
+        self.units = [""] * len(self.variables)
+        self.plottype = [False] * len(self.variables)
+        self.savetype = [True] * len(self.variables)
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -105,6 +142,14 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
+        # The correction file is checked first, so that an invalid file stops the run before the instrument changes
+        if self.correction == "From file":
+            self.transformation_matrix = self.load_correction_file(self.correction_file)
+            self.inverse_matrix = np.linalg.inv(self.transformation_matrix)
+        else:
+            self.transformation_matrix = None
+            self.inverse_matrix = None
+
         # Polarimeter commands are blocked while the stabilizer is running
         self.set_stabilization(state=False)
         self.set_polarimeter_wavelength(self.wavelength)
@@ -126,12 +171,30 @@ class Device(EmptyDevice):
             msg = f"Invalid mode '{self.mode}'. Expected 'SOP' or 'Waveguide Relative'."
             raise ValueError(msg)
 
+        # The requested SOP refers to the fiber end. The instrument has to set s_Synth = M^-1 * s_Ziel, which the
+        # fiber turns into the requested SOP. set_sop() normalizes the vector, as the instrument expects it.
+        if self.inverse_matrix is not None:
+            stokes_vector = tuple(self.inverse_matrix @ np.array(stokes_vector, dtype=float))
+
         self.set_sop(*stokes_vector)
 
-    def call(self) -> str:
+    def call(self) -> str | list[str]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        sop = self.get_sop()
+        applied_sop = self.get_sop()
 
+        if self.transformation_matrix is None:
+            return self.format_sop(applied_sop)
+
+        # The SOP at the fiber end is M * s_Synth, normalized to unit length like the requested SOP
+        sop_at_fiber_end = self.transformation_matrix @ np.array(applied_sop, dtype=float)
+        sop_at_fiber_end = sop_at_fiber_end / np.linalg.norm(sop_at_fiber_end)
+
+        # Rounding removes the numerical noise of the transformation, adding 0.0 turns -0.0 into 0.0
+        sop_at_fiber_end = [round(float(parameter), 6) + 0.0 for parameter in sop_at_fiber_end]
+        return [self.format_sop(sop_at_fiber_end), ";".join(str(parameter) for parameter in applied_sop)]
+
+    def format_sop(self, sop: list[float]) -> str:
+        """Return the SOP in the format of the selected SweepMode."""
         if self.mode == "Waveguide Relative":
             for polarization, stokes_vector in self.waveguide_polarizations.items():
                 if self.is_matching_sop(sop, stokes_vector):
@@ -141,6 +204,63 @@ class Device(EmptyDevice):
             return ""
 
         return ";".join(str(parameter) for parameter in sop)
+
+    """ here, the correction of the fiber polarization change is handled """
+
+    def load_correction_file(self, file_path: str) -> np.ndarray:
+        """Load the transformation matrix M for the set wavelength from a correction file and check that it is valid.
+
+        See examples/correction_example.json for the format. Only 'calibrations', and in each calibration the keys
+        'wavelength_nm' and 'transformation_matrix', are required.
+        """
+        path = Path(file_path)
+        if not path.is_file():
+            msg = f"Correction file '{file_path}' does not exist."
+            raise FileNotFoundError(msg)
+
+        with path.open(encoding="utf-8") as file:
+            content = json.load(file)
+
+        try:
+            calibrations = content["calibrations"]
+            calibration = min(calibrations, key=lambda entry: abs(float(entry["wavelength_nm"]) - self.wavelength))
+            calibration_wavelength = float(calibration["wavelength_nm"])
+            transformation_matrix = np.array(calibration["transformation_matrix"], dtype=float)
+        except (KeyError, TypeError, ValueError) as e:
+            msg = (
+                f"Correction file '{file_path}' has an invalid format. It needs a list 'calibrations' with the keys "
+                f"'wavelength_nm' and 'transformation_matrix'. See examples/correction_example.json of this driver."
+            )
+            raise ValueError(msg) from e
+
+        if abs(calibration_wavelength - self.wavelength) > CORRECTION_WAVELENGTH_TOLERANCE_NM:
+            msg = (
+                f"Correction file '{file_path}' has no calibration for {self.wavelength} nm. The closest one is at "
+                f"{calibration_wavelength} nm."
+            )
+            raise ValueError(msg)
+
+        if transformation_matrix.shape != (3, 3):
+            msg = f"The transformation matrix in correction file '{file_path}' must have 3x3 elements."
+            raise ValueError(msg)
+
+        # M^-1 is applied to the requested SOP, so M must be invertible
+        if np.linalg.matrix_rank(transformation_matrix) < 3:  # noqa: PLR2004
+            msg = f"The transformation matrix in correction file '{file_path}' is not invertible."
+            raise ValueError(msg)
+
+        created = content.get("created")
+        if created:
+            try:
+                # The calibration script writes the local time without time zone
+                age = datetime.datetime.now() - datetime.datetime.fromisoformat(created)  # noqa: DTZ005
+            except ValueError:
+                debug(f"N778xC: cannot read the creation time '{created}' of the correction file.")
+            else:
+                if age > CORRECTION_MAXIMUM_AGE:
+                    debug(f"N778xC: the correction file '{file_path}' was created {age.days} day(s) ago.")
+
+        return transformation_matrix
 
     """ here, communication commands are wrapped into python convenience functions """
 

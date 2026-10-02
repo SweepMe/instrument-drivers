@@ -47,20 +47,55 @@ external feedback signal.
 - **Wavelength in nm**: the wavelength of the polarimeter. The polarimeter is wavelength calibrated, so this
   must match the wavelength of your source for the SOP to be measured and stabilized correctly. It is applied
   in `configure()`, as the preset at the start of the run restores the default wavelength.
+- **Correction**: `None` sets the SOP at the output of the instrument. `From file` sets the SOP at the end of
+  the fiber that connects the instrument to your device, see [Fiber correction](#fiber-correction).
+- **Correction file**: only shown for `From file`. Path to the correction file (`.json`).
+
+---
+
+### Fiber correction:
+
+A fiber changes the SOP on its way from the instrument to the device under test. This change is described by a
+3x3 transformation matrix M that acts on the normalized Stokes components S1, S2, S3:
+
+`s_fiber_end = M * s_instrument`
+
+M is determined with three linearly independent, known SOPs, e.g. horizontal `1;0;0`, linear 45° `0;1;0` and right
+circular `0;0;1`. The set SOPs form the columns of `S_Soll`, the SOPs measured at the fiber end the columns of
+`S_Ist`, and `M = S_Ist * S_Soll^-1`.
+
+With **Correction** `From file`, the SOP entered as sweep value (or `TE`/`TM`) refers to the fiber end. The driver
+sends `s_Synth = M^-1 * s_Ziel` to the instrument, normalized to unit length as the instrument expects, so that
+the fiber turns it into the requested SOP. M only holds for one wavelength and fiber position and drifts with
+temperature, so the calibration should be repeated regularly.
+
+The correction file can be created with the CustomFunction script **Polarization_Calibration**, which calculates
+M from the SOPs measured with a polarimeter (e.g. Thorlabs PAX1000) at the fiber end, or with any other tool. The
+format is shown in `examples/correction_example.json`, whose matrix is only an example. Required are:
+
+- `calibrations`: a list with one entry per wavelength, each with
+  - `wavelength_nm`: wavelength of the calibration in nm
+  - `transformation_matrix`: M as list of three rows, e.g. `[[1, 0, 0], [0, 1, 0], [0, 0, 1]]` for no correction
+
+All other keys (`description`, `created`, `points`) are optional information. If `created` is given in ISO format
+(e.g. `2026-10-01T08:00:00`) and the file is older than one day, a message is printed to the Debug widget (F2).
+
+At the start of the run the driver checks that a calibration exists within 0.5 nm of **Wavelength in nm** (the
+closest one is used) and that M has 3x3 elements and can be inverted.
 
 ---
 
 ### Measurement Output:
 
-The driver returns one variable:
-
-- **SOP**: the target SOP of the stabilizer, read back from the instrument.
+- **SOP**: the SOP read back from the instrument (the target SOP of the stabilizer). With a correction, it is
+  transformed to the fiber end, i.e. it is the SOP that was requested.
   - In **SOP** mode the value is the normalized Stokes vector in the same `S1;S2;S3` format that is used for
     the input.
-  - In **Waveguide Relative** mode the value is `TE` or `TM`. If the read back Stokes vector matches neither,
-    an empty string is returned and a message is printed to the Debug widget (F2).
+  - In **Waveguide Relative** mode the value is `TE` or `TM`. If the Stokes vector matches neither, an empty
+    string is returned and a message is printed to the Debug widget (F2).
+- **Applied SOP**: only with a correction. The SOP that is set at the instrument output, as `S1;S2;S3`.
 
-The value is saved but not plotted, as it is a string.
+The values are saved but not plotted, as they are strings.
 
 ---
 
