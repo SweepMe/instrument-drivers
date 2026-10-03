@@ -177,9 +177,7 @@ class Device(EmptyDevice):
         The region is (x1, y1) to (x2, y2) in pixels of the monitor; leave x2 and
         y2 at 0 for the whole monitor. `path` must end with .png and must not
         exist yet - nothing is overwritten. An empty path saves into SweepMe!'s
-        temporary folder under a name with the date and time, which is where a
-        host such as SweepMe!'s Instrument Control takes the file over, e.g.
-        into its running session.
+        temporary folder under a name with the date and time.
         """
         if path:
             target = os.path.abspath(str(path))
