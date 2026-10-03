@@ -48,7 +48,6 @@ import mss
 import mss.tools
 
 import sys, os
-import time
 
 #from PIL import ImageGrab
 #import win32api
@@ -170,27 +169,30 @@ class Device(EmptyDevice):
             screen = self._monitor(sct, monitor)
         return screen["width"], screen["height"]
 
-    def take_screenshot(self, path: str = "", monitor: int = 1,
+    def take_screenshot(self, path: str, monitor: int = 1,
                         x1: int = 0, y1: int = 0, x2: int = 0, y2: int = 0) -> str:
-        """Save a screenshot as PNG and return the path of the file.
+        """Save a screenshot as PNG at `path` and return the path of the file.
 
-        The region is (x1, y1) to (x2, y2) in pixels of the monitor; leave x2 and
-        y2 at 0 for the whole monitor. `path` must end with .png and must not
-        exist yet - nothing is overwritten. An empty path saves into SweepMe!'s
-        temporary folder under a name with the date and time.
+        `path` is the full path of the file to write, e.g. in the folder of the
+        running session: it must be absolute, end with .png, lie in a folder
+        that exists, and not exist yet - nothing is overwritten. The region is
+        (x1, y1) to (x2, y2) in pixels of the monitor; leave x2 and y2 at 0 for
+        the whole monitor.
         """
-        if path:
-            target = os.path.abspath(str(path))
-            if not target.lower().endswith(".png"):
-                msg = f"path must end with .png, got '{path}'."
-                raise ValueError(msg)
-            if os.path.exists(target):
-                msg = f"'{target}' exists already - a screenshot never overwrites a file."
-                raise FileExistsError(msg)
-        else:
-            stamp = time.strftime("%Y%m%d_%H%M%S")
-            target = os.path.join(self.get_folder("TEMP"),
-                                  f"screenshot_{stamp}_{time.time_ns() % 10**6:06d}.png")
+        target = str(path)
+        if not os.path.isabs(target):
+            msg = f"path must be absolute, e.g. inside the session folder, got '{path}'."
+            raise ValueError(msg)
+        target = os.path.normpath(target)
+        if not target.lower().endswith(".png"):
+            msg = f"path must end with .png, got '{path}'."
+            raise ValueError(msg)
+        if not os.path.isdir(os.path.dirname(target)):
+            msg = f"the folder of '{target}' does not exist."
+            raise FileNotFoundError(msg)
+        if os.path.exists(target):
+            msg = f"'{target}' exists already - a screenshot never overwrites a file."
+            raise FileExistsError(msg)
 
         with mss.mss() as sct:
             screen = self._monitor(sct, monitor)
