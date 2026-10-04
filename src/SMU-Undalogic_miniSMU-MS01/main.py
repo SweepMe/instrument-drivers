@@ -884,7 +884,8 @@ class Device(EmptyDevice):
             channel: Channel number (1 or 2).
 
         Returns:
-            Tuple of (voltage in V, current in A).
+            Tuple of two floats in this order: the first value is the voltage
+            in V, the second value is the current in A.
         """
         response = self._send_command(f"MEAS{channel}:VOLT:CURR?")
         parts = response.split(",")
