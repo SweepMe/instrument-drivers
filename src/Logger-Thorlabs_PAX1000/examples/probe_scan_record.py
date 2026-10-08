@@ -44,12 +44,12 @@ FIELD_LABELS = [
     "int 4  ?",
     "int 5  waveplate count",
     "int 6  ?",
-    "flt 7  azimuth in rad",
-    "flt 8  DOP",
-    "flt 9  ellipticity in rad",
-    "flt 10 power in W",
-    "flt 11 revolution time in s",
-    "flt 12 misalignment",
+    "flt 7  revolution time in s",
+    "flt 8  misalignment",
+    "flt 9  azimuth in rad",
+    "flt 10 ellipticity in rad",
+    "flt 11 DOP",
+    "flt 12 power in W",
 ]
 
 
