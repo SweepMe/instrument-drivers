@@ -77,14 +77,15 @@ SCANS_PER_BASIC_PERIOD = {
 # --- Layout of the "SENS:DATA:LAT?" response ---------------------------------------------------------
 #
 # The instrument answers with 13 comma separated values: seven integers followed by six floats. The
-# field count and the split into 7 integers / 6 floats are certain, as is the meaning of the three
-# floats listed first below. The remaining assignments are derived from the Thorlabs instrument driver
-# and should be confirmed against a real instrument once - see examples/probe_scan_record.py, which
-# prints a raw response together with the interpretation used here.
+# positions of azimuth, ellipticity and DOP were confirmed against a real instrument: with a polarization
+# synthesizer setting the six states +/-S1, +/-S2, +/-S3, the measured Stokes vectors of each pair are
+# 180 deg and of all other pairs 90 deg apart on the Poincare sphere. Revolution time (constant at about
+# 20 ms), misalignment and power follow the order of the Thorlabs instrument driver. See
+# examples/probe_scan_record.py, which prints a raw response together with the interpretation used here.
 #
-# Confirmed: the instrument reports azimuth, ellipticity and DOP. It does NOT report the Stokes
-# parameters; those are calculated from azimuth and ellipticity (see stokes_from_ellipse) and form a
-# unit vector, so DOLP and DOCP have to be scaled with DOP.
+# The instrument reports azimuth, ellipticity and DOP. It does NOT report the Stokes parameters; those
+# are calculated from azimuth and ellipticity (see stokes_from_ellipse) and form a unit vector, so DOLP
+# and DOCP have to be scaled with DOP.
 SCAN_FIELD_COUNT = 13
 SCAN_INTEGER_FIELDS = 7
 
@@ -92,12 +93,12 @@ IDX_SCAN_COUNTER = 0
 IDX_TIMESTAMP = 1
 IDX_WAVEPLATE_COUNT = 5
 
-IDX_AZIMUTH = 7
-IDX_DOP = 8
-IDX_ELLIPTICITY = 9
-IDX_POWER = 10
-IDX_REVOLUTION_TIME = 11
-IDX_MISALIGNMENT = 12
+IDX_REVOLUTION_TIME = 7
+IDX_MISALIGNMENT = 8
+IDX_AZIMUTH = 9
+IDX_ELLIPTICITY = 10
+IDX_DOP = 11
+IDX_POWER = 12
 
 # Optical power below this level is reported as this dBm value instead of -inf.
 MINIMUM_DBM = -200.0
