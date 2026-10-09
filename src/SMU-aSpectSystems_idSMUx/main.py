@@ -212,11 +212,7 @@ class Device(EmptyDevice):
             "ListSweepType": ["Sweep", "Custom"],
             "ListSweepStart": 0.0,
             "ListSweepEnd": 1.0,
-            "ListSweepStepPointsType": [
-                "Step width:",
-                "Points (lin.):",
-                "Points (log.):",
-            ],
+            "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
             "ListSweepStepPointsValue": 0.1,
             "ListSweepDual": False,
             "ListSweepDelaytime": 0.0,
@@ -274,9 +270,7 @@ class Device(EmptyDevice):
                 self.list_sweep_values = np.linspace(start, end, int(step_points_value))
 
             elif step_points_type.startswith("Points (log.)"):
-                self.list_sweep_values = np.logspace(
-                    np.log10(start), np.log10(end), int(step_points_value)
-                )
+                self.list_sweep_values = np.logspace(np.log10(start), np.log10(end), int(step_points_value))
 
             else:
                 msg = f"Unknown step points type: {step_points_type}"
@@ -284,9 +278,7 @@ class Device(EmptyDevice):
 
         elif list_sweep_type == "Custom":
             custom_values = parameter["ListSweepCustomValues"]
-            self.list_sweep_values = np.array(
-                [float(value) for value in custom_values.split(",")]
-            )
+            self.list_sweep_values = np.array([float(value) for value in custom_values.split(",")])
 
         else:
             msg = f"Unknown list sweep type: {list_sweep_type}"
@@ -294,9 +286,7 @@ class Device(EmptyDevice):
 
         # Add the returning values in reverse order to the list
         if parameter["ListSweepDual"]:
-            self.list_sweep_values = np.append(
-                self.list_sweep_values, self.list_sweep_values[::-1]
-            )
+            self.list_sweep_values = np.append(self.list_sweep_values, self.list_sweep_values[::-1])
 
         if len(self.list_sweep_values) > 52:
             msg = f"Number of points {len(self.list_sweep_values)} is too high. Maximum is 52."
@@ -333,9 +323,7 @@ class Device(EmptyDevice):
             - "List results": dict[str, list[float], Dictionary with channel name as key and list of measured values as
             value.
         """
-        self.source_mode = (
-            "Voltage" if self.source_identifier.startswith("Voltage") else "Current"
-        )
+        self.source_mode = ("Voltage" if self.source_identifier.startswith("Voltage") else "Current")
 
         if self.identifier in self.device_communication:
             self.board_model = self.device_communication[self.identifier]["Board"]
@@ -428,14 +416,8 @@ class Device(EmptyDevice):
         if is_in_list_sweep:
             # Set the measurement mode - also for the list master itself
             # Maybe this can be done simpler, but it works
-            measurement_mode = (
-                MeasurementMode.isense
-                if self.source_mode == "Voltage"
-                else MeasurementMode.vsense
-            )
-            self.board_model.set_measurement_modes(
-                measurement_mode, [self.channel_name]
-            )
+            measurement_mode = MeasurementMode.isense if self.source_mode == "Voltage" else MeasurementMode.vsense
+            self.board_model.set_measurement_modes(measurement_mode, [self.channel_name])
 
             if self.list_role == "List creator":
                 # Check if the number of list points matches the list master
@@ -451,16 +433,12 @@ class Device(EmptyDevice):
                 # If another channel runs a list sweep, this channel must provide a list sweep configuration
                 config = ListSweepChannelConfiguration()
                 config.set_force_values(self.list_sweep_values)
-                self.device_communication[self.identifier]["List creators"][
-                    self.channel_name
-                ] = config
+                self.device_communication[self.identifier]["List creators"][self.channel_name] = config
 
             elif self.list_role not in ("List master", "List creator"):
                 self.list_role = "List receiver"
                 # again, 'configure' can be called repeatedly, so the channel must not be registered twice
-                list_receivers = self.device_communication[self.identifier][
-                    "List receivers"
-                ]
+                list_receivers = self.device_communication[self.identifier]["List receivers"]
                 if self.channel_name not in list_receivers:
                     list_receivers.append(self.channel_name)
 
@@ -468,10 +446,7 @@ class Device(EmptyDevice):
         # Registration must be idempotent: SweepMe! can call 'configure' again without a preceding 'unconfigure',
         # e.g. when a parameter such as the compliance is changed during a measurement. Registering the channel
         # twice would shift the roles of all channels, see 'is_retrieving_data'.
-        active_channel_names = self.device_communication[self.identifier].setdefault(
-            self.identifier_channel_names,
-            [],
-        )
+        active_channel_names = self.device_communication[self.identifier].setdefault(self.identifier_channel_names, [])
 
         # adding channel name as the SMU gets active
         if self.channel.name not in active_channel_names:
@@ -490,9 +465,7 @@ class Device(EmptyDevice):
 
     def unconfigure(self) -> None:
         """Removing channel name if the SMU is no longer active."""
-        active_channel_names = self.device_communication[self.identifier].get(
-            self.identifier_channel_names, []
-        )
+        active_channel_names = self.device_communication[self.identifier].get(self.identifier_channel_names, [])
         if self.channel.name in active_channel_names:
             active_channel_names.remove(self.channel.name)
 
@@ -506,9 +479,7 @@ class Device(EmptyDevice):
         The first registered channel takes this role. The role is derived on demand instead of being stored during
         'configure' so that it passes on automatically when that channel is unconfigured while others keep measuring.
         """
-        active_channel_names = self.device_communication[self.identifier].get(
-            self.identifier_channel_names, []
-        )
+        active_channel_names = self.device_communication[self.identifier].get(self.identifier_channel_names, [])
         return active_channel_names[:1] == [self.channel.name]
 
     def poweron(self) -> None:
@@ -577,16 +548,12 @@ class Device(EmptyDevice):
 
         if self.use_async_readout:
             if self.is_retrieving_data():
-                active_channel_names = self.device_communication[self.identifier][
-                    self.identifier_channel_names
-                ]
+                active_channel_names = self.device_communication[self.identifier][self.identifier_channel_names]
 
                 # The measurement started below covers all channels, so all of them must be autoranged first.
                 self.autorange_active_channels(active_channel_names)
 
-                self.board_model.set_measurement_modes(
-                    MeasurementMode.vsense, active_channel_names
-                )
+                self.board_model.set_measurement_modes(MeasurementMode.vsense, active_channel_names)
                 self.future_v = self.smu.measure_channels_async(
                     sample_count=self.speed_options[self.speed],
                     repetitions=1,
@@ -594,9 +561,7 @@ class Device(EmptyDevice):
                     wait_for_trigger=False,
                 )
 
-                self.board_model.set_measurement_modes(
-                    MeasurementMode.isense, active_channel_names
-                )
+                self.board_model.set_measurement_modes(MeasurementMode.isense, active_channel_names)
                 self.future_i = self.smu.measure_channels_async(
                     sample_count=self.speed_options[self.speed],
                     repetitions=1,
@@ -656,17 +621,10 @@ class Device(EmptyDevice):
                     msg = "idSMUx: Unknown error during measurement"
                     raise Exception(msg)
 
-                self.device_communication[self.identifier]["data"] = [
-                    result_v,
-                    result_i,
-                ]
+                self.device_communication[self.identifier]["data"] = [result_v, result_i]
             else:
-                self.v = self.device_communication[self.identifier]["data"][
-                    0
-                ].get_float_values(self.channel_name)[0]
-                self.i = self.device_communication[self.identifier]["data"][
-                    1
-                ].get_float_values(self.channel_name)[0]
+                self.v = self.device_communication[self.identifier]["data"][0].get_float_values(self.channel_name)[0]
+                self.i = self.device_communication[self.identifier]["data"][1].get_float_values(self.channel_name)[0]
 
     def run_list_sweep(self) -> None:
         """Run the list sweep."""
@@ -711,9 +669,7 @@ class Device(EmptyDevice):
         # Store the results of the other channels in device_communication
         for channel in [*list_receivers, *list_creators.keys()]:
             measurement_results = self.sweep.get_measurement_result(channel)
-            self.device_communication[self.identifier]["List results"][
-                channel
-            ] = measurement_results
+            self.device_communication[self.identifier]["List results"][channel] = measurement_results
 
         self.device_communication[self.identifier]["Time stamp"] = self.sweep.timecode
         self.t = self.sweep.timecode * 1e-6
@@ -725,9 +681,7 @@ class Device(EmptyDevice):
 
         if self.list_role != "None":
             # As list receiver/creator, the measurement data is read out by the List master
-            results = self.device_communication[self.identifier]["List results"][
-                self.channel_name
-            ]
+            results = self.device_communication[self.identifier]["List results"][self.channel_name]
             time_stamp = self.device_communication[self.identifier]["Time stamp"]
 
             # Currently, the list mode reads only one parameter, so the source value is used for the other parameter
