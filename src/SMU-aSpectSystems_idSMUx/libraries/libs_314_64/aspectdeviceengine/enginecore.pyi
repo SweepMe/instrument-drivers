@@ -3,7 +3,2055 @@ import collections.abc
 import numpy
 import numpy.typing
 import typing
-__all__: list[str] = ['AD5522ChannelModel', 'AD5560ChannelModel', 'AnalogChannelModel', 'At', 'ChannelResult', 'CommandReply', 'CommandReplyFuture', 'CommandReplyList', 'CurrentRange', 'Device', 'DeviceList', 'DeviceModel', 'DeviceResult', 'DoubleList', 'DpsCurrentRange', 'FirmwareVersion', 'ForceMode', 'FunctionGeneratorResult', 'FunctionGeneratorType', 'GangMode', 'IdSmu1DeviceModel', 'IdSmu2DeviceModel', 'IdSmuBoardModel', 'IdSmuDeviceModel', 'IdSmuService', 'IdSmuServiceRunner', 'IdSmuServiceRunnerExt', 'IdSmuSettingsService', 'IdqTable', 'IdqTableCell', 'IdqTableGroup', 'IdqTableRow', 'IdqTableRows', 'Iloc', 'ListSweep', 'ListSweepChannelConfiguration', 'LogLevel', 'LogService', 'MapOfStringVectors', 'MeasurementMode', 'ParamterChangedObserverProxy', 'ReadAdcCommandIdSmuResult', 'ReadWriteFpgaIdSmuResult', 'Result', 'RowFilter', 'SequencingCommandResult', 'SmuCurrentRange', 'StringList', 'StringTable', 'check_future_is_ready', 'generate_function_generator_data', 'get_build_number', 'get_git_version']
+__all__: list[str] = ['AD5522ChannelModel', 'AD5560ChannelModel', 'AnalogChannelModel', 'At', 'ChannelResult', 'CommandReply', 'CommandReplyFuture', 'CommandReplyList', 'CurrentRange', 'Device', 'DeviceList', 'DeviceModel', 'DeviceResult', 'DoubleList', 'DpsCurrentRange', 'FirmwareVersion', 'ForceMode', 'FunctionGeneratorResult', 'FunctionGeneratorType', 'GangMode', 'IdSmu1DeviceModel', 'IdSmu2DeviceModel', 'IdSmuBoardModel', 'IdSmuDeviceModel', 'IdSmuService', 'IdSmuServiceRunner', 'IdSmuServiceRunnerExt', 'IdSmuSettingsService', 'IdqTable', 'IdqTableCell', 'IdqTableGroup', 'IdqTableRow', 'IdqTableRows', 'Iloc', 'ListSweep', 'ListSweepChannelConfiguration', 'LogLevel', 'LogService', 'MapOfStringVectors', 'MeasurementMode', 'MeasurementTriggerOptions', 'ParamterChangedObserverProxy', 'ReadAdcCommandIdSmuResult', 'ReadWriteFpgaIdSmuResult', 'Result', 'RowFilter', 'SequencingCommandResult', 'SmuCurrentRange', 'StringList', 'StringTable', 'TriggerEdge', 'TriggerSource', 'check_future_is_ready', 'generate_function_generator_data', 'get_build_number', 'get_git_version']
+class StringList:
+    """
+    List of strings.
+    """
+    __hash__: typing.ClassVar[None] = None
+    def __bool__(self) -> bool:
+        """
+        Check whether the list is nonempty
+        """
+    def __contains__(self, x: str) -> bool:
+        """
+        Return true the container contains ``x``
+        """
+    @typing.overload
+    def __delitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
+        """
+        Delete the list elements at index ``i``
+        """
+    @typing.overload
+    def __delitem__(self, arg0: slice) -> None:
+        """
+        Delete list elements using a slice object
+        """
+    def __eq__(self, arg0: StringList) -> bool:
+        ...
+    @typing.overload
+    def __getitem__(self, s: slice) -> StringList:
+        """
+        Retrieve list elements using a slice object
+        """
+    @typing.overload
+    def __getitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> str:
+        ...
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, arg0: StringList) -> None:
+        """
+        Copy constructor
+        """
+    @typing.overload
+    def __init__(self, arg0: collections.abc.Iterable) -> None:
+        ...
+    def __iter__(self) -> collections.abc.Iterator[str]:
+        ...
+    def __len__(self) -> int:
+        ...
+    def __ne__(self, arg0: StringList) -> bool:
+        ...
+    def __repr__(self) -> str:
+        """
+        Return the canonical string representation of this list.
+        """
+    @typing.overload
+    def __setitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex, arg1: str) -> None:
+        ...
+    @typing.overload
+    def __setitem__(self, arg0: slice, arg1: StringList) -> None:
+        """
+        Assign list elements using a slice object
+        """
+    def append(self, x: str) -> None:
+        """
+        Add an item to the end of the list
+        """
+    def clear(self) -> None:
+        """
+        Clear the contents
+        """
+    def count(self, x: str) -> int:
+        """
+        Return the number of times ``x`` appears in the list
+        """
+    @typing.overload
+    def extend(self, L: StringList) -> None:
+        """
+        Extend the list by appending all the items in the given list
+        """
+    @typing.overload
+    def extend(self, L: collections.abc.Iterable) -> None:
+        """
+        Extend the list by appending all the items in the given list
+        """
+    def insert(self, i: typing.SupportsInt | typing.SupportsIndex, x: str) -> None:
+        """
+        Insert an item at a given position.
+        """
+    @typing.overload
+    def pop(self) -> str:
+        """
+        Remove and return the last item
+        """
+    @typing.overload
+    def pop(self, i: typing.SupportsInt | typing.SupportsIndex) -> str:
+        """
+        Remove and return the item at index ``i``
+        """
+    def remove(self, x: str) -> None:
+        """
+        Remove the first item from the list whose value is x. It is an error if there is no such item.
+        """
+class StringTable:
+    """
+    Table of strings.
+    """
+    __hash__: typing.ClassVar[None] = None
+    def __bool__(self) -> bool:
+        """
+        Check whether the list is nonempty
+        """
+    def __contains__(self, x: StringList) -> bool:
+        """
+        Return true the container contains ``x``
+        """
+    @typing.overload
+    def __delitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
+        """
+        Delete the list elements at index ``i``
+        """
+    @typing.overload
+    def __delitem__(self, arg0: slice) -> None:
+        """
+        Delete list elements using a slice object
+        """
+    def __eq__(self, arg0: StringTable) -> bool:
+        ...
+    @typing.overload
+    def __getitem__(self, s: slice) -> StringTable:
+        """
+        Retrieve list elements using a slice object
+        """
+    @typing.overload
+    def __getitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> StringList:
+        ...
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, arg0: StringTable) -> None:
+        """
+        Copy constructor
+        """
+    @typing.overload
+    def __init__(self, arg0: collections.abc.Iterable) -> None:
+        ...
+    def __iter__(self) -> collections.abc.Iterator[StringList]:
+        ...
+    def __len__(self) -> int:
+        ...
+    def __ne__(self, arg0: StringTable) -> bool:
+        ...
+    @typing.overload
+    def __setitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex, arg1: StringList) -> None:
+        ...
+    @typing.overload
+    def __setitem__(self, arg0: slice, arg1: StringTable) -> None:
+        """
+        Assign list elements using a slice object
+        """
+    def append(self, x: StringList) -> None:
+        """
+        Add an item to the end of the list
+        """
+    def clear(self) -> None:
+        """
+        Clear the contents
+        """
+    def count(self, x: StringList) -> int:
+        """
+        Return the number of times ``x`` appears in the list
+        """
+    @typing.overload
+    def extend(self, L: StringTable) -> None:
+        """
+        Extend the list by appending all the items in the given list
+        """
+    @typing.overload
+    def extend(self, L: collections.abc.Iterable) -> None:
+        """
+        Extend the list by appending all the items in the given list
+        """
+    def insert(self, i: typing.SupportsInt | typing.SupportsIndex, x: StringList) -> None:
+        """
+        Insert an item at a given position.
+        """
+    @typing.overload
+    def pop(self) -> StringList:
+        """
+        Remove and return the last item
+        """
+    @typing.overload
+    def pop(self, i: typing.SupportsInt | typing.SupportsIndex) -> StringList:
+        """
+        Remove and return the item at index ``i``
+        """
+    def remove(self, x: StringList) -> None:
+        """
+        Remove the first item from the list whose value is x. It is an error if there is no such item.
+        """
+class DoubleList:
+    """
+    List of doubles.
+    """
+    __hash__: typing.ClassVar[None] = None
+    def __bool__(self) -> bool:
+        """
+        Check whether the list is nonempty
+        """
+    def __contains__(self, x: typing.SupportsFloat | typing.SupportsIndex) -> bool:
+        """
+        Return true the container contains ``x``
+        """
+    @typing.overload
+    def __delitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
+        """
+        Delete the list elements at index ``i``
+        """
+    @typing.overload
+    def __delitem__(self, arg0: slice) -> None:
+        """
+        Delete list elements using a slice object
+        """
+    def __eq__(self, arg0: DoubleList) -> bool:
+        ...
+    @typing.overload
+    def __getitem__(self, s: slice) -> DoubleList:
+        """
+        Retrieve list elements using a slice object
+        """
+    @typing.overload
+    def __getitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> float:
+        ...
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, arg0: DoubleList) -> None:
+        """
+        Copy constructor
+        """
+    @typing.overload
+    def __init__(self, arg0: collections.abc.Iterable) -> None:
+        ...
+    def __iter__(self) -> collections.abc.Iterator[float]:
+        ...
+    def __len__(self) -> int:
+        ...
+    def __ne__(self, arg0: DoubleList) -> bool:
+        ...
+    def __repr__(self) -> str:
+        """
+        Return the canonical string representation of this list.
+        """
+    @typing.overload
+    def __setitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex, arg1: typing.SupportsFloat | typing.SupportsIndex) -> None:
+        ...
+    @typing.overload
+    def __setitem__(self, arg0: slice, arg1: DoubleList) -> None:
+        """
+        Assign list elements using a slice object
+        """
+    def append(self, x: typing.SupportsFloat | typing.SupportsIndex) -> None:
+        """
+        Add an item to the end of the list
+        """
+    def clear(self) -> None:
+        """
+        Clear the contents
+        """
+    def count(self, x: typing.SupportsFloat | typing.SupportsIndex) -> int:
+        """
+        Return the number of times ``x`` appears in the list
+        """
+    @typing.overload
+    def extend(self, L: DoubleList) -> None:
+        """
+        Extend the list by appending all the items in the given list
+        """
+    @typing.overload
+    def extend(self, L: collections.abc.Iterable) -> None:
+        """
+        Extend the list by appending all the items in the given list
+        """
+    def insert(self, i: typing.SupportsInt | typing.SupportsIndex, x: typing.SupportsFloat | typing.SupportsIndex) -> None:
+        """
+        Insert an item at a given position.
+        """
+    @typing.overload
+    def pop(self) -> float:
+        """
+        Remove and return the last item
+        """
+    @typing.overload
+    def pop(self, i: typing.SupportsInt | typing.SupportsIndex) -> float:
+        """
+        Remove and return the item at index ``i``
+        """
+    def remove(self, x: typing.SupportsFloat | typing.SupportsIndex) -> None:
+        """
+        Remove the first item from the list whose value is x. It is an error if there is no such item.
+        """
+class MapOfStringVectors:
+    """
+    Map of string vectors
+    """
+    def __bool__(self) -> bool:
+        """
+        Check whether the map is nonempty
+        """
+    @typing.overload
+    def __contains__(self, arg0: str) -> bool:
+        ...
+    @typing.overload
+    def __contains__(self, arg0: typing.Any) -> bool:
+        ...
+    def __delitem__(self, arg0: str) -> None:
+        ...
+    def __getitem__(self, arg0: str) -> StringList:
+        ...
+    def __init__(self) -> None:
+        ...
+    def __iter__(self) -> collections.abc.Iterator[str]:
+        ...
+    def __len__(self) -> int:
+        ...
+    def __setitem__(self, arg0: str, arg1: StringList) -> None:
+        ...
+    def items(self) -> typing.ItemsView:
+        ...
+    def keys(self) -> typing.KeysView:
+        ...
+    def values(self) -> typing.ValuesView:
+        ...
+class CommandReply:
+    """
+             The aspect device engine is a command driven framework. 
+             This is the base class of all command replies (and results).
+             The reply can be an error or a result.
+        
+    """
+    def is_error(self) -> bool:
+        """
+                 Indicates whether the response is a command error
+        
+                 Returns
+                 -------
+                 bool
+        """
+    def is_result(self) -> bool:
+        """
+                 Indicates whether the response is an command result
+        
+                 Returns
+                 -------
+                 bool
+        """
+    def to_json(self) -> str:
+        """
+                 Returns the reply as a JSON string
+        
+                 Returns
+                 -------
+                 str
+        """
+class CommandReplyList:
+    """
+    List of command replies.
+    """
+    __hash__: typing.ClassVar[None] = None
+    def __bool__(self: collections.abc.Sequence[CommandReply]) -> bool:
+        """
+        Check whether the list is nonempty
+        """
+    def __contains__(self: collections.abc.Sequence[CommandReply], x: CommandReply) -> bool:
+        """
+        Return true the container contains ``x``
+        """
+    @typing.overload
+    def __delitem__(self: collections.abc.Sequence[CommandReply], arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
+        """
+        Delete the list elements at index ``i``
+        """
+    @typing.overload
+    def __delitem__(self: collections.abc.Sequence[CommandReply], arg0: slice) -> None:
+        """
+        Delete list elements using a slice object
+        """
+    def __eq__(self: collections.abc.Sequence[CommandReply], arg0: collections.abc.Sequence[CommandReply]) -> bool:
+        ...
+    @typing.overload
+    def __getitem__(self: collections.abc.Sequence[CommandReply], s: slice) -> list[CommandReply]:
+        """
+        Retrieve list elements using a slice object
+        """
+    @typing.overload
+    def __getitem__(self: collections.abc.Sequence[CommandReply], arg0: typing.SupportsInt | typing.SupportsIndex) -> CommandReply:
+        ...
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, arg0: collections.abc.Sequence[CommandReply]) -> None:
+        """
+        Copy constructor
+        """
+    @typing.overload
+    def __init__(self, arg0: collections.abc.Iterable) -> None:
+        ...
+    def __iter__(self: collections.abc.Sequence[CommandReply]) -> collections.abc.Iterator[CommandReply]:
+        ...
+    def __len__(self: collections.abc.Sequence[CommandReply]) -> int:
+        ...
+    def __ne__(self: collections.abc.Sequence[CommandReply], arg0: collections.abc.Sequence[CommandReply]) -> bool:
+        ...
+    def __repr__(self: collections.abc.Sequence[CommandReply]) -> str:
+        """
+        Return the canonical string representation of this list.
+        """
+    @typing.overload
+    def __setitem__(self: collections.abc.Sequence[CommandReply], arg0: typing.SupportsInt | typing.SupportsIndex, arg1: CommandReply) -> None:
+        ...
+    @typing.overload
+    def __setitem__(self: collections.abc.Sequence[CommandReply], arg0: slice, arg1: collections.abc.Sequence[CommandReply]) -> None:
+        """
+        Assign list elements using a slice object
+        """
+    def append(self: collections.abc.Sequence[CommandReply], x: CommandReply) -> None:
+        """
+        Add an item to the end of the list
+        """
+    def clear(self: collections.abc.Sequence[CommandReply]) -> None:
+        """
+        Clear the contents
+        """
+    def count(self: collections.abc.Sequence[CommandReply], x: CommandReply) -> int:
+        """
+        Return the number of times ``x`` appears in the list
+        """
+    @typing.overload
+    def extend(self: collections.abc.Sequence[CommandReply], L: collections.abc.Sequence[CommandReply]) -> None:
+        """
+        Extend the list by appending all the items in the given list
+        """
+    @typing.overload
+    def extend(self: collections.abc.Sequence[CommandReply], L: collections.abc.Iterable) -> None:
+        """
+        Extend the list by appending all the items in the given list
+        """
+    def insert(self: collections.abc.Sequence[CommandReply], i: typing.SupportsInt | typing.SupportsIndex, x: CommandReply) -> None:
+        """
+        Insert an item at a given position.
+        """
+    @typing.overload
+    def pop(self: collections.abc.Sequence[CommandReply]) -> CommandReply:
+        """
+        Remove and return the last item
+        """
+    @typing.overload
+    def pop(self: collections.abc.Sequence[CommandReply], i: typing.SupportsInt | typing.SupportsIndex) -> CommandReply:
+        """
+        Remove and return the item at index ``i``
+        """
+    def remove(self: collections.abc.Sequence[CommandReply], x: CommandReply) -> None:
+        """
+        Remove the first item from the list whose value is x. It is an error if there is no such item.
+        """
+class Result(CommandReply):
+    pass
+class ReadWriteFpgaIdSmuResult(Result):
+    pass
+class FirmwareVersion:
+    """
+             Firmware version of a device detected by the engine.
+        
+    """
+    def to_hex_string(self) -> str:
+        ...
+class Device:
+    def get_firmware_version(self) -> FirmwareVersion:
+        ...
+    def get_id(self) -> str:
+        ...
+class DeviceList:
+    """
+    List of devices.
+    """
+    __hash__: typing.ClassVar[None] = None
+    def __bool__(self: collections.abc.Sequence[Device]) -> bool:
+        """
+        Check whether the list is nonempty
+        """
+    def __contains__(self: collections.abc.Sequence[Device], x: Device) -> bool:
+        """
+        Return true the container contains ``x``
+        """
+    @typing.overload
+    def __delitem__(self: collections.abc.Sequence[Device], arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
+        """
+        Delete the list elements at index ``i``
+        """
+    @typing.overload
+    def __delitem__(self: collections.abc.Sequence[Device], arg0: slice) -> None:
+        """
+        Delete list elements using a slice object
+        """
+    def __eq__(self: collections.abc.Sequence[Device], arg0: collections.abc.Sequence[Device]) -> bool:
+        ...
+    @typing.overload
+    def __getitem__(self: collections.abc.Sequence[Device], s: slice) -> list[Device]:
+        """
+        Retrieve list elements using a slice object
+        """
+    @typing.overload
+    def __getitem__(self: collections.abc.Sequence[Device], arg0: typing.SupportsInt | typing.SupportsIndex) -> Device:
+        ...
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, arg0: collections.abc.Sequence[Device]) -> None:
+        """
+        Copy constructor
+        """
+    @typing.overload
+    def __init__(self, arg0: collections.abc.Iterable) -> None:
+        ...
+    def __iter__(self: collections.abc.Sequence[Device]) -> collections.abc.Iterator[Device]:
+        ...
+    def __len__(self: collections.abc.Sequence[Device]) -> int:
+        ...
+    def __ne__(self: collections.abc.Sequence[Device], arg0: collections.abc.Sequence[Device]) -> bool:
+        ...
+    def __repr__(self: collections.abc.Sequence[Device]) -> str:
+        """
+        Return the canonical string representation of this list.
+        """
+    @typing.overload
+    def __setitem__(self: collections.abc.Sequence[Device], arg0: typing.SupportsInt | typing.SupportsIndex, arg1: Device) -> None:
+        ...
+    @typing.overload
+    def __setitem__(self: collections.abc.Sequence[Device], arg0: slice, arg1: collections.abc.Sequence[Device]) -> None:
+        """
+        Assign list elements using a slice object
+        """
+    def append(self: collections.abc.Sequence[Device], x: Device) -> None:
+        """
+        Add an item to the end of the list
+        """
+    def clear(self: collections.abc.Sequence[Device]) -> None:
+        """
+        Clear the contents
+        """
+    def count(self: collections.abc.Sequence[Device], x: Device) -> int:
+        """
+        Return the number of times ``x`` appears in the list
+        """
+    @typing.overload
+    def extend(self: collections.abc.Sequence[Device], L: collections.abc.Sequence[Device]) -> None:
+        """
+        Extend the list by appending all the items in the given list
+        """
+    @typing.overload
+    def extend(self: collections.abc.Sequence[Device], L: collections.abc.Iterable) -> None:
+        """
+        Extend the list by appending all the items in the given list
+        """
+    def insert(self: collections.abc.Sequence[Device], i: typing.SupportsInt | typing.SupportsIndex, x: Device) -> None:
+        """
+        Insert an item at a given position.
+        """
+    @typing.overload
+    def pop(self: collections.abc.Sequence[Device]) -> Device:
+        """
+        Remove and return the last item
+        """
+    @typing.overload
+    def pop(self: collections.abc.Sequence[Device], i: typing.SupportsInt | typing.SupportsIndex) -> Device:
+        """
+        Remove and return the item at index ``i``
+        """
+    def remove(self: collections.abc.Sequence[Device], x: Device) -> None:
+        """
+        Remove the first item from the list whose value is x. It is an error if there is no such item.
+        """
+class DeviceResult(CommandReply):
+    """
+             The result of a device detection command.
+        
+    """
+    def get_devices(self) -> list[Device]:
+        ...
+class SequencingCommandResult(Result):
+    """
+             The result of a sequencing command.
+        
+    """
+    def get_device_id(self) -> str:
+        ...
+    def get_results(self) -> list[CommandReply]:
+        ...
+class ReadAdcCommandIdSmuResult(Result):
+    def __getitem__(self, arg0: str) -> numpy.typing.NDArray[numpy.float64]:
+        ...
+    def get_execution_time(self) -> int:
+        """
+                 Gets the execution time in microseconds for the measurement command
+        
+                 Returns
+                 -------
+                 int
+                      Execution time in microsecontd
+        """
+    def get_float_values(self, channel_name: str) -> numpy.typing.NDArray[numpy.float64]:
+        ...
+    @typing.overload
+    def get_values(self, channel_number: typing.SupportsInt | typing.SupportsIndex) -> DoubleList:
+        """
+                 Gets the measured values for a channel number
+        
+                 Parameters
+                 ----------
+                 channel_number : int
+                      The channel number for which the measured values should be retreived
+        
+                 Returns
+                 -------
+                 DoubleList
+                      A DoubleList object
+        """
+    @typing.overload
+    def get_values(self, channel_name: str) -> DoubleList:
+        """
+                 Gets the measured values for a channel name
+        
+                 Parameters
+                 ----------
+                 channel_name : str
+                      The channel name for which the measured values should be retreived
+        
+                 Returns
+                 -------
+                 DoubleList
+                      A DoubleList object
+        """
+    @property
+    def channel_ids(self) -> StringList:
+        """
+                 Returns the channel ids associated with the results
+        
+                 Returns
+                 -------
+                 List[str]
+                      Channel Ids
+        """
+    @property
+    def channel_names(self) -> StringList:
+        """
+                 Returns the channel names associated with the results
+        
+                 Returns
+                 -------
+                 List[str]
+                      Channel names
+        """
+    @property
+    def device_id(self) -> str:
+        """
+                 Returns the device id associated with the results
+        
+                 Returns
+                 -------
+                 str
+                      Device Id
+        """
+    @property
+    def execution_time(self) -> int:
+        """
+                 Gets the execution time in microseconds for the measurement command
+        
+                 Returns
+                 -------
+                 int
+                      Execution time in microseconts
+        """
+    @property
+    def timecode(self) -> numpy.typing.NDArray[numpy.uint32]:
+        """
+                 Gets the timecodes for the measurement command
+        
+                 Returns
+                 -------
+                 ndarray[int]
+                      Array of time code values
+        """
+class CommandReplyFuture:
+    def get(self) -> CommandReply:
+        ...
+class Iloc:
+    def __getitem__(self, arg0: tuple[typing.SupportsInt | typing.SupportsIndex, typing.SupportsInt | typing.SupportsIndex]) -> str | None:
+        ...
+    def __setitem__(self, arg0: tuple[typing.SupportsInt | typing.SupportsIndex, typing.SupportsInt | typing.SupportsIndex], arg1: str) -> None:
+        ...
+class At:
+    def __getitem__(self, arg0: tuple[typing.SupportsInt | typing.SupportsIndex, str]) -> str | None:
+        ...
+    def __setitem__(self, arg0: tuple[typing.SupportsInt | typing.SupportsIndex, str], arg1: str) -> None:
+        ...
+class RowFilter:
+    column_name: str
+    exact_match: bool
+    filter_expression: str
+class IdqTableCell:
+    cell_value: str
+class IdqTableRow:
+    """
+    Row of IdqTableCells.
+    """
+    __hash__: typing.ClassVar[None] = None
+    def __bool__(self: collections.abc.Sequence[IdqTableCell]) -> bool:
+        """
+        Check whether the list is nonempty
+        """
+    def __contains__(self: collections.abc.Sequence[IdqTableCell], x: IdqTableCell) -> bool:
+        """
+        Return true the container contains ``x``
+        """
+    @typing.overload
+    def __delitem__(self: collections.abc.Sequence[IdqTableCell], arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
+        """
+        Delete the list elements at index ``i``
+        """
+    @typing.overload
+    def __delitem__(self: collections.abc.Sequence[IdqTableCell], arg0: slice) -> None:
+        """
+        Delete list elements using a slice object
+        """
+    def __eq__(self: collections.abc.Sequence[IdqTableCell], arg0: collections.abc.Sequence[IdqTableCell]) -> bool:
+        ...
+    @typing.overload
+    def __getitem__(self: collections.abc.Sequence[IdqTableCell], s: slice) -> list[IdqTableCell]:
+        """
+        Retrieve list elements using a slice object
+        """
+    @typing.overload
+    def __getitem__(self: collections.abc.Sequence[IdqTableCell], arg0: typing.SupportsInt | typing.SupportsIndex) -> IdqTableCell:
+        ...
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, arg0: collections.abc.Sequence[IdqTableCell]) -> None:
+        """
+        Copy constructor
+        """
+    @typing.overload
+    def __init__(self, arg0: collections.abc.Iterable) -> None:
+        ...
+    def __iter__(self: collections.abc.Sequence[IdqTableCell]) -> collections.abc.Iterator[IdqTableCell]:
+        ...
+    def __len__(self: collections.abc.Sequence[IdqTableCell]) -> int:
+        ...
+    def __ne__(self: collections.abc.Sequence[IdqTableCell], arg0: collections.abc.Sequence[IdqTableCell]) -> bool:
+        ...
+    def __repr__(self: collections.abc.Sequence[IdqTableCell]) -> str:
+        """
+        Return the canonical string representation of this list.
+        """
+    @typing.overload
+    def __setitem__(self: collections.abc.Sequence[IdqTableCell], arg0: typing.SupportsInt | typing.SupportsIndex, arg1: IdqTableCell) -> None:
+        ...
+    @typing.overload
+    def __setitem__(self: collections.abc.Sequence[IdqTableCell], arg0: slice, arg1: collections.abc.Sequence[IdqTableCell]) -> None:
+        """
+        Assign list elements using a slice object
+        """
+    def append(self: collections.abc.Sequence[IdqTableCell], x: IdqTableCell) -> None:
+        """
+        Add an item to the end of the list
+        """
+    def clear(self: collections.abc.Sequence[IdqTableCell]) -> None:
+        """
+        Clear the contents
+        """
+    def count(self: collections.abc.Sequence[IdqTableCell], x: IdqTableCell) -> int:
+        """
+        Return the number of times ``x`` appears in the list
+        """
+    @typing.overload
+    def extend(self: collections.abc.Sequence[IdqTableCell], L: collections.abc.Sequence[IdqTableCell]) -> None:
+        """
+        Extend the list by appending all the items in the given list
+        """
+    @typing.overload
+    def extend(self: collections.abc.Sequence[IdqTableCell], L: collections.abc.Iterable) -> None:
+        """
+        Extend the list by appending all the items in the given list
+        """
+    def insert(self: collections.abc.Sequence[IdqTableCell], i: typing.SupportsInt | typing.SupportsIndex, x: IdqTableCell) -> None:
+        """
+        Insert an item at a given position.
+        """
+    @typing.overload
+    def pop(self: collections.abc.Sequence[IdqTableCell]) -> IdqTableCell:
+        """
+        Remove and return the last item
+        """
+    @typing.overload
+    def pop(self: collections.abc.Sequence[IdqTableCell], i: typing.SupportsInt | typing.SupportsIndex) -> IdqTableCell:
+        """
+        Remove and return the item at index ``i``
+        """
+    def remove(self: collections.abc.Sequence[IdqTableCell], x: IdqTableCell) -> None:
+        """
+        Remove the first item from the list whose value is x. It is an error if there is no such item.
+        """
+class IdqTableRows:
+    """
+    Table of IdqTableCells.
+    """
+    __hash__: typing.ClassVar[None] = None
+    def __bool__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> bool:
+        """
+        Check whether the list is nonempty
+        """
+    def __contains__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], x: collections.abc.Sequence[IdqTableCell]) -> bool:
+        """
+        Return true the container contains ``x``
+        """
+    @typing.overload
+    def __delitem__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
+        """
+        Delete the list elements at index ``i``
+        """
+    @typing.overload
+    def __delitem__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], arg0: slice) -> None:
+        """
+        Delete list elements using a slice object
+        """
+    def __eq__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], arg0: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> bool:
+        ...
+    @typing.overload
+    def __getitem__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], s: slice) -> list[list[IdqTableCell]]:
+        """
+        Retrieve list elements using a slice object
+        """
+    @typing.overload
+    def __getitem__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], arg0: typing.SupportsInt | typing.SupportsIndex) -> list[IdqTableCell]:
+        ...
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, arg0: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> None:
+        """
+        Copy constructor
+        """
+    @typing.overload
+    def __init__(self, arg0: collections.abc.Iterable) -> None:
+        ...
+    def __iter__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> collections.abc.Iterator[list[IdqTableCell]]:
+        ...
+    def __len__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> int:
+        ...
+    def __ne__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], arg0: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> bool:
+        ...
+    @typing.overload
+    def __setitem__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], arg0: typing.SupportsInt | typing.SupportsIndex, arg1: collections.abc.Sequence[IdqTableCell]) -> None:
+        ...
+    @typing.overload
+    def __setitem__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], arg0: slice, arg1: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> None:
+        """
+        Assign list elements using a slice object
+        """
+    def append(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], x: collections.abc.Sequence[IdqTableCell]) -> None:
+        """
+        Add an item to the end of the list
+        """
+    def clear(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> None:
+        """
+        Clear the contents
+        """
+    def count(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], x: collections.abc.Sequence[IdqTableCell]) -> int:
+        """
+        Return the number of times ``x`` appears in the list
+        """
+    @typing.overload
+    def extend(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], L: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> None:
+        """
+        Extend the list by appending all the items in the given list
+        """
+    @typing.overload
+    def extend(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], L: collections.abc.Iterable) -> None:
+        """
+        Extend the list by appending all the items in the given list
+        """
+    def insert(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], i: typing.SupportsInt | typing.SupportsIndex, x: collections.abc.Sequence[IdqTableCell]) -> None:
+        """
+        Insert an item at a given position.
+        """
+    @typing.overload
+    def pop(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> list[IdqTableCell]:
+        """
+        Remove and return the last item
+        """
+    @typing.overload
+    def pop(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], i: typing.SupportsInt | typing.SupportsIndex) -> list[IdqTableCell]:
+        """
+        Remove and return the item at index ``i``
+        """
+    def remove(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], x: collections.abc.Sequence[IdqTableCell]) -> None:
+        """
+        Remove the first item from the list whose value is x. It is an error if there is no such item.
+        """
+class IdqTableGroup:
+    @typing.overload
+    def get_cell_value(self, row_index: typing.SupportsInt | typing.SupportsIndex, column_index: typing.SupportsInt | typing.SupportsIndex) -> str | None:
+        """
+                Gets a string parameter in the table group
+        
+                Parameters
+                ----------
+                row_index : int
+                    Index of the row in the table
+                column_index : int
+                    Index of the column in the table
+        
+                Returns
+                -------
+                str
+        """
+    @typing.overload
+    def get_cell_value(self, row_index: typing.SupportsInt | typing.SupportsIndex, column_name: str) -> str | None:
+        """
+                Gets a string parameter in the table group
+        
+                Parameters
+                ----------
+                row_index : int
+                    Index of the row in the table
+                column_name : str
+                    Name of the column in the table
+        
+                Returns
+                -------
+                str
+        """
+    def get_column_names(self) -> list[str]:
+        """
+                Returns the headers as list of strings
+        
+                Returns
+                -------
+                StringList
+                    Returns the headers as  list of strings
+        """
+    def get_name(self) -> str:
+        """
+                Returns the group name
+        
+                Returns
+                -------
+                str
+                    Returns the group name
+        """
+    def get_range_descriptors(self) -> dict[str, list[str]]:
+        """
+                Returns the the description of the allowed parameter ranges for this group, if available
+        
+                Returns
+                -------
+                MapOfStringVectors
+                    The the description of the allowed parameter ranges
+        """
+    def get_row(self, row_index: typing.SupportsInt | typing.SupportsIndex) -> list[IdqTableCell]:
+        """
+                Returns the row at the given index.
+        
+                Returns
+                -------
+                IdqTableRow
+                    Returns the row at the given index.
+        """
+    def get_row_index(self, column_name: str, column_value: str) -> int:
+        """
+                Returns the row index of a the first value in the given column that matches the given value
+        
+                Parameters
+                ----------
+                column_name : str
+                    The name of the column
+                column_value : str
+                    The value in the column to search for
+        
+                Returns
+                -------
+                int
+        """
+    def get_rows(self) -> list[list[IdqTableCell]]:
+        """
+                Returns the rows as a list of list of strings (StringTable)
+        
+                Returns
+                -------
+                IdqTableRows
+                    Returns the rows as a list of list of IdqTableCell
+        """
+    @typing.overload
+    def set_cell_value(self, row_index: typing.SupportsInt | typing.SupportsIndex, column_name: str, cell_value: str | None) -> None:
+        """
+                Sets a string parameter in the table group
+        
+                Parameters
+                ----------
+                row_index : int
+                    Index of the row in the table
+                column_name : str
+                    Name of the column in the table
+                cell_value : str
+                    The value to set
+        """
+    @typing.overload
+    def set_cell_value(self, row_index: typing.SupportsInt | typing.SupportsIndex, column_index: typing.SupportsInt | typing.SupportsIndex, cell_value: str | None) -> None:
+        """
+                Sets a string parameter in the table group
+        
+                Parameters
+                ----------
+                row_index : int
+                    Index of the row in the table
+                column_index : str
+                    Index of the column in the table
+                cell_value : str
+                    The value to set
+        """
+    def set_name(self, name: str) -> None:
+        """
+                 Sets the name of the table group
+        
+                 Parameters
+                 ----------
+                 name : str
+                      The new name of the table group
+        """
+    def set_parameter_value(self, row_index: typing.SupportsInt | typing.SupportsIndex, parameter_name: str, parameter_value: str) -> None:
+        """
+                Sets a string parameter in the table group
+        
+                Parameters
+                ----------
+                row_index : int
+                    Index of the row in the settings
+                parameter_name : str
+                    Name of the parameter
+                parameter_value : str
+                    String value of the parameter
+        """
+    @property
+    def at(self) -> At:
+        ...
+    @property
+    def columns(self) -> list[str]:
+        ...
+    @property
+    def iloc(self) -> Iloc:
+        ...
+    @property
+    def name(self) -> str:
+        """
+                Returns or sets the group name
+        
+                Returns
+                -------
+                str
+                    Returns the group name
+        """
+    @name.setter
+    def name(self, arg1: str) -> None:
+        ...
+    @property
+    def shape(self) -> list[int]:
+        ...
+class IdqTable:
+    def __getitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> IdqTableGroup:
+        ...
+    def filter_columns(self, column_names: collections.abc.Sequence[str]) -> IdqTable:
+        """
+                 Filters columns and returns a new IdqTable object containing this columns only
+        
+                 Parameters
+                 ----------
+                 column_names : List[str]
+                      The names of the columns to filter out
+        
+                 Returns
+                 -------
+                 IdqTable
+                      Returns a new IdqTable object
+        """
+    def filter_rows(self, column_name: str, filter_value: str, exact_match: bool) -> IdqTable:
+        """
+                 Filters rows by the given filter_values and returns a new IdqTable object containing this rows only
+        
+                 Parameters
+                 ----------
+                 column_name : str
+                      The name of the column to apply the filter to
+                 filter_value : str
+                      Each row in the given column   is checked against the filter_value and selected if the string in the filter_value is conatained in the cell
+                 exact_match : bool
+                      If enabled a whole word is searched
+                 Returns
+                 -------
+                 IdqTable
+                      Returns a new IdqTable object
+        """
+    def get_column_filter(self) -> list[str]:
+        """
+                 Returns the list of column names that are applied as column filter
+        
+                 Returns
+                 -------
+                 List[str]
+                      Returns a list of strings of column names
+        """
+    def get_file_path(self) -> str | None:
+        """
+                Returns the path of the file the table was imported from, if available
+        
+                Returns
+                -------
+                str
+                    Returns a path or none
+        """
+    def get_filtered_table(self) -> IdqTable:
+        """
+                 Returns the filtered table
+        
+                 Returns
+                 -------
+                 IdqTable
+        """
+    def get_grouped_by(self) -> str:
+        """
+                 Returns the name of the column the table is grouped by
+        
+                 Returns
+                 -------
+                 str
+                      Returns the name of the column the table is grouped by
+        """
+    def get_merged_column_names(self) -> list[str]:
+        """
+                Returns the unique headers of all groups as list of strings
+        
+                Returns
+                -------
+                List[str]
+                    Returns the headers as  list of strings
+        """
+    def get_name(self) -> str:
+        """
+                Returns the table name
+        
+                Returns
+                -------
+                str
+                    Returns the table name
+        """
+    def get_row_filters(self) -> list[RowFilter]:
+        """
+                 Returns the list of row filters applied to that table
+        
+                 Returns
+                 -------
+                 List[RowFilter]
+                      Returns a list of RowFilter objects
+        """
+    def get_table_group(self, group_name: str) -> IdqTableGroup:
+        """
+                 Return the table group with the given name
+        
+                 Parameters
+                 ----------
+                 group_name : str
+                      The name of the table group
+        
+                 Returns
+                 -------
+                 IdqTable
+                      Returns a the IdqTableGroup object
+        """
+    def get_table_group_names(self) -> list[str]:
+        """
+                 Returns a list of table group names
+        
+                 Returns
+                 -------
+                 List[str]
+                      A list of table group names
+        """
+    def get_table_groups_as_list(self) -> list[IdqTableGroup]:
+        """
+                 Returns a list of table groups
+        
+                 Returns
+                 -------
+                 List[IdqTableGroup]
+                      A list of table groups
+        """
+    def is_filter_active(self) -> bool:
+        """
+                 Returns true if a filter is applied to the table
+        
+                 Returns
+                 -------
+                 bool
+        """
+    def set_name(self, name: str) -> None:
+        """
+                 Sets the name of the table
+        
+                 Parameters
+                 ----------
+                 name : str
+                      The new name of the table
+        """
+    @property
+    def name(self) -> str:
+        """
+                Returns or sets the table name
+        
+                Returns
+                -------
+                str
+                    Returns the table name
+        """
+    @name.setter
+    def name(self, arg1: str) -> None:
+        ...
+    @property
+    def table_groups(self) -> list[IdqTableGroup]:
+        """
+                 Returns a list of table groups
+        
+                 Returns
+                 -------
+                 List[IdqTableGroup]
+                      A list of table groups
+        """
+class IdSmuSettingsService:
+    @typing.overload
+    def apply_parameter_setting(self, parameter_setting: IdqTable, board_address: str, filtered: bool, table_group_name: str | None) -> int:
+        """
+                 Applies the given setting to the hardware models
+        
+                 Parameters
+                 ----------
+                 setting_name : str
+                      The name of a loaded setting (IdqTable)
+        
+                 board_address : str
+                      The address of the board
+        
+                 filtered : bool
+                      If this flag is set, the parameters are taken from the filtered version of the table
+        
+                 table_group_name : str
+                      Optional table group name if only a group should be applied
+        
+                 Returns
+                 -------
+                 ParameterSetting
+                      A parameter setting object with the given name
+        """
+    @typing.overload
+    def apply_parameter_setting(self, setting_name: str, board_address: str, filtered: bool, table_group_name: str | None) -> int:
+        """
+                 Applies the parameters in a table to a idSMU board
+        
+                 Parameters
+                 ----------
+                 setting_name : str
+                      The name of a loaded setting (IdqTable)
+        
+                 board_address : str
+                      The address of the board
+        
+                 filtered : bool
+                      If this flag is set, the parameters are taken from the filtered version of the table
+        
+                 table_group_name : str
+                      Optional table group name
+        
+                 Returns
+                 -------
+                 int
+                      The number of resources the settings were applied to
+        """
+    def apply_parameter_settings_at_column_values(self, setting_name: str, board_address: str, column_name: str, column_values: collections.abc.Sequence[str], filtered: bool, table_group_name: str | None) -> int:
+        """
+                 Applies the parameters in a table to a idSMU board
+        
+                 Parameters
+                 ----------
+                 setting_name : str
+                      The name of a loaded setting (IdqTable)
+        
+                 board_address : str
+                      The address of the board
+        
+                 column_name : str
+                      The name of the column to search for value(s)
+        
+                 column_values : List[str]
+                      One or more values to search for in the selected column
+        
+                 filtered : bool
+                      If this flag is set, the parameters are taken from the filtered version of the table
+        
+                 table_group_name : str
+                      Optional table group name
+        
+                 Returns
+                 -------
+                 int
+                      The number of resources the settings were applied to
+        """
+    def bake_filter_into_table(self, setting_name: str) -> None:
+        """
+                 Replaces the table/setting with its filtered version
+        
+                 Parameters
+                 ----------
+                 setting_name : str
+                      The name of the setting
+        """
+    def export_settings_to_csv(self, file_path: str, setting_names: collections.abc.Sequence[str], append_to_file: bool) -> str | None:
+        """
+                 Exports setting(s) to csv
+        
+                 Parameters
+                 ----------
+                 file_path : str
+                      Path to the csv file
+        
+                 setting_names : List[str]
+                      List of names of the settings to export
+        
+                 append_to_file : bool
+                      If true, appends the exported settings to the existing file
+        
+                 Returns
+                 -------
+                 str
+                      Returns an error message if an error occured, else none
+        """
+    def export_settings_to_xlsx(self, file_path: str, setting_names: collections.abc.Sequence[str]) -> str | None:
+        """
+                 Exports parameter setting table(s) to excel (xlsx format)
+        
+                 Parameters
+                 ----------
+                 file_path : str
+                      Path to the xlsx file
+        
+                 setting_names : List[str]
+                      List of names of the parameter table settings to export
+        
+                 Returns
+                 -------
+                 str
+                      Returns an error message if an error occured, else none
+        """
+    def filter_columns(self, setting_name: str, column_names: collections.abc.Sequence[str]) -> IdqTable:
+        """
+                 Filters columns and returns a new IdqTable object containing this columns only
+        
+                 Parameters
+                 ----------
+                 setting_name : str
+                      The name of the setting to apply the filter to
+                 column_names : List[str]
+                      The names of the columns to filter out
+        
+                 Returns
+                 -------
+                 IdqTable
+                      Returns a new IdqTable object
+        """
+    def filter_rows(self, setting_name: str, column_name: str, filter_value: str, exact_match: bool) -> IdqTable:
+        """
+                 Filters rows by the given filter_values and returns a new IdqTable object containing this rows only
+        
+                 Parameters
+                 ----------
+                 setting_name : str
+                      The name of the setting to apply the filter to
+                 column : str
+                      The name of the column to apply the filter to
+                 filter_value : str
+                      Each row in the given column is checked against the filter_value and selected if the string in the filter_value is conatained in the cell
+                 exact_match : bool
+                      If enabled a whole word is searched
+        
+                 Returns
+                 -------
+                 IdqTable
+                      Returns a new IdqTable object
+        """
+    def get_merged_column_names(self, setting_name: str) -> list[str]:
+        """
+                 Returns the unique headers of all groups as list of strings
+        
+                 Parameters
+                 ----------
+                 setting_name : str
+                      The name of the setting to apply the filter to
+        
+                 Returns
+                 -------
+                 List[str]
+                      Returns the headers as  list of strings
+        """
+    def get_parameter_setting(self, setting_name: str) -> IdqTable:
+        """
+                 Returns a IdqTable object.
+        
+                 Parameters
+                 ----------
+                 setting_name : str
+                      Name of the parameter setting
+        
+                 Returns
+                 -------
+                 IdqTable
+                      A IdqTable object with the given name
+        """
+    def get_parameter_settings_for_board(self, board_address: str, group_by: str = 'Type') -> IdqTable:
+        """
+                 Returns the parameters settings for the give board address
+        
+                 Parameters
+                 ----------
+                 board_address : str
+                      A board address in the format Mx, where x is a number between 1 and 32
+                 group_by : bool
+                      The column used to group the parameter tables
+        
+                 Returns
+                 -------
+                 IdqTable
+                      A IdqTable object
+        """
+    def get_parameter_settings_names(self) -> list[str]:
+        """
+                 Returns a list containing the names of all loaded settings
+        
+                 Returns
+                 -------
+                 List[str]
+                      A list containing the names of all loaded settings
+        """
+    def group_setting(self, setting_name: str, group_by: str) -> IdqTable:
+        """
+                 Groups the given setting in groups of the unique values of the given column
+        
+                 Parameters
+                 ----------
+                 setting_name : str
+                      The name of the setting to apply the filter to
+                 group_by : List[str]
+                      The name of the column to use for the grouping
+        
+                 Returns
+                 -------
+                 IdqTable
+                      Returns a new IdqTable object
+        """
+    def import_settings_from_csv(self, file_path: str) -> str | None:
+        """
+                 Imports settings from CSV
+        
+                 Parameters
+                 ----------
+                 file_path : str
+                      Path to the csv file
+                 Returns
+                 -------
+                 str
+                      Returns an error message if an error occured, else none
+        """
+    @typing.overload
+    def import_settings_from_xlsx(self, file_path: str) -> str | None:
+        """
+                 Imports settings from exel (xlsx format)
+        
+                 Parameters
+                 ----------
+                 file_path : str
+                      Path to the xlsx file
+                 Returns
+                 -------
+                 str
+                      Returns an error message if an error occured, else none
+        """
+    @typing.overload
+    def import_settings_from_xlsx(self, file_path: str) -> str | None:
+        """
+                 Enables or disables channel(s)
+        
+                 Parameters
+                 ----------
+                 file_path : str
+                      Path to the csv settings file
+                 delimiter : str
+                      Delimiter (only a single character is allowed)
+        
+                 Returns
+                 -------
+                 str
+                      Returns an error message if an error occured, else none
+        """
+    def print_settings(self, setting_name: str, filtered: bool = False, column_information: bool = False, max_columns: typing.SupportsInt | typing.SupportsIndex = -1) -> str:
+        """
+                 Prints the setting / board to the console
+        
+                 Parameters
+                 ----------
+                 setting_name : str
+                      Name of the setting
+                 filtered : bool
+                      If true, prints the setting with applied filteres
+                 column_information : bool
+                      Printss additional column information
+        """
+    def refresh_table(self, table_name: str) -> bool:
+        """
+                 Refreshes a table. If the table represents a board state this table is updated.
+        
+                 Parameters
+                 ----------
+                 table_name : str
+                      Name of the table
+        
+                 Returns
+                 -------
+                 bool
+                      Returns false if the table does not exist, else true
+        """
+    def refresh_table_row(self, table_name: str, column_name: str, column_value: str) -> tuple[str, int]:
+        """
+                 Refreshes a table row. The row is found by a given value in a given column(name)
+        
+                 Parameters
+                 ----------
+                 table_name : str
+                      Name of the table
+                 column_name : str
+                      Name of the column
+                 column_value : str
+                      Value in the column to search for
+                 Returns
+                 -------
+                 Tuple
+                      Returns tuple of the group name and the row within the grup where the setting was found
+        """
+    def remove_parameter_setting(self, setting_name: str) -> bool:
+        """
+                 Removes a setting from the service setting storage
+        
+                 Parameters
+                 ----------
+                 setting_name : str
+                      The name of the setting
+        """
+    def search_and_replace(self, setting_name: str, search_term: str, replace_term: str) -> IdqTable:
+        """
+                 Replaces all occurences of a string in the parameter setting table
+        
+                 Parameters
+                 ----------
+                 setting_name : str
+                      The name of the paramter setting table
+                 search_term : str
+                      The search query value
+                 replace_term : str
+                      The value for the replacement
+        
+                 Returns
+                 -------
+                 IdqTable
+                      Returns the same paramter setting table with the replacements 
+        """
+class DeviceModel:
+    pass
+class AnalogChannelModel:
+    pass
+class AD5560ChannelModel(AnalogChannelModel):
+    def measure_current(self) -> float:
+        """
+                 Measures the current at the channel output (sample count is 16)
+        
+                 Returns
+                 -------
+                 float
+                      The measured current in the unit of ampere [A]
+        """
+    def measure_currents(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> list[float]:
+        """
+                 Measures the currents at the channel output (sample count is 16)
+        
+                 Parameters
+                 ----------
+                 repetitions : int
+                      The number of repetitions of the measurement
+        
+                 Returns
+                 -------
+                 List[float]
+                      The measured currents in the unit of ampere [A]
+        """
+    def measure_voltage(self) -> float:
+        """
+                 Measures the voltage at the channel output (sample count is 16)
+        
+                 Returns
+                 -------
+                 float
+                      The measured voltage in the unit of volt [V]
+        """
+    def measure_voltages(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> list[float]:
+        """
+                 Measures the voltages at the channel output (sample count is 16)
+        
+                 Parameters
+                 ----------
+                 repetitions : int
+                      The number of repetitions of the measurement
+        
+                 Returns
+                 -------
+                 List[float]
+                      The measured currents in the unit of volt [V]
+        """
+    def perform_autorange(self) -> None:
+        """
+                 Performs the autoranging of the channel
+        
+                 Parameters
+                 ----------
+        
+                 Returns
+                 -------
+                 None
+                      This function does not return any value
+        """
+    def print_channel_register(self) -> str:
+        """
+                 Prints the current state of the channel registers
+        """
+    def set_clamp_high_value(self, clamp_high_value: typing.SupportsFloat | typing.SupportsIndex) -> int:
+        """
+                 Sets the channel clamp high value
+        
+                 Parameters
+                 ----------
+                 clamp_high_value : float
+                      The clamp value in the unit of ampere [A]
+        """
+    def set_clamp_low_value(self, clamp_low_value: typing.SupportsFloat | typing.SupportsIndex) -> int:
+        """
+                 Sets the channel clamp low value
+        
+                 Parameters
+                 ----------
+                 clamp_low_value : float
+                      The clamp value in the unit of ampere [A]
+        """
+    def set_name(self, name: str) -> None:
+        """
+                 Sets the channel name
+        
+                 Parameters
+                 ----------
+                 name : str
+                      The name of the channel
+        """
+    def set_voltage(self, voltage: typing.SupportsFloat | typing.SupportsIndex) -> None:
+        """
+                 Sets the channel output voltage
+        
+                 Parameters
+                 ----------
+                 voltage : float
+                      The voltage in the unit of volt [V]
+        """
+    @property
+    def autorange(self) -> bool:
+        """
+                 Property that gets/sets the state of the channels automatic current range functionality
+        
+                 Parameters
+                 ----------
+                 enable : bool
+                      If set to true, the autoranging is enabled
+        
+                 Returns
+                 -------
+                 bool
+                      The state of the auto range enabled state
+        """
+    @autorange.setter
+    def autorange(self, arg1: bool) -> None:
+        ...
+    @property
+    def autorange_measurement_count(self) -> int:
+        """
+                 Property that gets/sets the effective number of measurements for autoranging, default is 100
+        
+                 Parameters
+                 ----------
+                 autorange_measurement_count : int
+                      Number of measurements
+        
+                 Returns
+                 -------
+                 int
+                      The number of measurements
+        """
+    @autorange_measurement_count.setter
+    def autorange_measurement_count(self, arg1: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    @property
+    def autorange_post_switch_delay(self) -> int:
+        """
+                  Property that gets/sets the delay after switching the range in autorange mode, default is 0ms
+        
+                 Parameters
+                 ----------
+                 autorange_post_switch_delay : int
+                      Delay in ms
+        
+                 Returns
+                 -------
+                 int
+                      The delay in ms
+        """
+    @autorange_post_switch_delay.setter
+    def autorange_post_switch_delay(self, arg1: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    @property
+    def clamp_enabled(self) -> bool:
+        """
+                 Property that gets/sets the channel clamp enable state
+        
+                 Parameters
+                 ----------
+                 clamp_enabled : bool
+        
+                 Returns
+                 -------
+                 bool
+                      The clamp enable state
+        """
+    @clamp_enabled.setter
+    def clamp_enabled(self, arg1: bool) -> None:
+        ...
+    @property
+    def clamp_low_value(self) -> float:
+        """
+                 Property that gets/sets the channel clamp low value
+        
+                 Parameters
+                 ----------
+                 clamp_low_value : float
+                      The clamp value in the unit of ampere [A]
+        
+                 Returns
+                 -------
+                 float
+                      The clamp value in the unit of ampere [A]
+        """
+    @clamp_low_value.setter
+    def clamp_low_value(self, arg1: typing.SupportsFloat | typing.SupportsIndex) -> int:
+        ...
+    @property
+    def current(self) -> float:
+        """
+                 Property that returns the measured current at the channel output (sample count is 16)
+        
+                 Returns
+                 -------
+                 float
+                      The measured current in the unit of ampere [A]
+        """
+    @property
+    def current_range(self) -> DpsCurrentRange:
+        """
+                 Property that gets/sets the channel current reange
+        
+                 Parameters
+                 ----------
+                 current_range : DpsCurrentRange
+                      The current range
+        
+                 Returns
+                 -------
+                 DpsCurrentRange
+                      The currently applied current range
+        """
+    @current_range.setter
+    def current_range(self, arg1: DpsCurrentRange) -> None:
+        ...
+    @property
+    def enabled(self) -> bool:
+        """
+                 Property that gets/sets the channel enabled state
+        
+                 Parameters
+                 ----------
+                 enabled : bool
+                      True to enable the channel, false to disable the channel
+        
+                 Returns
+                 -------
+                 bool
+                      The enabled state of the channel
+        """
+    @enabled.setter
+    def enabled(self, arg1: bool) -> None:
+        ...
+    @property
+    def gang_mode(self) -> GangMode:
+        """
+                 Property that gets/sets the channel gang mode configuration  
+                   Parameters
+                   ----------
+                       gang_mode : GangMode
+                            The gang mode configuration
+                       Returns
+                       -------
+                       GangMode
+                            The currently applied gang mode configuration
+        """
+    @gang_mode.setter
+    def gang_mode(self, arg1: GangMode) -> None:
+        ...
+    @property
+    def hardware_id(self) -> str:
+        """
+                 Property that gets the channel id
+        
+                 Returns
+                 -------
+                 str
+                      The id of the channel
+        """
+    @property
+    def highZ(self) -> bool:
+        """
+                 Property that gets/sets the channel HighZ state
+        
+                 Parameters
+                 ----------
+                 enabled : bool
+                      True to enable HighZ, false to disable
+        
+                 Returns
+                 -------
+                 bool
+                      The highZ state of the channel
+        """
+    @highZ.setter
+    def highZ(self, arg1: bool) -> None:
+        ...
+    @property
+    def name(self) -> str:
+        """
+                 Property that gets/sets the channel name
+        
+                 Parameters
+                 ----------
+                 name : 
+                      The name of the channel
+        
+                 Returns
+                 -------
+                 str
+                      The name of the channel
+        """
+    @name.setter
+    def name(self, arg1: str) -> None:
+        ...
+    @property
+    def output_ranges(self) -> list[float]:
+        """
+                 Property that gets the channel min/max output voltage and current
+        
+                 Returns
+                 -------
+                 List[float]
+                      A list containing the values [Vmin, Vmax, Imin, Imax]
+        """
+    @property
+    def sample_count(self) -> int:
+        """
+                 Property that gets/sets the number of samples per measurement
+        
+                 Parameters
+                 ----------
+                 sample_count : int
+                      Number of samples per measurements
+        
+                 Returns
+                 -------
+                 int
+                      The number of samples per measurement
+        """
+    @sample_count.setter
+    def sample_count(self, arg1: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    @property
+    def voltage(self) -> float:
+        """
+                 Property that measures/sets the channel output voltage
+        
+                 Parameters
+                 ----------
+                 voltage : float
+                      The voltage in unit of volt [V]
+        
+                 Returns
+                 -------
+                 float
+                      The measured voltage in the unit of volt [V]
+        """
+    @voltage.setter
+    def voltage(self, arg1: typing.SupportsFloat | typing.SupportsIndex) -> None:
+        ...
+class GangMode:
+    """
+    Members:
+    
+      MasterU
+    
+      MasterI
+    
+      SlaveU
+    
+      SlaveI
+    """
+    MasterI: typing.ClassVar[GangMode]
+    MasterU: typing.ClassVar[GangMode]
+    SlaveI: typing.ClassVar[GangMode]
+    SlaveU: typing.ClassVar[GangMode]
+    __members__: typing.ClassVar[dict[str, GangMode]]
+    @typing.overload
+    def __eq__(self, other: GangMode) -> bool:
+        ...
+    @typing.overload
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    @typing.overload
+    def __ne__(self, other: GangMode) -> bool:
+        ...
+    @typing.overload
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
+class DpsCurrentRange:
+    """
+    Members:
+    
+      Range_25uA
+    
+      Range_250uA
+    
+      Range_2500uA
+    
+      Range_25mA
+    
+      Range_500mA
+    
+      Range_1200mA
+    """
+    Range_1200mA: typing.ClassVar[DpsCurrentRange]
+    Range_2500uA: typing.ClassVar[DpsCurrentRange]
+    Range_250uA: typing.ClassVar[DpsCurrentRange]
+    Range_25mA: typing.ClassVar[DpsCurrentRange]
+    Range_25uA: typing.ClassVar[DpsCurrentRange]
+    Range_500mA: typing.ClassVar[DpsCurrentRange]
+    __members__: typing.ClassVar[dict[str, DpsCurrentRange]]
+    @typing.overload
+    def __eq__(self, other: DpsCurrentRange) -> bool:
+        ...
+    @typing.overload
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    @typing.overload
+    def __ne__(self, other: DpsCurrentRange) -> bool:
+        ...
+    @typing.overload
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
 class AD5522ChannelModel(AnalogChannelModel):
     def measure_current(self) -> float:
         """
@@ -347,293 +2395,178 @@ class AD5522ChannelModel(AnalogChannelModel):
     @voltage.setter
     def voltage(self, arg1: typing.SupportsFloat | typing.SupportsIndex) -> None:
         ...
-class AD5560ChannelModel(AnalogChannelModel):
-    def measure_current(self) -> float:
-        """
-                 Measures the current at the channel output (sample count is 16)
-        
-                 Returns
-                 -------
-                 float
-                      The measured current in the unit of ampere [A]
-        """
-    def measure_currents(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> list[float]:
-        """
-                 Measures the currents at the channel output (sample count is 16)
-        
-                 Parameters
-                 ----------
-                 repetitions : int
-                      The number of repetitions of the measurement
-        
-                 Returns
-                 -------
-                 List[float]
-                      The measured currents in the unit of ampere [A]
-        """
-    def measure_voltage(self) -> float:
-        """
-                 Measures the voltage at the channel output (sample count is 16)
-        
-                 Returns
-                 -------
-                 float
-                      The measured voltage in the unit of volt [V]
-        """
-    def measure_voltages(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> list[float]:
-        """
-                 Measures the voltages at the channel output (sample count is 16)
-        
-                 Parameters
-                 ----------
-                 repetitions : int
-                      The number of repetitions of the measurement
-        
-                 Returns
-                 -------
-                 List[float]
-                      The measured currents in the unit of volt [V]
-        """
-    def perform_autorange(self) -> None:
-        """
-                 Performs the autoranging of the channel
-        
-                 Parameters
-                 ----------
-        
-                 Returns
-                 -------
-                 None
-                      This function does not return any value
-        """
-    def print_channel_register(self) -> str:
-        """
-                 Prints the current state of the channel registers
-        """
-    def set_clamp_high_value(self, clamp_high_value: typing.SupportsFloat | typing.SupportsIndex) -> int:
-        """
-                 Sets the channel clamp high value
-        
-                 Parameters
-                 ----------
-                 clamp_high_value : float
-                      The clamp value in the unit of ampere [A]
-        """
-    def set_clamp_low_value(self, clamp_low_value: typing.SupportsFloat | typing.SupportsIndex) -> int:
-        """
-                 Sets the channel clamp low value
-        
-                 Parameters
-                 ----------
-                 clamp_low_value : float
-                      The clamp value in the unit of ampere [A]
-        """
-    def set_name(self, name: str) -> None:
-        """
-                 Sets the channel name
-        
-                 Parameters
-                 ----------
-                 name : str
-                      The name of the channel
-        """
-    def set_voltage(self, voltage: typing.SupportsFloat | typing.SupportsIndex) -> None:
-        """
-                 Sets the channel output voltage
-        
-                 Parameters
-                 ----------
-                 voltage : float
-                      The voltage in the unit of volt [V]
-        """
-    @property
-    def autorange(self) -> bool:
-        """
-                 Property that gets/sets the state of the channels automatic current range functionality
-        
-                 Parameters
-                 ----------
-                 enable : bool
-                      If set to true, the autoranging is enabled
-        
-                 Returns
-                 -------
-                 bool
-                      The state of the auto range enabled state
-        """
-    @autorange.setter
-    def autorange(self, arg1: bool) -> None:
+class SmuCurrentRange:
+    """
+    Members:
+    
+      Range_5uA
+    
+      Range_20uA
+    
+      Range_200uA
+    
+      Range_2mA
+    
+      Range_70mA
+    """
+    Range_200uA: typing.ClassVar[SmuCurrentRange]
+    Range_20uA: typing.ClassVar[SmuCurrentRange]
+    Range_2mA: typing.ClassVar[SmuCurrentRange]
+    Range_5uA: typing.ClassVar[SmuCurrentRange]
+    Range_70mA: typing.ClassVar[SmuCurrentRange]
+    __members__: typing.ClassVar[dict[str, SmuCurrentRange]]
+    @typing.overload
+    def __eq__(self, other: SmuCurrentRange) -> bool:
         ...
-    @property
-    def autorange_measurement_count(self) -> int:
-        """
-                 Property that gets/sets the effective number of measurements for autoranging, default is 100
-        
-                 Parameters
-                 ----------
-                 autorange_measurement_count : int
-                      Number of measurements
-        
-                 Returns
-                 -------
-                 int
-                      The number of measurements
-        """
-    @autorange_measurement_count.setter
-    def autorange_measurement_count(self, arg1: typing.SupportsInt | typing.SupportsIndex) -> None:
+    @typing.overload
+    def __eq__(self, other: typing.Any) -> bool:
         ...
-    @property
-    def autorange_post_switch_delay(self) -> int:
-        """
-                  Property that gets/sets the delay after switching the range in autorange mode, default is 0ms
-        
-                 Parameters
-                 ----------
-                 autorange_post_switch_delay : int
-                      Delay in ms
-        
-                 Returns
-                 -------
-                 int
-                      The delay in ms
-        """
-    @autorange_post_switch_delay.setter
-    def autorange_post_switch_delay(self, arg1: typing.SupportsInt | typing.SupportsIndex) -> None:
+    def __getstate__(self) -> int:
         ...
-    @property
-    def clamp_enabled(self) -> bool:
-        """
-                 Property that gets/sets the channel clamp enable state
-        
-                 Parameters
-                 ----------
-                 clamp_enabled : bool
-        
-                 Returns
-                 -------
-                 bool
-                      The clamp enable state
-        """
-    @clamp_enabled.setter
-    def clamp_enabled(self, arg1: bool) -> None:
+    def __hash__(self) -> int:
         ...
-    @property
-    def clamp_low_value(self) -> float:
-        """
-                 Property that gets/sets the channel clamp low value
-        
-                 Parameters
-                 ----------
-                 clamp_low_value : float
-                      The clamp value in the unit of ampere [A]
-        
-                 Returns
-                 -------
-                 float
-                      The clamp value in the unit of ampere [A]
-        """
-    @clamp_low_value.setter
-    def clamp_low_value(self, arg1: typing.SupportsFloat | typing.SupportsIndex) -> int:
+    def __index__(self) -> int:
         ...
-    @property
-    def current(self) -> float:
-        """
-                 Property that returns the measured current at the channel output (sample count is 16)
-        
-                 Returns
-                 -------
-                 float
-                      The measured current in the unit of ampere [A]
-        """
-    @property
-    def current_range(self) -> DpsCurrentRange:
-        """
-                 Property that gets/sets the channel current reange
-        
-                 Parameters
-                 ----------
-                 current_range : DpsCurrentRange
-                      The current range
-        
-                 Returns
-                 -------
-                 DpsCurrentRange
-                      The currently applied current range
-        """
-    @current_range.setter
-    def current_range(self, arg1: DpsCurrentRange) -> None:
+    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
         ...
-    @property
-    def enabled(self) -> bool:
-        """
-                 Property that gets/sets the channel enabled state
-        
-                 Parameters
-                 ----------
-                 enabled : bool
-                      True to enable the channel, false to disable the channel
-        
-                 Returns
-                 -------
-                 bool
-                      The enabled state of the channel
-        """
-    @enabled.setter
-    def enabled(self, arg1: bool) -> None:
+    def __int__(self) -> int:
         ...
-    @property
-    def gang_mode(self) -> GangMode:
-        """
-                 Property that gets/sets the channel gang mode configuration  
-                   Parameters
-                   ----------
-                       gang_mode : GangMode
-                            The gang mode configuration
-                       Returns
-                       -------
-                       GangMode
-                            The currently applied gang mode configuration
-        """
-    @gang_mode.setter
-    def gang_mode(self, arg1: GangMode) -> None:
+    @typing.overload
+    def __ne__(self, other: SmuCurrentRange) -> bool:
         ...
-    @property
-    def hardware_id(self) -> str:
-        """
-                 Property that gets the channel id
-        
-                 Returns
-                 -------
-                 str
-                      The id of the channel
-        """
-    @property
-    def highZ(self) -> bool:
-        """
-                 Property that gets/sets the channel HighZ state
-        
-                 Parameters
-                 ----------
-                 enabled : bool
-                      True to enable HighZ, false to disable
-        
-                 Returns
-                 -------
-                 bool
-                      The highZ state of the channel
-        """
-    @highZ.setter
-    def highZ(self, arg1: bool) -> None:
+    @typing.overload
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __str__(self) -> str:
         ...
     @property
     def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
+class IdSmuDeviceModel:
+    def get_firmware_version(self) -> str:
         """
-                 Property that gets/sets the channel name
+                 Returns the firmware version of this device
+                 
+                 Returns
+                 -------
+                 str
+                      The firmware version
+        """
+    def get_hardware_id(self) -> str:
+        """
+                 Returns the hardware id of this device in the format Mx.Sy (Motherboard.Slot - Format)
+                 
+                 Returns
+                 -------
+                 str
+                      The hardware id
+        """
+    def measure_channels(self, sample_count: typing.SupportsInt | typing.SupportsIndex, repetitions: typing.SupportsInt | typing.SupportsIndex, channel_numbers: collections.abc.Sequence[typing.SupportsInt | typing.SupportsIndex], wait_for_trigger: bool = False) -> CommandReplyFuture:
+        """
+                 Performs a measurement command on the listed channels
+        
+                 Parameters
+                 ----------
+                 sample_count : int
+                      The number of samples for the measurement
+              
+                 repetitions : int
+                      The number repetitions of the measurement
+        
+                 channel_numbers : List[int]
+                      The channel numbers of the channels to measure
+        
+                 wait_for_trigger : bool
+                      If true, the measurement is executed with the next hardware trigger signal
+        
+                 Returns
+                 -------
+                 CommandReplyFuture
+                      A CommandReplyFuture
+        """
+    @typing.overload
+    def measure_channels_async(self, sample_count: typing.SupportsInt | typing.SupportsIndex, repetitions: typing.SupportsInt | typing.SupportsIndex, channel_numbers: collections.abc.Sequence[typing.SupportsInt | typing.SupportsIndex], wait_for_trigger: bool) -> CommandReplyFuture:
+        """
+                 Performs a measurement command on the listed channels. The method as "measure_channels", except the GIL scope is released in this version
+        
+                 Parameters
+                 ----------
+                 sample_count : int
+                      The number of samples for the measurement
+              
+                 repetitions : int
+                      The number repetitions of the measurement
+        
+                 channel_numbers : List[int]
+                      The channel numbers of the channels to measure
+        
+                 wait_for_trigger : bool
+                      If true, the measurement is executed with the next hardware trigger signal
+        
+                 Returns
+                 -------
+                 CommandReplyFuture
+                      A CommandReplyFuture 
+        """
+    @typing.overload
+    def measure_channels_async(self, sample_count: typing.SupportsInt | typing.SupportsIndex, repetitions: typing.SupportsInt | typing.SupportsIndex, channel_numbers: collections.abc.Sequence[str], wait_for_trigger: bool) -> CommandReplyFuture:
+        """
+                 Performs a measurement command on the listed channels. The method as "measure_channels", except the GIL scope is released in this version
+        
+                 Parameters
+                 ----------
+                 sample_count : int
+                      The number of samples for the measurement
+              
+                 repetitions : int
+                      The number repetitions of the measurement
+        
+                 channel_numbers : List[int]
+                      The channel numbers of the channels to measure
+        
+                 wait_for_trigger : bool
+                      If true, the measurement is executed with the next hardware trigger signal
+        
+                 Returns
+                 -------
+                 CommandReplyFuture
+                      A CommandReplyFuture 
+        """
+    @property
+    def channel_ids(self) -> list[str]:
+        """
+                 Returns a list of all channel-ids (hardware-ids) in the format Mx.Sy.Cz (Motherboard.Slot.Channel - Format)
+                 Returns
+                 -------
+                 List[str]
+                      The list of the channel-ids
+        """
+    @property
+    def hardware_id(self) -> str:
+        """
+                 Returns the hardware id of this device in the format Mx.Sy (Motherboard.Slot - Format)
+                 
+                 Returns
+                 -------
+                 str
+                      The hardware id
+        """
+    @property
+    def name(self) -> str:
+        """
+                 Property that gets/sets the device name
         
                  Parameters
                  ----------
                  name : 
-                      The name of the channel
+                      The device name
         
                  Returns
                  -------
@@ -643,762 +2576,20 @@ class AD5560ChannelModel(AnalogChannelModel):
     @name.setter
     def name(self, arg1: str) -> None:
         ...
-    @property
-    def output_ranges(self) -> list[float]:
-        """
-                 Property that gets the channel min/max output voltage and current
-        
-                 Returns
-                 -------
-                 List[float]
-                      A list containing the values [Vmin, Vmax, Imin, Imax]
-        """
-    @property
-    def sample_count(self) -> int:
-        """
-                 Property that gets/sets the number of samples per measurement
-        
-                 Parameters
-                 ----------
-                 sample_count : int
-                      Number of samples per measurements
-        
-                 Returns
-                 -------
-                 int
-                      The number of samples per measurement
-        """
-    @sample_count.setter
-    def sample_count(self, arg1: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    @property
-    def voltage(self) -> float:
-        """
-                 Property that measures/sets the channel output voltage
-        
-                 Parameters
-                 ----------
-                 voltage : float
-                      The voltage in unit of volt [V]
-        
-                 Returns
-                 -------
-                 float
-                      The measured voltage in the unit of volt [V]
-        """
-    @voltage.setter
-    def voltage(self, arg1: typing.SupportsFloat | typing.SupportsIndex) -> None:
-        ...
-class AnalogChannelModel:
-    pass
-class At:
-    def __getitem__(self, arg0: tuple[typing.SupportsInt | typing.SupportsIndex, str]) -> str | None:
-        ...
-    def __setitem__(self, arg0: tuple[typing.SupportsInt | typing.SupportsIndex, str], arg1: str) -> None:
-        ...
-class ChannelResult:
-    """
-    
-             The result of a ReadAdcCommandIdSmu
-        
-    """
-    def get_values(self) -> list[float]:
-        """
-                 Returns the measurement values for a channel
-        
-                 Returns
-                 -------
-                 DoubleList
-                      A DoubleList object
-        """
-    @property
-    def values(self) -> numpy.typing.NDArray[numpy.float64]:
-        """
-                 Returns the measurement values for a channel
-        
-                 Returns
-                 -------
-                 ndarray
-        """
-class CommandReply:
-    """
-    
-             The aspect device engine is a command driven framework. 
-             This is the base class of all command replies (and results).
-             The reply can be an error or a result.
-        
-    """
-    def is_error(self) -> bool:
-        """
-                 Indicates whether the response is a command error
-        
-                 Returns
-                 -------
-                 bool
-        """
-    def is_result(self) -> bool:
-        """
-                 Indicates whether the response is an command result
-        
-                 Returns
-                 -------
-                 bool
-        """
-    def to_json(self) -> str:
-        """
-                 Returns the reply as a JSON string
-        
-                 Returns
-                 -------
-                 str
-        """
-class CommandReplyFuture:
-    def get(self) -> CommandReply:
-        ...
-class CommandReplyList:
-    """
-    List of command replies.
-    """
-    __hash__: typing.ClassVar[None] = None
-    def __bool__(self: collections.abc.Sequence[CommandReply]) -> bool:
-        """
-        Check whether the list is nonempty
-        """
-    def __contains__(self: collections.abc.Sequence[CommandReply], x: CommandReply) -> bool:
-        """
-        Return true the container contains ``x``
-        """
-    @typing.overload
-    def __delitem__(self: collections.abc.Sequence[CommandReply], arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
-        """
-        Delete the list elements at index ``i``
-        """
-    @typing.overload
-    def __delitem__(self: collections.abc.Sequence[CommandReply], arg0: slice) -> None:
-        """
-        Delete list elements using a slice object
-        """
-    def __eq__(self: collections.abc.Sequence[CommandReply], arg0: collections.abc.Sequence[CommandReply]) -> bool:
-        ...
-    @typing.overload
-    def __getitem__(self: collections.abc.Sequence[CommandReply], s: slice) -> list[CommandReply]:
-        """
-        Retrieve list elements using a slice object
-        """
-    @typing.overload
-    def __getitem__(self: collections.abc.Sequence[CommandReply], arg0: typing.SupportsInt | typing.SupportsIndex) -> CommandReply:
-        ...
-    @typing.overload
-    def __init__(self) -> None:
-        ...
-    @typing.overload
-    def __init__(self, arg0: collections.abc.Sequence[CommandReply]) -> None:
-        """
-        Copy constructor
-        """
-    @typing.overload
-    def __init__(self, arg0: collections.abc.Iterable) -> None:
-        ...
-    def __iter__(self: collections.abc.Sequence[CommandReply]) -> collections.abc.Iterator[CommandReply]:
-        ...
-    def __len__(self: collections.abc.Sequence[CommandReply]) -> int:
-        ...
-    def __ne__(self: collections.abc.Sequence[CommandReply], arg0: collections.abc.Sequence[CommandReply]) -> bool:
-        ...
-    def __repr__(self: collections.abc.Sequence[CommandReply]) -> str:
-        """
-        Return the canonical string representation of this list.
-        """
-    @typing.overload
-    def __setitem__(self: collections.abc.Sequence[CommandReply], arg0: typing.SupportsInt | typing.SupportsIndex, arg1: CommandReply) -> None:
-        ...
-    @typing.overload
-    def __setitem__(self: collections.abc.Sequence[CommandReply], arg0: slice, arg1: collections.abc.Sequence[CommandReply]) -> None:
-        """
-        Assign list elements using a slice object
-        """
-    def append(self: collections.abc.Sequence[CommandReply], x: CommandReply) -> None:
-        """
-        Add an item to the end of the list
-        """
-    def clear(self: collections.abc.Sequence[CommandReply]) -> None:
-        """
-        Clear the contents
-        """
-    def count(self: collections.abc.Sequence[CommandReply], x: CommandReply) -> int:
-        """
-        Return the number of times ``x`` appears in the list
-        """
-    @typing.overload
-    def extend(self: collections.abc.Sequence[CommandReply], L: collections.abc.Sequence[CommandReply]) -> None:
-        """
-        Extend the list by appending all the items in the given list
-        """
-    @typing.overload
-    def extend(self: collections.abc.Sequence[CommandReply], L: collections.abc.Iterable) -> None:
-        """
-        Extend the list by appending all the items in the given list
-        """
-    def insert(self: collections.abc.Sequence[CommandReply], i: typing.SupportsInt | typing.SupportsIndex, x: CommandReply) -> None:
-        """
-        Insert an item at a given position.
-        """
-    @typing.overload
-    def pop(self: collections.abc.Sequence[CommandReply]) -> CommandReply:
-        """
-        Remove and return the last item
-        """
-    @typing.overload
-    def pop(self: collections.abc.Sequence[CommandReply], i: typing.SupportsInt | typing.SupportsIndex) -> CommandReply:
-        """
-        Remove and return the item at index ``i``
-        """
-    def remove(self: collections.abc.Sequence[CommandReply], x: CommandReply) -> None:
-        """
-        Remove the first item from the list whose value is x. It is an error if there is no such item.
-        """
-class CurrentRange:
-    """
-    Members:
-    
-      Range_5uA
-    
-      Range_20uA_SMU
-    
-      Range_200uA_SMU
-    
-      Range_2mA_SMU
-    
-      Range_70mA_SMU
-    
-      Range_25uA_DPS
-    
-      Range_250uA_DPS
-    
-      Range_2500uA_DPS
-    
-      Range_25mA_DPS
-    
-      Range_500mA_DPS
-    
-      Range_1200mA_DPS
-    """
-    Range_1200mA_DPS: typing.ClassVar[CurrentRange]  # value = <CurrentRange.Range_1200mA_DPS: 150>
-    Range_200uA_SMU: typing.ClassVar[CurrentRange]  # value = <CurrentRange.Range_200uA_SMU: 30>
-    Range_20uA_SMU: typing.ClassVar[CurrentRange]  # value = <CurrentRange.Range_20uA_SMU: 20>
-    Range_2500uA_DPS: typing.ClassVar[CurrentRange]  # value = <CurrentRange.Range_2500uA_DPS: 120>
-    Range_250uA_DPS: typing.ClassVar[CurrentRange]  # value = <CurrentRange.Range_250uA_DPS: 110>
-    Range_25mA_DPS: typing.ClassVar[CurrentRange]  # value = <CurrentRange.Range_25mA_DPS: 130>
-    Range_25uA_DPS: typing.ClassVar[CurrentRange]  # value = <CurrentRange.Range_25uA_DPS: 100>
-    Range_2mA_SMU: typing.ClassVar[CurrentRange]  # value = <CurrentRange.Range_2mA_SMU: 40>
-    Range_500mA_DPS: typing.ClassVar[CurrentRange]  # value = <CurrentRange.Range_500mA_DPS: 140>
-    Range_5uA: typing.ClassVar[CurrentRange]  # value = <CurrentRange.Range_5uA: 10>
-    Range_70mA_SMU: typing.ClassVar[CurrentRange]  # value = <CurrentRange.Range_70mA_SMU: 50>
-    __members__: typing.ClassVar[dict[str, CurrentRange]]  # value = {'Range_5uA': <CurrentRange.Range_5uA: 10>, 'Range_20uA_SMU': <CurrentRange.Range_20uA_SMU: 20>, 'Range_200uA_SMU': <CurrentRange.Range_200uA_SMU: 30>, 'Range_2mA_SMU': <CurrentRange.Range_2mA_SMU: 40>, 'Range_70mA_SMU': <CurrentRange.Range_70mA_SMU: 50>, 'Range_25uA_DPS': <CurrentRange.Range_25uA_DPS: 100>, 'Range_250uA_DPS': <CurrentRange.Range_250uA_DPS: 110>, 'Range_2500uA_DPS': <CurrentRange.Range_2500uA_DPS: 120>, 'Range_25mA_DPS': <CurrentRange.Range_25mA_DPS: 130>, 'Range_500mA_DPS': <CurrentRange.Range_500mA_DPS: 140>, 'Range_1200mA_DPS': <CurrentRange.Range_1200mA_DPS: 150>}
-    @typing.overload
-    def __eq__(self, other: CurrentRange) -> bool:
-        ...
-    @typing.overload
-    def __eq__(self, other: typing.Any) -> bool:
-        ...
-    def __getstate__(self) -> int:
-        ...
-    def __hash__(self) -> int:
-        ...
-    def __index__(self) -> int:
-        ...
-    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    def __int__(self) -> int:
-        ...
-    @typing.overload
-    def __ne__(self, other: CurrentRange) -> bool:
-        ...
-    @typing.overload
-    def __ne__(self, other: typing.Any) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
-    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    def __str__(self) -> str:
-        ...
-    @property
-    def name(self) -> str:
-        ...
-    @property
-    def value(self) -> int:
-        ...
-class Device:
-    def get_firmware_version(self) -> FirmwareVersion:
-        ...
-    def get_id(self) -> str:
-        ...
-class DeviceList:
-    """
-    List of devices.
-    """
-    __hash__: typing.ClassVar[None] = None
-    def __bool__(self: collections.abc.Sequence[Device]) -> bool:
-        """
-        Check whether the list is nonempty
-        """
-    def __contains__(self: collections.abc.Sequence[Device], x: Device) -> bool:
-        """
-        Return true the container contains ``x``
-        """
-    @typing.overload
-    def __delitem__(self: collections.abc.Sequence[Device], arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
-        """
-        Delete the list elements at index ``i``
-        """
-    @typing.overload
-    def __delitem__(self: collections.abc.Sequence[Device], arg0: slice) -> None:
-        """
-        Delete list elements using a slice object
-        """
-    def __eq__(self: collections.abc.Sequence[Device], arg0: collections.abc.Sequence[Device]) -> bool:
-        ...
-    @typing.overload
-    def __getitem__(self: collections.abc.Sequence[Device], s: slice) -> list[Device]:
-        """
-        Retrieve list elements using a slice object
-        """
-    @typing.overload
-    def __getitem__(self: collections.abc.Sequence[Device], arg0: typing.SupportsInt | typing.SupportsIndex) -> Device:
-        ...
-    @typing.overload
-    def __init__(self) -> None:
-        ...
-    @typing.overload
-    def __init__(self, arg0: collections.abc.Sequence[Device]) -> None:
-        """
-        Copy constructor
-        """
-    @typing.overload
-    def __init__(self, arg0: collections.abc.Iterable) -> None:
-        ...
-    def __iter__(self: collections.abc.Sequence[Device]) -> collections.abc.Iterator[Device]:
-        ...
-    def __len__(self: collections.abc.Sequence[Device]) -> int:
-        ...
-    def __ne__(self: collections.abc.Sequence[Device], arg0: collections.abc.Sequence[Device]) -> bool:
-        ...
-    def __repr__(self: collections.abc.Sequence[Device]) -> str:
-        """
-        Return the canonical string representation of this list.
-        """
-    @typing.overload
-    def __setitem__(self: collections.abc.Sequence[Device], arg0: typing.SupportsInt | typing.SupportsIndex, arg1: Device) -> None:
-        ...
-    @typing.overload
-    def __setitem__(self: collections.abc.Sequence[Device], arg0: slice, arg1: collections.abc.Sequence[Device]) -> None:
-        """
-        Assign list elements using a slice object
-        """
-    def append(self: collections.abc.Sequence[Device], x: Device) -> None:
-        """
-        Add an item to the end of the list
-        """
-    def clear(self: collections.abc.Sequence[Device]) -> None:
-        """
-        Clear the contents
-        """
-    def count(self: collections.abc.Sequence[Device], x: Device) -> int:
-        """
-        Return the number of times ``x`` appears in the list
-        """
-    @typing.overload
-    def extend(self: collections.abc.Sequence[Device], L: collections.abc.Sequence[Device]) -> None:
-        """
-        Extend the list by appending all the items in the given list
-        """
-    @typing.overload
-    def extend(self: collections.abc.Sequence[Device], L: collections.abc.Iterable) -> None:
-        """
-        Extend the list by appending all the items in the given list
-        """
-    def insert(self: collections.abc.Sequence[Device], i: typing.SupportsInt | typing.SupportsIndex, x: Device) -> None:
-        """
-        Insert an item at a given position.
-        """
-    @typing.overload
-    def pop(self: collections.abc.Sequence[Device]) -> Device:
-        """
-        Remove and return the last item
-        """
-    @typing.overload
-    def pop(self: collections.abc.Sequence[Device], i: typing.SupportsInt | typing.SupportsIndex) -> Device:
-        """
-        Remove and return the item at index ``i``
-        """
-    def remove(self: collections.abc.Sequence[Device], x: Device) -> None:
-        """
-        Remove the first item from the list whose value is x. It is an error if there is no such item.
-        """
-class DeviceModel:
-    pass
-class DeviceResult(CommandReply):
-    """
-    
-             The result of a device detection command.
-        
-    """
-    def get_devices(self) -> list[Device]:
-        ...
-class DoubleList:
-    """
-    List of doubles.
-    """
-    __hash__: typing.ClassVar[None] = None
-    def __bool__(self) -> bool:
-        """
-        Check whether the list is nonempty
-        """
-    def __contains__(self, x: typing.SupportsFloat | typing.SupportsIndex) -> bool:
-        """
-        Return true the container contains ``x``
-        """
-    @typing.overload
-    def __delitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
-        """
-        Delete the list elements at index ``i``
-        """
-    @typing.overload
-    def __delitem__(self, arg0: slice) -> None:
-        """
-        Delete list elements using a slice object
-        """
-    def __eq__(self, arg0: DoubleList) -> bool:
-        ...
-    @typing.overload
-    def __getitem__(self, s: slice) -> DoubleList:
-        """
-        Retrieve list elements using a slice object
-        """
-    @typing.overload
-    def __getitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> float:
-        ...
-    @typing.overload
-    def __init__(self) -> None:
-        ...
-    @typing.overload
-    def __init__(self, arg0: DoubleList) -> None:
-        """
-        Copy constructor
-        """
-    @typing.overload
-    def __init__(self, arg0: collections.abc.Iterable) -> None:
-        ...
-    def __iter__(self) -> collections.abc.Iterator[float]:
-        ...
-    def __len__(self) -> int:
-        ...
-    def __ne__(self, arg0: DoubleList) -> bool:
-        ...
-    def __repr__(self) -> str:
-        """
-        Return the canonical string representation of this list.
-        """
-    @typing.overload
-    def __setitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex, arg1: typing.SupportsFloat | typing.SupportsIndex) -> None:
-        ...
-    @typing.overload
-    def __setitem__(self, arg0: slice, arg1: DoubleList) -> None:
-        """
-        Assign list elements using a slice object
-        """
-    def append(self, x: typing.SupportsFloat | typing.SupportsIndex) -> None:
-        """
-        Add an item to the end of the list
-        """
-    def clear(self) -> None:
-        """
-        Clear the contents
-        """
-    def count(self, x: typing.SupportsFloat | typing.SupportsIndex) -> int:
-        """
-        Return the number of times ``x`` appears in the list
-        """
-    @typing.overload
-    def extend(self, L: DoubleList) -> None:
-        """
-        Extend the list by appending all the items in the given list
-        """
-    @typing.overload
-    def extend(self, L: collections.abc.Iterable) -> None:
-        """
-        Extend the list by appending all the items in the given list
-        """
-    def insert(self, i: typing.SupportsInt | typing.SupportsIndex, x: typing.SupportsFloat | typing.SupportsIndex) -> None:
-        """
-        Insert an item at a given position.
-        """
-    @typing.overload
-    def pop(self) -> float:
-        """
-        Remove and return the last item
-        """
-    @typing.overload
-    def pop(self, i: typing.SupportsInt | typing.SupportsIndex) -> float:
-        """
-        Remove and return the item at index ``i``
-        """
-    def remove(self, x: typing.SupportsFloat | typing.SupportsIndex) -> None:
-        """
-        Remove the first item from the list whose value is x. It is an error if there is no such item.
-        """
-class DpsCurrentRange:
-    """
-    Members:
-    
-      Range_25uA
-    
-      Range_250uA
-    
-      Range_2500uA
-    
-      Range_25mA
-    
-      Range_500mA
-    
-      Range_1200mA
-    """
-    Range_1200mA: typing.ClassVar[DpsCurrentRange]  # value = <DpsCurrentRange.Range_1200mA: 6>
-    Range_2500uA: typing.ClassVar[DpsCurrentRange]  # value = <DpsCurrentRange.Range_2500uA: 3>
-    Range_250uA: typing.ClassVar[DpsCurrentRange]  # value = <DpsCurrentRange.Range_250uA: 2>
-    Range_25mA: typing.ClassVar[DpsCurrentRange]  # value = <DpsCurrentRange.Range_25mA: 4>
-    Range_25uA: typing.ClassVar[DpsCurrentRange]  # value = <DpsCurrentRange.Range_25uA: 1>
-    Range_500mA: typing.ClassVar[DpsCurrentRange]  # value = <DpsCurrentRange.Range_500mA: 5>
-    __members__: typing.ClassVar[dict[str, DpsCurrentRange]]  # value = {'Range_25uA': <DpsCurrentRange.Range_25uA: 1>, 'Range_250uA': <DpsCurrentRange.Range_250uA: 2>, 'Range_2500uA': <DpsCurrentRange.Range_2500uA: 3>, 'Range_25mA': <DpsCurrentRange.Range_25mA: 4>, 'Range_500mA': <DpsCurrentRange.Range_500mA: 5>, 'Range_1200mA': <DpsCurrentRange.Range_1200mA: 6>}
-    @typing.overload
-    def __eq__(self, other: DpsCurrentRange) -> bool:
-        ...
-    @typing.overload
-    def __eq__(self, other: typing.Any) -> bool:
-        ...
-    def __getstate__(self) -> int:
-        ...
-    def __hash__(self) -> int:
-        ...
-    def __index__(self) -> int:
-        ...
-    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    def __int__(self) -> int:
-        ...
-    @typing.overload
-    def __ne__(self, other: DpsCurrentRange) -> bool:
-        ...
-    @typing.overload
-    def __ne__(self, other: typing.Any) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
-    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    def __str__(self) -> str:
-        ...
-    @property
-    def name(self) -> str:
-        ...
-    @property
-    def value(self) -> int:
-        ...
-class FirmwareVersion:
-    """
-    
-             Firmware version of a device detected by the engine.
-        
-    """
-    def to_hex_string(self) -> str:
-        ...
-class ForceMode:
-    """
-    Members:
-    
-      FV
-    
-      FI
-    
-      HighZ_Voltage
-    
-      HighZ_Current
-    """
-    FI: typing.ClassVar[ForceMode]  # value = <ForceMode.FI: 1>
-    FV: typing.ClassVar[ForceMode]  # value = <ForceMode.FV: 0>
-    HighZ_Current: typing.ClassVar[ForceMode]  # value = <ForceMode.HighZ_Current: 3>
-    HighZ_Voltage: typing.ClassVar[ForceMode]  # value = <ForceMode.HighZ_Voltage: 2>
-    __members__: typing.ClassVar[dict[str, ForceMode]]  # value = {'FV': <ForceMode.FV: 0>, 'FI': <ForceMode.FI: 1>, 'HighZ_Voltage': <ForceMode.HighZ_Voltage: 2>, 'HighZ_Current': <ForceMode.HighZ_Current: 3>}
-    @typing.overload
-    def __eq__(self, other: ForceMode) -> bool:
-        ...
-    @typing.overload
-    def __eq__(self, other: typing.Any) -> bool:
-        ...
-    def __getstate__(self) -> int:
-        ...
-    def __hash__(self) -> int:
-        ...
-    def __index__(self) -> int:
-        ...
-    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    def __int__(self) -> int:
-        ...
-    @typing.overload
-    def __ne__(self, other: ForceMode) -> bool:
-        ...
-    @typing.overload
-    def __ne__(self, other: typing.Any) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
-    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    def __str__(self) -> str:
-        ...
-    @property
-    def name(self) -> str:
-        ...
-    @property
-    def value(self) -> int:
-        ...
-class FunctionGeneratorResult:
-    @property
-    def measurement_values(self) -> list[float]:
-        ...
-    @measurement_values.setter
-    def measurement_values(self, arg0: collections.abc.Sequence[typing.SupportsFloat | typing.SupportsIndex]) -> None:
-        ...
-    @property
-    def time_codes(self) -> list[float]:
-        ...
-    @time_codes.setter
-    def time_codes(self, arg0: collections.abc.Sequence[typing.SupportsFloat | typing.SupportsIndex]) -> None:
-        ...
-class FunctionGeneratorType:
-    """
-    Members:
-    
-      sawtooth
-    
-      sinus
-    
-      square
-    
-      triangle
-    
-      ramp
-    """
-    __members__: typing.ClassVar[dict[str, FunctionGeneratorType]]  # value = {'sawtooth': <FunctionGeneratorType.sawtooth: 1>, 'sinus': <FunctionGeneratorType.sinus: 2>, 'square': <FunctionGeneratorType.square: 3>, 'triangle': <FunctionGeneratorType.triangle: 0>, 'ramp': <FunctionGeneratorType.ramp: 4>}
-    ramp: typing.ClassVar[FunctionGeneratorType]  # value = <FunctionGeneratorType.ramp: 4>
-    sawtooth: typing.ClassVar[FunctionGeneratorType]  # value = <FunctionGeneratorType.sawtooth: 1>
-    sinus: typing.ClassVar[FunctionGeneratorType]  # value = <FunctionGeneratorType.sinus: 2>
-    square: typing.ClassVar[FunctionGeneratorType]  # value = <FunctionGeneratorType.square: 3>
-    triangle: typing.ClassVar[FunctionGeneratorType]  # value = <FunctionGeneratorType.triangle: 0>
-    @typing.overload
-    def __eq__(self, other: FunctionGeneratorType) -> bool:
-        ...
-    @typing.overload
-    def __eq__(self, other: typing.Any) -> bool:
-        ...
-    def __getstate__(self) -> int:
-        ...
-    def __hash__(self) -> int:
-        ...
-    def __index__(self) -> int:
-        ...
-    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    def __int__(self) -> int:
-        ...
-    @typing.overload
-    def __ne__(self, other: FunctionGeneratorType) -> bool:
-        ...
-    @typing.overload
-    def __ne__(self, other: typing.Any) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
-    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    def __str__(self) -> str:
-        ...
-    @property
-    def name(self) -> str:
-        ...
-    @property
-    def value(self) -> int:
-        ...
-class GangMode:
-    """
-    Members:
-    
-      MasterU
-    
-      MasterI
-    
-      SlaveU
-    
-      SlaveI
-    """
-    MasterI: typing.ClassVar[GangMode]  # value = <GangMode.MasterI: 1>
-    MasterU: typing.ClassVar[GangMode]  # value = <GangMode.MasterU: 0>
-    SlaveI: typing.ClassVar[GangMode]  # value = <GangMode.SlaveI: 3>
-    SlaveU: typing.ClassVar[GangMode]  # value = <GangMode.SlaveU: 2>
-    __members__: typing.ClassVar[dict[str, GangMode]]  # value = {'MasterU': <GangMode.MasterU: 0>, 'MasterI': <GangMode.MasterI: 1>, 'SlaveU': <GangMode.SlaveU: 2>, 'SlaveI': <GangMode.SlaveI: 3>}
-    @typing.overload
-    def __eq__(self, other: GangMode) -> bool:
-        ...
-    @typing.overload
-    def __eq__(self, other: typing.Any) -> bool:
-        ...
-    def __getstate__(self) -> int:
-        ...
-    def __hash__(self) -> int:
-        ...
-    def __index__(self) -> int:
-        ...
-    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    def __int__(self) -> int:
-        ...
-    @typing.overload
-    def __ne__(self, other: GangMode) -> bool:
-        ...
-    @typing.overload
-    def __ne__(self, other: typing.Any) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
-    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    def __str__(self) -> str:
-        ...
-    @property
-    def name(self) -> str:
-        ...
-    @property
-    def value(self) -> int:
-        ...
 class IdSmu1DeviceModel(IdSmuDeviceModel):
     """
-    
              IdSmuDeviceModel class that contains idSmu1 specific methods and properties.
     
         
     """
     class Dps:
         """
-        
                  DPS object for quick access to the dps
         
             
         """
         class Channels:
             """
-            
                      DPS channels object for quick access to the dps channels with the bracket operator []
             
                 
@@ -1442,13 +2633,11 @@ class IdSmu1DeviceModel(IdSmuDeviceModel):
         """
 class IdSmu2DeviceModel(IdSmuDeviceModel):
     """
-    
              IdSmuDeviceModel class that contains idSmu2 specific methods and properties.
         
     """
     class Smu:
         """
-        
                  SMU object for quick access to the smu
         
             
@@ -1482,15 +2671,80 @@ class IdSmu2DeviceModel(IdSmuDeviceModel):
                  object
                       smu object
         """
+class FunctionGeneratorType:
+    """
+    Members:
+    
+      sawtooth
+    
+      sinus
+    
+      square
+    
+      triangle
+    
+      ramp
+    """
+    __members__: typing.ClassVar[dict[str, FunctionGeneratorType]]
+    ramp: typing.ClassVar[FunctionGeneratorType]
+    sawtooth: typing.ClassVar[FunctionGeneratorType]
+    sinus: typing.ClassVar[FunctionGeneratorType]
+    square: typing.ClassVar[FunctionGeneratorType]
+    triangle: typing.ClassVar[FunctionGeneratorType]
+    @typing.overload
+    def __eq__(self, other: FunctionGeneratorType) -> bool:
+        ...
+    @typing.overload
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    @typing.overload
+    def __ne__(self, other: FunctionGeneratorType) -> bool:
+        ...
+    @typing.overload
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
+class FunctionGeneratorResult:
+    @property
+    def measurement_values(self) -> list[float]:
+        ...
+    @measurement_values.setter
+    def measurement_values(self, arg0: collections.abc.Sequence[typing.SupportsFloat | typing.SupportsIndex]) -> None:
+        ...
+    @property
+    def time_codes(self) -> list[float]:
+        ...
+    @time_codes.setter
+    def time_codes(self, arg0: collections.abc.Sequence[typing.SupportsFloat | typing.SupportsIndex]) -> None:
+        ...
 class IdSmuBoardModel:
     """
-    
              Container and controller vor idSmu modules and channels
         
     """
     class IdSmu1Modules:
         """
-        
                  This class represents all idSmu1 (DPS) modules on the board
             
         """
@@ -1500,7 +2754,6 @@ class IdSmuBoardModel:
             ...
     class IdSmu2Modules:
         """
-        
                  This class represents all idSmu2 (SMU) modules on the board
             
         """
@@ -1548,6 +2801,72 @@ class IdSmuBoardModel:
                  ----------
                  device_name : str
                       Name of or id of the device
+        """
+    def execute_bypass_command(self, device_id: str, address_word: typing.SupportsInt | typing.SupportsIndex, command_word: typing.SupportsInt | typing.SupportsIndex, expected_reply_size: typing.SupportsInt | typing.SupportsIndex, payload: collections.abc.Sequence[typing.SupportsInt | typing.SupportsIndex] = [], number_of_repeats: typing.SupportsInt | typing.SupportsIndex = 1, write_answer: bool = True, send_answer: bool = True, send_identifier: bool = True, send_timecode: bool = False, wait_before_in_microseconds: typing.SupportsInt | typing.SupportsIndex = 0, wait_after_in_microseconds: typing.SupportsInt | typing.SupportsIndex = 0, firmware_timeout_in_milliseconds: typing.SupportsInt | typing.SupportsIndex = 0, usb_timeout_in_milliseconds: typing.SupportsInt | typing.SupportsIndex = 5000) -> list[int]:
+        """
+                 Executes an arbitrary ("bypass") FPGA command and returns the raw reply words
+        
+                 Every idSMU command consists of eight 32 bit header words followed by an optional payload.
+                 read_fpga, write_fpga, read_status and friends hide the address word and the command word of
+                 the FPGA function they wrap; this method exposes both directly, which makes every FPGA
+                 function reachable, including the ones without a dedicated wrapper.
+        
+                 Parameters
+                 ----------
+                 device_id : str
+        
+                 address_word : int
+                      Header word 0, the address of the addressed FPGA component.
+        
+                 command_word : int
+                      Header word 1, the command opcode for that component.
+        
+                 expected_reply_size : int
+                      The number of 32 bit words to read back, including the leading length word and, when
+                      enabled, the identifier and the timecodes. 0 reads no reply. Getting this wrong
+                      desynchronizes the USB pipe: too large blocks until the USB timeout elapses, too small
+                      leaves words in the pipe that corrupt the reply of the next command.
+        
+                 payload : List[int]
+                      The command specific data words that follow the eight header words.
+        
+                 number_of_repeats : int
+                      Header word 7, the number of execution cycles. Must be at least 1.
+        
+                 write_answer : bool
+                      Parameter word bit 0, write the answer to the output FIFO or block RAM.
+        
+                 send_answer : bool
+                      Parameter word bit 1, send the output FIFO content to the PC afterwards.
+        
+                 send_identifier : bool
+                      Parameter word bit 3, prepend the identifier to the response.
+        
+                 send_timecode : bool
+                      Parameter word bit 4, append a timecode to each response.
+        
+                 wait_before_in_microseconds : int
+                      Header word 4, the delay before the command is executed.
+        
+                 wait_after_in_microseconds : int
+                      Header word 5, the delay after execution before the answer is sent.
+        
+                 firmware_timeout_in_milliseconds : int
+                      Header word 6, the overall firmware timeout.
+        
+                 usb_timeout_in_milliseconds : int
+                      The USB pipe timeout used for the write and the read.
+        
+                 Returns
+                 -------
+                 List[int]
+                      The reply words exactly as the device sent them, unparsed. Empty when
+                      expected_reply_size is 0.
+        
+                 Raises
+                 ------
+                 RuntimeError
+                      If the command fails
         """
     def function_generator(self, device_id: str, channel_number: typing.SupportsInt | typing.SupportsIndex, min_value: typing.SupportsFloat | typing.SupportsIndex, max_value: typing.SupportsFloat | typing.SupportsIndex, step_size: typing.SupportsFloat | typing.SupportsIndex, step_delay_in_microseconds: typing.SupportsInt | typing.SupportsIndex, function_generator_type: FunctionGeneratorType) -> None:
         """
@@ -1923,6 +3242,7 @@ class IdSmuBoardModel:
                  bool
                       True if the device with the given id is initialized 
         """
+    @typing.overload
     def measure_channels(self, wait_for_result: bool, sample_count: typing.SupportsInt | typing.SupportsIndex, repetitions: typing.SupportsInt | typing.SupportsIndex, channel_names: collections.abc.Sequence[str], wait_for_trigger: bool = False) -> list[CommandReply]:
         """
                  Measures the voltage, current or temperature, depending on the adjusted MeasurementMode
@@ -1944,6 +3264,75 @@ class IdSmuBoardModel:
                  -------
                  List[CommandReply]
                       A list of CommandReply object
+        """
+    @typing.overload
+    def measure_channels(self, wait_for_result: bool, sample_count: typing.SupportsInt | typing.SupportsIndex, repetitions: typing.SupportsInt | typing.SupportsIndex, channel_names: collections.abc.Sequence[str], trigger_options: MeasurementTriggerOptions) -> list[CommandReply]:
+        """
+                 Measures the voltage, current or temperature after a hardware trigger, configured by trigger_options
+        
+                 Parameters
+                 ----------
+                 wait_for_result : bool
+                      If set, the method waits until the result for all measurements are present. If disabled, the method returns after the command was queued
+                 sample_count : int
+                      Sample count per measurement. Valid values are 1,2,4,8 ... 2^31 (2 to the power of x)
+                 repetitions : int
+                      Number of measurements
+                 channel_names : list
+                      Names of the channels to measure
+                 trigger_options : MeasurementTriggerOptions
+                      Trigger edge, source, firmware timeout, wait before and wait after
+        
+                 Returns
+                 -------
+                 List[CommandReply]
+                      A list of CommandReply object. A device whose firmware timeout expired returns an error reply "Trigger timeout"
+        """
+    @typing.overload
+    def measure_device_channels(self, wait_for_result: bool, sample_count: typing.SupportsInt | typing.SupportsIndex, repetitions: typing.SupportsInt | typing.SupportsIndex, device_names: collections.abc.Sequence[str], wait_for_trigger: bool = False) -> list[CommandReply]:
+        """
+                 Measures all channels of the given devices, depending on the adjusted MeasurementMode
+        
+                 Parameters
+                 ----------
+                 wait_for_result : bool
+                      If set, the method waits until the result for all measurements are present. If disabled, the method returns after the command was queued
+                 sample_count : int
+                      Sample count per measurement. Valid values are 1,2,4,8 ... 2^31 (2 to the power of x)
+                 repetitions : int
+                      Number of measurements
+                 device_names : list
+                      Names or ids of the devices whose channels are measured
+                 wait_for_trigger : bool
+                      If true, the measurement is executed with the next hardware trigger signal
+        
+                 Returns
+                 -------
+                 List[CommandReply]
+                      A list of CommandReply object
+        """
+    @typing.overload
+    def measure_device_channels(self, wait_for_result: bool, sample_count: typing.SupportsInt | typing.SupportsIndex, repetitions: typing.SupportsInt | typing.SupportsIndex, device_names: collections.abc.Sequence[str], trigger_options: MeasurementTriggerOptions) -> list[CommandReply]:
+        """
+                 Measures all channels of the given devices after a hardware trigger, configured by trigger_options
+        
+                 Parameters
+                 ----------
+                 wait_for_result : bool
+                      If set, the method waits until the result for all measurements are present. If disabled, the method returns after the command was queued
+                 sample_count : int
+                      Sample count per measurement. Valid values are 1,2,4,8 ... 2^31 (2 to the power of x)
+                 repetitions : int
+                      Number of measurements
+                 device_names : list
+                      Names or ids of the devices whose channels are measured
+                 trigger_options : MeasurementTriggerOptions
+                      Trigger edge, source, firmware timeout, wait before and wait after
+        
+                 Returns
+                 -------
+                 List[CommandReply]
+                      A list of CommandReply object. A device whose firmware timeout expired returns an error reply "Trigger timeout"
         """
     def print_channel_registers(self, channel_name: str) -> None:
         """
@@ -2354,136 +3743,549 @@ class IdSmuBoardModel:
     @property
     def idSmu2Modules(self) -> IdSmuBoardModel.IdSmu2Modules:
         ...
-class IdSmuDeviceModel:
-    def get_firmware_version(self) -> str:
+class ParamterChangedObserverProxy:
+    def __init__(self) -> None:
+        ...
+    def register_observer(self, board_model: IdSmuBoardModel, resource_id: str, python_handler: collections.abc.Callable[[], None]) -> None:
         """
-                 Returns the firmware version of this device
-                 
-                 Returns
-                 -------
-                 str
-                      The firmware version
-        """
-    def get_hardware_id(self) -> str:
-        """
-                 Returns the hardware id of this device in the format Mx.Sy (Motherboard.Slot - Format)
-                 
-                 Returns
-                 -------
-                 str
-                      The hardware id
-        """
-    def measure_channels(self, sample_count: typing.SupportsInt | typing.SupportsIndex, repetitions: typing.SupportsInt | typing.SupportsIndex, channel_numbers: collections.abc.Sequence[typing.SupportsInt | typing.SupportsIndex], wait_for_trigger: bool = False) -> CommandReplyFuture:
-        """
-                 Performs a measurement command on the listed channels
+                 Initialize all installed idSMU devices on the board
         
                  Parameters
                  ----------
-                 sample_count : int
-                      The number of samples for the measurement
-              
-                 repetitions : int
-                      The number repetitions of the measurement
+                 board_model : IdSmuBoardModel
         
-                 channel_numbers : List[int]
-                      The channel numbers of the channels to measure
+                 resource_id : str
         
-                 wait_for_trigger : bool
-                      If true, the measurement is executed with the next hardware trigger signal
-        
-                 Returns
-                 -------
-                 CommandReplyFuture
-                      A CommandReplyFuture
+                 python_handler : Functional
         """
+    def unregister_observer(self) -> None:
+        """
+                Leave context manager.
+        """
+class MeasurementMode:
+    """
+    Members:
+    
+      highZ
+    
+      isense
+    
+      vsense
+    
+      tsense
+    """
+    __members__: typing.ClassVar[dict[str, MeasurementMode]]
+    highZ: typing.ClassVar[MeasurementMode]
+    isense: typing.ClassVar[MeasurementMode]
+    tsense: typing.ClassVar[MeasurementMode]
+    vsense: typing.ClassVar[MeasurementMode]
     @typing.overload
-    def measure_channels_async(self, sample_count: typing.SupportsInt | typing.SupportsIndex, repetitions: typing.SupportsInt | typing.SupportsIndex, channel_numbers: collections.abc.Sequence[typing.SupportsInt | typing.SupportsIndex], wait_for_trigger: bool) -> CommandReplyFuture:
-        """
-                 Performs a measurement command on the listed channels. The method as "measure_channels", except the GIL scope is released in this version
-        
-                 Parameters
-                 ----------
-                 sample_count : int
-                      The number of samples for the measurement
-              
-                 repetitions : int
-                      The number repetitions of the measurement
-        
-                 channel_numbers : List[int]
-                      The channel numbers of the channels to measure
-        
-                 wait_for_trigger : bool
-                      If true, the measurement is executed with the next hardware trigger signal
-        
-                 Returns
-                 -------
-                 CommandReplyFuture
-                      A CommandReplyFuture 
-        """
+    def __eq__(self, other: MeasurementMode) -> bool:
+        ...
     @typing.overload
-    def measure_channels_async(self, sample_count: typing.SupportsInt | typing.SupportsIndex, repetitions: typing.SupportsInt | typing.SupportsIndex, channel_numbers: collections.abc.Sequence[str], wait_for_trigger: bool) -> CommandReplyFuture:
-        """
-                 Performs a measurement command on the listed channels. The method as "measure_channels", except the GIL scope is released in this version
-        
-                 Parameters
-                 ----------
-                 sample_count : int
-                      The number of samples for the measurement
-              
-                 repetitions : int
-                      The number repetitions of the measurement
-        
-                 channel_numbers : List[int]
-                      The channel numbers of the channels to measure
-        
-                 wait_for_trigger : bool
-                      If true, the measurement is executed with the next hardware trigger signal
-        
-                 Returns
-                 -------
-                 CommandReplyFuture
-                      A CommandReplyFuture 
-        """
-    @property
-    def channel_ids(self) -> list[str]:
-        """
-                 Returns a list of all channel-ids (hardware-ids) in the format Mx.Sy.Cz (Motherboard.Slot.Channel - Format)
-                 Returns
-                 -------
-                 List[str]
-                      The list of the channel-ids
-        """
-    @property
-    def hardware_id(self) -> str:
-        """
-                 Returns the hardware id of this device in the format Mx.Sy (Motherboard.Slot - Format)
-                 
-                 Returns
-                 -------
-                 str
-                      The hardware id
-        """
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    @typing.overload
+    def __ne__(self, other: MeasurementMode) -> bool:
+        ...
+    @typing.overload
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
     @property
     def name(self) -> str:
-        """
-                 Property that gets/sets the device name
+        ...
+    @property
+    def value(self) -> int:
+        ...
+class ForceMode:
+    """
+    Members:
+    
+      FV
+    
+      FI
+    
+      HighZ_Voltage
+    
+      HighZ_Current
+    """
+    FI: typing.ClassVar[ForceMode]
+    FV: typing.ClassVar[ForceMode]
+    HighZ_Current: typing.ClassVar[ForceMode]
+    HighZ_Voltage: typing.ClassVar[ForceMode]
+    __members__: typing.ClassVar[dict[str, ForceMode]]
+    @typing.overload
+    def __eq__(self, other: ForceMode) -> bool:
+        ...
+    @typing.overload
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    @typing.overload
+    def __ne__(self, other: ForceMode) -> bool:
+        ...
+    @typing.overload
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
+class CurrentRange:
+    """
+    Members:
+    
+      Range_5uA
+    
+      Range_20uA_SMU
+    
+      Range_200uA_SMU
+    
+      Range_2mA_SMU
+    
+      Range_70mA_SMU
+    
+      Range_25uA_DPS
+    
+      Range_250uA_DPS
+    
+      Range_2500uA_DPS
+    
+      Range_25mA_DPS
+    
+      Range_500mA_DPS
+    
+      Range_1200mA_DPS
+    """
+    Range_1200mA_DPS: typing.ClassVar[CurrentRange]
+    Range_200uA_SMU: typing.ClassVar[CurrentRange]
+    Range_20uA_SMU: typing.ClassVar[CurrentRange]
+    Range_2500uA_DPS: typing.ClassVar[CurrentRange]
+    Range_250uA_DPS: typing.ClassVar[CurrentRange]
+    Range_25mA_DPS: typing.ClassVar[CurrentRange]
+    Range_25uA_DPS: typing.ClassVar[CurrentRange]
+    Range_2mA_SMU: typing.ClassVar[CurrentRange]
+    Range_500mA_DPS: typing.ClassVar[CurrentRange]
+    Range_5uA: typing.ClassVar[CurrentRange]
+    Range_70mA_SMU: typing.ClassVar[CurrentRange]
+    __members__: typing.ClassVar[dict[str, CurrentRange]]
+    @typing.overload
+    def __eq__(self, other: CurrentRange) -> bool:
+        ...
+    @typing.overload
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    @typing.overload
+    def __ne__(self, other: CurrentRange) -> bool:
+        ...
+    @typing.overload
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
+class TriggerEdge:
+    """
+             Edge of the hardware trigger signal a triggered measurement waits for
         
+    
+    Members:
+    
+      RisingEdge
+    
+      FallingEdge
+    
+      AnyEdge
+    """
+    AnyEdge: typing.ClassVar[TriggerEdge]
+    FallingEdge: typing.ClassVar[TriggerEdge]
+    RisingEdge: typing.ClassVar[TriggerEdge]
+    __members__: typing.ClassVar[dict[str, TriggerEdge]]
+    @typing.overload
+    def __eq__(self, other: TriggerEdge) -> bool:
+        ...
+    @typing.overload
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    @typing.overload
+    def __ne__(self, other: TriggerEdge) -> bool:
+        ...
+    @typing.overload
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
+class TriggerSource:
+    """
+             Input of the hardware trigger signal: Global (backplane) or Local
+        
+    
+    Members:
+    
+      Global
+    
+      Local
+    """
+    Global: typing.ClassVar[TriggerSource]
+    Local: typing.ClassVar[TriggerSource]
+    __members__: typing.ClassVar[dict[str, TriggerSource]]
+    @typing.overload
+    def __eq__(self, other: TriggerSource) -> bool:
+        ...
+    @typing.overload
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    @typing.overload
+    def __ne__(self, other: TriggerSource) -> bool:
+        ...
+    @typing.overload
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
+class MeasurementTriggerOptions:
+    """
+             Configures a triggered measurement: trigger edge and source, firmware timeout and the delays around the measurement.
+             The default values reproduce wait_for_trigger=True: rising edge, global source, no delays, no timeout.
+        
+    """
+    edge: TriggerEdge
+    source: TriggerSource
+    def __init__(self, edge: TriggerEdge = ..., source: TriggerSource = ..., firmware_timeout_ms: typing.SupportsInt | typing.SupportsIndex = 0, wait_before_us: typing.SupportsInt | typing.SupportsIndex = 0, wait_after_us: typing.SupportsInt | typing.SupportsIndex = 0, usb_timeout_ms: typing.SupportsInt | typing.SupportsIndex | None = None) -> None:
+        """
                  Parameters
                  ----------
-                 name : 
-                      The device name
+                 edge : TriggerEdge
+                      Edge the measurement waits for. The edge is ignored by firmware versions up to 0x1F
+                 source : TriggerSource
+                      Global (backplane) or local trigger input
+                 firmware_timeout_ms : int
+                      How long the firmware waits for the trigger in milliseconds. 0 waits forever.
+                      On timeout the reply of the device is an error reply "Trigger timeout"
+                 wait_before_us : int
+                      Delay between the trigger and the start of the measurement in microseconds
+                 wait_after_us : int
+                      Delay between the end of the measurement and sending the answer in microseconds
+                 usb_timeout_ms : int, optional
+                      USB timeout in milliseconds. None derives it: 0 (wait forever) for firmware_timeout_ms == 0,
+                      otherwise firmware_timeout_ms + 1000
+        """
+    def get_effective_usb_timeout_ms(self) -> int:
+        """
+                 Returns the USB timeout in milliseconds that is used for the measurement
+        """
+    @property
+    def firmware_timeout_ms(self) -> int:
+        ...
+    @firmware_timeout_ms.setter
+    def firmware_timeout_ms(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    @property
+    def usb_timeout_ms(self) -> int | None:
+        ...
+    @usb_timeout_ms.setter
+    def usb_timeout_ms(self, arg0: typing.SupportsInt | typing.SupportsIndex | None) -> None:
+        ...
+    @property
+    def wait_after_us(self) -> int:
+        ...
+    @wait_after_us.setter
+    def wait_after_us(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    @property
+    def wait_before_us(self) -> int:
+        ...
+    @wait_before_us.setter
+    def wait_before_us(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+class ChannelResult:
+    """
+             The result of a ReadAdcCommandIdSmu
+        
+    """
+    def get_values(self) -> list[float]:
+        """
+                 Returns the measurement values for a channel
         
                  Returns
                  -------
-                 str
-                      The name of the channel
+                 DoubleList
+                      A DoubleList object
         """
-    @name.setter
-    def name(self, arg1: str) -> None:
+    @property
+    def values(self) -> numpy.typing.NDArray[numpy.float64]:
+        """
+                 Returns the measurement values for a channel
+        
+                 Returns
+                 -------
+                 ndarray
+        """
+class ListSweepChannelConfiguration:
+    """
+             Instances of this class are needed to configure a List Sweep
+        
+    """
+    def __init__(self) -> None:
         ...
+    def change_current_range_at(self, step_index: typing.SupportsInt | typing.SupportsIndex, current_range: CurrentRange) -> None:
+        """
+                 Changes the current range at the given index within the sweep
+        
+                 Parameters
+                 ----------
+                 step_index : int
+                      The step index in the sweep at which the current range changes
+                 current_range : CurrentRange
+                      The new current range 
+        """
+    def clear_current_ranges(self) -> None:
+        """
+                 Removes all current range changes from the configuration
+        """
+    def get_force_values(self) -> numpy.typing.NDArray[numpy.float64]:
+        ...
+    def set_constant_force_mode(self, number_of_steps: typing.SupportsInt | typing.SupportsIndex) -> None:
+        """
+                 Sets the configuration to measurement only mode - no sweep is performerd
+        
+                 Parameters
+                 ----------
+                 number_of_steps : int
+                      Number of  measurement steps 
+        """
+    def set_disable_measurement(self) -> None:
+        """
+                 Disables the measurement for this configuration
+        """
+    def set_force_values(self, force_values: numpy.ndarray) -> None:
+        """
+                 Sets the custom sweep force values
+        
+                 Parameters
+                 ----------
+                 force_values : ndarray
+                      The force values
+        """
+    def set_linear_sweep(self, start: typing.SupportsFloat | typing.SupportsIndex, end: typing.SupportsFloat | typing.SupportsIndex, number_of_steps: typing.SupportsInt | typing.SupportsIndex) -> None:
+        """
+                 Configures a linear sweep
+        
+                 Parameters
+                 ----------
+                 start : float
+                      Start value
+                 stop : float
+                      Stop value
+                 number_of_steps : int
+                      Number of steps 
+        """
+    def set_number_of_steps(self, number_of_steps: typing.SupportsInt | typing.SupportsIndex) -> None:
+        """
+                 Sets the number of measurement steps
+        
+                 Parameters
+                 ----------
+                 number_of_steps : int
+                      Number of measurement steps. Only valid for measurement only mode (constant force mode)
+        """
+    @property
+    def force_values(self) -> numpy.typing.NDArray[numpy.float64]:
+        """
+                 Sets the custom sweep force values
+        
+                 Parameters
+                 ----------
+                 force_values : ndarray
+                      The force values
+        """
+    @force_values.setter
+    def force_values(self, arg1: numpy.ndarray) -> None:
+        ...
+class ListSweep:
+    """
+             Class to perform a List Sweep on a idSmu module
+        
+    """
+    def __init__(self, arg0: str, arg1: IdSmuBoardModel) -> None:
+        ...
+    def add_channel_configuration(self, channel_name: str, list_sweep_channel_configuration: ListSweepChannelConfiguration) -> None:
+        """
+                 Adds a list sweep configuration for the given channel
+        
+                 Parameters
+                 ----------
+                 channel_name : str
+                      Name or Id of the channel
+                 list_sweep_channel_configuration : ListSweepChannelConfiguration
+                      The channel configuration
+        """
+    def can_run(self) -> bool:
+        """
+                 Returns true if the sweep can be executed (the memory used by the sweep does not exceed the memory limit of 4k)
+        
+                 Returns
+                 -------
+                 bool
+        """
+    def get_measurement_result(self, channel_name: str) -> numpy.typing.NDArray[numpy.float64]:
+        """
+                 Returns the measurement results of the sweep
+        
+                 Returns
+                 -------
+                 ndarray
+                      An array of measurement values
+        """
+    def get_timecode(self) -> numpy.typing.NDArray[numpy.float64]:
+        """
+                 Returns the timecode of the sweep in microseconds
+        
+                 Returns
+                 -------
+                 ndarray
+                      An array of timestamps, one entry for each measurement
+        """
+    def run(self) -> str | None:
+        """
+                 Runs the sweep
+        
+                 Returns
+                 -------
+                 str or None
+                      In case of an error, the error is reported as string
+        """
+    def set_measurement_delay(self, measurement_delay: typing.SupportsInt | typing.SupportsIndex) -> None:
+        """
+                 Sets the set to measurement delay in microseconds
+        
+                 Parameters
+                 ----------
+                 measurement_delay : int
+                      Time in microseconds
+        """
+    def set_sample_count(self, sample_count: typing.SupportsInt | typing.SupportsIndex) -> None:
+        """
+                 Sets the sample count for each measurement. The sampled values are averaged. Default is 1.
+        
+                 Parameters
+                 ----------
+                 sample_count : int
+                      Number of samples
+        """
+    @property
+    def size(self) -> int:
+        """
+                 Returns the number of words stored in memory when the sweep is executed (the memory used by the sweep shout not exceed the memory limit of 1k words)
+        
+                 Returns
+                 -------
+                 bool
+        """
+    @property
+    def timecode(self) -> numpy.typing.NDArray[numpy.float64]:
+        """
+                 Returns the timecode of the sweep in microseconds
+        
+                 Returns
+                 -------
+                 ndarray
+                      An array of timestamps, one entry for each measurement
+        """
 class IdSmuService:
     """
-    
              Service class that detects and manages idSmu hardware.
     
         
@@ -2673,1103 +4475,6 @@ class IdSmuService:
                  List[CommandReply]
                       A list of CommandReply objects  
         """
-class IdSmuServiceRunner:
-    """
-    
-             Simplifies the starting of idSmu services and controls their lifetime.
-        
-    """
-    def __init__(self, log_level: typing.SupportsInt | typing.SupportsIndex = 0, worker_thread_count: typing.SupportsInt | typing.SupportsIndex = 4) -> None:
-        ...
-    def get_idsmu_service(self) -> IdSmuService:
-        ...
-    def shutdown(self) -> None:
-        ...
-    @property
-    def log_service(self) -> LogService:
-        ...
-class IdSmuServiceRunnerExt:
-    """
-    
-        Simplifies the starting of idSmu services and controls their lifetime.
-    """
-    @staticmethod
-    def instance(log_level: typing.SupportsInt | typing.SupportsIndex = 0, worker_thread_count: typing.SupportsInt | typing.SupportsIndex = 4) -> IdSmuServiceRunnerExt:
-        """
-                   Returns the singleton instance of the ServiceRunner.
-                   Subsequent calls return the same instance.
-        """
-    def __enter__(self) -> IdSmuServiceRunnerExt:
-        ...
-    def __exit__(self, arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> None:
-        ...
-    def get_idsmu_service(self) -> IdSmuService:
-        ...
-    def shutdown(self) -> None:
-        ...
-    @property
-    def log_service(self) -> LogService:
-        ...
-class IdSmuSettingsService:
-    @typing.overload
-    def apply_parameter_setting(self, parameter_setting: IdqTable, board_address: str, filtered: bool, table_group_name: str | None) -> int:
-        """
-                 Applies the given setting to the hardware models
-        
-                 Parameters
-                 ----------
-                 setting_name : str
-                      The name of a loaded setting (IdqTable)
-        
-                 board_address : str
-                      The address of the board
-        
-                 filtered : bool
-                      If this flag is set, the parameters are taken from the filtered version of the table
-        
-                 table_group_name : str
-                      Optional table group name if only a group should be applied
-        
-                 Returns
-                 -------
-                 ParameterSetting
-                      A parameter setting object with the given name
-        """
-    @typing.overload
-    def apply_parameter_setting(self, setting_name: str, board_address: str, filtered: bool, table_group_name: str | None) -> int:
-        """
-                 Applies the parameters in a table to a idSMU board
-        
-                 Parameters
-                 ----------
-                 setting_name : str
-                      The name of a loaded setting (IdqTable)
-        
-                 board_address : str
-                      The address of the board
-        
-                 filtered : bool
-                      If this flag is set, the parameters are taken from the filtered version of the table
-        
-                 table_group_name : str
-                      Optional table group name
-        
-                 Returns
-                 -------
-                 int
-                      The number of resources the settings were applied to
-        """
-    def apply_parameter_settings_at_column_values(self, setting_name: str, board_address: str, column_name: str, column_values: collections.abc.Sequence[str], filtered: bool, table_group_name: str | None) -> int:
-        """
-                 Applies the parameters in a table to a idSMU board
-        
-                 Parameters
-                 ----------
-                 setting_name : str
-                      The name of a loaded setting (IdqTable)
-        
-                 board_address : str
-                      The address of the board
-        
-                 column_name : str
-                      The name of the column to search for value(s)
-        
-                 column_values : List[str]
-                      One or more values to search for in the selected column
-        
-                 filtered : bool
-                      If this flag is set, the parameters are taken from the filtered version of the table
-        
-                 table_group_name : str
-                      Optional table group name
-        
-                 Returns
-                 -------
-                 int
-                      The number of resources the settings were applied to
-        """
-    def bake_filter_into_table(self, setting_name: str) -> None:
-        """
-                 Replaces the table/setting with its filtered version
-        
-                 Parameters
-                 ----------
-                 setting_name : str
-                      The name of the setting
-        """
-    def export_settings_to_csv(self, file_path: str, setting_names: collections.abc.Sequence[str], append_to_file: bool) -> str | None:
-        """
-                 Exports setting(s) to csv
-        
-                 Parameters
-                 ----------
-                 file_path : str
-                      Path to the csv file
-        
-                 setting_names : List[str]
-                      List of names of the settings to export
-        
-                 append_to_file : bool
-                      If true, appends the exported settings to the existing file
-        
-                 Returns
-                 -------
-                 str
-                      Returns an error message if an error occured, else none
-        """
-    def export_settings_to_xlsx(self, file_path: str, setting_names: collections.abc.Sequence[str]) -> str | None:
-        """
-                 Exports parameter setting table(s) to excel (xlsx format)
-        
-                 Parameters
-                 ----------
-                 file_path : str
-                      Path to the xlsx file
-        
-                 setting_names : List[str]
-                      List of names of the parameter table settings to export
-        
-                 Returns
-                 -------
-                 str
-                      Returns an error message if an error occured, else none
-        """
-    def filter_columns(self, setting_name: str, column_names: collections.abc.Sequence[str]) -> IdqTable:
-        """
-                 Filters columns and returns a new IdqTable object containing this columns only
-        
-                 Parameters
-                 ----------
-                 setting_name : str
-                      The name of the setting to apply the filter to
-                 column_names : List[str]
-                      The names of the columns to filter out
-        
-                 Returns
-                 -------
-                 IdqTable
-                      Returns a new IdqTable object
-        """
-    def filter_rows(self, setting_name: str, column_name: str, filter_value: str, exact_match: bool) -> IdqTable:
-        """
-                 Filters rows by the given filter_values and returns a new IdqTable object containing this rows only
-        
-                 Parameters
-                 ----------
-                 setting_name : str
-                      The name of the setting to apply the filter to
-                 column : str
-                      The name of the column to apply the filter to
-                 filter_value : str
-                      Each row in the given column is checked against the filter_value and selected if the string in the filter_value is conatained in the cell
-                 exact_match : bool
-                      If enabled a whole word is searched
-        
-                 Returns
-                 -------
-                 IdqTable
-                      Returns a new IdqTable object
-        """
-    def get_merged_column_names(self, setting_name: str) -> list[str]:
-        """
-                 Returns the unique headers of all groups as list of strings
-        
-                 Parameters
-                 ----------
-                 setting_name : str
-                      The name of the setting to apply the filter to
-        
-                 Returns
-                 -------
-                 List[str]
-                      Returns the headers as  list of strings
-        """
-    def get_parameter_setting(self, setting_name: str) -> IdqTable:
-        """
-                 Returns a IdqTable object.
-        
-                 Parameters
-                 ----------
-                 setting_name : str
-                      Name of the parameter setting
-        
-                 Returns
-                 -------
-                 IdqTable
-                      A IdqTable object with the given name
-        """
-    def get_parameter_settings_for_board(self, board_address: str, group_by: str = 'Type') -> IdqTable:
-        """
-                 Returns the parameters settings for the give board address
-        
-                 Parameters
-                 ----------
-                 board_address : str
-                      A board address in the format Mx, where x is a number between 1 and 32
-                 group_by : bool
-                      The column used to group the parameter tables
-        
-                 Returns
-                 -------
-                 IdqTable
-                      A IdqTable object
-        """
-    def get_parameter_settings_names(self) -> list[str]:
-        """
-                 Returns a list containing the names of all loaded settings
-        
-                 Returns
-                 -------
-                 List[str]
-                      A list containing the names of all loaded settings
-        """
-    def group_setting(self, setting_name: str, group_by: str) -> IdqTable:
-        """
-                 Groups the given setting in groups of the unique values of the given column
-        
-                 Parameters
-                 ----------
-                 setting_name : str
-                      The name of the setting to apply the filter to
-                 group_by : List[str]
-                      The name of the column to use for the grouping
-        
-                 Returns
-                 -------
-                 IdqTable
-                      Returns a new IdqTable object
-        """
-    def import_settings_from_csv(self, file_path: str) -> str | None:
-        """
-                 Imports settings from CSV
-        
-                 Parameters
-                 ----------
-                 file_path : str
-                      Path to the csv file
-                 Returns
-                 -------
-                 str
-                      Returns an error message if an error occured, else none
-        """
-    @typing.overload
-    def import_settings_from_xlsx(self, file_path: str) -> str | None:
-        """
-                 Imports settings from exel (xlsx format)
-        
-                 Parameters
-                 ----------
-                 file_path : str
-                      Path to the xlsx file
-                 Returns
-                 -------
-                 str
-                      Returns an error message if an error occured, else none
-        """
-    @typing.overload
-    def import_settings_from_xlsx(self, file_path: str) -> str | None:
-        """
-                 Enables or disables channel(s)
-        
-                 Parameters
-                 ----------
-                 file_path : str
-                      Path to the csv settings file
-                 delimiter : str
-                      Delimiter (only a single character is allowed)
-        
-                 Returns
-                 -------
-                 str
-                      Returns an error message if an error occured, else none
-        """
-    def print_settings(self, setting_name: str, filtered: bool = False, column_information: bool = False, max_columns: typing.SupportsInt | typing.SupportsIndex = -1) -> str:
-        """
-                 Prints the setting / board to the console
-        
-                 Parameters
-                 ----------
-                 setting_name : str
-                      Name of the setting
-                 filtered : bool
-                      If true, prints the setting with applied filteres
-                 column_information : bool
-                      Printss additional column information
-        """
-    def refresh_table(self, table_name: str) -> bool:
-        """
-                 Refreshes a table. If the table represents a board state this table is updated.
-        
-                 Parameters
-                 ----------
-                 table_name : str
-                      Name of the table
-        
-                 Returns
-                 -------
-                 bool
-                      Returns false if the table does not exist, else true
-        """
-    def refresh_table_row(self, table_name: str, column_name: str, column_value: str) -> tuple[str, int]:
-        """
-                 Refreshes a table row. The row is found by a given value in a given column(name)
-        
-                 Parameters
-                 ----------
-                 table_name : str
-                      Name of the table
-                 column_name : str
-                      Name of the column
-                 column_value : str
-                      Value in the column to search for
-                 Returns
-                 -------
-                 Tuple
-                      Returns tuple of the group name and the row within the grup where the setting was found
-        """
-    def remove_parameter_setting(self, setting_name: str) -> bool:
-        """
-                 Removes a setting from the service setting storage
-        
-                 Parameters
-                 ----------
-                 setting_name : str
-                      The name of the setting
-        """
-    def search_and_replace(self, setting_name: str, search_term: str, replace_term: str) -> IdqTable:
-        """
-                 Replaces all occurences of a string in the parameter setting table
-        
-                 Parameters
-                 ----------
-                 setting_name : str
-                      The name of the paramter setting table
-                 search_term : str
-                      The search query value
-                 replace_term : str
-                      The value for the replacement
-        
-                 Returns
-                 -------
-                 IdqTable
-                      Returns the same paramter setting table with the replacements 
-        """
-class IdqTable:
-    def __getitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> IdqTableGroup:
-        ...
-    def filter_columns(self, column_names: collections.abc.Sequence[str]) -> IdqTable:
-        """
-                 Filters columns and returns a new IdqTable object containing this columns only
-        
-                 Parameters
-                 ----------
-                 column_names : List[str]
-                      The names of the columns to filter out
-        
-                 Returns
-                 -------
-                 IdqTable
-                      Returns a new IdqTable object
-        """
-    def filter_rows(self, column_name: str, filter_value: str, exact_match: bool) -> IdqTable:
-        """
-                 Filters rows by the given filter_values and returns a new IdqTable object containing this rows only
-        
-                 Parameters
-                 ----------
-                 column_name : str
-                      The name of the column to apply the filter to
-                 filter_value : str
-                      Each row in the given column   is checked against the filter_value and selected if the string in the filter_value is conatained in the cell
-                 exact_match : bool
-                      If enabled a whole word is searched
-                 Returns
-                 -------
-                 IdqTable
-                      Returns a new IdqTable object
-        """
-    def get_column_filter(self) -> list[str]:
-        """
-                 Returns the list of column names that are applied as column filter
-        
-                 Returns
-                 -------
-                 List[str]
-                      Returns a list of strings of column names
-        """
-    def get_file_path(self) -> str | None:
-        """
-                Returns the path of the file the table was imported from, if available
-        
-                Returns
-                -------
-                str
-                    Returns a path or none
-        """
-    def get_filtered_table(self) -> IdqTable:
-        """
-                 Returns the filtered table
-        
-                 Returns
-                 -------
-                 IdqTable
-        """
-    def get_grouped_by(self) -> str:
-        """
-                 Returns the name of the column the table is grouped by
-        
-                 Returns
-                 -------
-                 str
-                      Returns the name of the column the table is grouped by
-        """
-    def get_merged_column_names(self) -> list[str]:
-        """
-                Returns the unique headers of all groups as list of strings
-        
-                Returns
-                -------
-                List[str]
-                    Returns the headers as  list of strings
-        """
-    def get_name(self) -> str:
-        """
-                Returns the table name
-        
-                Returns
-                -------
-                str
-                    Returns the table name
-        """
-    def get_row_filters(self) -> list[RowFilter]:
-        """
-                 Returns the list of row filters applied to that table
-        
-                 Returns
-                 -------
-                 List[RowFilter]
-                      Returns a list of RowFilter objects
-        """
-    def get_table_group(self, group_name: str) -> IdqTableGroup:
-        """
-                 Return the table group with the given name
-        
-                 Parameters
-                 ----------
-                 group_name : str
-                      The name of the table group
-        
-                 Returns
-                 -------
-                 IdqTable
-                      Returns a the IdqTableGroup object
-        """
-    def get_table_group_names(self) -> list[str]:
-        """
-                 Returns a list of table group names
-        
-                 Returns
-                 -------
-                 List[str]
-                      A list of table group names
-        """
-    def get_table_groups_as_list(self) -> list[IdqTableGroup]:
-        """
-                 Returns a list of table groups
-        
-                 Returns
-                 -------
-                 List[IdqTableGroup]
-                      A list of table groups
-        """
-    def is_filter_active(self) -> bool:
-        """
-                 Returns true if a filter is applied to the table
-        
-                 Returns
-                 -------
-                 bool
-        """
-    def set_name(self, name: str) -> None:
-        """
-                 Sets the name of the table
-        
-                 Parameters
-                 ----------
-                 name : str
-                      The new name of the table
-        """
-    @property
-    def name(self) -> str:
-        """
-                Returns or sets the table name
-        
-                Returns
-                -------
-                str
-                    Returns the table name
-        """
-    @name.setter
-    def name(self, arg1: str) -> None:
-        ...
-    @property
-    def table_groups(self) -> list[IdqTableGroup]:
-        """
-                 Returns a list of table groups
-        
-                 Returns
-                 -------
-                 List[IdqTableGroup]
-                      A list of table groups
-        """
-class IdqTableCell:
-    cell_value: str
-class IdqTableGroup:
-    @typing.overload
-    def get_cell_value(self, row_index: typing.SupportsInt | typing.SupportsIndex, column_index: typing.SupportsInt | typing.SupportsIndex) -> str | None:
-        """
-                Gets a string parameter in the table group
-        
-                Parameters
-                ----------
-                row_index : int
-                    Index of the row in the table
-                column_index : int
-                    Index of the column in the table
-        
-                Returns
-                -------
-                str
-        """
-    @typing.overload
-    def get_cell_value(self, row_index: typing.SupportsInt | typing.SupportsIndex, column_name: str) -> str | None:
-        """
-                Gets a string parameter in the table group
-        
-                Parameters
-                ----------
-                row_index : int
-                    Index of the row in the table
-                column_name : str
-                    Name of the column in the table
-        
-                Returns
-                -------
-                str
-        """
-    def get_column_names(self) -> list[str]:
-        """
-                Returns the headers as list of strings
-        
-                Returns
-                -------
-                StringList
-                    Returns the headers as  list of strings
-        """
-    def get_name(self) -> str:
-        """
-                Returns the group name
-        
-                Returns
-                -------
-                str
-                    Returns the group name
-        """
-    def get_range_descriptors(self) -> dict[str, list[str]]:
-        """
-                Returns the the description of the allowed parameter ranges for this group, if available
-        
-                Returns
-                -------
-                MapOfStringVectors
-                    The the description of the allowed parameter ranges
-        """
-    def get_row(self, row_index: typing.SupportsInt | typing.SupportsIndex) -> list[IdqTableCell]:
-        """
-                Returns the row at the given index.
-        
-                Returns
-                -------
-                IdqTableRow
-                    Returns the row at the given index.
-        """
-    def get_row_index(self, column_name: str, column_value: str) -> int:
-        """
-                Returns the row index of a the first value in the given column that matches the given value
-        
-                Parameters
-                ----------
-                column_name : str
-                    The name of the column
-                column_value : str
-                    The value in the column to search for
-        
-                Returns
-                -------
-                int
-        """
-    def get_rows(self) -> list[list[IdqTableCell]]:
-        """
-                Returns the rows as a list of list of strings (StringTable)
-        
-                Returns
-                -------
-                IdqTableRows
-                    Returns the rows as a list of list of IdqTableCell
-        """
-    @typing.overload
-    def set_cell_value(self, row_index: typing.SupportsInt | typing.SupportsIndex, column_name: str, cell_value: str | None) -> None:
-        """
-                Sets a string parameter in the table group
-        
-                Parameters
-                ----------
-                row_index : int
-                    Index of the row in the table
-                column_name : str
-                    Name of the column in the table
-                cell_value : str
-                    The value to set
-        """
-    @typing.overload
-    def set_cell_value(self, row_index: typing.SupportsInt | typing.SupportsIndex, column_index: typing.SupportsInt | typing.SupportsIndex, cell_value: str | None) -> None:
-        """
-                Sets a string parameter in the table group
-        
-                Parameters
-                ----------
-                row_index : int
-                    Index of the row in the table
-                column_index : str
-                    Index of the column in the table
-                cell_value : str
-                    The value to set
-        """
-    def set_name(self, name: str) -> None:
-        """
-                 Sets the name of the table group
-        
-                 Parameters
-                 ----------
-                 name : str
-                      The new name of the table group
-        """
-    def set_parameter_value(self, row_index: typing.SupportsInt | typing.SupportsIndex, parameter_name: str, parameter_value: str) -> None:
-        """
-                Sets a string parameter in the table group
-        
-                Parameters
-                ----------
-                row_index : int
-                    Index of the row in the settings
-                parameter_name : str
-                    Name of the parameter
-                parameter_value : str
-                    String value of the parameter
-        """
-    @property
-    def at(self) -> At:
-        ...
-    @property
-    def columns(self) -> list[str]:
-        ...
-    @property
-    def iloc(self) -> Iloc:
-        ...
-    @property
-    def name(self) -> str:
-        """
-                Returns or sets the group name
-        
-                Returns
-                -------
-                str
-                    Returns the group name
-        """
-    @name.setter
-    def name(self, arg1: str) -> None:
-        ...
-    @property
-    def shape(self) -> list[int]:
-        ...
-class IdqTableRow:
-    """
-    Row of IdqTableCells.
-    """
-    __hash__: typing.ClassVar[None] = None
-    def __bool__(self: collections.abc.Sequence[IdqTableCell]) -> bool:
-        """
-        Check whether the list is nonempty
-        """
-    def __contains__(self: collections.abc.Sequence[IdqTableCell], x: IdqTableCell) -> bool:
-        """
-        Return true the container contains ``x``
-        """
-    @typing.overload
-    def __delitem__(self: collections.abc.Sequence[IdqTableCell], arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
-        """
-        Delete the list elements at index ``i``
-        """
-    @typing.overload
-    def __delitem__(self: collections.abc.Sequence[IdqTableCell], arg0: slice) -> None:
-        """
-        Delete list elements using a slice object
-        """
-    def __eq__(self: collections.abc.Sequence[IdqTableCell], arg0: collections.abc.Sequence[IdqTableCell]) -> bool:
-        ...
-    @typing.overload
-    def __getitem__(self: collections.abc.Sequence[IdqTableCell], s: slice) -> list[IdqTableCell]:
-        """
-        Retrieve list elements using a slice object
-        """
-    @typing.overload
-    def __getitem__(self: collections.abc.Sequence[IdqTableCell], arg0: typing.SupportsInt | typing.SupportsIndex) -> IdqTableCell:
-        ...
-    @typing.overload
-    def __init__(self) -> None:
-        ...
-    @typing.overload
-    def __init__(self, arg0: collections.abc.Sequence[IdqTableCell]) -> None:
-        """
-        Copy constructor
-        """
-    @typing.overload
-    def __init__(self, arg0: collections.abc.Iterable) -> None:
-        ...
-    def __iter__(self: collections.abc.Sequence[IdqTableCell]) -> collections.abc.Iterator[IdqTableCell]:
-        ...
-    def __len__(self: collections.abc.Sequence[IdqTableCell]) -> int:
-        ...
-    def __ne__(self: collections.abc.Sequence[IdqTableCell], arg0: collections.abc.Sequence[IdqTableCell]) -> bool:
-        ...
-    def __repr__(self: collections.abc.Sequence[IdqTableCell]) -> str:
-        """
-        Return the canonical string representation of this list.
-        """
-    @typing.overload
-    def __setitem__(self: collections.abc.Sequence[IdqTableCell], arg0: typing.SupportsInt | typing.SupportsIndex, arg1: IdqTableCell) -> None:
-        ...
-    @typing.overload
-    def __setitem__(self: collections.abc.Sequence[IdqTableCell], arg0: slice, arg1: collections.abc.Sequence[IdqTableCell]) -> None:
-        """
-        Assign list elements using a slice object
-        """
-    def append(self: collections.abc.Sequence[IdqTableCell], x: IdqTableCell) -> None:
-        """
-        Add an item to the end of the list
-        """
-    def clear(self: collections.abc.Sequence[IdqTableCell]) -> None:
-        """
-        Clear the contents
-        """
-    def count(self: collections.abc.Sequence[IdqTableCell], x: IdqTableCell) -> int:
-        """
-        Return the number of times ``x`` appears in the list
-        """
-    @typing.overload
-    def extend(self: collections.abc.Sequence[IdqTableCell], L: collections.abc.Sequence[IdqTableCell]) -> None:
-        """
-        Extend the list by appending all the items in the given list
-        """
-    @typing.overload
-    def extend(self: collections.abc.Sequence[IdqTableCell], L: collections.abc.Iterable) -> None:
-        """
-        Extend the list by appending all the items in the given list
-        """
-    def insert(self: collections.abc.Sequence[IdqTableCell], i: typing.SupportsInt | typing.SupportsIndex, x: IdqTableCell) -> None:
-        """
-        Insert an item at a given position.
-        """
-    @typing.overload
-    def pop(self: collections.abc.Sequence[IdqTableCell]) -> IdqTableCell:
-        """
-        Remove and return the last item
-        """
-    @typing.overload
-    def pop(self: collections.abc.Sequence[IdqTableCell], i: typing.SupportsInt | typing.SupportsIndex) -> IdqTableCell:
-        """
-        Remove and return the item at index ``i``
-        """
-    def remove(self: collections.abc.Sequence[IdqTableCell], x: IdqTableCell) -> None:
-        """
-        Remove the first item from the list whose value is x. It is an error if there is no such item.
-        """
-class IdqTableRows:
-    """
-    Table of IdqTableCells.
-    """
-    __hash__: typing.ClassVar[None] = None
-    def __bool__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> bool:
-        """
-        Check whether the list is nonempty
-        """
-    def __contains__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], x: collections.abc.Sequence[IdqTableCell]) -> bool:
-        """
-        Return true the container contains ``x``
-        """
-    @typing.overload
-    def __delitem__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
-        """
-        Delete the list elements at index ``i``
-        """
-    @typing.overload
-    def __delitem__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], arg0: slice) -> None:
-        """
-        Delete list elements using a slice object
-        """
-    def __eq__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], arg0: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> bool:
-        ...
-    @typing.overload
-    def __getitem__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], s: slice) -> list[list[IdqTableCell]]:
-        """
-        Retrieve list elements using a slice object
-        """
-    @typing.overload
-    def __getitem__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], arg0: typing.SupportsInt | typing.SupportsIndex) -> list[IdqTableCell]:
-        ...
-    @typing.overload
-    def __init__(self) -> None:
-        ...
-    @typing.overload
-    def __init__(self, arg0: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> None:
-        """
-        Copy constructor
-        """
-    @typing.overload
-    def __init__(self, arg0: collections.abc.Iterable) -> None:
-        ...
-    def __iter__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> collections.abc.Iterator[list[IdqTableCell]]:
-        ...
-    def __len__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> int:
-        ...
-    def __ne__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], arg0: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> bool:
-        ...
-    @typing.overload
-    def __setitem__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], arg0: typing.SupportsInt | typing.SupportsIndex, arg1: collections.abc.Sequence[IdqTableCell]) -> None:
-        ...
-    @typing.overload
-    def __setitem__(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], arg0: slice, arg1: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> None:
-        """
-        Assign list elements using a slice object
-        """
-    def append(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], x: collections.abc.Sequence[IdqTableCell]) -> None:
-        """
-        Add an item to the end of the list
-        """
-    def clear(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> None:
-        """
-        Clear the contents
-        """
-    def count(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], x: collections.abc.Sequence[IdqTableCell]) -> int:
-        """
-        Return the number of times ``x`` appears in the list
-        """
-    @typing.overload
-    def extend(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], L: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> None:
-        """
-        Extend the list by appending all the items in the given list
-        """
-    @typing.overload
-    def extend(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], L: collections.abc.Iterable) -> None:
-        """
-        Extend the list by appending all the items in the given list
-        """
-    def insert(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], i: typing.SupportsInt | typing.SupportsIndex, x: collections.abc.Sequence[IdqTableCell]) -> None:
-        """
-        Insert an item at a given position.
-        """
-    @typing.overload
-    def pop(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]]) -> list[IdqTableCell]:
-        """
-        Remove and return the last item
-        """
-    @typing.overload
-    def pop(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], i: typing.SupportsInt | typing.SupportsIndex) -> list[IdqTableCell]:
-        """
-        Remove and return the item at index ``i``
-        """
-    def remove(self: collections.abc.Sequence[collections.abc.Sequence[IdqTableCell]], x: collections.abc.Sequence[IdqTableCell]) -> None:
-        """
-        Remove the first item from the list whose value is x. It is an error if there is no such item.
-        """
-class Iloc:
-    def __getitem__(self, arg0: tuple[typing.SupportsInt | typing.SupportsIndex, typing.SupportsInt | typing.SupportsIndex]) -> str | None:
-        ...
-    def __setitem__(self, arg0: tuple[typing.SupportsInt | typing.SupportsIndex, typing.SupportsInt | typing.SupportsIndex], arg1: str) -> None:
-        ...
-class ListSweep:
-    """
-    
-             Class to perform a List Sweep on a idSmu module
-        
-    """
-    def __init__(self, arg0: str, arg1: IdSmuBoardModel) -> None:
-        ...
-    def add_channel_configuration(self, channel_name: str, list_sweep_channel_configuration: ListSweepChannelConfiguration) -> None:
-        """
-                 Adds a list sweep configuration for the given channel
-        
-                 Parameters
-                 ----------
-                 channel_name : str
-                      Name or Id of the channel
-                 list_sweep_channel_configuration : ListSweepChannelConfiguration
-                      The channel configuration
-        """
-    def can_run(self) -> bool:
-        """
-                 Returns true if the sweep can be executed (the memory used by the sweep does not exceed the memory limit of 4k)
-        
-                 Returns
-                 -------
-                 bool
-        """
-    def get_measurement_result(self, channel_name: str) -> numpy.typing.NDArray[numpy.float64]:
-        """
-                 Returns the measurement results of the sweep
-        
-                 Returns
-                 -------
-                 ndarray
-                      An array of measurement values
-        """
-    def get_timecode(self) -> numpy.typing.NDArray[numpy.float64]:
-        """
-                 Returns the timecode of the sweep in microseconds
-        
-                 Returns
-                 -------
-                 ndarray
-                      An array of timestamps, one entry for each measurement
-        """
-    def run(self) -> str | None:
-        """
-                 Runs the sweep
-        
-                 Returns
-                 -------
-                 str or None
-                      In case of an error, the error is reported as string
-        """
-    def set_measurement_delay(self, measurement_delay: typing.SupportsInt | typing.SupportsIndex) -> None:
-        """
-                 Sets the set to measurement delay in microseconds
-        
-                 Parameters
-                 ----------
-                 measurement_delay : int
-                      Time in microseconds
-        """
-    def set_sample_count(self, sample_count: typing.SupportsInt | typing.SupportsIndex) -> None:
-        """
-                 Sets the sample count for each measurement. The sampled values are averaged. Default is 1.
-        
-                 Parameters
-                 ----------
-                 sample_count : int
-                      Number of samples
-        """
-    @property
-    def size(self) -> int:
-        """
-                 Returns the number of words stored in memory when the sweep is executed (the memory used by the sweep shout not exceed the memory limit of 1k words)
-        
-                 Returns
-                 -------
-                 bool
-        """
-    @property
-    def timecode(self) -> numpy.typing.NDArray[numpy.float64]:
-        """
-                 Returns the timecode of the sweep in microseconds
-        
-                 Returns
-                 -------
-                 ndarray
-                      An array of timestamps, one entry for each measurement
-        """
-class ListSweepChannelConfiguration:
-    """
-    
-             Instances of this class are needed to configure a List Sweep
-        
-    """
-    def __init__(self) -> None:
-        ...
-    def change_current_range_at(self, step_index: typing.SupportsInt | typing.SupportsIndex, current_range: CurrentRange) -> None:
-        """
-                 Changes the current range at the given index within the sweep
-        
-                 Parameters
-                 ----------
-                 step_index : int
-                      The step index in the sweep at which the current range changes
-                 current_range : CurrentRange
-                      The new current range 
-        """
-    def clear_current_ranges(self) -> None:
-        """
-                 Removes all current range changes from the configuration
-        """
-    def get_force_values(self) -> numpy.typing.NDArray[numpy.float64]:
-        ...
-    def set_constant_force_mode(self, number_of_steps: typing.SupportsInt | typing.SupportsIndex) -> None:
-        """
-                 Sets the configuration to measurement only mode - no sweep is performerd
-        
-                 Parameters
-                 ----------
-                 number_of_steps : int
-                      Number of  measurement steps 
-        """
-    def set_disable_measurement(self) -> None:
-        """
-                 Disables the measurement for this configuration
-        """
-    def set_force_values(self, force_values: numpy.ndarray) -> None:
-        """
-                 Sets the custom sweep force values
-        
-                 Parameters
-                 ----------
-                 force_values : ndarray
-                      The force values
-        """
-    def set_linear_sweep(self, start: typing.SupportsFloat | typing.SupportsIndex, end: typing.SupportsFloat | typing.SupportsIndex, number_of_steps: typing.SupportsInt | typing.SupportsIndex) -> None:
-        """
-                 Configures a linear sweep
-        
-                 Parameters
-                 ----------
-                 start : float
-                      Start value
-                 stop : float
-                      Stop value
-                 number_of_steps : int
-                      Number of steps 
-        """
-    def set_number_of_steps(self, number_of_steps: typing.SupportsInt | typing.SupportsIndex) -> None:
-        """
-                 Sets the number of measurement steps
-        
-                 Parameters
-                 ----------
-                 number_of_steps : int
-                      Number of measurement steps. Only valid for measurement only mode (constant force mode)
-        """
-    @property
-    def force_values(self) -> numpy.typing.NDArray[numpy.float64]:
-        """
-                 Sets the custom sweep force values
-        
-                 Parameters
-                 ----------
-                 force_values : ndarray
-                      The force values
-        """
-    @force_values.setter
-    def force_values(self, arg1: numpy.ndarray) -> None:
-        ...
 class LogLevel:
     """
     Members:
@@ -3786,13 +4491,13 @@ class LogLevel:
     
       Trace
     """
-    Debug: typing.ClassVar[LogLevel]  # value = <LogLevel.Debug: 4>
-    Error: typing.ClassVar[LogLevel]  # value = <LogLevel.Error: 1>
-    Info: typing.ClassVar[LogLevel]  # value = <LogLevel.Info: 3>
-    None_: typing.ClassVar[LogLevel]  # value = <LogLevel.None_: 0>
-    Trace: typing.ClassVar[LogLevel]  # value = <LogLevel.Trace: 5>
-    Warning: typing.ClassVar[LogLevel]  # value = <LogLevel.Warning: 2>
-    __members__: typing.ClassVar[dict[str, LogLevel]]  # value = {'None_': <LogLevel.None_: 0>, 'Error': <LogLevel.Error: 1>, 'Warning': <LogLevel.Warning: 2>, 'Info': <LogLevel.Info: 3>, 'Debug': <LogLevel.Debug: 4>, 'Trace': <LogLevel.Trace: 5>}
+    Debug: typing.ClassVar[LogLevel]
+    Error: typing.ClassVar[LogLevel]
+    Info: typing.ClassVar[LogLevel]
+    None_: typing.ClassVar[LogLevel]
+    Trace: typing.ClassVar[LogLevel]
+    Warning: typing.ClassVar[LogLevel]
+    __members__: typing.ClassVar[dict[str, LogLevel]]
     @typing.overload
     def __eq__(self, other: LogLevel) -> bool:
         ...
@@ -3829,7 +4534,6 @@ class LogLevel:
         ...
 class LogService:
     """
-    
              Log service of the Device Engine  
     """
     def flush_file_log(self) -> None:
@@ -3883,474 +4587,41 @@ class LogService:
     @file_log_level.setter
     def file_log_level(self, arg1: LogLevel) -> None:
         ...
-class MapOfStringVectors:
+class IdSmuServiceRunner:
     """
-    Map of string vectors
+             Simplifies the starting of idSmu services and controls their lifetime.
+        
     """
-    def __bool__(self) -> bool:
-        """
-        Check whether the map is nonempty
-        """
-    @typing.overload
-    def __contains__(self, arg0: str) -> bool:
+    def __init__(self, log_level: typing.SupportsInt | typing.SupportsIndex = 0, worker_thread_count: typing.SupportsInt | typing.SupportsIndex = 4) -> None:
         ...
-    @typing.overload
-    def __contains__(self, arg0: typing.Any) -> bool:
+    def get_idsmu_service(self) -> IdSmuService:
         ...
-    def __delitem__(self, arg0: str) -> None:
-        ...
-    def __getitem__(self, arg0: str) -> StringList:
-        ...
-    def __init__(self) -> None:
-        ...
-    def __iter__(self) -> collections.abc.Iterator[str]:
-        ...
-    def __len__(self) -> int:
-        ...
-    def __setitem__(self, arg0: str, arg1: StringList) -> None:
-        ...
-    def items(self) -> typing.ItemsView:
-        ...
-    def keys(self) -> typing.KeysView:
-        ...
-    def values(self) -> typing.ValuesView:
-        ...
-class MeasurementMode:
-    """
-    Members:
-    
-      highZ
-    
-      isense
-    
-      vsense
-    
-      tsense
-    """
-    __members__: typing.ClassVar[dict[str, MeasurementMode]]  # value = {'highZ': <MeasurementMode.highZ: 3>, 'isense': <MeasurementMode.isense: 0>, 'vsense': <MeasurementMode.vsense: 1>, 'tsense': <MeasurementMode.tsense: 2>}
-    highZ: typing.ClassVar[MeasurementMode]  # value = <MeasurementMode.highZ: 3>
-    isense: typing.ClassVar[MeasurementMode]  # value = <MeasurementMode.isense: 0>
-    tsense: typing.ClassVar[MeasurementMode]  # value = <MeasurementMode.tsense: 2>
-    vsense: typing.ClassVar[MeasurementMode]  # value = <MeasurementMode.vsense: 1>
-    @typing.overload
-    def __eq__(self, other: MeasurementMode) -> bool:
-        ...
-    @typing.overload
-    def __eq__(self, other: typing.Any) -> bool:
-        ...
-    def __getstate__(self) -> int:
-        ...
-    def __hash__(self) -> int:
-        ...
-    def __index__(self) -> int:
-        ...
-    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    def __int__(self) -> int:
-        ...
-    @typing.overload
-    def __ne__(self, other: MeasurementMode) -> bool:
-        ...
-    @typing.overload
-    def __ne__(self, other: typing.Any) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
-    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    def __str__(self) -> str:
+    def shutdown(self) -> None:
         ...
     @property
-    def name(self) -> str:
+    def log_service(self) -> LogService:
+        ...
+class IdSmuServiceRunnerExt:
+    """
+        Simplifies the starting of idSmu services and controls their lifetime.
+    """
+    @staticmethod
+    def instance(log_level: typing.SupportsInt | typing.SupportsIndex = 0, worker_thread_count: typing.SupportsInt | typing.SupportsIndex = 4) -> IdSmuServiceRunnerExt:
+        """
+                   Returns the singleton instance of the ServiceRunner.
+                   Subsequent calls return the same instance.
+        """
+    def __enter__(self) -> IdSmuServiceRunnerExt:
+        ...
+    def __exit__(self, arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> None:
+        ...
+    def get_idsmu_service(self) -> IdSmuService:
+        ...
+    def shutdown(self) -> None:
         ...
     @property
-    def value(self) -> int:
+    def log_service(self) -> LogService:
         ...
-class ParamterChangedObserverProxy:
-    def __init__(self) -> None:
-        ...
-    def register_observer(self, board_model: IdSmuBoardModel, resource_id: str, python_handler: collections.abc.Callable[[], None]) -> None:
-        """
-                 Initialize all installed idSMU devices on the board
-        
-                 Parameters
-                 ----------
-                 board_model : IdSmuBoardModel
-        
-                 resource_id : str
-        
-                 python_handler : Functional
-        """
-    def unregister_observer(self) -> None:
-        """
-                Leave context manager.
-        """
-class ReadAdcCommandIdSmuResult(Result):
-    def __getitem__(self, arg0: str) -> numpy.typing.NDArray[numpy.float64]:
-        ...
-    def get_execution_time(self) -> int:
-        """
-                 Gets the execution time in microseconds for the measurement command
-        
-                 Returns
-                 -------
-                 int
-                      Execution time in microsecontd
-        """
-    def get_float_values(self, channel_name: str) -> numpy.typing.NDArray[numpy.float64]:
-        ...
-    @typing.overload
-    def get_values(self, channel_number: typing.SupportsInt | typing.SupportsIndex) -> DoubleList:
-        """
-                 Gets the measured values for a channel number
-        
-                 Parameters
-                 ----------
-                 channel_number : int
-                      The channel number for which the measured values should be retreived
-        
-                 Returns
-                 -------
-                 DoubleList
-                      A DoubleList object
-        """
-    @typing.overload
-    def get_values(self, channel_name: str) -> DoubleList:
-        """
-                 Gets the measured values for a channel name
-        
-                 Parameters
-                 ----------
-                 channel_name : str
-                      The channel name for which the measured values should be retreived
-        
-                 Returns
-                 -------
-                 DoubleList
-                      A DoubleList object
-        """
-    @property
-    def channel_ids(self) -> StringList:
-        """
-                 Returns the channel ids associated with the results
-        
-                 Returns
-                 -------
-                 List[str]
-                      Channel Ids
-        """
-    @property
-    def channel_names(self) -> StringList:
-        """
-                 Returns the channel names associated with the results
-        
-                 Returns
-                 -------
-                 List[str]
-                      Channel names
-        """
-    @property
-    def device_id(self) -> str:
-        """
-                 Returns the device id associated with the results
-        
-                 Returns
-                 -------
-                 str
-                      Device Id
-        """
-    @property
-    def execution_time(self) -> int:
-        """
-                 Gets the execution time in microseconds for the measurement command
-        
-                 Returns
-                 -------
-                 int
-                      Execution time in microseconts
-        """
-    @property
-    def timecode(self) -> numpy.typing.NDArray[numpy.uint32]:
-        """
-                 Gets the timecodes for the measurement command
-        
-                 Returns
-                 -------
-                 ndarray[int]
-                      Array of time code values
-        """
-class ReadWriteFpgaIdSmuResult(Result):
-    pass
-class Result(CommandReply):
-    pass
-class RowFilter:
-    column_name: str
-    exact_match: bool
-    filter_expression: str
-class SequencingCommandResult(Result):
-    """
-    
-             The result of a sequencing command.
-        
-    """
-    def get_device_id(self) -> str:
-        ...
-    def get_results(self) -> list[CommandReply]:
-        ...
-class SmuCurrentRange:
-    """
-    Members:
-    
-      Range_5uA
-    
-      Range_20uA
-    
-      Range_200uA
-    
-      Range_2mA
-    
-      Range_70mA
-    """
-    Range_200uA: typing.ClassVar[SmuCurrentRange]  # value = <SmuCurrentRange.Range_200uA: 2>
-    Range_20uA: typing.ClassVar[SmuCurrentRange]  # value = <SmuCurrentRange.Range_20uA: 1>
-    Range_2mA: typing.ClassVar[SmuCurrentRange]  # value = <SmuCurrentRange.Range_2mA: 3>
-    Range_5uA: typing.ClassVar[SmuCurrentRange]  # value = <SmuCurrentRange.Range_5uA: 0>
-    Range_70mA: typing.ClassVar[SmuCurrentRange]  # value = <SmuCurrentRange.Range_70mA: 4>
-    __members__: typing.ClassVar[dict[str, SmuCurrentRange]]  # value = {'Range_5uA': <SmuCurrentRange.Range_5uA: 0>, 'Range_20uA': <SmuCurrentRange.Range_20uA: 1>, 'Range_200uA': <SmuCurrentRange.Range_200uA: 2>, 'Range_2mA': <SmuCurrentRange.Range_2mA: 3>, 'Range_70mA': <SmuCurrentRange.Range_70mA: 4>}
-    @typing.overload
-    def __eq__(self, other: SmuCurrentRange) -> bool:
-        ...
-    @typing.overload
-    def __eq__(self, other: typing.Any) -> bool:
-        ...
-    def __getstate__(self) -> int:
-        ...
-    def __hash__(self) -> int:
-        ...
-    def __index__(self) -> int:
-        ...
-    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    def __int__(self) -> int:
-        ...
-    @typing.overload
-    def __ne__(self, other: SmuCurrentRange) -> bool:
-        ...
-    @typing.overload
-    def __ne__(self, other: typing.Any) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
-    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
-        ...
-    def __str__(self) -> str:
-        ...
-    @property
-    def name(self) -> str:
-        ...
-    @property
-    def value(self) -> int:
-        ...
-class StringList:
-    """
-    List of strings.
-    """
-    __hash__: typing.ClassVar[None] = None
-    def __bool__(self) -> bool:
-        """
-        Check whether the list is nonempty
-        """
-    def __contains__(self, x: str) -> bool:
-        """
-        Return true the container contains ``x``
-        """
-    @typing.overload
-    def __delitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
-        """
-        Delete the list elements at index ``i``
-        """
-    @typing.overload
-    def __delitem__(self, arg0: slice) -> None:
-        """
-        Delete list elements using a slice object
-        """
-    def __eq__(self, arg0: StringList) -> bool:
-        ...
-    @typing.overload
-    def __getitem__(self, s: slice) -> StringList:
-        """
-        Retrieve list elements using a slice object
-        """
-    @typing.overload
-    def __getitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> str:
-        ...
-    @typing.overload
-    def __init__(self) -> None:
-        ...
-    @typing.overload
-    def __init__(self, arg0: StringList) -> None:
-        """
-        Copy constructor
-        """
-    @typing.overload
-    def __init__(self, arg0: collections.abc.Iterable) -> None:
-        ...
-    def __iter__(self) -> collections.abc.Iterator[str]:
-        ...
-    def __len__(self) -> int:
-        ...
-    def __ne__(self, arg0: StringList) -> bool:
-        ...
-    def __repr__(self) -> str:
-        """
-        Return the canonical string representation of this list.
-        """
-    @typing.overload
-    def __setitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex, arg1: str) -> None:
-        ...
-    @typing.overload
-    def __setitem__(self, arg0: slice, arg1: StringList) -> None:
-        """
-        Assign list elements using a slice object
-        """
-    def append(self, x: str) -> None:
-        """
-        Add an item to the end of the list
-        """
-    def clear(self) -> None:
-        """
-        Clear the contents
-        """
-    def count(self, x: str) -> int:
-        """
-        Return the number of times ``x`` appears in the list
-        """
-    @typing.overload
-    def extend(self, L: StringList) -> None:
-        """
-        Extend the list by appending all the items in the given list
-        """
-    @typing.overload
-    def extend(self, L: collections.abc.Iterable) -> None:
-        """
-        Extend the list by appending all the items in the given list
-        """
-    def insert(self, i: typing.SupportsInt | typing.SupportsIndex, x: str) -> None:
-        """
-        Insert an item at a given position.
-        """
-    @typing.overload
-    def pop(self) -> str:
-        """
-        Remove and return the last item
-        """
-    @typing.overload
-    def pop(self, i: typing.SupportsInt | typing.SupportsIndex) -> str:
-        """
-        Remove and return the item at index ``i``
-        """
-    def remove(self, x: str) -> None:
-        """
-        Remove the first item from the list whose value is x. It is an error if there is no such item.
-        """
-class StringTable:
-    """
-    Table of strings.
-    """
-    __hash__: typing.ClassVar[None] = None
-    def __bool__(self) -> bool:
-        """
-        Check whether the list is nonempty
-        """
-    def __contains__(self, x: StringList) -> bool:
-        """
-        Return true the container contains ``x``
-        """
-    @typing.overload
-    def __delitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
-        """
-        Delete the list elements at index ``i``
-        """
-    @typing.overload
-    def __delitem__(self, arg0: slice) -> None:
-        """
-        Delete list elements using a slice object
-        """
-    def __eq__(self, arg0: StringTable) -> bool:
-        ...
-    @typing.overload
-    def __getitem__(self, s: slice) -> StringTable:
-        """
-        Retrieve list elements using a slice object
-        """
-    @typing.overload
-    def __getitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> StringList:
-        ...
-    @typing.overload
-    def __init__(self) -> None:
-        ...
-    @typing.overload
-    def __init__(self, arg0: StringTable) -> None:
-        """
-        Copy constructor
-        """
-    @typing.overload
-    def __init__(self, arg0: collections.abc.Iterable) -> None:
-        ...
-    def __iter__(self) -> collections.abc.Iterator[StringList]:
-        ...
-    def __len__(self) -> int:
-        ...
-    def __ne__(self, arg0: StringTable) -> bool:
-        ...
-    @typing.overload
-    def __setitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex, arg1: StringList) -> None:
-        ...
-    @typing.overload
-    def __setitem__(self, arg0: slice, arg1: StringTable) -> None:
-        """
-        Assign list elements using a slice object
-        """
-    def append(self, x: StringList) -> None:
-        """
-        Add an item to the end of the list
-        """
-    def clear(self) -> None:
-        """
-        Clear the contents
-        """
-    def count(self, x: StringList) -> int:
-        """
-        Return the number of times ``x`` appears in the list
-        """
-    @typing.overload
-    def extend(self, L: StringTable) -> None:
-        """
-        Extend the list by appending all the items in the given list
-        """
-    @typing.overload
-    def extend(self, L: collections.abc.Iterable) -> None:
-        """
-        Extend the list by appending all the items in the given list
-        """
-    def insert(self, i: typing.SupportsInt | typing.SupportsIndex, x: StringList) -> None:
-        """
-        Insert an item at a given position.
-        """
-    @typing.overload
-    def pop(self) -> StringList:
-        """
-        Remove and return the last item
-        """
-    @typing.overload
-    def pop(self, i: typing.SupportsInt | typing.SupportsIndex) -> StringList:
-        """
-        Remove and return the item at index ``i``
-        """
-    def remove(self, x: StringList) -> None:
-        """
-        Remove the first item from the list whose value is x. It is an error if there is no such item.
-        """
 def check_future_is_ready(arg0: CommandReplyFuture) -> bool:
     ...
 def generate_function_generator_data(min_value: typing.SupportsFloat | typing.SupportsIndex, max_value: typing.SupportsFloat | typing.SupportsIndex, step_size: typing.SupportsFloat | typing.SupportsIndex, function_generator_type: FunctionGeneratorType) -> list[float]:
@@ -4384,4 +4655,4 @@ def get_git_version() -> int:
              -------
              int
     """
-__version__: str = '0.9.647'
+__version__: str = '0.9.652'
