@@ -101,7 +101,7 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.port_string = parameter["Port"]  # can be used to enable device communication
+        self.port_string = parameter.get("Port", "")  # can be used to enable device communication
         self.sweep_mode = parameter["SweepMode"]
         self.waveform = parameter["Waveform"]
         self.period_frequency_mode = parameter["PeriodFrequency"]
@@ -185,4 +185,66 @@ class Device(EmptyDevice):
 
         return self.offset + signal * self.amplitude
 
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
 
+    The commands do not need 'initialize' or 'configure'.
+    """
+
+    def set_waveform(self, waveform: str) -> None:
+        """Set the waveform to 'Sine', 'Square', 'Triangle' or 'Sawtooth'."""
+        valid_waveforms = ("Sine", "Square", "Triangle", "Sawtooth")
+        if waveform not in valid_waveforms:
+            msg = f"Waveform '{waveform}' is not supported. Choose one of {valid_waveforms}."
+            raise ValueError(msg)
+        self.waveform = waveform
+
+    def set_frequency(self, frequency: float) -> None:
+        """Set the frequency in Hz (greater than 0 Hz)."""
+        frequency = float(frequency)
+        if frequency <= 0:
+            msg = f"Frequency {frequency} Hz must be greater than 0 Hz."
+            raise ValueError(msg)
+        self.frequency = frequency
+
+    def set_amplitude(self, amplitude: float) -> None:
+        """Set the amplitude in V (0 V or more)."""
+        amplitude = float(amplitude)
+        if amplitude < 0:
+            msg = f"Amplitude {amplitude} V must not be negative."
+            raise ValueError(msg)
+        self.amplitude = amplitude
+
+    def set_offset(self, offset: float) -> None:
+        """Set the offset in V."""
+        self.offset = float(offset)
+
+    def set_delay(self, delay: float) -> None:
+        """Set the delay of the signal in s."""
+        self.delay = float(delay)
+
+    def get_settings(self) -> dict:
+        """Return the waveform, frequency in Hz, amplitude in V, offset in V and delay in s."""
+        return {
+            "waveform": self.waveform,
+            "frequency": float(self.frequency),
+            "amplitude": float(self.amplitude),
+            "offset": float(self.offset),
+            "delay": float(self.delay),
+        }
+
+    def sample_signal(self, duration: float, points: int) -> dict:
+        """Return the signal of the set waveform at 'points' times from 0 s to 'duration' in s (2 to 100000 points).
+
+        Returns a dictionary with the lists 'time' in s and 'signal' in V.
+        """
+        duration = float(duration)
+        points = int(points)
+        if duration <= 0:
+            msg = f"Duration {duration} s must be greater than 0 s."
+            raise ValueError(msg)
+        if not 2 <= points <= 100000:
+            msg = f"Points {points} must be between 2 and 100000."
+            raise ValueError(msg)
+        time_stamps = np.linspace(0, duration, points)
+        signal = self.generate_waveform(time_stamps.copy())
+        return {"time": time_stamps.tolist(), "signal": np.asarray(signal, dtype=float).tolist()}

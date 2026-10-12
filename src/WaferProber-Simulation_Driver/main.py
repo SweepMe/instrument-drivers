@@ -83,7 +83,7 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.port_string = parameter["Port"]  # can be used to enable device communication
+        self.port_string = parameter.get("Port", "")  # can be used to enable device communication
 
     # here functions start that only exists for the WaferProber module and are called by this module
 
@@ -263,3 +263,18 @@ class Device(EmptyDevice):
                 self.current_die_y,
                 self.current_subsite,
                 self.skip)
+
+    """Communication command, used e.g. by the SweepMe! Instrument Control.
+
+    The functions of the WaferProber module above, such as 'load_wafer', 'step_to_die', 'contact' or 'separate', are
+    communication commands as well.
+    """
+
+    def get_status(self) -> dict:
+        """Return the loaded 'wafer', the 'die' and 'subsite' the probes stand on and whether they are 'contacted'."""
+        return {
+            "wafer": self.current_wafer,
+            "die": self.current_die,
+            "subsite": self.current_subsite,
+            "contacted": bool(self.is_contacted),
+        }

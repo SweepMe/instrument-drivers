@@ -113,7 +113,7 @@ class Device(EmptyDevice):
         self.average = int(parameter["Average"])
         self.trigger_mode = parameter["Trigger"]
         self.trigger_delay = float(parameter["TriggerDelay"])
-        self.port_string = parameter["Port"]
+        self.port_string = parameter.get("Port", self.port_string)
 
     def initialize(self) -> None:
         """Reset the silicon-photonics peak so it does not drift out of range across runs."""
@@ -216,3 +216,59 @@ class Device(EmptyDevice):
         for _ in self.get_wavelengths():
             noise.append(50 * random.random() - 25)
         return noise
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    The commands do not need 'initialize' or 'configure'. Which spectrum the simulation returns is selected with
+    'set_spectrum_mode'.
+    """
+
+    def set_spectrum_mode(self, mode: str) -> None:
+        """Select the simulated spectrum: 'Test spectrum.txt', 'Raman Spectrum', 'Background Spectrum',
+        'Silicon Photonics' or 'No Noise'.
+        """
+        valid_modes = self.find_ports()
+        if mode not in valid_modes:
+            msg = f"Spectrum mode '{mode}' is not supported. Choose one of {valid_modes}."
+            raise ValueError(msg)
+        self.port_string = mode
+        if mode == "Silicon Photonics":
+            self.siph_peak_wl = self.SIPH_PEAK_WL_START
+
+    def get_spectrum_mode(self) -> str:
+        """Return the selected simulated spectrum."""
+        return str(self.port_string)
+
+    def set_integration_time(self, integration_time: float) -> None:
+        """Set the integration time in s (greater than 0 s and at most 10 s)."""
+        integration_time = float(integration_time)
+        if not 0 < integration_time <= 10:
+            msg = f"Integration time {integration_time} s must be greater than 0 s and at most 10 s."
+            raise ValueError(msg)
+        self.integration_time = integration_time
+
+    def get_integration_time(self) -> float:
+        """Return the integration time in s."""
+        return float(self.integration_time)
+
+    def set_average(self, average: int) -> None:
+        """Set the number of spectra that are averaged for one acquisition (1 to 100)."""
+        average = int(average)
+        if not 1 <= average <= 100:
+            msg = f"Average {average} must be between 1 and 100."
+            raise ValueError(msg)
+        self.average = average
+
+    def acquire_spectrum(self) -> dict:
+        """Acquire a spectrum. It takes as long as integration time times average.
+
+        Returns a dictionary with the lists 'wavelength' in nm and 'intensity' in counts/s (in dB for the mode
+        'Silicon Photonics') and the 'integration_time' in s.
+        """
+        self.measure()
+        wavelengths, intensities, integration_time = self.call()
+        return {
+            "wavelength": np.asarray(wavelengths, dtype=float).tolist(),
+            "intensity": np.asarray(intensities, dtype=float).tolist(),
+            "integration_time": float(integration_time),
+        }

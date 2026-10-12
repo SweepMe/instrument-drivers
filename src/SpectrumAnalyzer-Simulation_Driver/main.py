@@ -110,7 +110,7 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Handle GUI inputs."""
-        self.port_string = parameter["Port"]
+        self.port_string = parameter.get("Port", self.port_string)
         self.handle_frequency_input(parameter)
 
         self.reference_level = float(parameter["Reference level in dBm"])
@@ -195,3 +195,56 @@ class Device(EmptyDevice):
             amplitude += noise
 
         return amplitude
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    The commands do not need 'initialize' or 'configure'. Set the frequency range before acquiring a trace.
+    """
+
+    def set_frequency_range(self, min_frequency: float, max_frequency: float) -> None:
+        """Set the frequency range of the trace in Hz. The minimum must be lower than the maximum."""
+        min_frequency = float(min_frequency)
+        max_frequency = float(max_frequency)
+        if max_frequency <= min_frequency:
+            msg = "The minimum frequency must be lower than the maximum frequency."
+            raise ValueError(msg)
+        self.frequency_min = min_frequency
+        self.frequency_max = max_frequency
+        self.frequency_center = (min_frequency + max_frequency) / 2
+        self.frequency_span = max_frequency - min_frequency
+
+    def get_frequency_range(self) -> tuple[float, float]:
+        """Return (minimum frequency in Hz, maximum frequency in Hz)."""
+        return float(self.frequency_min), float(self.frequency_max)
+
+    def set_reference_level(self, reference_level: float) -> None:
+        """Set the reference level in dBm."""
+        self.reference_level = float(reference_level)
+
+    def set_trace_mode(self, trace_mode: str, repetitions: int = 1) -> None:
+        """Set the trace mode ('Current', 'Max hold', 'Min hold' or 'Average') and the number of repetitions (1 to 100)."""
+        repetitions = int(repetitions)
+        if trace_mode not in self.trace_modes:
+            msg = f"Trace mode '{trace_mode}' is not supported. Choose one of {self.trace_modes}."
+            raise ValueError(msg)
+        if not 1 <= repetitions <= 100:
+            msg = f"Repetitions {repetitions} must be between 1 and 100."
+            raise ValueError(msg)
+        self.trace_mode = trace_mode
+        self.trace_integration = repetitions
+
+    def set_noise_enabled(self, enabled: bool) -> None:
+        """Switch the simulated noise on or off. Without noise the traces are reproducible."""
+        self.port_string = "Simulated Spectrum" if enabled else "No Noise"
+
+    def acquire_trace(self) -> dict:
+        """Acquire a trace of 100 points over the set frequency range.
+
+        Returns a dictionary with the lists 'frequency' in Hz and 'power' in dBm.
+        """
+        if self.frequency_max <= self.frequency_min:
+            msg = "The frequency range is empty. Use 'set_frequency_range' first."
+            raise ValueError(msg)
+        self.measure()
+        frequencies, power = self.call()
+        return {"frequency": list(frequencies), "power": list(power)}

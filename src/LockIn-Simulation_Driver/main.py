@@ -101,3 +101,75 @@ class Device(EmptyDevice):
         magnitude += self.noise_level * (random() - 0.5)
         phase += self.noise_level * 100.0 * (random() - 0.5)
         return magnitude, phase
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    The simulated lock-in amplifier measures a device with a resonance at 1 kHz. The commands do not need
+    'initialize' or 'configure'.
+    """
+
+    def set_frequency(self, frequency: float) -> None:
+        """Set the reference frequency in Hz (greater than 0 Hz)."""
+        frequency = float(frequency)
+        if frequency <= 0:
+            msg = f"Frequency {frequency} Hz must be greater than 0 Hz."
+            raise ValueError(msg)
+        self.frequency = frequency
+
+    def get_frequency(self) -> float:
+        """Return the reference frequency in Hz."""
+        return float(self.frequency)
+
+    def set_amplitude(self, amplitude: float) -> None:
+        """Set the excitation amplitude in V (0 V or more)."""
+        amplitude = float(amplitude)
+        if amplitude < 0:
+            msg = f"Amplitude {amplitude} V must not be negative."
+            raise ValueError(msg)
+        self.amplitude = amplitude
+
+    def get_amplitude(self) -> float:
+        """Return the excitation amplitude in V."""
+        return float(self.amplitude)
+
+    def set_noise_level(self, noise_level: float) -> None:
+        """Set the noise level of the simulated readings. Use 0 for a deterministic output."""
+        noise_level = float(noise_level)
+        if noise_level < 0:
+            msg = f"Noise level {noise_level} must not be negative."
+            raise ValueError(msg)
+        self.noise_level = noise_level
+
+    def get_magnitude_and_phase(self) -> tuple[float, float]:
+        """Measure and return (magnitude in V, phase in degrees) at the set frequency and amplitude."""
+        magnitude, phase = self._simulate(self.frequency)
+        return float(magnitude), float(phase)
+
+    def get_xy(self) -> tuple[float, float]:
+        """Measure and return the in-phase and quadrature components (X in V, Y in V)."""
+        magnitude, phase = self._simulate(self.frequency)
+        phase_rad = np.deg2rad(phase)
+        return float(magnitude * np.cos(phase_rad)), float(magnitude * np.sin(phase_rad))
+
+    def measure_frequency_sweep(self, start_frequency: float, stop_frequency: float, points: int) -> dict:
+        """Measure at 'points' linearly spaced frequencies from start to stop in Hz (2 to 10000 points).
+
+        Returns a dictionary with the lists 'frequency' in Hz, 'magnitude' in V and 'phase' in degrees. The set
+        frequency stays unchanged.
+        """
+        start_frequency = float(start_frequency)
+        stop_frequency = float(stop_frequency)
+        points = int(points)
+        if start_frequency <= 0 or stop_frequency <= 0:
+            msg = "Start and stop frequency must be greater than 0 Hz."
+            raise ValueError(msg)
+        if not 2 <= points <= 10000:
+            msg = f"Points {points} must be between 2 and 10000."
+            raise ValueError(msg)
+        frequencies = np.linspace(start_frequency, stop_frequency, points)
+        results = [self._simulate(float(frequency)) for frequency in frequencies]
+        return {
+            "frequency": frequencies.tolist(),
+            "magnitude": [float(magnitude) for magnitude, _ in results],
+            "phase": [float(phase) for _, phase in results],
+        }

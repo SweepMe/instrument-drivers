@@ -93,7 +93,7 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Get the GUI parameters and choose driver parameters accordingly."""
-        self.port = parameter["Port"]
+        self.port = parameter.get("Port", "Simulation Scope")
 
         self.time_range = float(parameter["TimeRangeValue"])
         self.sampling_rate_type = parameter["SamplingRateType"]
@@ -161,3 +161,59 @@ class Device(EmptyDevice):
             data.append(channel_2)
 
         return data
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    Channel 1 shows a 1 kHz sine and channel 2 a 1 kHz cosine, each with the amplitude of the set voltage range. The
+    commands do not need 'initialize' or 'configure'.
+    """
+
+    def set_timebase(self, time_range: float, sampling_rate: float) -> None:
+        """Set the acquisition time in s and the sampling rate in Hz. The waveform may have 2 to 1,000,000 points."""
+        time_range = float(time_range)
+        sampling_rate = float(sampling_rate)
+        if time_range <= 0 or sampling_rate <= 0:
+            msg = "Time range and sampling rate must be greater than 0."
+            raise ValueError(msg)
+        points = time_range * sampling_rate
+        if not 2 <= points <= 1e6:
+            msg = f"Time range and sampling rate give {points:.0f} points, but 2 to 1,000,000 are allowed."
+            raise ValueError(msg)
+        self.time_range = time_range
+        self.sampling_rate = sampling_rate
+
+    def get_timebase(self) -> tuple[float, float]:
+        """Return (time range in s, sampling rate in Hz)."""
+        return float(self.time_range), float(self.sampling_rate)
+
+    def set_channel(self, channel: int, enabled: bool = True, voltage_range: float = 5.0, offset: float = 0.0) -> None:
+        """Enable or disable channel 1 or 2 and set its voltage range in V and offset in V."""
+        channel = int(channel)
+        voltage_range = float(voltage_range)
+        if channel not in (1, 2):
+            msg = f"Channel {channel} does not exist. Choose 1 or 2."
+            raise ValueError(msg)
+        if voltage_range <= 0:
+            msg = f"Voltage range {voltage_range} V must be greater than 0 V."
+            raise ValueError(msg)
+        setattr(self, f"channel{channel}", bool(enabled))
+        setattr(self, f"channel{channel}_range", voltage_range)
+        setattr(self, f"channel{channel}_offset", float(offset))
+
+    def acquire_waveform(self, channel: int) -> dict:
+        """Acquire the waveform of an enabled channel (1 or 2).
+
+        Returns a dictionary with the lists 'time' in s and 'voltage' in V.
+        """
+        channel = int(channel)
+        if channel not in (1, 2):
+            msg = f"Channel {channel} does not exist. Choose 1 or 2."
+            raise ValueError(msg)
+        if not getattr(self, f"channel{channel}"):
+            msg = f"Channel {channel} is not enabled. Use 'set_channel' first."
+            raise ValueError(msg)
+        time = np.arange(0, self.time_range, 1 / self.sampling_rate)
+        voltage_range = float(getattr(self, f"channel{channel}_range"))
+        offset = float(getattr(self, f"channel{channel}_offset"))
+        wave = np.sin(time * 2 * np.pi * 1e3) if channel == 1 else np.cos(time * 2 * np.pi * 1e3)
+        return {"time": time.tolist(), "voltage": (wave * voltage_range + offset).tolist()}

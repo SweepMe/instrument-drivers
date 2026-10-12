@@ -168,3 +168,37 @@ class Device(EmptyDevice):
         """Returns the calculated temperature."""
         self.measure()
         return self.call()
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    The simulated temperature controller moves the temperature towards the setpoint while it is read. The commands do
+    not need 'initialize' or 'configure'.
+    """
+
+    def set_temperature_setpoint(self, temperature: float) -> None:
+        """Set the target temperature in °C (-273 °C to 1000 °C). The temperature then moves towards it."""
+        temperature = float(temperature)
+        if not -273.15 < temperature <= 1000:
+            msg = f"Temperature {temperature} °C must be above -273.15 °C and at most 1000 °C."
+            raise ValueError(msg)
+        self.set_temperature = temperature
+        self.last_time = time.time()
+
+    def get_temperature_setpoint(self) -> float:
+        """Return the target temperature in °C that was set last."""
+        setpoint = self.set_temperature
+        if setpoint is None:
+            msg = "No setpoint has been set yet. Use 'set_temperature_setpoint' first."
+            raise ValueError(msg)
+        return float(setpoint)
+
+    def get_temperature(self) -> float:
+        """Return the current temperature in °C after letting it move towards the setpoint for the elapsed time."""
+        return float(self.measure_temperature())
+
+    def set_sensor_mode(self, sensor: str) -> None:
+        """Set the sensor to 'Realistic' (exponential settling, noise) or 'No Noise' (linear ramp, reproducible)."""
+        if sensor not in ("Realistic", "No Noise"):
+            msg = f"Sensor mode '{sensor}' is not supported. Choose 'Realistic' or 'No Noise'."
+            raise ValueError(msg)
+        self.sensor = sensor

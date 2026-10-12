@@ -123,3 +123,38 @@ class Device(EmptyDevice):
         current = channel * 0.1
         noise = random.uniform(-1, 1) * self.noise_level * current
         return current + noise
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    The simulated multimeter returns 1 V per channel number as voltage and 0.1 A per channel number as current,
+    each with some noise. The commands do not need 'initialize' or 'configure'.
+    """
+
+    @staticmethod
+    def _check_channel(channel: int) -> int:
+        """Return the channel as integer or raise an error if it is not a positive number."""
+        channel = int(channel)
+        if channel < 1:
+            msg = f"Channel {channel} must be 1 or higher."
+            raise ValueError(msg)
+        return channel
+
+    def read_voltage(self, channel: int) -> float:
+        """Measure the voltage in V of a channel (1 or higher)."""
+        return float(self.simulate_voltage(self._check_channel(channel)))
+
+    def read_current(self, channel: int) -> float:
+        """Measure the current in A of a channel (1 or higher)."""
+        return float(self.simulate_current(self._check_channel(channel)))
+
+    def set_noise_level(self, noise_level: float) -> None:
+        """Set the noise of the simulated readings in percent of the value (0 to 100). Use 0 for no noise."""
+        noise_level = float(noise_level)
+        if not 0 <= noise_level <= 100:
+            msg = f"Noise level {noise_level} % must be between 0 and 100."
+            raise ValueError(msg)
+        self.noise_level = noise_level / 100
+
+    def get_noise_level(self) -> float:
+        """Return the noise of the simulated readings in percent."""
+        return float(self.noise_level * 100)
