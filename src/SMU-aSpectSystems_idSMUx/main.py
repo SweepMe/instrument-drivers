@@ -827,8 +827,9 @@ class Device(EmptyDevice):
         The current compliance for the mode 'Voltage' must have been set before, with 'set_compliance' while this
         mode is active or with 'set_compliance(value, mode="Voltage")'. Without it, nothing is changed and an error is
         raised. A compliance of the other source mode is never reused. Changing between forcing voltage and current
-        resets the engine's clamps, so the channel is first put into the new mode at 0 V and the compliance of this
-        mode is applied before and after the value is set.
+        is rejected while the output is enabled. With the output disabled, the engine resets the
+        clamps on the change, so the channel is first put into the new mode at 0 V and the compliance of this mode is
+        applied before and after the value is set.
 
         Args:
             voltage: Voltage in V, within the output range of the channel.
@@ -844,6 +845,12 @@ class Device(EmptyDevice):
             msg = "idSMUx: Set the current compliance for voltage mode first, with set_compliance (mode 'Voltage')."
             raise ValueError(msg)
         if self.source_mode != "Voltage":
+            if self.channel.enabled:
+                msg = (
+                    "idSMUx: The source mode cannot be changed to 'Voltage' while the output is enabled. "
+                    "Disable the output first."
+                )
+                raise RuntimeError(msg)
             self.channel.voltage = 0.0
             self.source_mode = "Voltage"
         self._apply_clamp(compliance)
@@ -856,8 +863,9 @@ class Device(EmptyDevice):
         The voltage compliance for the mode 'Current' must have been set before, with 'set_compliance' while this
         mode is active or with 'set_compliance(value, mode="Current")'. Without it, nothing is changed and an error is
         raised. A compliance of the other source mode is never reused. Changing between forcing voltage and current
-        resets the engine's clamps, so the channel is first put into the new mode at 0 A and the compliance of this
-        mode is applied before and after the value is set. With the range set to 'Auto' in the GUI, the range is not
+        is rejected while the output is enabled. With the output disabled, the engine resets the
+        clamps on the change, so the channel is first put into the new mode at 0 A and the compliance of this mode is
+        applied before and after the value is set. With the range set to 'Auto' in the GUI, the range is not
         selected from the value here, set it with 'set_current_range'.
 
         Args:
@@ -874,6 +882,12 @@ class Device(EmptyDevice):
             msg = "idSMUx: Set the voltage compliance for current mode first, with set_compliance (mode 'Current')."
             raise ValueError(msg)
         if self.source_mode != "Current":
+            if self.channel.enabled:
+                msg = (
+                    "idSMUx: The source mode cannot be changed to 'Current' while the output is enabled. "
+                    "Disable the output first."
+                )
+                raise RuntimeError(msg)
             self.channel.current = 0.0
             self.source_mode = "Current"
         self._apply_clamp(compliance)
