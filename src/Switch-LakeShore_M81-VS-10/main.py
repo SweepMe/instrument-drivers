@@ -333,10 +333,12 @@ class Device(EmptyDevice):
         """Set source amplitude (peak)."""
         if self.vlim_low:
             if self.vlim_low > (-abs(amplitude) + self.offset):
-                raise ValueError("Output (= Amplitude + Offset) must be within the limits you set.")
+                msg = "Output (= Amplitude + Offset) must be within the limits you set."
+                raise ValueError(msg)
         if self.vlim_high:
             if self.vlim_high < (abs(amplitude) + self.offset):
-                raise ValueError("Output (= Amplitude + Offset) must be within the limits you set.")
+                msg = "Output (= Amplitude + Offset) must be within the limits you set."
+                raise ValueError(msg)
         self.port.write(f"SOURce{self.slot}:VOLTage:LEVel:AMPLitude:PEAK {amplitude}")
 
     def set_offset(self, offset: float):
@@ -348,23 +350,27 @@ class Device(EmptyDevice):
         if scpi_shape:
             self.port.write(f"SOURce{self.slot}:FUNCtion:SHAPe {scpi_shape}")
         else:
-            raise ValueError("Shape may not be empty.")
+            msg = "Shape may not be empty."
+            raise ValueError(msg)
 
     def set_frequency(self, frequency: float):
         """Set excitation frequency (for non-DC shapes)."""
         if self.shape_set in ["Square", "Triangle"]:
             if not (0.0001 <= frequency <= 5000):
-                raise ValueError("Frequency must be between 0.1 mHz and 5 kHz for triangle and square shapes.")
+                msg = "Frequency must be between 0.1 mHz and 5 kHz for triangle and square shapes."
+                raise ValueError(msg)
         else:
             if not (0.0001 <= frequency <= 100000):
-                raise ValueError("Frequency must be between 0.1 mHz and 100 kHz for sine waves.")
+                msg = "Frequency must be between 0.1 mHz and 100 kHz for sine waves."
+                raise ValueError(msg)
         if not self.sync_enabled:  # Sync gets the frequency from another source.
             self.port.write(f"SOURce{self.slot}:FREQuency:FIXed {frequency}")
 
     def set_duty(self, duty: float):
         """Set duty cycle for Triangle and Square shapes. Allowed 0.0-1.0; M81 supports 0.001-0.999 increments."""
         if not (0.0 <= duty <= 1.0):
-            raise ValueError("Duty must be between 0.0 and 1.0.")
+            msg = "Duty must be between 0.0 and 1.0."
+            raise ValueError(msg)
         # M81 supports 0.001..0.999 but allows 0 and 1 (become DC).
         self.port.write(f"SOURce{self.slot}:DCYCle {duty}")
 
@@ -381,7 +387,8 @@ class Device(EmptyDevice):
             # For AC, only set if shape is not DC
             if self.shape_set != "DC":
                 if ac_limit is None:
-                    raise ValueError("Manual AC range limit not provided for AC shape.")
+                    msg = "Manual AC range limit not provided for AC shape."
+                    raise ValueError(msg)
                 self.port.write(f"SOURce{self.slot}:VOLTage:RANGe:AC {ac_limit}")
         else:
             # Auto ranges
@@ -393,14 +400,17 @@ class Device(EmptyDevice):
             self.port.write(f"SOURce{self.slot}:SYNChronize:STATe {'1' if self.sync_enabled else '0'}")
             if self.sync_enabled:
                 if self.sweepmode == "Frequency in Hz":
-                    raise ValueError("Frequency sweep is not possible while device is in sync mode.")
+                    msg = "Frequency sweep is not possible while device is in sync mode."
+                    raise ValueError(msg)
                 if self.sync_source == f"S{self.slot}":
-                    raise ValueError("Source can not be synced to itself.")
+                    msg = "Source can not be synced to itself."
+                    raise ValueError(msg)
                 # Sync source and phase
                 self.port.write(f"SOURce{self.slot}:SYNChronize:SOURce {self.sync_source}")
                 # phase in degrees
                 if not (-360 <= self.sync_phase <= 360):
-                    raise ValueError("Sync phase must be between -360 and +360 degrees.")
+                    msg = "Sync phase must be between -360 and +360 degrees."
+                    raise ValueError(msg)
                 self.port.write(f"SOURce{self.slot}:SYNChronize:PHASe {self.sync_phase}")
         else:
             # ensure sync disabled for DC
@@ -411,7 +421,8 @@ class Device(EmptyDevice):
         if current_protection:  # If field is empty, level is NoneType and nothing is set.
             level = float(current_protection)
             if not (0 <= level <= 100):
-                raise ValueError("Current protection level must be between 0 and 100 mA.")
+                msg = "Current protection level must be between 0 and 100 mA."
+                raise ValueError(msg)
             level = level / 1000  # Level is set in the GUI in mA, convert to A
             self.port.write(f"SOURce{self.slot}:CURRent:PROTection {level}")
 
@@ -422,13 +433,16 @@ class Device(EmptyDevice):
         """
         if low:
             if low < -10.0:
-                raise ValueError("Lower voltage limit must not exceed -10 V.")
+                msg = "Lower voltage limit must not exceed -10 V."
+                raise ValueError(msg)
         if high:
             if high > 10.0:
-                raise ValueError("Higher voltage limit must not exceed 10 V.")
+                msg = "Higher voltage limit must not exceed 10 V."
+                raise ValueError(msg)
         if high and low:
             if high <= low:
-                raise ValueError("Higher voltage limit must be above lower limit.")
+                msg = "Higher voltage limit must be above lower limit."
+                raise ValueError(msg)
         if low:  # If field is empty, level is NoneType and nothing is set. (Preset: -10 V)
             self.port.write(f"SOURce{self.slot}:VOLTage:LIMit:LOW {low}")
         if high:  # If field is empty, level is NoneType and nothing is set. (Preset: +10 V)
@@ -441,6 +455,5 @@ class Device(EmptyDevice):
         """Check connected device is a VS-10 module."""
         model = self.port.query(f"SOURce{self.slot}:MODel?")
         if not "VS-10" in model:
-            raise ValueError(
-                f"Device connected on channel S{self.slot} does not match this driver. Found: '{model}'"
-            )
+            msg = f"Device connected on channel S{self.slot} does not match this driver. Found: '{model}'"
+            raise ValueError(msg)
