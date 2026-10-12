@@ -883,3 +883,134 @@ class Device(EmptyDevice):
         """
         self._ensure_channel()
         return float(self.channel.voltage), float(self.channel.current)
+
+    def get_compliance(self) -> float:
+        """Return the symmetric compliance (clamp) of the channel in V or A, depending on the source mode.
+
+        Returns:
+            The upper clamp value of the channel.
+        """
+        self._ensure_channel()
+        return float(self.channel.clamp_high_value)
+
+    def get_current_range(self) -> str:
+        """Return the name of the present current range of the channel, e.g. 'Range_2mA'."""
+        self._ensure_channel()
+        return str(self.channel.current_range)
+
+    def measure_transient(self, points: int, sample_count: int = 1, measure: str = "current") -> dict:
+        """Record a time-resolved series of measurements of the channel, e.g. the charging current of a capacitor.
+
+        Start it right after the voltage step to be observed. The measurements are made back to back by the device,
+        so the time stamps come from the device and not from the PC. Voltage and current are not measured
+        simultaneously: call it once per quantity if both are needed.
+
+        Args:
+            points: Number of consecutive measurements, between 1 and 1000.
+            sample_count: Number of samples averaged per measurement, a power of 2 between 1 and 65536.
+            measure: 'current' or 'voltage'.
+
+        Returns:
+            Dictionary with 'time_us' (device time stamps in µs), 'values' (A or V) and 'measure'.
+        """
+        self._ensure_channel()
+        points = int(points)
+        sample_count = int(sample_count)
+        if not 1 <= points <= 1000:
+            msg = f"points must be between 1 and 1000, not {points}"
+            raise ValueError(msg)
+        if sample_count not in self.speed_options.values():
+            msg = f"sample_count must be one of {list(self.speed_options.values())}"
+            raise ValueError(msg)
+        if measure not in ("current", "voltage"):
+            msg = "measure must be 'current' or 'voltage'"
+            raise ValueError(msg)
+
+        mode = MeasurementMode.isense if measure == "current" else MeasurementMode.vsense
+        self.board_model.set_measurement_modes(mode, [self.channel.name])
+        result = self.smu.measure_channels_async(
+            sample_count=sample_count,
+            repetitions=points,
+            channel_numbers=[self.channel.name],
+            wait_for_trigger=False,
+        ).get()
+        if not result.is_result():
+            msg = f"idSMUx: transient measurement failed: {result.to_json()}"
+            raise RuntimeError(msg)
+        return {
+            "measure": measure,
+            "time_us": [float(t) for t in result.timecode],
+            "values": [float(v) for v in result.get_float_values(self.channel.name)],
+        }
+
+    def list_sweep_linear(
+        self,
+        start: float,
+        stop: float,
+        points: int,
+        delay_us: int = 1000,
+        sample_count: int = 1,
+    ) -> dict:
+        """Run a fast voltage sweep on the device and measure the current at every point.
+
+        The sweep runs inside the device without PC latency (at most 52 points). All other enabled channels of the
+        board hold their present voltage and are measured at every point as well, so a bias on another channel stays
+        applied. Set the compliance and the current range of the channels beforehand.
+
+        Args:
+            start: First voltage in V.
+            stop: Last voltage in V.
+            points: Number of points, between 2 and 52.
+            delay_us: Settling time between setting a voltage and measuring, in µs.
+            sample_count: Number of samples averaged per point, a power of 2.
+
+        Returns:
+            Dictionary with 'voltage' (forced values), 'current' (this channel, in A), 'time_us' (device time stamps)
+            and 'others' (channel name -> list of currents in A of the other enabled channels).
+        """
+        self._ensure_channel()
+        points = int(points)
+        if not 2 <= points <= 52:
+            msg = f"points must be between 2 and 52, not {points}"
+            raise ValueError(msg)
+        if int(sample_count) not in self.speed_options.values():
+            msg = f"sample_count must be one of {list(self.speed_options.values())}"
+            raise ValueError(msg)
+        v_min, v_max, _, _ = self.channel.output_ranges
+        if not (v_min <= float(start) <= v_max and v_min <= float(stop) <= v_max):
+            msg = f"Sweep {start} V to {stop} V out of range {v_min} V to {v_max} V"
+            raise ValueError(msg)
+        if not self.channel.enabled:
+            msg = "idSMUx: Switch the output on with 'enable_output' before the sweep."
+            raise RuntimeError(msg)
+
+        other_names = [
+            ch.name for ch in self.smu.smu.channels.as_list() if ch.enabled and ch.name != self.channel.name
+        ]
+
+        self.board_model.set_measurement_modes(MeasurementMode.isense, [self.channel.name, *other_names])
+
+        config = ListSweepChannelConfiguration()
+        config.set_linear_sweep(float(start), float(stop), points)
+        sweep = ListSweep(self.smu.name, self.board_model)
+        sweep.add_channel_configuration(self.channel.name, config)
+        for name in other_names:
+            hold = ListSweepChannelConfiguration()
+            hold.set_constant_force_mode(points)
+            sweep.add_channel_configuration(name, hold)
+        sweep.set_measurement_delay(int(delay_us))
+        sweep.set_sample_count(int(sample_count))
+        if not sweep.can_run():
+            msg = "idSMUx: The sweep is too large for the device memory, reduce the number of points."
+            raise ValueError(msg)
+        error = sweep.run()
+        if error:
+            msg = f"idSMUx: List sweep failed: {error}"
+            raise RuntimeError(msg)
+
+        return {
+            "voltage": [float(v) for v in config.force_values],
+            "current": [float(i) for i in sweep.get_measurement_result(self.channel.name)],
+            "time_us": [float(t) for t in sweep.timecode],
+            "others": {n: [float(i) for i in sweep.get_measurement_result(n)] for n in other_names},
+        }
