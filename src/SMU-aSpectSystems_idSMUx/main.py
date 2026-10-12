@@ -169,8 +169,13 @@ class Device(EmptyDevice):
         self.identifier_channel_names: str = "Active channel names"
         """Key under which the names of all active channels of a board are shared via device_communication."""
 
-        self._compliance: float | None = None
-        """Last compliance set with 'set_compliance', re-applied by 'set_voltage' and 'set_current'."""
+        self._compliance_by_mode: dict[str, float | None] = {"Voltage": None, "Current": None}
+        """Compliance per source mode, set with 'set_compliance'.
+
+        The clamp of the channel is symmetric and has a different meaning in each mode: it is a current limit in A
+        while voltage is forced and a voltage limit in V while current is forced. A value is therefore never carried
+        over from one mode to the other.
+        """
 
         self.identifier_autorange_channels: str = "Autorange channels"
         """Key under which the channels with explicit autoranging are shared via device_communication.
@@ -709,14 +714,31 @@ class Device(EmptyDevice):
 
     """further convenience functions """
 
-    def set_compliance(self, value: float) -> None:
+    def set_compliance(self, value: float, mode: str | None = None) -> None:
         """Set the compliance on the SMU.
 
-        The device automatically switches to voltage compliance when current is forced and vice versa.
+        The clamp is symmetric (+-value) and limits the current while voltage is forced and the voltage while current
+        is forced. The value is stored per source mode and is applied to the channel at once only for the present
+        source mode.
+
+        Args:
+            value: Compliance magnitude, in A for the mode 'Voltage' and in V for the mode 'Current'.
+            mode: Source mode the value is meant for, 'Voltage' or 'Current'. Defaults to the present source mode.
+                Setting the value of the other mode in advance is needed before 'set_voltage' or 'set_current' can
+                switch the mode.
         """
         self._ensure_channel()
+        mode = self.source_mode if mode is None else str(mode).strip().capitalize()
+        if mode not in self._compliance_by_mode:
+            msg = f"Unknown source mode '{mode}'. Allowed: {list(self._compliance_by_mode)}"
+            raise ValueError(msg)
         value = float(abs(value))
-        self._compliance = value
+        self._compliance_by_mode[mode] = value
+        if mode == self.source_mode:
+            self._apply_clamp(value)
+
+    def _apply_clamp(self, value: float) -> None:
+        """Write the symmetric clamp to the channel."""
         self.channel.clamp_high_value = value
         self.channel.clamp_low_value = -value
         self.channel.clamp_enabled = True
@@ -736,11 +758,17 @@ class Device(EmptyDevice):
             msg = "idSMUx: No port selected, the channel cannot be resolved."
             raise ValueError(msg)
 
+        board_prefix = self.channel_name.split(".")[0]
+        """The 'Mx' component of the port, which names the board the channel belongs to."""
+
         shared = self.device_communication.get(self.identifier, {})
         if "Board" in shared:
             # Another channel of the board already opened it. Opening the service a second time would take the USB
             # handle away from it ('INVALID_HANDLE'), so this instance must not touch its own service.
             board_model = shared["Board"]
+            if not self._board_has_prefix(board_model, board_prefix):
+                msg = f"idSMUx: The shared board does not belong to port {self.channel_name} (board {board_prefix})."
+                raise ValueError(msg)
         else:
             if self.srunner is None:
                 self.srunner = IdSmuServiceRunner()
@@ -749,7 +777,7 @@ class Device(EmptyDevice):
             if not service.devices_are_detected():
                 service.detect_devices()
 
-            board_model = service.get_first_board()
+            board_model = self._find_board(service, board_prefix)
             self.device_communication.setdefault(self.identifier, {})["Board"] = board_model
 
         self.board_model = board_model
@@ -763,6 +791,21 @@ class Device(EmptyDevice):
         self.channel_number = int(self.channel_name[-1])
         self.channel = self.smu.smu.channels[self.channel_number]
         self.channel.name = self.channel_name
+
+    @staticmethod
+    def _board_has_prefix(board_model: object, board_prefix: str) -> bool:
+        """Check whether a board has hardware ids of the form '<board_prefix>.<slot>[.<channel>]'."""
+        return any(hardware_id.split(".")[0] == board_prefix for hardware_id in board_model.get_all_hardware_ids())
+
+    def _find_board(self, service: object, board_prefix: str) -> object:
+        """Return the board of the service whose hardware ids start with the 'Mx' component of the port."""
+        addresses = list(service.get_board_addresses())
+        for address in addresses:
+            board = service.get_board(address)
+            if self._board_has_prefix(board, board_prefix):
+                return board
+        msg = f"idSMUx: No board '{board_prefix}' found for port {self.channel_name}. Detected boards: {addresses}"
+        raise ValueError(msg)
 
     def get_identification(self) -> str:
         """Return hardware id, firmware version and channel name of the module this channel belongs to."""
@@ -781,8 +824,11 @@ class Device(EmptyDevice):
     def set_voltage(self, voltage: float) -> None:
         """Force a voltage on the channel.
 
-        Set the compliance first with 'set_compliance'. Changing between forcing voltage and current resets the
-        engine's clamps, so the compliance last set is applied again here.
+        The current compliance for the mode 'Voltage' must have been set before, with 'set_compliance' while this
+        mode is active or with 'set_compliance(value, mode="Voltage")'. Without it, nothing is changed and an error is
+        raised. A compliance of the other source mode is never reused. Changing between forcing voltage and current
+        resets the engine's clamps, so the channel is first put into the new mode at 0 V and the compliance of this
+        mode is applied before and after the value is set.
 
         Args:
             voltage: Voltage in V, within the output range of the channel.
@@ -793,17 +839,26 @@ class Device(EmptyDevice):
         if not v_min <= voltage <= v_max:
             msg = f"Voltage {voltage} V out of range {v_min} V to {v_max} V"
             raise ValueError(msg)
-        self.source_mode = "Voltage"
+        compliance = self._compliance_by_mode["Voltage"]
+        if compliance is None:
+            msg = "idSMUx: Set the current compliance for voltage mode first, with set_compliance (mode 'Voltage')."
+            raise ValueError(msg)
+        if self.source_mode != "Voltage":
+            self.channel.voltage = 0.0
+            self.source_mode = "Voltage"
+        self._apply_clamp(compliance)
         self.channel.voltage = voltage
-        if self._compliance is not None:
-            self.set_compliance(self._compliance)
+        self._apply_clamp(compliance)
 
     def set_current(self, current: float) -> None:
         """Force a current on the channel.
 
-        Set the compliance first with 'set_compliance'. Changing between forcing voltage and current resets the
-        engine's clamps, so the compliance last set is applied again here. With the range set to 'Auto' in the GUI, the
-        range is not selected from the value here, set it with 'set_current_range'.
+        The voltage compliance for the mode 'Current' must have been set before, with 'set_compliance' while this
+        mode is active or with 'set_compliance(value, mode="Current")'. Without it, nothing is changed and an error is
+        raised. A compliance of the other source mode is never reused. Changing between forcing voltage and current
+        resets the engine's clamps, so the channel is first put into the new mode at 0 A and the compliance of this
+        mode is applied before and after the value is set. With the range set to 'Auto' in the GUI, the range is not
+        selected from the value here, set it with 'set_current_range'.
 
         Args:
             current: Current in A, within the output range of the channel.
@@ -814,10 +869,16 @@ class Device(EmptyDevice):
         if not i_min <= current <= i_max:
             msg = f"Current {current} A out of range {i_min} A to {i_max} A"
             raise ValueError(msg)
-        self.source_mode = "Current"
+        compliance = self._compliance_by_mode["Current"]
+        if compliance is None:
+            msg = "idSMUx: Set the voltage compliance for current mode first, with set_compliance (mode 'Current')."
+            raise ValueError(msg)
+        if self.source_mode != "Current":
+            self.channel.current = 0.0
+            self.source_mode = "Current"
+        self._apply_clamp(compliance)
         self.channel.current = current
-        if self._compliance is not None:
-            self.set_compliance(self._compliance)
+        self._apply_clamp(compliance)
 
     def set_current_range(self, range_name: str) -> None:
         """Set a fixed current range of the channel.
@@ -953,14 +1014,14 @@ class Device(EmptyDevice):
     ) -> dict:
         """Run a fast voltage sweep on the device and measure the current at every point.
 
-        The sweep runs inside the device without PC latency (at most 52 points). All other enabled channels of the
+        The sweep runs inside the device without PC latency (at most 52 steps). All other enabled channels of the
         board hold their present voltage and are measured at every point as well, so a bias on another channel stays
         applied. Set the compliance and the current range of the channels beforehand.
 
         Args:
             start: First voltage in V.
             stop: Last voltage in V.
-            points: Number of points, between 2 and 52.
+            points: Number of sweep steps, between 2 and 52. The sweep returns points + 1 values, start and stop included.
             delay_us: Settling time between setting a voltage and measuring, in µs.
             sample_count: Number of samples averaged per point, a power of 2.
 
@@ -980,6 +1041,12 @@ class Device(EmptyDevice):
         if not (v_min <= float(start) <= v_max and v_min <= float(stop) <= v_max):
             msg = f"Sweep {start} V to {stop} V out of range {v_min} V to {v_max} V"
             raise ValueError(msg)
+        if self.source_mode != "Voltage" or self._compliance_by_mode["Voltage"] is None:
+            msg = (
+                "idSMUx: The sweep forces voltage. Set the current compliance for voltage mode and call 'set_voltage' "
+                "first, so that the channel is in voltage mode with its own compliance."
+            )
+            raise RuntimeError(msg)
         if not self.channel.enabled:
             msg = "idSMUx: Switch the output on with 'enable_output' before the sweep."
             raise RuntimeError(msg)
