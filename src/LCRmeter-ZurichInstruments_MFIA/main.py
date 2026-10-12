@@ -163,10 +163,6 @@ class Device(EmptyDevice):
         self.volt_index = self.daq.getInt("/%s/imps/%d/voltage/inputselect" % (self.devID, imp_index))
 
 
-    def deinitialize(self):
-        pass
-
-
     def configure(self):
 
         self.check_bias_configuration()
