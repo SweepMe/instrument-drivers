@@ -143,7 +143,9 @@ class Device(EmptyDevice):
         if self.delay_phase_mode.startswith("Delay"):
             self.delay = self.delay_phase_value
         else:
-            self.delay = self.delay_phase_value / 360 * 1 / self.frequency
+            # A positive phase advances the waveform, which is a negative delay.
+            self.phase = self.delay_phase_value
+            self.delay = -self.phase / 360 / self.frequency
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
@@ -155,31 +157,38 @@ class Device(EmptyDevice):
             self.amplitude = self.value
         elif self.sweep_mode == "Phase in deg":
             self.phase = self.value
+            self.delay = -self.phase / 360 / self.frequency
         elif self.sweep_mode == "Delay in s":
             self.delay = self.value
 
         # update the signal generator function
         self.device_communication["Simulated signal"] = self.generate_waveform
 
-    def call(self) -> tuple[float, float, np.array, np.array]:
+    def call(self) -> tuple[float, float, np.ndarray, np.ndarray]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         timestamps = np.linspace(0, 3 / self.frequency, 100)
         signal = self.generate_waveform(timestamps)
 
         return self.frequency, self.amplitude, timestamps, signal
 
-    def generate_waveform(self, time_stamp: float | np.array) -> float:
+    def generate_waveform(self, time_stamp: float | np.ndarray) -> float | np.ndarray:
         """Generate a wave signal."""
-        time_stamp += self.delay
+        # A positive delay shifts the waveform to later times. Subtracting creates a new array, so the time stamps
+        # of the caller are not changed.
+        time_stamp = np.asarray(time_stamp, dtype=float) - self.delay
+        phase = 2 * np.pi * self.frequency * time_stamp
 
         if self.waveform == "Sine":
-            signal = np.sin(2 * np.pi * self.frequency * time_stamp)
+            signal = np.sin(phase)
         elif self.waveform == "Square":
-            signal = np.sign(np.sin(2 * np.pi * self.frequency * time_stamp))
+            signal = np.sign(np.sin(phase))
         elif self.waveform == "Triangle":
-            signal = np.arcsin(np.sin(2 * np.pi * self.frequency * time_stamp))
+            # arcsin(sin(x)) spans +/- pi/2, normalized to +/- 1
+            signal = 2 / np.pi * np.arcsin(np.sin(phase))
         elif self.waveform == "Sawtooth":
-            signal = np.arctan(np.tan(np.pi * self.frequency * time_stamp))
+            # rises linearly from -1 to 1 within each period, 0 at t = 0
+            cycles = self.frequency * time_stamp
+            signal = 2 * (cycles - np.floor(cycles + 0.5))
         else:
             signal = 0
 
@@ -219,7 +228,7 @@ class Device(EmptyDevice):
         self.offset = float(offset)
 
     def set_delay(self, delay: float) -> None:
-        """Set the delay of the signal in s."""
+        """Set the delay of the signal in s. A positive delay shifts the waveform to later times."""
         self.delay = float(delay)
 
     def get_settings(self) -> dict:

@@ -39,7 +39,8 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
     """Simulated Oscilloscope Driver Class.
 
-    This driver returns a simulated sine (Ch1) and cosine (Ch2) wave signal with a frequency of 1 kHz.
+    This driver returns a simulated sine (Ch1) and cosine (Ch2) wave signal with a frequency of 1 kHz and an amplitude
+    of 1 V. Each channel clips the signal to its offset +/- voltage range.
     """
 
     def __init__(self) -> None:
@@ -145,7 +146,7 @@ class Device(EmptyDevice):
 
     def call(self) -> list[list[float]]:
         """Generate simulated data."""
-        time = np.arange(0, self.time_range, 1 / self.sampling_rate)
+        time = self._time_axis()
         data = [time]
 
         if self.channel1:
@@ -153,19 +154,32 @@ class Device(EmptyDevice):
                 generate_waveform = self.device_communication["Simulated signal"]
                 channel_1 = generate_waveform(time)
             else:
-                channel_1 = np.sin(time * 2 * np.pi * 1e3) * self.channel1_range + self.channel1_offset
-            data.append(channel_1)
+                channel_1 = self.SIGNAL_AMPLITUDE * np.sin(time * 2 * np.pi * 1e3)
+            data.append(self._digitize(channel_1, self.channel1_range, self.channel1_offset))
 
         if self.channel2:
-            channel_2 = np.cos(time * 2 * np.pi * 1e3) * self.channel2_range + self.channel2_offset
-            data.append(channel_2)
+            channel_2 = self.SIGNAL_AMPLITUDE * np.cos(time * 2 * np.pi * 1e3)
+            data.append(self._digitize(channel_2, self.channel2_range, self.channel2_offset))
 
         return data
 
+    SIGNAL_AMPLITUDE: float = 1.0
+    """Amplitude in V of the simulated 1 kHz sine (channel 1) and cosine (channel 2)."""
+
+    def _time_axis(self) -> np.ndarray:
+        """Return the sampling times; the number of points is rounded, so floating point steps add no extra point."""
+        points = int(round(float(self.time_range) * float(self.sampling_rate)))
+        return np.arange(points) / float(self.sampling_rate)
+
+    @staticmethod
+    def _digitize(signal: np.ndarray, voltage_range: float, offset: float) -> np.ndarray:
+        """Clip the signal to the window offset +/- range, like an overdriven input of a real oscilloscope."""
+        return np.clip(signal, offset - voltage_range, offset + voltage_range)
+
     """Communication commands, used e.g. by the SweepMe! Instrument Control.
 
-    Channel 1 shows a 1 kHz sine and channel 2 a 1 kHz cosine, each with the amplitude of the set voltage range. The
-    commands do not need 'initialize' or 'configure'.
+    Channel 1 shows a 1 kHz sine and channel 2 a 1 kHz cosine, each with an amplitude of 1 V and clipped to the window
+    offset +/- voltage range of the channel. The commands do not need 'initialize' or 'configure'.
     """
 
     def set_timebase(self, time_range: float, sampling_rate: float) -> None:
@@ -212,8 +226,9 @@ class Device(EmptyDevice):
         if not getattr(self, f"channel{channel}"):
             msg = f"Channel {channel} is not enabled. Use 'set_channel' first."
             raise ValueError(msg)
-        time = np.arange(0, self.time_range, 1 / self.sampling_rate)
+        time = self._time_axis()
         voltage_range = float(getattr(self, f"channel{channel}_range"))
         offset = float(getattr(self, f"channel{channel}_offset"))
         wave = np.sin(time * 2 * np.pi * 1e3) if channel == 1 else np.cos(time * 2 * np.pi * 1e3)
-        return {"time": time.tolist(), "voltage": (wave * voltage_range + offset).tolist()}
+        voltage = self._digitize(self.SIGNAL_AMPLITUDE * wave, voltage_range, offset)
+        return {"time": time.tolist(), "voltage": voltage.tolist()}

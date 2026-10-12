@@ -133,7 +133,7 @@ class Device(EmptyDevice):
         return float(self.amplitude)
 
     def set_noise_level(self, noise_level: float) -> None:
-        """Set the noise level of the simulated readings. Use 0 for a deterministic output."""
+        """Set the noise: magnitude +/- noise_level/2 in V, phase +/- 50 * noise_level in deg. 0 is deterministic."""
         noise_level = float(noise_level)
         if noise_level < 0:
             msg = f"Noise level {noise_level} must not be negative."

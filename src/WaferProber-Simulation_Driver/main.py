@@ -174,20 +174,33 @@ class Device(EmptyDevice):
 
         Implementing this function enables the 'load_wafer' action in the right-click menu of the Wafer table.
         """
+        wafers = self.get_probeplan()[0]
+        if wafer not in wafers:
+            msg = f"Wafer '{wafer}' is not in the probe plan. Choose one of {wafers}."
+            raise ValueError(msg)
         if self.current_wafer != wafer:
             self.current_wafer = wafer
 
     def unload_wafer(self) -> None:
         """Unloads a wafer from the prober. It is called when 'Unload wafer' action of the wafer table is performed."""
+        self.is_contacted = False
         self.current_wafer = ""
 
     def step_to_die(self, die: str) -> None:
         """Move to given die. It is called when 'Step to die' action of the die table is performed."""
+        die = str(die).replace(" ", "")
+        if die not in self.generate_dies():
+            msg = f"Die '{die}' is not on the wafer. Use 'column,row' as listed by 'get_probeplan'."
+            raise ValueError(msg)
         if self.current_die != die:
             self.current_die = die
 
     def step_to_subsite(self, subsite: int | str) -> None:
         """Move to given subsite. It is called when the 'Step to subsite' action of the Subsite table is performed."""
+        subsites = self.get_probeplan()[2]
+        if str(subsite) not in subsites:
+            msg = f"Subsite '{subsite}' is not in the probe plan. Choose one of {subsites}."
+            raise ValueError(msg)
         self.current_subsite = str(subsite)
 
     def contact(self) -> None:
@@ -195,7 +208,9 @@ class Device(EmptyDevice):
 
         Implementing this function enables the 'Contact' button in the wafer-map panel.
         """
-        print("Contacting wafer...")
+        if not self.current_wafer:
+            msg = "No wafer is loaded. Use 'load_wafer' first."
+            raise ValueError(msg)
         self.is_contacted = True
 
     def separate(self) -> None:
@@ -203,7 +218,6 @@ class Device(EmptyDevice):
 
         Implementing this function enables the 'Separate' button in the wafer-map panel.
         """
-        print("Separating wafer...")
         self.is_contacted = False
 
     def get_contact_state(self) -> bool:

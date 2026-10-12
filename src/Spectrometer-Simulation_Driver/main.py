@@ -73,7 +73,7 @@ class Device(EmptyDevice):
 
         # Measurement Parameters
         self.sweep_mode: str = "None"
-        self.port_string: str = "Spectrometer1"
+        self.port_string: str = "Test spectrum.txt"
 
         self.integration_time: float = 0.1
         self.average: int = 1
@@ -146,7 +146,7 @@ class Device(EmptyDevice):
         intensities_per_second = intensities / self.integration_time
         return [wavelengths, intensities_per_second, self.integration_time]
 
-    def get_wavelengths(self) -> np.array:
+    def get_wavelengths(self) -> np.ndarray:
         """Return a list of all wavelengths at which the spectrum is measured."""
         if self.port_string == "Silicon Photonics":
             return np.linspace(self.siph_wl_start, self.siph_wl_stop, int(self.siph_n_points))
@@ -156,12 +156,15 @@ class Device(EmptyDevice):
         spectrum = np.loadtxt(spectrum_file, skiprows=3)
         return spectrum[:, 0]
 
-    def read_Wavelengths(self) -> np.array:
+    def read_Wavelengths(self) -> np.ndarray:
         """For compatibility with the old version of the module."""
         return self.get_wavelengths()
 
-    def get_intensities(self) -> np.array:
-        """Return the measured intensities."""
+    def get_intensities(self) -> np.ndarray:
+        """Return one raw reading in counts per integration time (dB for 'Silicon Photonics'), not averaged.
+
+        'acquire_spectrum' averages such readings and divides them by the integration time to give counts/s.
+        """
         if self.port_string == "Silicon Photonics":
             wavelengths = self.get_wavelengths()
             sigma = self.siph_peak_fwhm_nm / (2.0 * math.sqrt(2.0 * math.log(2.0)))
@@ -200,22 +203,22 @@ class Device(EmptyDevice):
 
         return np.array(intensities)
 
-    def calculate_background_spectrum(self) -> np.array:
+    def calculate_background_spectrum(self) -> np.ndarray:
         """Calculate a background spectrum."""
         intensities = 150 * self.calculate_gaussian_peak(750, 250000)
         intensities += 350 * self.calculate_gaussian_peak(450, 50000)
         return intensities
 
-    def calculate_gaussian_peak(self, peak_position: float, peak_width: float) -> np.array:
+    def calculate_gaussian_peak(self, peak_position: float, peak_width: float) -> np.ndarray:
         """Calculate a gaussian peak with the given parameters."""
         return np.exp(-(self.get_wavelengths() - peak_position) ** 2 / peak_width)
 
-    def calculate_noise(self) -> np.array:
+    def calculate_noise(self) -> np.ndarray:
         """Calculate a noise spectrum."""
         noise = []
         for _ in self.get_wavelengths():
             noise.append(50 * random.random() - 25)
-        return noise
+        return np.array(noise)
 
     """Communication commands, used e.g. by the SweepMe! Instrument Control.
 
@@ -224,9 +227,7 @@ class Device(EmptyDevice):
     """
 
     def set_spectrum_mode(self, mode: str) -> None:
-        """Select the simulated spectrum: 'Test spectrum.txt', 'Raman Spectrum', 'Background Spectrum',
-        'Silicon Photonics' or 'No Noise'.
-        """
+        """Select: 'Test spectrum.txt', 'Raman Spectrum', 'Background Spectrum', 'Silicon Photonics' or 'No Noise'."""
         valid_modes = self.find_ports()
         if mode not in valid_modes:
             msg = f"Spectrum mode '{mode}' is not supported. Choose one of {valid_modes}."

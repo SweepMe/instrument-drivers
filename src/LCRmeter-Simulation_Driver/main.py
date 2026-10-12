@@ -55,7 +55,7 @@ class Device(EmptyDevice):
         self.bias = 1
         self.average = 1
         self.use_list_sweep = False
-        self.list_sweep_values: np.array = np.empty((0,))
+        self.list_sweep_values: np.ndarray = np.empty((0,))
 
         # Device under test parameters
         self.inductance = 4e-9  # H
@@ -123,14 +123,13 @@ class Device(EmptyDevice):
 
     def handle_set_value(self, mode: str, value: float) -> None:
         """Set value for sweep or step mode."""
-        if mode.startswith("Voltage bias"):
+        if mode.startswith(("Voltage bias", "Current bias")):
             self.bias = value
-
-        if mode.startswith("Current bias"):
-            self.bias = value
-
         elif mode.startswith("Frequency"):
             self.frequency = value
+        else:
+            msg = f"Mode '{mode}' is not supported. Use 'Frequency...', 'Voltage bias...' or 'Current bias...'."
+            raise ValueError(msg)
 
     def call(self) -> list:
         """Simulate data and return as a list."""
@@ -148,15 +147,15 @@ class Device(EmptyDevice):
 
     """Simulated LCRmeter"""
 
-    def simulate_resistance(self, frequency: float | np.array) -> float:
-        """Simulate resistance with weak frequency dependency of the device under test."""
-        # Calculate the base resistance with a weak frequency dependency
+    def simulate_resistance(self, frequency: float | np.ndarray) -> float | np.ndarray:
+        """Simulate the resistance of the device under test: 50 Ohm plus 1 Ohm per kHz, scaled by the bias."""
+        # Calculate the base resistance, rising linearly with the frequency
         base_resistance = self.resistance + frequency / 1000.0
         # Adjust resistance based on the bias (using an arbitrary coefficient of 0.01)
         adjusted_resistance = base_resistance * (1 + self.bias_coefficient * self.bias)
         return self.simulate_noise(adjusted_resistance)
 
-    def simulate_reactance(self, frequency: float | np.array) -> float:
+    def simulate_reactance(self, frequency: float | np.ndarray) -> float | np.ndarray:
         """Simulate reactance of the device under test."""
         angular_frequency = 2 * np.pi * frequency
 
@@ -170,9 +169,9 @@ class Device(EmptyDevice):
 
         return self.simulate_noise(adjusted_reactance)
 
-    def simulate_noise(self, value: float | np.array) -> float:
-        """Simulate noise."""
-        return value + value * self.noise_level * random()
+    def simulate_noise(self, value: float | np.ndarray) -> float | np.ndarray:
+        """Add relative noise of up to +/- noise_level to the value; the mean stays at the value."""
+        return value * (1 + self.noise_level * (2 * random() - 1))
 
     """Communication commands, used e.g. by the SweepMe! Instrument Control.
 

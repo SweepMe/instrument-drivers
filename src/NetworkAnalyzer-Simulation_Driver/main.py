@@ -149,8 +149,11 @@ class Device(EmptyDevice):
         floor shrinks as the power increases. In "No Noise" mode the clean trace is returned
         for reproducible tests.
         """
-        indices = np.arange(array_length)
-        s_param = np.sin(indices / 5 - phase) ** 2 + 1j * np.cos(indices / 5) ** 2
+        # A passive device: the magnitude stays between 0.05 and 0.95 (-26 dB to -0.4 dB) and the phase rolls off
+        # linearly over the sweep, wrapping around +/-180 deg, as for a line with a delay.
+        x = np.arange(array_length) / 5
+        magnitude = 0.05 + 0.9 * np.sin(x - phase) ** 2
+        s_param = magnitude * np.exp(-1j * (x + phase))
 
         if self.no_noise:
             return s_param
@@ -163,12 +166,7 @@ class Device(EmptyDevice):
 
 
     def find_calibrations(self, *args, **kwargs) -> list:
-        """Called by the SweepMe NetworkAnalyser module returns available calibrations on ZNL at default driectory."""
-        if args:
-            print(f"find_calibrations called with args: {args}")
-        if kwargs:
-            print(f"find_calibrations called with kwargs: {kwargs}")
-
+        """Return the names of the simulated calibrations; called by the NetworkAnalyzer module, arguments are ignored."""
         return ["Calibration1", "Calibration2", "Calibration3"]
 
     """Communication commands, used e.g. by the SweepMe! Instrument Control.

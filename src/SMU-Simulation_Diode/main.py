@@ -97,25 +97,7 @@ class Device(EmptyDevice):
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         if self.source.startswith("Voltage"):
-            v_exp = self.value
-            measured_currents = []
-
-            delta_v = -1
-            for _ in range(self.average):
-                i = 0
-
-                # Measure the current until the current is stable or 1500 iterations are reached
-                while abs(abs(self.value - v_exp) - delta_v) > 1e-3 and i < 1500:
-                    i += 1
-
-                    measured_current = self.simulate_current(v_exp)
-                    delta_v = 1e2 * (abs(measured_current)) ** 0.5  # some SCLC
-
-                    # Measured voltage cannot be higher than the applied voltage
-                    if abs(v_exp) + delta_v > self.value:
-                        v_exp -= 0.001 * np.sign(self.value)
-
-                measured_currents.append(measured_current)
+            measured_currents = [self.simulate_series_current(self.value) for _ in range(self.average)]
 
             self.v = self.simulate_voltage(self.value)
             self.i = np.mean(measured_currents)
@@ -127,12 +109,34 @@ class Device(EmptyDevice):
 
     """Simulated Diode"""
 
+    def simulate_series_current(self, applied_voltage: float) -> float:
+        """Simulate the current of the diode in series with a space-charge-limited layer, as measured by the SMU.
+
+        The applied voltage divides into the junction voltage and a drop of 100 V * sqrt(I / 1 A) across the layer.
+        The junction voltage is found by bisection, so the result holds at any voltage up to the compliance.
+        """
+        applied_voltage = float(applied_voltage)
+        if applied_voltage == 0:
+            return 0.0
+
+        low, high = sorted((0.0, applied_voltage))
+        current = 0.0
+        for _ in range(60):
+            junction_voltage = (low + high) / 2
+            current = self.simulate_current(junction_voltage)
+            residual = junction_voltage + np.sign(applied_voltage) * 1e2 * abs(current) ** 0.5 - applied_voltage
+            if residual > 0:
+                high = junction_voltage
+            else:
+                low = junction_voltage
+        return float(current)
+
     def simulate_current(self, applied_voltage: float) -> float:
-        """Simulate the current of a diode with linear leakage and some resolution noise."""
+        """Simulate the current of the bare diode junction (without the series layer), with linear leakage and noise."""
         if applied_voltage == 0:
             return 0
 
-        noise = 0 if self.speed == "No Noise" else random.random() / 1e10
+        noise = 0 if self.speed == "No Noise" else (random.random() - 0.5) / 1e10
         current = 1e-15 * (np.exp(applied_voltage / 1.4 / 0.025) - 1) + applied_voltage / 1e9 + noise
 
         if current > self.protection:
@@ -146,7 +150,7 @@ class Device(EmptyDevice):
         """Simulate the measured voltage including some noise depending on the measurement speed."""
         if self.speed not in self.speedvalues:
             return applied_voltage
-        return applied_voltage + random.random() * 1e-2 / self.speedvalues[self.speed]
+        return applied_voltage + (random.random() - 0.5) * 1e-2 / self.speedvalues[self.speed]
 
     """Communication commands, used e.g. by the SweepMe! Instrument Control.
 
@@ -217,7 +221,7 @@ class Device(EmptyDevice):
         return bool(self._output_enabled)
 
     def get_voltage_and_current(self) -> tuple[float, float]:
-        """Measure the diode and return (voltage in V, current in A). The current is limited by the compliance."""
+        """Measure (voltage in V, current in A) of the diode behind a space-charge-limited layer, up to the compliance."""
         self.source = "Voltage in V"
         self.value = self._voltage_setpoint if self._output_enabled else 0.0
         voltage, current = self.call()
