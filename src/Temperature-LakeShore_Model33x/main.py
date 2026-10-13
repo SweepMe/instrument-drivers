@@ -77,7 +77,8 @@ class Device(EmptyDevice):
                         "HeaterRange": list(self.heater_ranges.keys()),
                         "ZeroPowerAfterSweep": True,
                         "IdleTemperature": "",
-                        # "MeasureT": True,
+                        "MeasureT": True,
+                        "ReachT": True,
                         "Rate": "",
                         }
                        
