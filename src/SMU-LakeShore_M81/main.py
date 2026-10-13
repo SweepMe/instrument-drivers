@@ -226,7 +226,8 @@ class Device(EmptyDevice):
         """Set source amplitude (peak)."""
         # check voltage limits
         if not (self.vlim_low <= amplitude <= self.vlim_high):
-            raise ValueError("Voltage must be within the limits you set.")
+            msg = "Voltage must be within the limits you set."
+            raise ValueError(msg)
         self.port.write(f"SOURce{self.sslot}:VOLTage:LEVel:AMPLitude:PEAK {amplitude}")
 
     def set_ranging_source(self, range_set: float):
@@ -243,15 +244,19 @@ class Device(EmptyDevice):
     def set_current_protection(self, level: float):
         """Set DC current protection level (SOURce#:CURRent:PROTection)."""
         if level <= 0:
-            raise ValueError("Current protection level must be positive (in A).")
+            msg = "Current protection level must be positive (in A)."
+            raise ValueError(msg)
         self.current_protect = level
         self.port.write(f"SOURce{self.sslot}:CURRent:PROTection {level}")
 
     def set_voltage_limits(self, low: float, high: float):
         """Set software high/low voltage output limits."""
         if not (-10.0 <= low < high <= 10.0):
-            raise ValueError("Voltage limits must not exceed +-10 V "
-                             "and the low limit needs be smaller than the high one.")
+            msg = (
+                "Voltage limits must not exceed +-10 V "
+                "and the low limit needs be smaller than the high one."
+            )
+            raise ValueError(msg)
         self.port.write(f"SOURce{self.sslot}:VOLTage:LIMit:LOW {self.vlim_low}")
         self.port.write(f"SOURce{self.sslot}:VOLTage:LIMit:HIGH {self.vlim_high}")
 
@@ -276,6 +281,8 @@ class Device(EmptyDevice):
         model_s = self.port.query(f"SOURce{self.sslot}:MODel?")
         model_m = self.port.query(f"SENSe{self.mslot}:MODel?")
         if "VS-10" not in model_s:
-            raise ValueError(f"Source module on channel S{self.sslot} is not a VS-10. Found: '{model_s}'")
+            msg = f"Source module on channel S{self.sslot} is not a VS-10. Found: '{model_s}'"
+            raise ValueError(msg)
         if "CM-10" not in model_m:
-            raise ValueError(f"Measure module on channel M{self.mslot} is not a CM-10. Found: '{model_m}'")
+            msg = f"Measure module on channel M{self.mslot} is not a CM-10. Found: '{model_m}'"
+            raise ValueError(msg)

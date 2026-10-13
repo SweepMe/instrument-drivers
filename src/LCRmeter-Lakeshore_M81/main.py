@@ -267,7 +267,8 @@ class Device(EmptyDevice):
     def set_frequency(self, frequency: float) -> None:
         """Set the frequency in Hz."""
         if not (0.0001 <= frequency <= 100000):
-            raise ValueError("Frequency must be between 0.1 mHz and 100 kHz for sine waves.")
+            msg = "Frequency must be between 0.1 mHz and 100 kHz for sine waves."
+            raise ValueError(msg)
         self.port.write(f"SOURce{self.src_slot}:FREQuency:FIXed {frequency}")
 
     def set_range(self, limit):
@@ -278,12 +279,14 @@ class Device(EmptyDevice):
 
     def set_nplc(self, nplc):
         if not (600 >= nplc >= 0.01):
-            raise ValueError("NPLC must be between 0.01 and 600.00.")
+            msg = "NPLC must be between 0.01 and 600.00."
+            raise ValueError(msg)
         self.port.write(f'SENSe{self.meas_slot}:NPLCycles {nplc}')
 
     def set_average(self, number):
         if not (1000000 >= number >= 1):
-            raise ValueError("Number of reference cycles must be >= 1 and <= 1,000,000.")
+            msg = "Number of reference cycles must be >= 1 and <= 1,000,000."
+            raise ValueError(msg)
         self.port.write(f"SENSe{self.meas_slot}:LIA:REFerence:CYCLes {number}")
 
     def handle_set_value(self, mode: str, value: float) -> None:
@@ -302,11 +305,14 @@ class Device(EmptyDevice):
 
     def check_device(self):
         if not self.src_slot or not self.meas_slot:
-            raise ValueError(f"Invalid channel format: '{self.channel}'. Expected format 'S# + M#'.")
+            msg = f"Invalid channel format: '{self.channel}'. Expected format 'S# + M#'."
+            raise ValueError(msg)
         # Verify both modules are present and of the expected type
         model_s = self.port.query(f"SOURce{self.src_slot}:MODel?")
         model_m = self.port.query(f"SENSe{self.meas_slot}:MODel?")
         if "VS-10" not in model_s:
-            raise ValueError(f"Source module on channel S{self.src_slot} is not a VS-10. Found: '{model_s}'")
+            msg = f"Source module on channel S{self.src_slot} is not a VS-10. Found: '{model_s}'"
+            raise ValueError(msg)
         if "CM-10" not in model_m:
-            raise ValueError(f"Measure module on channel M{self.meas_slot} is not a CM-10. Found: '{model_m}'")
+            msg = f"Measure module on channel M{self.meas_slot} is not a CM-10. Found: '{model_m}'"
+            raise ValueError(msg)

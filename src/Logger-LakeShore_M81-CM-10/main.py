@@ -171,7 +171,8 @@ class Device(EmptyDevice):
 
     def initialize(self):
         if not self.slot:
-            raise ValueError("Please give a correct channel number (M1, M2 or M3).")
+            msg = "Please give a correct channel number (M1, M2 or M3)."
+            raise ValueError(msg)
         self.check_device()
         self.port.write(f'SENSe{self.slot}:PRESet')
 
@@ -212,7 +213,8 @@ class Device(EmptyDevice):
         else:
             if self.filter_on and self.filter_type == "REServe":
                 if self.limit == 0.1:  # CM-10 does not allow this combination. It would quietly reduce the range.
-                    raise ValueError("100 mA range cannot be used with filter optimization 'highest reserve'.")
+                    msg = "100 mA range cannot be used with filter optimization 'highest reserve'."
+                    raise ValueError(msg)
             self.port.write(f'SENSe{self.slot}:CURRent:RANGe:AUTO 0')
             self.port.write(f'SENSe{self.slot}:CURRent:RANGe {limit}')
 
@@ -220,7 +222,8 @@ class Device(EmptyDevice):
     def set_nplc(self, nplc):
         nplc = float(nplc)
         if not (600 >= nplc >= 0.01):
-            raise ValueError("NPLC must be between 0.01 and 600.00.")
+            msg = "NPLC must be between 0.01 and 600.00."
+            raise ValueError(msg)
         self.port.write(f'SENSe{self.slot}:NPLCycles {nplc}')
 
     def set_bias(self, enabled, voltage):
@@ -228,21 +231,26 @@ class Device(EmptyDevice):
         if enabled:
             if abs(voltage) > 0:
                 if self.filter_on and self.filter_type == "NOISe":
-                    raise ValueError("Bias voltage > 0 cannot be used with 'Lowest noise' filter optimization.")
+                    msg = "Bias voltage > 0 cannot be used with 'Lowest noise' filter optimization."
+                    raise ValueError(msg)
                 self.port.write(f'SENSe{self.slot}:BIAS:VOLTage {voltage}')
             elif voltage == 0:
                 self.port.write(f'SENSe{self.slot}:BIAS:VOLTage 0')
             else:
-                raise ValueError("Bias voltage is enabled, but no value has been given. "
-                                 "Set a value in Volts or disable bias voltage.")
+                msg = (
+                    "Bias voltage is enabled, but no value has been given. "
+                    "Set a value in Volts or disable bias voltage."
+                )
+                raise ValueError(msg)
 
     def check_device(self):
         model = self.port.query(f'SENSe{self.slot}:MODel?')
         if not "CM-10" in model:
-            raise ValueError(
+            msg = (
                 f"Device connected on channel M{self.slot} does not match this driver. "
                 f"Found: '{model}'"
             )
+            raise ValueError(msg)
 
     def set_advanced_settings(self):
         if self.filter_on:
