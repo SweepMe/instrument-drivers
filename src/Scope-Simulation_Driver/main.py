@@ -39,7 +39,10 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 class Device(EmptyDevice):
     """Simulated Oscilloscope Driver Class.
 
-    This driver returns a simulated sine (Ch1) and cosine (Ch2) wave signal with a frequency of 1 kHz.
+    This driver returns a simulated sine (Ch1) and cosine (Ch2) wave signal with a frequency of 1 kHz and an amplitude
+    of 1 V. Each channel clips the signal to its offset +/- voltage range.
+
+    If a Signal-Simulation_Driver is used at the same time, channel 1 shows its signal instead of the sine.
     """
 
     def __init__(self) -> None:
@@ -93,7 +96,7 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Get the GUI parameters and choose driver parameters accordingly."""
-        self.port = parameter["Port"]
+        self.port = parameter.get("Port", "Simulation Scope")
 
         self.time_range = float(parameter["TimeRangeValue"])
         self.sampling_rate_type = parameter["SamplingRateType"]
@@ -145,19 +148,100 @@ class Device(EmptyDevice):
 
     def call(self) -> list[list[float]]:
         """Generate simulated data."""
-        time = np.arange(0, self.time_range, 1 / self.sampling_rate)
+        time = self._time_axis()
         data = [time]
 
         if self.channel1:
-            if self.use_simulated_signal:
-                generate_waveform = self.device_communication["Simulated signal"]
-                channel_1 = generate_waveform(time)
-            else:
-                channel_1 = np.sin(time * 2 * np.pi * 1e3) * self.channel1_range + self.channel1_offset
-            data.append(channel_1)
+            data.append(self._digitize(self._input_signal(1, time), self.channel1_range, self.channel1_offset))
 
         if self.channel2:
-            channel_2 = np.cos(time * 2 * np.pi * 1e3) * self.channel2_range + self.channel2_offset
-            data.append(channel_2)
+            data.append(self._digitize(self._input_signal(2, time), self.channel2_range, self.channel2_offset))
 
         return data
+
+    SIGNAL_AMPLITUDE: float = 1.0
+    """Amplitude in V of the simulated 1 kHz sine (channel 1) and cosine (channel 2)."""
+
+    def _time_axis(self) -> np.ndarray:
+        """Return the sampling times; the number of points is rounded, so floating point steps add no extra point."""
+        points = int(round(float(self.time_range) * float(self.sampling_rate)))
+        return np.arange(points) / float(self.sampling_rate)
+
+    @staticmethod
+    def _digitize(signal: np.ndarray, voltage_range: float, offset: float) -> np.ndarray:
+        """Clip the signal to the window offset +/- range, like an overdriven input of a real oscilloscope."""
+        return np.clip(signal, offset - voltage_range, offset + voltage_range)
+
+    def _input_signal(self, channel: int, time: np.ndarray) -> np.ndarray:
+        """Return the signal in V at the input of a channel, before it is digitized.
+
+        Channel 1 shows the signal of a Signal-Simulation_Driver if one shares it in device_communication. This is
+        checked at every acquisition, so the oscilloscope also works on its own and follows a generator that is added
+        or removed later.
+        """
+        shared_signal = None
+        if channel == 1:
+            shared_signal = self.device_communication.get("Simulated signal")
+            self.use_simulated_signal = shared_signal is not None
+        if shared_signal is not None:
+            # Pass a copy, so a generator can never change the time axis of the oscilloscope.
+            return np.asarray(shared_signal(time.copy()), dtype=float) * np.ones_like(time)
+        wave = np.sin(time * 2 * np.pi * 1e3) if channel == 1 else np.cos(time * 2 * np.pi * 1e3)
+        return self.SIGNAL_AMPLITUDE * wave
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    Channel 1 shows a 1 kHz sine and channel 2 a 1 kHz cosine, each with an amplitude of 1 V and clipped to the window
+    offset +/- voltage range of the channel. If a Signal-Simulation_Driver is connected at the same time, channel 1
+    shows its signal instead. The commands do not need 'initialize' or 'configure'.
+    """
+
+    def set_timebase(self, time_range: float, sampling_rate: float) -> None:
+        """Set the acquisition time in s and the sampling rate in Hz. The waveform may have 2 to 1,000,000 points."""
+        time_range = float(time_range)
+        sampling_rate = float(sampling_rate)
+        if time_range <= 0 or sampling_rate <= 0:
+            msg = "Time range and sampling rate must be greater than 0."
+            raise ValueError(msg)
+        points = time_range * sampling_rate
+        if not 2 <= points <= 1e6:
+            msg = f"Time range and sampling rate give {points:.0f} points, but 2 to 1,000,000 are allowed."
+            raise ValueError(msg)
+        self.time_range = time_range
+        self.sampling_rate = sampling_rate
+
+    def get_timebase(self) -> tuple[float, float]:
+        """Return (time range in s, sampling rate in Hz)."""
+        return float(self.time_range), float(self.sampling_rate)
+
+    def set_channel(self, channel: int, enabled: bool = True, voltage_range: float = 5.0, offset: float = 0.0) -> None:
+        """Enable or disable channel 1 or 2 and set its voltage range in V and offset in V."""
+        channel = int(channel)
+        voltage_range = float(voltage_range)
+        if channel not in (1, 2):
+            msg = f"Channel {channel} does not exist. Choose 1 or 2."
+            raise ValueError(msg)
+        if voltage_range <= 0:
+            msg = f"Voltage range {voltage_range} V must be greater than 0 V."
+            raise ValueError(msg)
+        setattr(self, f"channel{channel}", bool(enabled))
+        setattr(self, f"channel{channel}_range", voltage_range)
+        setattr(self, f"channel{channel}_offset", float(offset))
+
+    def acquire_waveform(self, channel: int) -> dict:
+        """Acquire the waveform of an enabled channel (1 or 2).
+
+        Returns a dictionary with the lists 'time' in s and 'voltage' in V.
+        """
+        channel = int(channel)
+        if channel not in (1, 2):
+            msg = f"Channel {channel} does not exist. Choose 1 or 2."
+            raise ValueError(msg)
+        if not getattr(self, f"channel{channel}"):
+            msg = f"Channel {channel} is not enabled. Use 'set_channel' first."
+            raise ValueError(msg)
+        time = self._time_axis()
+        voltage_range = float(getattr(self, f"channel{channel}_range"))
+        offset = float(getattr(self, f"channel{channel}_offset"))
+        voltage = self._digitize(self._input_signal(channel, time), voltage_range, offset)
+        return {"time": time.tolist(), "voltage": voltage.tolist()}

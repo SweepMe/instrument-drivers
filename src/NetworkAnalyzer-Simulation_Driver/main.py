@@ -149,8 +149,11 @@ class Device(EmptyDevice):
         floor shrinks as the power increases. In "No Noise" mode the clean trace is returned
         for reproducible tests.
         """
-        indices = np.arange(array_length)
-        s_param = np.sin(indices / 5 - phase) ** 2 + 1j * np.cos(indices / 5) ** 2
+        # A passive device: the magnitude stays between 0.05 and 0.95 (-26 dB to -0.4 dB) and the phase rolls off
+        # linearly over the sweep, wrapping around +/-180 deg, as for a line with a delay.
+        x = np.arange(array_length) / 5
+        magnitude = 0.05 + 0.9 * np.sin(x - phase) ** 2
+        s_param = magnitude * np.exp(-1j * (x + phase))
 
         if self.no_noise:
             return s_param
@@ -163,10 +166,64 @@ class Device(EmptyDevice):
 
 
     def find_calibrations(self, *args, **kwargs) -> list:
-        """Called by the SweepMe NetworkAnalyser module returns available calibrations on ZNL at default driectory."""
-        if args:
-            print(f"find_calibrations called with args: {args}")
-        if kwargs:
-            print(f"find_calibrations called with kwargs: {kwargs}")
-
+        """Return the names of the simulated calibrations; called by the NetworkAnalyzer module, arguments are ignored."""
         return ["Calibration1", "Calibration2", "Calibration3"]
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    The commands do not need 'initialize' or 'configure'.
+    """
+
+    _points: int = 51
+
+    def set_frequency_range(self, start_frequency: float, stop_frequency: float, points: int) -> None:
+        """Set the sweep to 'points' linearly spaced frequencies from start to stop in Hz (2 to 10001 points)."""
+        start_frequency = float(start_frequency)
+        stop_frequency = float(stop_frequency)
+        points = int(points)
+        if start_frequency <= 0 or stop_frequency <= start_frequency:
+            msg = "The start frequency must be greater than 0 Hz and lower than the stop frequency."
+            raise ValueError(msg)
+        if not 2 <= points <= 10001:
+            msg = f"Points {points} must be between 2 and 10001."
+            raise ValueError(msg)
+        self.frequency_start = start_frequency
+        self.frequency_end = stop_frequency
+        self._points = points
+
+    def get_frequency_range(self) -> tuple[float, float, int]:
+        """Return (start frequency in Hz, stop frequency in Hz, number of points) of the sweep."""
+        return float(self.frequency_start), float(self.frequency_end), int(self._points)
+
+    def set_source_power(self, power: float) -> None:
+        """Set the source power in dBm (-60 dBm to 30 dBm). A higher power lowers the noise of the traces."""
+        power = float(power)
+        if not -60 <= power <= 30:
+            msg = f"Power {power} dBm must be between -60 dBm and 30 dBm."
+            raise ValueError(msg)
+        self.power = power
+
+    def get_source_power(self) -> float:
+        """Return the source power in dBm."""
+        return float(self.power)
+
+    def set_noise_enabled(self, enabled: bool) -> None:
+        """Switch the simulated noise on or off. Without noise the traces are reproducible."""
+        self.no_noise = not enabled
+
+    def measure_s_parameter(self, s_parameter: str = "S21") -> dict:
+        """Measure one S-parameter over the sweep, e.g. 'S11' or 'S21'.
+
+        Returns a dictionary with the lists 'frequency' in Hz, 'magnitude_db' in dB and 'phase_deg' in degrees.
+        """
+        name = str(s_parameter).strip().upper()
+        if len(name) != 3 or name[0] != "S" or not name[1:].isdigit() or "0" in name[1:]:
+            msg = f"'{s_parameter}' is not an S-parameter. Use a name like 'S11' or 'S21'."
+            raise ValueError(msg)
+        frequencies = np.linspace(self.frequency_start, self.frequency_end, self._points)
+        trace = self.simulate_s_parameter(len(frequencies), phase=float(int(name[1]) + int(name[2])))
+        return {
+            "frequency": frequencies.tolist(),
+            "magnitude_db": (20 * np.log10(np.abs(trace) + 1e-12)).tolist(),
+            "phase_deg": np.angle(trace, deg=True).tolist(),
+        }

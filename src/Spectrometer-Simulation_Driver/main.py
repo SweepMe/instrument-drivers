@@ -73,7 +73,7 @@ class Device(EmptyDevice):
 
         # Measurement Parameters
         self.sweep_mode: str = "None"
-        self.port_string: str = "Spectrometer1"
+        self.port_string: str = "Test spectrum.txt"
 
         self.integration_time: float = 0.1
         self.average: int = 1
@@ -113,7 +113,7 @@ class Device(EmptyDevice):
         self.average = int(parameter["Average"])
         self.trigger_mode = parameter["Trigger"]
         self.trigger_delay = float(parameter["TriggerDelay"])
-        self.port_string = parameter["Port"]
+        self.port_string = parameter.get("Port", self.port_string)
 
     def initialize(self) -> None:
         """Reset the silicon-photonics peak so it does not drift out of range across runs."""
@@ -135,8 +135,11 @@ class Device(EmptyDevice):
         wavelengths = self.get_wavelengths()
 
         if self.port_string == "Silicon Photonics":
+            # The peak drifts once per acquisition; the readings of one acquisition are averaged in dB, the unit in
+            # which the noise is simulated.
             self.siph_peak_wl += 3
-            return [wavelengths, self.get_intensities(), self.integration_time]
+            readings = [self.get_intensities() for _ in range(max(1, int(self.average)))]
+            return [wavelengths, np.mean(readings, axis=0), self.integration_time]
 
         intensities = self.get_intensities()
         for _ in range(self.average - 1):
@@ -146,7 +149,7 @@ class Device(EmptyDevice):
         intensities_per_second = intensities / self.integration_time
         return [wavelengths, intensities_per_second, self.integration_time]
 
-    def get_wavelengths(self) -> np.array:
+    def get_wavelengths(self) -> np.ndarray:
         """Return a list of all wavelengths at which the spectrum is measured."""
         if self.port_string == "Silicon Photonics":
             return np.linspace(self.siph_wl_start, self.siph_wl_stop, int(self.siph_n_points))
@@ -156,12 +159,15 @@ class Device(EmptyDevice):
         spectrum = np.loadtxt(spectrum_file, skiprows=3)
         return spectrum[:, 0]
 
-    def read_Wavelengths(self) -> np.array:
+    def read_Wavelengths(self) -> np.ndarray:
         """For compatibility with the old version of the module."""
         return self.get_wavelengths()
 
-    def get_intensities(self) -> np.array:
-        """Return the measured intensities."""
+    def get_intensities(self) -> np.ndarray:
+        """Return one raw reading in counts per integration time (dB for 'Silicon Photonics'), not averaged.
+
+        'acquire_spectrum' averages such readings and divides them by the integration time to give counts/s.
+        """
         if self.port_string == "Silicon Photonics":
             wavelengths = self.get_wavelengths()
             sigma = self.siph_peak_fwhm_nm / (2.0 * math.sqrt(2.0 * math.log(2.0)))
@@ -200,19 +206,73 @@ class Device(EmptyDevice):
 
         return np.array(intensities)
 
-    def calculate_background_spectrum(self) -> np.array:
+    def calculate_background_spectrum(self) -> np.ndarray:
         """Calculate a background spectrum."""
         intensities = 150 * self.calculate_gaussian_peak(750, 250000)
         intensities += 350 * self.calculate_gaussian_peak(450, 50000)
         return intensities
 
-    def calculate_gaussian_peak(self, peak_position: float, peak_width: float) -> np.array:
+    def calculate_gaussian_peak(self, peak_position: float, peak_width: float) -> np.ndarray:
         """Calculate a gaussian peak with the given parameters."""
         return np.exp(-(self.get_wavelengths() - peak_position) ** 2 / peak_width)
 
-    def calculate_noise(self) -> np.array:
+    def calculate_noise(self) -> np.ndarray:
         """Calculate a noise spectrum."""
         noise = []
         for _ in self.get_wavelengths():
             noise.append(50 * random.random() - 25)
-        return noise
+        return np.array(noise)
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    The commands do not need 'initialize' or 'configure'. Which spectrum the simulation returns is selected with
+    'set_spectrum_mode'.
+    """
+
+    def set_spectrum_mode(self, mode: str) -> None:
+        """Select: 'Test spectrum.txt', 'Raman Spectrum', 'Background Spectrum', 'Silicon Photonics' or 'No Noise'."""
+        valid_modes = self.find_ports()
+        if mode not in valid_modes:
+            msg = f"Spectrum mode '{mode}' is not supported. Choose one of {valid_modes}."
+            raise ValueError(msg)
+        self.port_string = mode
+        if mode == "Silicon Photonics":
+            self.siph_peak_wl = self.SIPH_PEAK_WL_START
+
+    def get_spectrum_mode(self) -> str:
+        """Return the selected simulated spectrum."""
+        return str(self.port_string)
+
+    def set_integration_time(self, integration_time: float) -> None:
+        """Set the integration time in s (greater than 0 s and at most 10 s)."""
+        integration_time = float(integration_time)
+        if not 0 < integration_time <= 10:
+            msg = f"Integration time {integration_time} s must be greater than 0 s and at most 10 s."
+            raise ValueError(msg)
+        self.integration_time = integration_time
+
+    def get_integration_time(self) -> float:
+        """Return the integration time in s."""
+        return float(self.integration_time)
+
+    def set_average(self, average: int) -> None:
+        """Set the number of spectra that are averaged for one acquisition (1 to 100)."""
+        average = int(average)
+        if not 1 <= average <= 100:
+            msg = f"Average {average} must be between 1 and 100."
+            raise ValueError(msg)
+        self.average = average
+
+    def acquire_spectrum(self) -> dict:
+        """Acquire a spectrum. It takes as long as integration time times average.
+
+        Returns a dictionary with the lists 'wavelength' in nm and 'intensity' in counts/s (in dB for the mode
+        'Silicon Photonics') and the 'integration_time' in s.
+        """
+        self.measure()
+        wavelengths, intensities, integration_time = self.call()
+        return {
+            "wavelength": np.asarray(wavelengths, dtype=float).tolist(),
+            "intensity": np.asarray(intensities, dtype=float).tolist(),
+            "integration_time": float(integration_time),
+        }

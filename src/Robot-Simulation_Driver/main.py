@@ -110,3 +110,26 @@ class Device(EmptyDevice):
         """Move all axes to the origin. Called by the 'Go home' button."""
         for axis in self.position:
             self.position[axis] = 0.0
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    The simulated robot has three Cartesian axes in mm. Moving is instantaneous, there are no travel limits. The
+    commands do not need 'initialize' or 'configure'.
+    """
+
+    def move_axis(self, axis: str, position: float) -> None:
+        """Move one axis ('x', 'y' or 'z') to an absolute position in mm."""
+        axis = str(axis).strip().lower()
+        if axis not in self.position:
+            msg = f"Axis '{axis}' does not exist. Choose one of {list(self.position)}."
+            raise ValueError(msg)
+        self.position[axis] = float(position)
+
+    def move_to(self, x: float, y: float, z: float) -> None:
+        """Move all three axes to an absolute position in mm."""
+        target = {"x": float(x), "y": float(y), "z": float(z)}
+        self.position.update(target)
+
+    def get_position(self) -> tuple[float, float, float]:
+        """Return the position (x in mm, y in mm, z in mm)."""
+        return self.position["x"], self.position["y"], self.position["z"]

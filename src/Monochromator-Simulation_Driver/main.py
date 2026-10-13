@@ -130,3 +130,60 @@ class Device(EmptyDevice):
         low, high = self.FILTER[filter_slot]
         return low <= wavelength_nm <= high
 
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    The simulated monochromator has four filters that cover 200 nm to 1500 nm. The commands do not need 'initialize' or
+    'configure'.
+    """
+
+    def set_wavelength(self, wavelength: float) -> None:
+        """Move to a wavelength in nm.
+
+        The filter is selected automatically unless one was chosen with 'set_filter'. A wavelength outside the range of
+        the filter raises an error and leaves the monochromator where it was.
+        """
+        wavelength = float(wavelength)
+        if wavelength <= 0:
+            msg = f"Wavelength {wavelength} nm must be greater than 0 nm."
+            raise ValueError(msg)
+        filter_slot = self._auto_select_filter(wavelength) if self.filter_mode == "Auto" else int(self.filter_mode)
+        if not self._wavelength_is_in_filter_range(wavelength, filter_slot):
+            msg = f"Wavelength {wavelength:.2f} nm is out of range for filter {filter_slot}."
+            raise ValueError(msg)
+        self.sweep_mode = "Wavelength in nm"
+        self.units = ["nm", "#"]
+        self.value = wavelength
+        self.current_filter = filter_slot
+
+    def get_wavelength(self) -> float:
+        """Return the wavelength in nm that was set last."""
+        if not hasattr(self, "value") or self.value is None:
+            msg = "No wavelength has been set yet. Use 'set_wavelength' first."
+            raise ValueError(msg)
+        return float(self._to_wavelength_nm(float(self.value)))
+
+    def set_filter(self, filter_slot: int) -> None:
+        """Select a fixed filter (1 to 4). The next 'set_wavelength' must lie within the range of this filter."""
+        filter_slot = int(filter_slot)
+        if filter_slot not in self.FILTER:
+            msg = f"Filter {filter_slot} does not exist. Choose one of {list(self.FILTER)}."
+            raise ValueError(msg)
+        self.filter_mode = str(filter_slot)
+        self.current_filter = filter_slot
+
+    def set_filter_auto(self) -> None:
+        """Let the monochromator select the filter automatically from the wavelength."""
+        self.filter_mode = "Auto"
+
+    def get_filter(self) -> int:
+        """Return the filter slot that is in the beam."""
+        return int(self.current_filter)
+
+    def get_filter_range(self, filter_slot: int) -> tuple[float, float]:
+        """Return (lowest wavelength in nm, highest wavelength in nm) of a filter slot."""
+        filter_slot = int(filter_slot)
+        if filter_slot not in self.FILTER:
+            msg = f"Filter {filter_slot} does not exist. Choose one of {list(self.FILTER)}."
+            raise ValueError(msg)
+        low, high = self.FILTER[filter_slot]
+        return float(low), float(high)

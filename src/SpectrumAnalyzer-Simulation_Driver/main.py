@@ -110,8 +110,8 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Handle GUI inputs."""
-        self.port_string = parameter["Port"]
-        self.handle_frequency_input(parameter)
+        self.port_string = parameter.get("Port", self.port_string)
+        self._handle_frequency_input(parameter)
 
         self.reference_level = float(parameter["Reference level in dBm"])
         self.resolution_bandwidth = self.bandwidth_resolution_values[parameter["Resolution bandwidth"]]
@@ -120,7 +120,7 @@ class Device(EmptyDevice):
         self.trace_integration = float(parameter["Trace mode integration"])
         self.video_averaging = parameter["Video averaging"]
 
-    def handle_frequency_input(self, parameter: dict) -> None:
+    def _handle_frequency_input(self, parameter: dict) -> None:
         """Calculate the frequency center, span, min, and max from the input values."""
         input_1_type = parameter["Frequency label 1"]
         input_1_value = float(parameter["Frequency value 1"])
@@ -155,43 +155,93 @@ class Device(EmptyDevice):
         self.measured_frequency = np.linspace(self.frequency_min, self.frequency_max, number_of_points)
 
     def call(self) -> tuple[list, list]:
-        """Return the measured frequency and amplitude."""
-        spectrum = self.simulate_spectrum(self.measured_frequency)
+        """Return the measured frequency in Hz and power in dBm, combined over the repetitions of the trace mode."""
+        repetitions = 1 if self.trace_mode == "Current" else max(1, int(self.trace_integration))
+        spectra = np.array([self.simulate_spectrum(self.measured_frequency) for _ in range(repetitions)])
 
         if self.trace_mode == "Min hold":
-            for _ in range(int(self.trace_integration)):
-                new_spectrum = self.simulate_spectrum(self.measured_frequency)
-                spectrum = np.min([spectrum, new_spectrum], axis=0)
-
+            spectrum = spectra.min(axis=0)
         elif self.trace_mode == "Max hold":
-            for _ in range(int(self.trace_integration)):
-                new_spectrum = self.simulate_spectrum(self.measured_frequency)
-                spectrum = np.max([spectrum, new_spectrum], axis=0)
-
+            spectrum = spectra.max(axis=0)
         elif self.trace_mode == "Average":
-            for _ in range(int(self.trace_integration)):
-                spectrum += self.simulate_spectrum(self.measured_frequency)
-            spectrum /= self.trace_integration
+            spectrum = spectra.mean(axis=0)
+        else:
+            spectrum = spectra[0]
 
         return self.measured_frequency.tolist(), spectrum.tolist()
 
     def simulate_spectrum(self, frequency: np.ndarray) -> np.ndarray:
-        """Simulate a spectrum."""
-        number_of_peaks = 3
+        """Simulate a spectrum in dBm: -60, -45 and -30 dBm peaks at 10, 30 and 55 % of the span, -90 dBm floor."""
+        frequency = np.asarray(frequency, dtype=float)
         position_of_peaks = [0.1, 0.3, 0.55]
-        amplitude_of_peaks = [1, 2, 3]
+        power_of_peaks_dbm = [-60.0, -45.0, -30.0]
+        noise_floor_dbm = -90.0
+        peak_width = self.frequency_span * 0.02  # standard deviation of each peak in Hz
 
-        amplitude = np.zeros(len(frequency))
-        for i in range(number_of_peaks):
-            peak_position = position_of_peaks[i] * self.frequency_span + self.frequency_center - self.frequency_span / 2
-            peak_width = self.frequency_span * 0.15
-            peak_amplitude = amplitude_of_peaks[i] * 25
-            amplitude += peak_amplitude * np.exp(-((frequency - peak_position) ** 2) / peak_width)
+        power_mw = np.full(len(frequency), 10 ** (noise_floor_dbm / 10))
+        if "No Noise" not in self.port_string:
+            # The noise power in a bin fluctuates exponentially around its mean, as on a real analyzer.
+            rng = np.random.default_rng()
+            power_mw = power_mw * rng.exponential(1.0, len(frequency))
 
-        rng = np.random.default_rng()
-        noise_level = 0
-        noise = rng.normal(noise_level, 3, len(frequency))
-        if not "No Noise" in self.port_string:
-            amplitude += noise
+        for position, peak_dbm in zip(position_of_peaks, power_of_peaks_dbm):
+            peak_frequency = self.frequency_center + (position - 0.5) * self.frequency_span
+            power_mw += 10 ** (peak_dbm / 10) * np.exp(-((frequency - peak_frequency) ** 2) / (2 * peak_width**2))
 
-        return amplitude
+        return 10 * np.log10(power_mw)
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    The commands do not need 'initialize' or 'configure'. Set the frequency range before acquiring a trace.
+    """
+
+    def set_frequency_range(self, min_frequency: float, max_frequency: float) -> None:
+        """Set the frequency range of the trace in Hz. The minimum must be 0 Hz or more and lower than the maximum."""
+        min_frequency = float(min_frequency)
+        max_frequency = float(max_frequency)
+        if min_frequency < 0:
+            msg = f"The minimum frequency {min_frequency} Hz must not be negative."
+            raise ValueError(msg)
+        if max_frequency <= min_frequency:
+            msg = "The minimum frequency must be lower than the maximum frequency."
+            raise ValueError(msg)
+        self.frequency_min = min_frequency
+        self.frequency_max = max_frequency
+        self.frequency_center = (min_frequency + max_frequency) / 2
+        self.frequency_span = max_frequency - min_frequency
+
+    def get_frequency_range(self) -> tuple[float, float]:
+        """Return (minimum frequency in Hz, maximum frequency in Hz)."""
+        return float(self.frequency_min), float(self.frequency_max)
+
+    def set_reference_level(self, reference_level: float) -> None:
+        """Set the reference level in dBm, the top of the display. It does not change the simulated trace."""
+        self.reference_level = float(reference_level)
+
+    def set_trace_mode(self, trace_mode: str, repetitions: int = 1) -> None:
+        """Set the trace mode ('Current', 'Max hold', 'Min hold' or 'Average') and the number of repetitions (1 to 100)."""
+        repetitions = int(repetitions)
+        if trace_mode not in self.trace_modes:
+            msg = f"Trace mode '{trace_mode}' is not supported. Choose one of {self.trace_modes}."
+            raise ValueError(msg)
+        if not 1 <= repetitions <= 100:
+            msg = f"Repetitions {repetitions} must be between 1 and 100."
+            raise ValueError(msg)
+        self.trace_mode = trace_mode
+        self.trace_integration = repetitions
+
+    def set_noise_enabled(self, enabled: bool) -> None:
+        """Switch the simulated noise on or off. Without noise the traces are reproducible."""
+        self.port_string = "Simulated Spectrum" if enabled else "No Noise"
+
+    def acquire_trace(self) -> dict:
+        """Acquire a trace of 100 points over the set frequency range.
+
+        Returns a dictionary with the lists 'frequency' in Hz and 'power' in dBm.
+        """
+        if self.frequency_max <= self.frequency_min:
+            msg = "The frequency range is empty. Use 'set_frequency_range' first."
+            raise ValueError(msg)
+        self.measure()
+        frequencies, power = self.call()
+        return {"frequency": list(frequencies), "power": list(power)}

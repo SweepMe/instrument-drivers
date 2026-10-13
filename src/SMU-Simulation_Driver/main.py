@@ -240,3 +240,78 @@ class Device(EmptyDevice):
             applied_voltage
             + (random.random() - 0.5) * 1e-2 / self.speedvalues[self.speed]
         )
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    The simulated SMU forces a voltage on a simulated diode and measures voltage and current. The commands do not need
+    'initialize' or 'configure' and therefore also work when the instrument was only connected. As on a real SMU, the
+    output is off after connecting: enable it with 'enable_output' to measure the diode, otherwise 0 V is forced.
+    """
+
+    _voltage_setpoint: float = 0.0
+    _output_enabled: bool = False
+    _max_voltage: float = 20.0
+
+    def set_compliance(self, compliance: float) -> None:
+        """Set the current compliance in A. It must be greater than 0 A and at most 1 A."""
+        compliance = float(compliance)
+        if not 0 < compliance <= 1.0:
+            msg = f"Compliance {compliance} A must be greater than 0 A and at most 1 A."
+            raise ValueError(msg)
+        self.protection = compliance
+
+    def get_compliance(self) -> float:
+        """Return the current compliance in A."""
+        return float(self.protection)
+
+    def set_speed(self, speed: str) -> None:
+        """Set the measurement speed, which defines the voltage noise: "Fast", "Medium" or "Slow"."""
+        valid_speeds = tuple(self.speedvalues)
+        if speed not in valid_speeds:
+            msg = f"Speed '{speed}' is not supported. Choose one of {valid_speeds}."
+            raise ValueError(msg)
+        self.speed = speed
+
+    def get_speed(self) -> str:
+        """Return the measurement speed."""
+        return str(self.speed)
+
+    def set_average(self, average: int) -> None:
+        """Set the number of current readings that are averaged for one measurement (1 to 100)."""
+        average = int(average)
+        if not 1 <= average <= 100:
+            msg = f"Average {average} must be between 1 and 100."
+            raise ValueError(msg)
+        self.average = average
+
+    def set_voltage(self, voltage: float) -> None:
+        """Force a voltage in V (-20 V to 20 V). The voltage reaches the diode only while the output is enabled."""
+        voltage = float(voltage)
+        if abs(voltage) > self._max_voltage:
+            msg = f"Voltage {voltage} V is out of range, the maximum is +/-{self._max_voltage} V."
+            raise ValueError(msg)
+        self.source = "Voltage in V"
+        self._voltage_setpoint = voltage
+
+    def get_voltage_setpoint(self) -> float:
+        """Return the voltage in V that was set with 'set_voltage'."""
+        return float(self._voltage_setpoint)
+
+    def enable_output(self) -> None:
+        """Switch the output on."""
+        self._output_enabled = True
+
+    def disable_output(self) -> None:
+        """Switch the output off. The simulated diode then sees 0 V."""
+        self._output_enabled = False
+
+    def get_output_state(self) -> bool:
+        """Return True if the output is on."""
+        return bool(self._output_enabled)
+
+    def get_voltage_and_current(self) -> tuple[float, float]:
+        """Measure the diode and return (voltage in V, current in A). The current is limited by the compliance."""
+        self.source = "Voltage in V"
+        self.value = self._voltage_setpoint if self._output_enabled else 0.0
+        voltage, current = self.call()
+        return float(voltage), float(current)

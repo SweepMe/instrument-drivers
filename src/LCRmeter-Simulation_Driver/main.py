@@ -55,7 +55,7 @@ class Device(EmptyDevice):
         self.bias = 1
         self.average = 1
         self.use_list_sweep = False
-        self.list_sweep_values: np.array = np.empty((0,))
+        self.list_sweep_values: np.ndarray = np.empty((0,))
 
         # Device under test parameters
         self.inductance = 4e-9  # H
@@ -123,14 +123,13 @@ class Device(EmptyDevice):
 
     def handle_set_value(self, mode: str, value: float) -> None:
         """Set value for sweep or step mode."""
-        if mode.startswith("Voltage bias"):
+        if mode.startswith(("Voltage bias", "Current bias")):
             self.bias = value
-
-        if mode.startswith("Current bias"):
-            self.bias = value
-
         elif mode.startswith("Frequency"):
             self.frequency = value
+        else:
+            msg = f"Mode '{mode}' is not supported. Use 'Frequency...', 'Voltage bias...' or 'Current bias...'."
+            raise ValueError(msg)
 
     def call(self) -> list:
         """Simulate data and return as a list."""
@@ -148,15 +147,15 @@ class Device(EmptyDevice):
 
     """Simulated LCRmeter"""
 
-    def simulate_resistance(self, frequency: float | np.array) -> float:
-        """Simulate resistance with weak frequency dependency of the device under test."""
-        # Calculate the base resistance with a weak frequency dependency
+    def simulate_resistance(self, frequency: float | np.ndarray) -> float | np.ndarray:
+        """Simulate the resistance of the device under test: 50 Ohm plus 1 Ohm per kHz, scaled by the bias."""
+        # Calculate the base resistance, rising linearly with the frequency
         base_resistance = self.resistance + frequency / 1000.0
         # Adjust resistance based on the bias (using an arbitrary coefficient of 0.01)
         adjusted_resistance = base_resistance * (1 + self.bias_coefficient * self.bias)
         return self.simulate_noise(adjusted_resistance)
 
-    def simulate_reactance(self, frequency: float | np.array) -> float:
+    def simulate_reactance(self, frequency: float | np.ndarray) -> float | np.ndarray:
         """Simulate reactance of the device under test."""
         angular_frequency = 2 * np.pi * frequency
 
@@ -170,6 +169,81 @@ class Device(EmptyDevice):
 
         return self.simulate_noise(adjusted_reactance)
 
-    def simulate_noise(self, value: float | np.array) -> float:
-        """Simulate noise."""
-        return value + value * self.noise_level * random()
+    def simulate_noise(self, value: float | np.ndarray) -> float | np.ndarray:
+        """Add relative noise of up to +/- noise_level to the value; the mean stays at the value."""
+        return value * (1 + self.noise_level * (2 * random() - 1))
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    The simulated LCR meter measures a series resonant circuit. The commands do not need 'initialize' or 'configure'.
+    """
+
+    def set_frequency(self, frequency: float) -> None:
+        """Set the measurement frequency in Hz (greater than 0 Hz)."""
+        frequency = float(frequency)
+        if frequency <= 0:
+            msg = f"Frequency {frequency} Hz must be greater than 0 Hz."
+            raise ValueError(msg)
+        self.frequency = frequency
+
+    def get_frequency(self) -> float:
+        """Return the measurement frequency in Hz."""
+        return float(self.frequency)
+
+    def set_bias(self, bias: float) -> None:
+        """Set the bias value. Its unit is V for the mode 'Voltage bias' and A for 'Current bias'."""
+        self.bias = float(bias)
+
+    def get_bias(self) -> float:
+        """Return the bias value."""
+        return float(self.bias)
+
+    def set_bias_mode(self, mode: str) -> None:
+        """Set the bias mode to 'Voltage bias' or 'Current bias'."""
+        if mode not in ("Voltage bias", "Current bias"):
+            msg = f"Bias mode '{mode}' is not supported. Choose 'Voltage bias' or 'Current bias'."
+            raise ValueError(msg)
+        self.bias_mode = mode
+
+    def set_average(self, average: int) -> None:
+        """Set the number of readings that are averaged for one measurement (at least 1)."""
+        average = int(average)
+        if average < 1:
+            msg = f"Average {average} must be at least 1."
+            raise ValueError(msg)
+        self.average = average
+
+    def set_noise_level(self, noise_level: float) -> None:
+        """Set the relative noise of the simulated readings as a fraction, e.g. 0.05 for 5 %. Use 0 for no noise."""
+        noise_level = float(noise_level)
+        if noise_level < 0:
+            msg = f"Noise level {noise_level} must not be negative."
+            raise ValueError(msg)
+        self.noise_level = noise_level
+
+    def get_resistance_and_reactance(self) -> tuple[float, float]:
+        """Measure at the set frequency and bias and return (resistance R in Ohm, reactance X in Ohm)."""
+        resistance = np.mean([self.simulate_resistance(self.frequency) for _ in range(self.average)])
+        reactance = np.mean([self.simulate_reactance(self.frequency) for _ in range(self.average)])
+        return float(resistance), float(reactance)
+
+    def measure_frequency_sweep(self, start_frequency: float, stop_frequency: float, points: int) -> dict:
+        """Measure R and X at 'points' linearly spaced frequencies from start to stop in Hz (2 to 10000 points).
+
+        Returns a dictionary with the lists 'frequency' in Hz, 'R' in Ohm and 'X' in Ohm.
+        """
+        start_frequency = float(start_frequency)
+        stop_frequency = float(stop_frequency)
+        points = int(points)
+        if start_frequency <= 0 or stop_frequency <= 0:
+            msg = "Start and stop frequency must be greater than 0 Hz."
+            raise ValueError(msg)
+        if not 2 <= points <= 10000:
+            msg = f"Points {points} must be between 2 and 10000."
+            raise ValueError(msg)
+        frequencies = np.linspace(start_frequency, stop_frequency, points)
+        return {
+            "frequency": frequencies.tolist(),
+            "R": np.asarray(self.simulate_resistance(frequencies), dtype=float).tolist(),
+            "X": np.asarray(self.simulate_reactance(frequencies), dtype=float).tolist(),
+        }

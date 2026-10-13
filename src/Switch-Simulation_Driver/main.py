@@ -74,3 +74,16 @@ class Device(EmptyDevice):
     def call(self) -> float:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         return self.voltage
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    The commands do not need 'initialize' or 'configure'.
+    """
+
+    def set_voltage(self, voltage: float) -> None:
+        """Set the voltage in V that the simulated switch passes on."""
+        self.voltage = float(voltage)
+
+    def get_voltage(self) -> float:
+        """Return the voltage in V that the simulated switch passes on."""
+        return float(self.voltage)
