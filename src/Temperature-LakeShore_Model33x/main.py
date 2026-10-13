@@ -197,7 +197,7 @@ class Device(EmptyDevice):
                 self.value = float(self.value) + 273.15
             elif self.temperature_unit == "°F":
                 # convert setvalue from °F to K
-                self.value = 5/9*(float(self.value + 273.15) - 32.0)
+                self.value = 5/9*(float(self.value) - 32.0) + 273.15
          
             self.set_temperature(self.channel, self.value)
 
@@ -218,7 +218,7 @@ class Device(EmptyDevice):
     def measure_temperature(self):
         """ used by reach functionality """
 
-        temperature = self.get_temperature(self.channel)
+        temperature = self.get_temperature(self.sensor)
         
         return temperature
 
