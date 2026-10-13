@@ -36,7 +36,14 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
 class Device(EmptyDevice):
-    """Simulated Signal driver."""
+    """Simulated Signal driver.
+
+    The generated signal is shared via device_communication under the key 'Simulated signal', so that a
+    Scope-Simulation_Driver used at the same time shows it on channel 1. Without a scope, the driver works on its own.
+    """
+
+    SHARED_SIGNAL_KEY: str = "Simulated signal"
+    """Key in device_communication under which generate_waveform is shared with the simulated oscilloscope."""
 
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters."""
@@ -118,10 +125,18 @@ class Device(EmptyDevice):
 
     # here functions start that are called by SweepMe! during a measurement
 
+    def connect(self) -> None:
+        """Share the signal with a simulated oscilloscope, also when only the communication commands are used."""
+        self._share_signal()
+
+    def disconnect(self) -> None:
+        """Stop sharing the signal, so that a simulated oscilloscope falls back to its own waveform."""
+        if self.device_communication.get(self.SHARED_SIGNAL_KEY) == self.generate_waveform:
+            del self.device_communication[self.SHARED_SIGNAL_KEY]
+
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
-        # The generated signal is saved in device_communication to allow the simulated oscilloscope to read it.
-        self.device_communication["Simulated signal"] = self.generate_waveform
+        self._share_signal()
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
@@ -162,7 +177,7 @@ class Device(EmptyDevice):
             self.delay = self.value
 
         # update the signal generator function
-        self.device_communication["Simulated signal"] = self.generate_waveform
+        self._share_signal()
 
     def call(self) -> tuple[float, float, np.ndarray, np.ndarray]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
@@ -257,3 +272,11 @@ class Device(EmptyDevice):
         time_stamps = np.linspace(0, duration, points)
         signal = self.generate_waveform(time_stamps.copy())
         return {"time": time_stamps.tolist(), "signal": np.asarray(signal, dtype=float).tolist()}
+
+    def _share_signal(self) -> None:
+        """Put generate_waveform into device_communication, where a simulated oscilloscope can find it.
+
+        The bound method always uses the current settings, so later changes reach the oscilloscope without sharing
+        the signal again.
+        """
+        self.device_communication[self.SHARED_SIGNAL_KEY] = self.generate_waveform

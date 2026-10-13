@@ -41,6 +41,8 @@ class Device(EmptyDevice):
 
     This driver returns a simulated sine (Ch1) and cosine (Ch2) wave signal with a frequency of 1 kHz and an amplitude
     of 1 V. Each channel clips the signal to its offset +/- voltage range.
+
+    If a Signal-Simulation_Driver is used at the same time, channel 1 shows its signal instead of the sine.
     """
 
     def __init__(self) -> None:
@@ -150,16 +152,10 @@ class Device(EmptyDevice):
         data = [time]
 
         if self.channel1:
-            if self.use_simulated_signal:
-                generate_waveform = self.device_communication["Simulated signal"]
-                channel_1 = generate_waveform(time)
-            else:
-                channel_1 = self.SIGNAL_AMPLITUDE * np.sin(time * 2 * np.pi * 1e3)
-            data.append(self._digitize(channel_1, self.channel1_range, self.channel1_offset))
+            data.append(self._digitize(self._input_signal(1, time), self.channel1_range, self.channel1_offset))
 
         if self.channel2:
-            channel_2 = self.SIGNAL_AMPLITUDE * np.cos(time * 2 * np.pi * 1e3)
-            data.append(self._digitize(channel_2, self.channel2_range, self.channel2_offset))
+            data.append(self._digitize(self._input_signal(2, time), self.channel2_range, self.channel2_offset))
 
         return data
 
@@ -176,10 +172,28 @@ class Device(EmptyDevice):
         """Clip the signal to the window offset +/- range, like an overdriven input of a real oscilloscope."""
         return np.clip(signal, offset - voltage_range, offset + voltage_range)
 
+    def _input_signal(self, channel: int, time: np.ndarray) -> np.ndarray:
+        """Return the signal in V at the input of a channel, before it is digitized.
+
+        Channel 1 shows the signal of a Signal-Simulation_Driver if one shares it in device_communication. This is
+        checked at every acquisition, so the oscilloscope also works on its own and follows a generator that is added
+        or removed later.
+        """
+        shared_signal = None
+        if channel == 1:
+            shared_signal = self.device_communication.get("Simulated signal")
+            self.use_simulated_signal = shared_signal is not None
+        if shared_signal is not None:
+            # Pass a copy, so a generator can never change the time axis of the oscilloscope.
+            return np.asarray(shared_signal(time.copy()), dtype=float) * np.ones_like(time)
+        wave = np.sin(time * 2 * np.pi * 1e3) if channel == 1 else np.cos(time * 2 * np.pi * 1e3)
+        return self.SIGNAL_AMPLITUDE * wave
+
     """Communication commands, used e.g. by the SweepMe! Instrument Control.
 
     Channel 1 shows a 1 kHz sine and channel 2 a 1 kHz cosine, each with an amplitude of 1 V and clipped to the window
-    offset +/- voltage range of the channel. The commands do not need 'initialize' or 'configure'.
+    offset +/- voltage range of the channel. If a Signal-Simulation_Driver is connected at the same time, channel 1
+    shows its signal instead. The commands do not need 'initialize' or 'configure'.
     """
 
     def set_timebase(self, time_range: float, sampling_rate: float) -> None:
@@ -229,6 +243,5 @@ class Device(EmptyDevice):
         time = self._time_axis()
         voltage_range = float(getattr(self, f"channel{channel}_range"))
         offset = float(getattr(self, f"channel{channel}_offset"))
-        wave = np.sin(time * 2 * np.pi * 1e3) if channel == 1 else np.cos(time * 2 * np.pi * 1e3)
-        voltage = self._digitize(self.SIGNAL_AMPLITUDE * wave, voltage_range, offset)
+        voltage = self._digitize(self._input_signal(channel, time), voltage_range, offset)
         return {"time": time.tolist(), "voltage": voltage.tolist()}

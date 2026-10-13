@@ -135,8 +135,11 @@ class Device(EmptyDevice):
         wavelengths = self.get_wavelengths()
 
         if self.port_string == "Silicon Photonics":
+            # The peak drifts once per acquisition; the readings of one acquisition are averaged in dB, the unit in
+            # which the noise is simulated.
             self.siph_peak_wl += 3
-            return [wavelengths, self.get_intensities(), self.integration_time]
+            readings = [self.get_intensities() for _ in range(max(1, int(self.average)))]
+            return [wavelengths, np.mean(readings, axis=0), self.integration_time]
 
         intensities = self.get_intensities()
         for _ in range(self.average - 1):
