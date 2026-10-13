@@ -717,7 +717,7 @@ class Device(EmptyDevice):
                     # point; skip and keep parsing rather than aborting.
                     continue
                 try:
-                    t = float(parts[0]) / 1000.0
+                    t = float(parts[0]) / 1000000.0
                     v = float(parts[1])
                     i = float(parts[2])
                 except ValueError:
