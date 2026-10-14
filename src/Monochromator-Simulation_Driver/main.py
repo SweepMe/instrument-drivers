@@ -50,7 +50,7 @@ class Device(EmptyDevice):
         """Initialize the driver class and the instrument parameters."""
         super().__init__()
 
-        self.shortname = "Driver"  # short name will be shown in the sequencer
+        self.shortname = "Simulation"  # short name will be shown in the sequencer
 
         # SweepMe! parameters
         self.variables = ["Wavelength", "Filter"]
