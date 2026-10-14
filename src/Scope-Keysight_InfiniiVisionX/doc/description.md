@@ -1,6 +1,6 @@
-# Scope Keysight InfiniiVision 3000T
+# Scope Keysight InfiniiVision X
 
-This driver reads the analog channels of Keysight InfiniiVision 3000T X-Series oscilloscopes. For every measurement
+This driver reads the analog channels of Keysight InfiniiVision X-Series oscilloscopes. For every measurement
 point, one single acquisition is started, the driver waits until it is complete, and the waveforms of all selected
 channels are read out as binary data.
 
@@ -17,7 +17,13 @@ channels are read out as binary data.
 
 ### Supported instruments:
 
-- DSOX3000T and MSOX3000T models with 4 analog channels, e.g. `MSO-X 3024T`, `DSO-X 3034T`, `MSO-X 3104T`.
+- The InfiniiVision X-Series, which share one remote command set: 1000 X (`DSOX1000`, `EDUX1000`), 2000 X, 3000 X,
+  3000T X, 4000 X, and 6000 X, as DSOX and MSOX models with 2 or 4 analog channels. Models sold under the Agilent
+  brand are included.
+- The driver reads the model from the identification at the start of the run. The last digit of the model number is
+  the number of analog channels, e.g. `MSO-X 3024T` has 4 and `DSO-X 2002A` has 2. Only the 3000 X-Series and above
+  have 50 Ohm inputs.
+- The older InfiniiVision 5000, 6000, and 7000 Series without the X are not covered.
 - The digital channels of the MSO models are not read.
 
 ---
@@ -25,6 +31,9 @@ channels are read out as binary data.
 ### Usage:
 
 - Add one **Scope** module and select this driver. All channels of the oscilloscope are handled by one instance.
+- The GUI always offers 4 channels, because the model is only known after connecting. If a channel, a trigger source,
+  or the `50 Ohm` impedance is selected that the connected model does not have, the run stops at the start with a
+  message that names the model.
 - Every combo box has an `As is` option, and the level and offset fields accept `As is`. With `As is`, the driver
   sends no command for this setting, so the oscilloscope can be set up at the front panel and only read out.
 - At the start of a branch, the driver stops the oscilloscope, clears the error queue, and applies the settings in the
@@ -72,7 +81,8 @@ channels are read out as binary data.
   - **Range**: range or scale as selected in **Voltage range**, at the probe tip.
   - **Offset**: voltage in V at the center of the screen, or `As is`.
   - **Coupling**: input coupling `DC` or `AC`.
-  - **Impedance**: input impedance `1 MOhm` or `50 Ohm`.
+  - **Impedance**: input impedance `1 MOhm` or `50 Ohm`. On the 1000 X and 2000 X-Series, which only have 1 MOhm
+    inputs, no impedance command is sent.
   - **Probe**: probe attenuation `1:1`, `10:1`, or `100:1`. `As is` keeps the attenuation that is set or detected
     by the oscilloscope.
 

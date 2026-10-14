@@ -27,12 +27,13 @@
 
 # SweepMe! driver
 # * Module: Scope
-# * Instrument: Keysight InfiniiVision 3000T X-Series (DSOX3000T, MSOX3000T)
+# * Instrument: Keysight InfiniiVision X-Series (1000 X, 2000 X, 3000 X, 3000T X, 4000 X, 6000 X)
 
 from __future__ import annotations
 
+import re
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -42,13 +43,19 @@ if TYPE_CHECKING:
 
 
 class Device(EmptyDevice):
-    """Driver for the analog channels of Keysight InfiniiVision 3000T X-Series oscilloscopes."""
+    """Driver for the analog channels of Keysight InfiniiVision X-Series oscilloscopes."""
+
+    MAX_CHANNELS: ClassVar[int] = 4
+    """The model is only known after connecting, so the GUI always offers the maximum number of channels."""
+
+    FIRST_SERIES_WITH_50_OHM: ClassVar[int] = 3
+    """The 1000 X and 2000 X-Series have 1 MOhm inputs only."""
 
     def __init__(self) -> None:
         """Initialize the driver class and the default parameters."""
         EmptyDevice.__init__(self)
 
-        self.shortname = "InfiniiVision 3000T"
+        self.shortname = "InfiniiVision X"
 
         self.variables = ["Time"]
         self.units = ["s"]
@@ -58,13 +65,17 @@ class Device(EmptyDevice):
         # Communication
         self.port_manager = True
         self.port_types = ["USB", "TCPIP", "GPIB"]
-        self.port_identifications = ["*SO-X 3*"]
+        # Compared as case-sensitive substrings of the *IDN? answer, e.g. "KEYSIGHT TECHNOLOGIES,MSO-X 3024T,..."
+        self.port_identifications = ["DSO-X", "MSO-X", "DSOX", "MSOX", "EDU-X", "EDUX"]
         self.port_properties = {
             # Reading the full acquisition record of several channels can take a few seconds.
             "timeout": 10.0,
         }
 
-        self.number_of_channels = 4
+        # Model dependent capabilities, read from the identification in 'initialize'
+        self.model: str = ""
+        self.number_of_channels: int = self.MAX_CHANNELS
+        self.has_50_ohm_input: bool = True
 
         # Front panel names to SCPI arguments
         self.trigger_sources = {
@@ -210,7 +221,7 @@ class Device(EmptyDevice):
             self.channel_scales if voltage_range_type == "Voltage scale in V/div" else self.channel_full_ranges
         )
 
-        for i in range(1, self.number_of_channels + 1):
+        for i in range(1, self.MAX_CHANNELS + 1):
             new_parameters[f"Channel{i}"] = i == 1
             if parameters.get(f"Channel{i}", i == 1):
                 new_parameters[f"Channel{i}_Name"] = f"Ch{i}"
@@ -232,7 +243,7 @@ class Device(EmptyDevice):
 
         self.sweepmode = parameters.get("SweepMode", "None")
 
-        self.channels = [i for i in range(1, self.number_of_channels + 1) if parameters.get(f"Channel{i}", i == 1)]
+        self.channels = [i for i in range(1, self.MAX_CHANNELS + 1) if parameters.get(f"Channel{i}", i == 1)]
         self.channel_names = {i: parameters.get(f"Channel{i}_Name", f"Ch{i}") for i in self.channels}
 
         self.variables = ["Time"]
@@ -247,12 +258,14 @@ class Device(EmptyDevice):
             self.savetype.append(True)
 
     def initialize(self) -> None:
-        """Clear the status and error registers of the instrument."""
+        """Clear the status and error registers and read the capabilities of the connected model."""
         self.clear_status()
+        self.read_model_capabilities()
 
     def configure(self) -> None:
         """Apply the GUI parameters to the instrument."""
         self.convert_gui_parameters()
+        self.check_model_capabilities()
 
         # Settings are applied to a stopped instrument, every measurement point starts its own acquisition
         self.stop_acquisition()
@@ -420,6 +433,47 @@ class Device(EmptyDevice):
             return None
         return cls.to_float(value, name)
 
+    def read_model_capabilities(self) -> None:
+        """Derive the number of analog channels and the availability of 50 Ohm inputs from the model number.
+
+        The four digits of the model number are series, two digits bandwidth, and number of analog channels, e.g.
+        MSO-X 3024T is a 3000T X-Series model with 200 MHz and 4 channels. Only the 3000 X-Series and above have
+        50 Ohm inputs. If the model number cannot be parsed, 4 channels with 50 Ohm inputs are assumed.
+        """
+        identification = self.get_identification().split(",")
+        self.model = identification[1].strip() if len(identification) > 1 else identification[0].strip()
+
+        match = re.search(r"(\d)\d\d([24])[A-Z]*$", self.model.replace(" ", ""))
+        if match:
+            self.number_of_channels = int(match.group(2))
+            self.has_50_ohm_input = int(match.group(1)) >= self.FIRST_SERIES_WITH_50_OHM
+        else:
+            self.number_of_channels = self.MAX_CHANNELS
+            self.has_50_ohm_input = True
+
+    def check_model_capabilities(self) -> None:
+        """Raise an error if channels, trigger source or input impedance do not exist on the connected model."""
+        missing_channels = [str(i) for i in self.channels if i > self.number_of_channels]
+        if missing_channels:
+            msg = (
+                f"The {self.model} has {self.number_of_channels} analog channels. "
+                f"Please deselect channel {', '.join(missing_channels)}."
+            )
+            raise ValueError(msg)
+
+        if self.trigger_source.startswith("Channel ") and int(self.trigger_source[-1]) > self.number_of_channels:
+            msg = f"The {self.model} has no {self.trigger_source}. Please select another trigger source."
+            raise ValueError(msg)
+
+        if not self.has_50_ohm_input:
+            channels_50_ohm = [str(i) for i in self.channels if self.channel_impedance_selection[i] == "50 Ohm"]
+            if channels_50_ohm:
+                msg = (
+                    f"The {self.model} has no 50 Ohm inputs. "
+                    f"Please set the impedance of channel {', '.join(channels_50_ohm)} to '1 MOhm' or 'As is'."
+                )
+                raise ValueError(msg)
+
     def configure_timebase(self) -> None:
         """Set the horizontal range or scale together with the horizontal position."""
         if self.time_range_type == "Time range in s":
@@ -468,8 +522,9 @@ class Device(EmptyDevice):
         if probe != "As is":
             self.set_channel_probe(channel, self.channel_probes[probe])
 
+        # Models without 50 Ohm inputs have 1 MOhm only, which therefore is not set
         impedance = self.channel_impedance_selection[channel]
-        if impedance != "As is":
+        if impedance != "As is" and self.has_50_ohm_input:
             self.set_channel_impedance(channel, self.channel_impedances[impedance])
 
         coupling = self.channel_coupling_selection[channel]
