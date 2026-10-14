@@ -1,7 +1,7 @@
 // GPL v3 License
 //
 //Arduino code to control a motor stepper via COM port
-//Copyright (C) 2023  SweepMe! GmbH (sweep-me.net)
+//Copyright (C) 2023,2026 SweepMe! GmbH (sweep-me.net)
 //
 //This program is free software: you can redistribute it and/or modify
 //it under the terms of the GNU General Public License as published by
@@ -24,7 +24,7 @@
 
 String command;
 
-String idn_string = "SweepMe! GmbH,Arduino Stepper controller,1.0.0";
+String idn_string = "SweepMe! GmbH,Arduino Stepper controller,1.1.0";
 
 // motor driver type
 int motor_driver_type = 1;
@@ -41,6 +41,13 @@ int limit_switch_pin_upper = 3;
 int limit_switch_config = 3;
 bool activate_lower_switch = true;
 bool activate_upper_switch = true;
+
+// The motor type describes how the motor is WIRED, so it cannot sensibly change
+// while the stage is in use. MT= is therefore accepted only as the very first
+// command after a boot and refused from the second command on: replacing the
+// stepper object later would reset speed, acceleration and the position
+// reference in the middle of a measurement.
+bool first_command_handled = false;
 
 volatile int limit_switch_state;
 volatile int limit_switch_state_lower;
@@ -306,17 +313,38 @@ void loop()
 
     else if (command.startsWith("MT=")) {
 
-       // split the value from the command here and change the parameter accordingly
-       motor_driver_type = command.substring(command.indexOf('=')+1).toInt();
+      if (first_command_handled) {
+        // Too late: the motor has been addressed already. Say so, rather than
+        // reporting a type that is not the one actually being driven.
+        Serial.println("Error: MT= is only accepted as the first command after boot");
+      }
+      else {
+        // split the value from the command here and change the parameter accordingly
+        motor_driver_type = command.substring(command.indexOf('=')+1).toInt();
 
-       if (motor_driver_type == 1){
-         AccelStepper stepper(motor_driver_type, motor_pin1,  motor_pin2); 
-       }
-       else {
-         AccelStepper stepper(motor_driver_type, motor_pin1,  motor_pin2, motor_pin3,  motor_pin4); 
-       }
-          Serial.println(motor_driver_type);
-       }
+        // ASSIGNMENT, not a declaration. "AccelStepper stepper(...)" here would
+        // declare a *local* object that shadows the global one and is destroyed
+        // at the closing brace, leaving the running stepper untouched - which is
+        // exactly what this command did until 2026-09-18: it reported the new
+        // type while the motor kept running as the type setup() had built.
+        if (motor_driver_type == 1){
+          stepper = AccelStepper(motor_driver_type, motor_pin1, motor_pin2);
+        }
+        else {
+          stepper = AccelStepper(motor_driver_type, motor_pin1, motor_pin2, motor_pin3, motor_pin4);
+        }
+
+        // A freshly constructed AccelStepper starts with maxSpeed 0, acceleration
+        // 0 and minPulseWidth 1 - a motor that cannot move. Put setup()'s
+        // configuration back onto the new object.
+        stepper.setMaxSpeed(1000);
+        stepper.setAcceleration(1000);
+        stepper.setMinPulseWidth(100);
+        stepper.setCurrentPosition(0);
+
+        Serial.println(motor_driver_type);
+      }
+    }
 
     else if (command == "SAVE") {
         long position_saved;
@@ -391,6 +419,15 @@ void loop()
      {
      Serial.println("Unknown command: " + command);
      }
+
+    // The board now counts as in use, so the configuration window for MT= is
+    // closed - a second MT= included. Two commands are exempt because they only
+    // read and touch nothing: IDN?, so a host can identify the board before
+    // configuring it, and MT?, so it can see which type is set without spending
+    // its one chance to change it.
+    if (command != "IDN?" && command != "MT?") {
+      first_command_handled = true;
+    }
      
    }
 }

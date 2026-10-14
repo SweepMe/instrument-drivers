@@ -176,6 +176,33 @@ class Device(EmptyDevice):
     def call(self):
         return self.pos_current
 
+    @staticmethod
+    def _to_int(value, name):
+        """Convert a command argument to int.
+
+        This driver is used from more than one place, and they do not agree on
+        types: SweepMe! hands over GUI field values as strings, a standalone
+        pysweepme script passes whatever the author wrote, and a remote
+        interface may pass every value as text. So the setters coerce rather
+        than insist - str, float and int all work, and only something that is
+        no number at all is refused.
+
+        The `: int` annotations on the setters are metadata for callers that
+        introspect the signature (the MCP layer types its tool schemas from
+        them, and its safety layer needs a real number before it can
+        range-check one). Python does not enforce them, so they neither replace
+        this conversion nor stop a string from arriving - do not remove it in
+        favour of them.
+
+        Named with a leading underscore on purpose: EmptyDevice.list_functions()
+        offers every public callable as a driver command, and this is a helper,
+        not something to send to the instrument.
+        """
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            raise TypeError("Input argument %r for %s has to be int." % (value, name))
+
     """ here, convenience functions start """
 
     def wait_until_reached(self):
@@ -192,24 +219,49 @@ class Device(EmptyDevice):
     def get_identification(self):
         self.port.write("IDN?")
         iden_string = self.port.read()
-        compnay, driver_name, version_no = iden_string.split(",")
-        return compnay, driver_name, version_no
+        fields = [part.strip() for part in iden_string.split(",")]
+        if len(fields) != 3:
+            # Firmware older than this driver's own sketch does not know IDN? and
+            # answers "Unknown command: IDN?". Unpacking that raised "not enough
+            # values to unpack", which named neither the command nor the cause -
+            # quote what actually came back, it usually says what is wrong.
+            raise ValueError(
+                "IDN? returned %r, expected 'company,model,version'. Firmware "
+                "older than Switch-Arduino_StepperMotor.ino does not implement "
+                "IDN? - flash the sketch from this driver folder onto the board."
+                % iden_string
+            )
+        company, driver_name, version_no = fields
+        return company, driver_name, version_no
 
-    def set_motor_type(self, motor_type):
-        if type(motor_type) is not int:
-            raise TypeError("Input argument %s has to be int." % motor_type)
+    def set_motor_type(self, motor_type: int) -> int:
+        """Set how the motor is wired. Only valid as the first command after boot.
+
+        The motor type describes the wiring, so the firmware accepts it once,
+        before any other command, and refuses it afterwards - changing it mid-run
+        would rebuild the stepper and drop speed, acceleration and the position
+        reference. Send it first, or reset the board (reopening the port does
+        that) and send it first then.
+        """
+        motor_type = self._to_int(motor_type, "motor_type")
         self.port.write("MT=%d" % motor_type)
-        answer = int(float(self.port.read()))
-        return answer
+        answer = self.port.read()
+        try:
+            return int(float(answer))
+        except ValueError:
+            raise ValueError(
+                "setting the motor type was refused: %r. It is only accepted as "
+                "the first command after the board boots - reset the board and "
+                "send it before anything else." % answer
+            )
     
     def get_motor_type(self):
         self.port.write("MT?")
         motor_type = int(float(self.port.read()))
         return motor_type
     
-    def set_target_position(self, target_position):
-        if type(target_position) is not int:
-            raise TypeError("Input argument %s has to be int." % target_position)
+    def set_target_position(self, target_position: int) -> int:
+        target_position = self._to_int(target_position, "target_position")
         self.port.write("TP=%d" % target_position)
         updated_target_position = int(float(self.port.read()))
         return updated_target_position
@@ -219,16 +271,14 @@ class Device(EmptyDevice):
         target_position = int(float(self.port.read()))
         return target_position
     
-    def set_relative_position(self, relative_position):
-        if type(relative_position) is not int:
-            raise TypeError("Input argument %s has to be int." % relative_position)
+    def set_relative_position(self, relative_position: int) -> int:
+        relative_position = self._to_int(relative_position, "relative_position")
         self.port.write("RP=%d" % relative_position)
         updated_target_position = int(float(self.port.read()))
         return updated_target_position
         
-    def set_current_position(self, current_position):
-        if type(current_position) is not int:
-            raise TypeError("Input argument %s has to be int." % current_position)
+    def set_current_position(self, current_position: int) -> int:
+        current_position = self._to_int(current_position, "current_position")
         self.port.write("P=%d" % current_position)
         updated_position = int(float(self.port.read()))
         return updated_position
@@ -238,9 +288,8 @@ class Device(EmptyDevice):
         position = int(float(self.port.read()))
         return position
     
-    def set_speed(self, speed):
-        if type(speed) is not int:
-            raise TypeError("Input argument %s has to be int." % speed)
+    def set_speed(self, speed: int) -> int:
+        speed = self._to_int(speed, "speed")
         self.port.write("S=%d" % speed)
         updated_speed = int(float(self.port.read()))
         return updated_speed
@@ -250,9 +299,8 @@ class Device(EmptyDevice):
         speed = int(float(self.port.read()))
         return speed
 
-    def set_acceleration(self, acceleration):
-        if type(acceleration) is not int:
-            raise TypeError("Input argument %s has to be int." % acceleration)
+    def set_acceleration(self, acceleration: int) -> int:
+        acceleration = self._to_int(acceleration, "acceleration")
         self.port.write("A=%d" % acceleration)
         updated_acceleration = int(float(self.port.read()))
         return updated_acceleration
@@ -282,9 +330,8 @@ class Device(EmptyDevice):
         answer = self.port.read()
         return answer
 
-    def set_homing_speed(self, homing_speed):
-        if type(homing_speed) is not int:
-            raise TypeError("Input argument %s has to be int." % homing_speed)
+    def set_homing_speed(self, homing_speed: int) -> int:
+        homing_speed = self._to_int(homing_speed, "homing_speed")
         self.port.write("HS=%d" % homing_speed)
         updated_homing_speed = int(float(self.port.read()))
         return updated_homing_speed
@@ -314,9 +361,10 @@ class Device(EmptyDevice):
         loaded_position = int(float(self.port.read()))
         return loaded_position
     
-    def set_limit_switches_config(self, config):
-        if type(config) is not int or not 0 <= config <= 3:
-            raise TypeError("Input argument %s is not valid." % config)
+    def set_limit_switches_config(self, config: int) -> str:
+        config = self._to_int(config, "config")
+        if not 0 <= config <= 3:
+            raise ValueError("Input argument %s is not valid." % config)
         self.port.write("SC=%d" % config)
         updated_config = self.port.read()
         return updated_config
