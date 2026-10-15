@@ -169,6 +169,14 @@ class Device(EmptyDevice):
         self.identifier_channel_names: str = "Active channel names"
         """Key under which the names of all active channels of a board are shared via device_communication."""
 
+        self._compliance_by_mode: dict[str, float | None] = {"Voltage": None, "Current": None}
+        """Compliance per source mode, set with 'set_compliance'.
+
+        The clamp of the channel is symmetric and has a different meaning in each mode: it is a current limit in A
+        while voltage is forced and a voltage limit in V while current is forced. A value is therefore never carried
+        over from one mode to the other.
+        """
+
         self.identifier_autorange_channels: str = "Autorange channels"
         """Key under which the channels with explicit autoranging are shared via device_communication.
 
@@ -706,12 +714,384 @@ class Device(EmptyDevice):
 
     """further convenience functions """
 
-    def set_compliance(self, value: float) -> None:
+    def set_compliance(self, value: float, mode: str | None = None) -> None:
         """Set the compliance on the SMU.
 
-        The device automatically switches to voltage compliance when current is forced and vice versa.
+        The clamp is symmetric (+-value) and limits the current while voltage is forced and the voltage while current
+        is forced. The value is stored per source mode and is applied to the channel at once only for the present
+        source mode.
+
+        Args:
+            value: Compliance magnitude, in A for the mode 'Voltage' and in V for the mode 'Current'.
+            mode: Source mode the value is meant for, 'Voltage' or 'Current'. Defaults to the present source mode.
+                Setting the value of the other mode in advance is needed before 'set_voltage' or 'set_current' can
+                switch the mode.
         """
+        self._ensure_channel()
+        mode = self.source_mode if mode is None else str(mode).strip().capitalize()
+        if mode not in self._compliance_by_mode:
+            msg = f"Unknown source mode '{mode}'. Allowed: {list(self._compliance_by_mode)}"
+            raise ValueError(msg)
         value = float(abs(value))
+        self._compliance_by_mode[mode] = value
+        if mode == self.source_mode:
+            self._apply_clamp(value)
+
+    def _apply_clamp(self, value: float) -> None:
+        """Write the symmetric clamp to the channel."""
         self.channel.clamp_high_value = value
         self.channel.clamp_low_value = -value
         self.channel.clamp_enabled = True
+
+    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+
+    The port names the channel (e.g. 'M1.S1.C1'), so the commands take no channel argument. They resolve the board and
+    the channel on demand and also work when only 'connect' was run, without 'initialize'.
+    """
+
+    def _ensure_channel(self) -> None:
+        """Resolve board, module and channel from the port, if 'initialize' has not done it yet."""
+        if self.channel is not None:
+            return
+
+        if not self.channel_name:
+            msg = "idSMUx: No port selected, the channel cannot be resolved."
+            raise ValueError(msg)
+
+        board_prefix = self.channel_name.split(".")[0]
+        """The 'Mx' component of the port, which names the board the channel belongs to."""
+
+        shared = self.device_communication.get(self.identifier, {})
+        if "Board" in shared:
+            # Another channel of the board already opened it. Opening the service a second time would take the USB
+            # handle away from it ('INVALID_HANDLE'), so this instance must not touch its own service.
+            board_model = shared["Board"]
+            if not self._board_has_prefix(board_model, board_prefix):
+                msg = f"idSMUx: The shared board does not belong to port {self.channel_name} (board {board_prefix})."
+                raise ValueError(msg)
+        else:
+            if self.srunner is None:
+                self.srunner = IdSmuServiceRunner()
+
+            service = self.srunner.get_idsmu_service()
+            if not service.devices_are_detected():
+                service.detect_devices()
+
+            board_model = self._find_board(service, board_prefix)
+            self.device_communication.setdefault(self.identifier, {})["Board"] = board_model
+
+        self.board_model = board_model
+
+        # Detecting alone does not initialize the devices. Without it, firmware commands fail with 'device is not
+        # initialized'. The outputs stay switched off.
+        if not self.board_model.is_board_initialized():
+            self.board_model.initialize_devices(True)
+
+        self.smu = self.board_model.idSmu2Modules[self.board_id]
+        self.channel_number = int(self.channel_name[-1])
+        self.channel = self.smu.smu.channels[self.channel_number]
+        self.channel.name = self.channel_name
+
+    @staticmethod
+    def _board_has_prefix(board_model: object, board_prefix: str) -> bool:
+        """Check whether a board has hardware ids of the form '<board_prefix>.<slot>[.<channel>]'."""
+        return any(hardware_id.split(".")[0] == board_prefix for hardware_id in board_model.get_all_hardware_ids())
+
+    def _find_board(self, service: object, board_prefix: str) -> object:
+        """Return the board of the service whose hardware ids start with the 'Mx' component of the port."""
+        addresses = list(service.get_board_addresses())
+        for address in addresses:
+            board = service.get_board(address)
+            if self._board_has_prefix(board, board_prefix):
+                return board
+        msg = f"idSMUx: No board '{board_prefix}' found for port {self.channel_name}. Detected boards: {addresses}"
+        raise ValueError(msg)
+
+    def get_identification(self) -> str:
+        """Return hardware id, firmware version and channel name of the module this channel belongs to."""
+        self._ensure_channel()
+        return (
+            f"aSpectSystems idSMU2, hardware id {self.smu.get_hardware_id()}, "
+            f"firmware {self.smu.get_firmware_version()}, channel {self.channel_name}"
+        )
+
+    def get_output_ranges(self) -> tuple[float, float, float, float]:
+        """Return the output ranges of the channel as (min voltage in V, max voltage in V, min current in A, max current in A)."""
+        self._ensure_channel()
+        v_min, v_max, i_min, i_max = self.channel.output_ranges
+        return float(v_min), float(v_max), float(i_min), float(i_max)
+
+    def set_voltage(self, voltage: float) -> None:
+        """Force a voltage on the channel.
+
+        The current compliance for the mode 'Voltage' must have been set before, with 'set_compliance' while this
+        mode is active or with 'set_compliance(value, mode="Voltage")'. Without it, nothing is changed and an error is
+        raised. A compliance of the other source mode is never reused. Changing between forcing voltage and current
+        is rejected while the output is enabled. With the output disabled, the engine resets the
+        clamps on the change, so the channel is first put into the new mode at 0 V and the compliance of this mode is
+        applied before and after the value is set.
+
+        Args:
+            voltage: Voltage in V, within the output range of the channel.
+        """
+        self._ensure_channel()
+        voltage = float(voltage)
+        v_min, v_max, _, _ = self.channel.output_ranges
+        if not v_min <= voltage <= v_max:
+            msg = f"Voltage {voltage} V out of range {v_min} V to {v_max} V"
+            raise ValueError(msg)
+        compliance = self._compliance_by_mode["Voltage"]
+        if compliance is None:
+            msg = "idSMUx: Set the current compliance for voltage mode first, with set_compliance (mode 'Voltage')."
+            raise ValueError(msg)
+        if self.source_mode != "Voltage":
+            if self.channel.enabled:
+                msg = (
+                    "idSMUx: The source mode cannot be changed to 'Voltage' while the output is enabled. "
+                    "Disable the output first."
+                )
+                raise RuntimeError(msg)
+            self.channel.voltage = 0.0
+            self.source_mode = "Voltage"
+        self._apply_clamp(compliance)
+        self.channel.voltage = voltage
+        self._apply_clamp(compliance)
+
+    def set_current(self, current: float) -> None:
+        """Force a current on the channel.
+
+        The voltage compliance for the mode 'Current' must have been set before, with 'set_compliance' while this
+        mode is active or with 'set_compliance(value, mode="Current")'. Without it, nothing is changed and an error is
+        raised. A compliance of the other source mode is never reused. Changing between forcing voltage and current
+        is rejected while the output is enabled. With the output disabled, the engine resets the
+        clamps on the change, so the channel is first put into the new mode at 0 A and the compliance of this mode is
+        applied before and after the value is set. With the range set to 'Auto' in the GUI, the range is not
+        selected from the value here, set it with 'set_current_range'.
+
+        Args:
+            current: Current in A, within the output range of the channel.
+        """
+        self._ensure_channel()
+        current = float(current)
+        _, _, i_min, i_max = self.channel.output_ranges
+        if not i_min <= current <= i_max:
+            msg = f"Current {current} A out of range {i_min} A to {i_max} A"
+            raise ValueError(msg)
+        compliance = self._compliance_by_mode["Current"]
+        if compliance is None:
+            msg = "idSMUx: Set the voltage compliance for current mode first, with set_compliance (mode 'Current')."
+            raise ValueError(msg)
+        if self.source_mode != "Current":
+            if self.channel.enabled:
+                msg = (
+                    "idSMUx: The source mode cannot be changed to 'Current' while the output is enabled. "
+                    "Disable the output first."
+                )
+                raise RuntimeError(msg)
+            self.channel.current = 0.0
+            self.source_mode = "Current"
+        self._apply_clamp(compliance)
+        self.channel.current = current
+        self._apply_clamp(compliance)
+
+    def set_current_range(self, range_name: str) -> None:
+        """Set a fixed current range of the channel.
+
+        Args:
+            range_name: One of '5 µA - idSMU2', '20 µA - idSMU2', '200 µA - idSMU2', '2 mA - id SMU2' and
+                '70 mA - idSMU2'. The ranges of the DPS module are not supported here.
+        """
+        self._ensure_channel()
+        allowed = [name for name in self.current_ranges if name.endswith("idSMU2") or name.endswith("id SMU2")]
+        if range_name not in allowed:
+            msg = f"Unknown current range '{range_name}'. Allowed: {allowed}"
+            raise ValueError(msg)
+        self.channel.autorange = False
+        self.board_model.set_current_ranges(self.current_ranges[range_name], [self.channel.name])
+
+    def set_autorange(self, enabled: bool) -> None:
+        """Switch the internal autoranging of the channel on or off.
+
+        The internal autoranging switches the range only when the set value changes.
+
+        Args:
+            enabled: True to switch the internal autoranging on.
+        """
+        self._ensure_channel()
+        self.channel.autorange = bool(enabled)
+
+    def set_speed(self, speed: str) -> None:
+        """Set the measurement speed, i.e. the number of samples averaged per measurement.
+
+        Args:
+            speed: One of 'Very fast', 'Fast', 'Medium', 'Slow', 'Very slow'.
+        """
+        self._ensure_channel()
+        if speed not in self.speed_options:
+            msg = f"Unknown speed '{speed}'. Allowed: {list(self.speed_options)}"
+            raise ValueError(msg)
+        self.speed = speed
+        self.channel.sample_count = self.speed_options[speed]
+
+    def enable_output(self) -> None:
+        """Switch the output of the channel on."""
+        self._ensure_channel()
+        if not self.channel.enabled:
+            self.channel.enabled = True
+
+    def disable_output(self) -> None:
+        """Switch the output of the channel off."""
+        self._ensure_channel()
+        if self.channel.enabled:
+            self.channel.enabled = False
+
+    def get_output_state(self) -> bool:
+        """Return whether the output of the channel is switched on."""
+        self._ensure_channel()
+        return bool(self.channel.enabled)
+
+    def get_voltage_and_current(self) -> tuple[float, float]:
+        """Measure voltage and current of the channel.
+
+        Returns:
+            Tuple of (voltage in V, current in A).
+        """
+        self._ensure_channel()
+        return float(self.channel.voltage), float(self.channel.current)
+
+    def get_compliance(self) -> float:
+        """Return the symmetric compliance (clamp) of the channel in V or A, depending on the source mode.
+
+        Returns:
+            The upper clamp value of the channel.
+        """
+        self._ensure_channel()
+        return float(self.channel.clamp_high_value)
+
+    def get_current_range(self) -> str:
+        """Return the name of the present current range of the channel, e.g. 'Range_2mA'."""
+        self._ensure_channel()
+        return str(self.channel.current_range)
+
+    def measure_transient(self, points: int, sample_count: int = 1, measure: str = "current") -> dict:
+        """Record a time-resolved series of measurements of the channel, e.g. the charging current of a capacitor.
+
+        Start it right after the voltage step to be observed. The measurements are made back to back by the device,
+        so the time stamps come from the device and not from the PC. Voltage and current are not measured
+        simultaneously: call it once per quantity if both are needed.
+
+        Args:
+            points: Number of consecutive measurements, between 1 and 1000.
+            sample_count: Number of samples averaged per measurement, a power of 2 between 1 and 65536.
+            measure: 'current' or 'voltage'.
+
+        Returns:
+            Dictionary with 'time_us' (device time stamps in µs), 'values' (A or V) and 'measure'.
+        """
+        self._ensure_channel()
+        points = int(points)
+        sample_count = int(sample_count)
+        if not 1 <= points <= 1000:
+            msg = f"points must be between 1 and 1000, not {points}"
+            raise ValueError(msg)
+        if sample_count not in self.speed_options.values():
+            msg = f"sample_count must be one of {list(self.speed_options.values())}"
+            raise ValueError(msg)
+        if measure not in ("current", "voltage"):
+            msg = "measure must be 'current' or 'voltage'"
+            raise ValueError(msg)
+
+        mode = MeasurementMode.isense if measure == "current" else MeasurementMode.vsense
+        self.board_model.set_measurement_modes(mode, [self.channel.name])
+        result = self.smu.measure_channels_async(
+            sample_count=sample_count,
+            repetitions=points,
+            channel_numbers=[self.channel.name],
+            wait_for_trigger=False,
+        ).get()
+        if not result.is_result():
+            msg = f"idSMUx: transient measurement failed: {result.to_json()}"
+            raise RuntimeError(msg)
+        return {
+            "measure": measure,
+            "time_us": [float(t) for t in result.timecode],
+            "values": [float(v) for v in result.get_float_values(self.channel.name)],
+        }
+
+    def list_sweep_linear(
+        self,
+        start: float,
+        stop: float,
+        points: int,
+        delay_us: int = 1000,
+        sample_count: int = 1,
+    ) -> dict:
+        """Run a fast voltage sweep on the device and measure the current at every point.
+
+        The sweep runs inside the device without PC latency (at most 52 steps). All other enabled channels of the
+        board hold their present voltage and are measured at every point as well, so a bias on another channel stays
+        applied. Set the compliance and the current range of the channels beforehand.
+
+        Args:
+            start: First voltage in V.
+            stop: Last voltage in V.
+            points: Number of sweep steps, between 2 and 52. The sweep returns points + 1 values, start and stop included.
+            delay_us: Settling time between setting a voltage and measuring, in µs.
+            sample_count: Number of samples averaged per point, a power of 2.
+
+        Returns:
+            Dictionary with 'voltage' (forced values), 'current' (this channel, in A), 'time_us' (device time stamps)
+            and 'others' (channel name -> list of currents in A of the other enabled channels).
+        """
+        self._ensure_channel()
+        points = int(points)
+        if not 2 <= points <= 52:
+            msg = f"points must be between 2 and 52, not {points}"
+            raise ValueError(msg)
+        if int(sample_count) not in self.speed_options.values():
+            msg = f"sample_count must be one of {list(self.speed_options.values())}"
+            raise ValueError(msg)
+        v_min, v_max, _, _ = self.channel.output_ranges
+        if not (v_min <= float(start) <= v_max and v_min <= float(stop) <= v_max):
+            msg = f"Sweep {start} V to {stop} V out of range {v_min} V to {v_max} V"
+            raise ValueError(msg)
+        if self.source_mode != "Voltage" or self._compliance_by_mode["Voltage"] is None:
+            msg = (
+                "idSMUx: The sweep forces voltage. Set the current compliance for voltage mode and call 'set_voltage' "
+                "first, so that the channel is in voltage mode with its own compliance."
+            )
+            raise RuntimeError(msg)
+        if not self.channel.enabled:
+            msg = "idSMUx: Switch the output on with 'enable_output' before the sweep."
+            raise RuntimeError(msg)
+
+        other_names = [
+            ch.name for ch in self.smu.smu.channels.as_list() if ch.enabled and ch.name != self.channel.name
+        ]
+
+        self.board_model.set_measurement_modes(MeasurementMode.isense, [self.channel.name, *other_names])
+
+        config = ListSweepChannelConfiguration()
+        config.set_linear_sweep(float(start), float(stop), points)
+        sweep = ListSweep(self.smu.name, self.board_model)
+        sweep.add_channel_configuration(self.channel.name, config)
+        for name in other_names:
+            hold = ListSweepChannelConfiguration()
+            hold.set_constant_force_mode(points)
+            sweep.add_channel_configuration(name, hold)
+        sweep.set_measurement_delay(int(delay_us))
+        sweep.set_sample_count(int(sample_count))
+        if not sweep.can_run():
+            msg = "idSMUx: The sweep is too large for the device memory, reduce the number of points."
+            raise ValueError(msg)
+        error = sweep.run()
+        if error:
+            msg = f"idSMUx: List sweep failed: {error}"
+            raise RuntimeError(msg)
+
+        return {
+            "voltage": [float(v) for v in config.force_values],
+            "current": [float(i) for i in sweep.get_measurement_result(self.channel.name)],
+            "time_us": [float(t) for t in sweep.timecode],
+            "others": {n: [float(i) for i in sweep.get_measurement_result(n)] for n in other_names},
+        }
