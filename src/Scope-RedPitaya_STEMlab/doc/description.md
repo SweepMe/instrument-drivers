@@ -6,7 +6,10 @@ SCPI server over Ethernet.
 ## Setup
 
 1. Start the SCPI server on the Red Pitaya (web interface -> Development -> SCPI server).
-2. Enter the IP address of the board as the port, e.g. `192.168.178.xxx`.
+2. Enter the IP address of the board with the TCP port of the SCPI server (5000) as the port,
+   e.g. `192.168.178.xxx:5000`. The connection goes through the SweepMe! port manager as a
+   socket. Settings from earlier driver versions that hold the bare IP address have to be
+   changed to `ip:5000`.
 
 ## Trigger sources
 
@@ -57,8 +60,8 @@ SCPI server over Ethernet.
 ## Using generator and scope of the same board together
 
 The `Signal-RedPitaya_STEMlab` driver can be used in the same setting to generate a signal on OUT1
-and read it back on IN1 (SMA cable required). Both drivers open their own connection to the SCPI
-server. Use the trigger source `Channel 1` or `Now`, not `Signal`, because the generator is only
+and read it back on IN1 (SMA cable required). With the same port string both drivers share one
+connection to the SCPI server through the port manager. Use the trigger source `Channel 1` or `Now`, not `Signal`, because the generator is only
 triggered once when it is configured.
 
 ## Compatibility
@@ -72,16 +75,42 @@ acquisition of a run costs one port timeout while the driver finds out that it i
 
 Tested on OS 2.x (STEMlab 125-14, query used) and on OS 0.98 (STEMlab 125-10, fallback used).
 
-The connection is opened with a receive timeout (`self.port_timeout`, 5 s by default). This is
+The port is opened with a receive timeout (`port_properties["timeout"]`, 5 s by default). This is
 essential on older ecosystems: without it, a command the instrument does not know is never
 answered and the driver would wait forever, with no error and no way to stop the run. The timeout
-applies to each received chunk rather than to the whole answer, so reading a full data buffer is
-not affected.
+bounds the whole answer; a full 16384-sample data buffer arrives in about 0.2 s over Ethernet.
 
 Board models: the driver works with all boards that provide fast analog inputs, including the
 discontinued STEMlab 125-10. The buffer size is read from the instrument (`ACQ:BUF:SIZE?`) rather
 than assumed. Note that the 125-10 has a 10 bit ADC, so its quantisation step in the `Low voltage`
 range is about 2 mV instead of the 122 µV of the 14 bit boards.
+
+## Communication commands
+
+Besides the sequencer functions, the driver offers one function per SCPI command for use from
+pysweepme scripts (`driver.list_functions()`). `channel` is the input, 1 or 2:
+
+- `reset_acquisition()`, `start_acquisition()`, `stop_acquisition()`
+- `set_decimation(decimation)` / `get_decimation()` - a power of two, 1 to 65536
+- `set_averaging(enabled)` / `get_averaging()`
+- `set_data_units(units)` / `get_data_units()` - VOLTS or RAW
+- `get_buffer_size()`
+- `set_gain(channel, gain)` / `get_gain(channel)` - LV or HV (the GUI names are accepted as well)
+- `set_trigger_source(source)` - DISABLED, NOW, CH1_PE, CH1_NE, CH2_PE, CH2_NE, EXT_PE, EXT_NE,
+  AWG_PE, AWG_NE; this arms the trigger and must be sent after `start_acquisition()`
+- `get_trigger_status()` - WAIT or TD
+- `set_trigger_level(level)`, `set_trigger_hysteresis(hysteresis)` in V, `set_trigger_delay(samples)`
+  and their `get_` counterparts
+- `get_buffer_filled()` (OS 2.00 and up), `get_trigger_position()`, `get_write_position()`
+- `get_data(channel, samples)` - the oldest samples of the buffer, i.e. the acquired trace;
+  `get_latest_data(channel, samples)`; `get_buffer(channel)` - all 16384 samples
+- `get_settings()` - the acquisition settings as a dictionary
+- `get_identification()`, `get_system_version()`
+
+One acquisition by hand: `start_acquisition()`, `set_trigger_source("NOW")`, poll
+`get_trigger_status()` until `TD`, poll `get_buffer_filled()` until true, `get_data(1, 16384)`,
+`stop_acquisition()`. The trigger sits in the middle of the buffer unless the trigger delay says
+otherwise.
 
 ## Reference
 
