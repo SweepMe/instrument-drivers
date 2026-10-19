@@ -583,14 +583,16 @@ class Device(EmptyDevice):
     def _parse_data(answer: str, channel: int) -> list[float]:
         """Turn the '{v1,v2,...}' answer of a data query into a list of floats.
 
-        If the answer cannot be parsed as numbers, it is parsed again after stripping an 'ERR!'
-        marker, and a message is written to the debug log, so a single faulty readout does not
-        abort a measurement.
+        If the answer cannot be parsed as numbers, it is parsed again after removing every 'ERR!'
+        marker (the server may put it anywhere in the answer, e.g. '{1.0,ERR!,2.0}') and the
+        empty fields it leaves, and a message is written to the debug log, so a single faulty
+        readout does not abort a measurement.
         """
         try:
             return list(map(float, answer.strip("{}\n\r").replace("  ", "").split(",")))
         except ValueError:
-            data = list(map(float, answer.strip("{}ERR!\n\r").replace("  ", "").split(",")))
+            cleaned = answer.strip("{}\n\r").replace("ERR!", "").replace("  ", "")
+            data = [float(value) for value in cleaned.split(",") if value.strip()]
             debug(
                 "Scope-RedPitaya_STEMlab: Error while reading the data of channel "
                 "{0}.".format(channel)
