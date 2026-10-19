@@ -264,12 +264,13 @@ class Device(EmptyDevice):
 
     def deinitialize(self) -> None:
         """Restore the miniSMU to a safe default state."""
-        # Disable 4-wire mode if we enabled it
-        if self.four_wire_was_enabled:
-            self.set_four_wire(False)
-
-        # Re-enable autoranging
-        self.set_current_autorange(self.channel, True)
+        try:
+            # Disable 4-wire mode if we enabled it
+            if self.four_wire_was_enabled:
+                self.set_four_wire(False)
+        finally:
+            # Re-enable autoranging even if leaving 4-wire mode failed; the error still propagates
+            self.set_current_autorange(self.channel, True)
 
     def configure(self) -> None:
         """Apply the measurement settings for the current pass.
