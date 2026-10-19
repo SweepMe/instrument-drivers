@@ -211,220 +211,6 @@ class Device(EmptyDevice):
             self.plottype = [True, True]
             self.savetype = [True, True]
 
-    # --- Communication layer ---------------------------------------------------
-
-    def _send_command(self, command: str) -> str:
-        """Send a command to the device and return the response.
-
-        Uses the SweepMe! port manager for both USB (COM) and WiFi (TCPIP)
-        connections. The port manager handles EOL differences between the two
-        transports via the port_properties configured in __init__.
-
-        The miniSMU may return chunked JSON responses that span multiple reads,
-        so non-trivial responses are accumulated by _read_response.
-
-        Args:
-            command: Command string to send (e.g. "SOUR1:VOLT 3.3" or "MEAS1:VOLT?").
-
-        Returns:
-            Response string from the device.
-        """
-        self.port.write(command)
-        return self._read_response(command)
-
-    def _read_response(self, command: str) -> str:
-        """Read the device response, handling chunked JSON data.
-
-        The miniSMU may split large JSON responses (e.g. sweep data, WiFi status)
-        across multiple packets. This method accumulates chunks until a complete
-        JSON object is received or a timeout is reached.
-
-        Args:
-            command: Original command sent (used to detect expected response type).
-
-        Returns:
-            Complete response string from the device.
-        """
-        initial_response = self.port.read()
-
-        # Simple non-JSON responses can be returned immediately. Account for any
-        # leading whitespace the transport may introduce so JSON is not missed.
-        stripped_initial = initial_response.lstrip()
-        if not stripped_initial.startswith("{") and not stripped_initial.startswith("["):
-            return initial_response
-
-        # JSON response - may need to accumulate chunks
-        response_buffer = [initial_response]
-        current_response = initial_response
-
-        if self._is_likely_complete_json(current_response):
-            try:
-                json.loads(current_response)
-                return current_response
-            except json.JSONDecodeError:
-                pass
-
-        # Read additional chunks until complete or timeout
-        max_timeout_iterations = 10
-        timeout_count = 0
-
-        while timeout_count < max_timeout_iterations:
-            if self.is_run_stopped():
-                return "".join(response_buffer)
-
-            try:
-                chunk = self.port.read()
-                if chunk:
-                    # Append every non-empty chunk. Whitespace (including inter-
-                    # chunk newlines) is part of the payload structure and
-                    # dropping it can silently corrupt the reassembled JSON.
-                    if self._is_valid_chunk(chunk):
-                        response_buffer.append(chunk)
-                    timeout_count = 0
-
-                    current_response = "".join(response_buffer)
-
-                    # Only attempt json.loads when braces/brackets balance,
-                    # avoiding redundant parsing on every chunk.
-                    if not self._is_likely_complete_json(current_response):
-                        continue
-
-                    try:
-                        json.loads(current_response)
-                        return current_response
-                    except json.JSONDecodeError:
-                        # Only run the cleanup pass once structure looks complete
-                        # but parsing still fails - a known-corruption signature.
-                        cleaned = self._clean_json_response(current_response)
-                        if cleaned != current_response:
-                            try:
-                                json.loads(cleaned)
-                                return cleaned
-                            except json.JSONDecodeError:
-                                pass
-                        continue
-                else:
-                    timeout_count += 1
-            except Exception:
-                timeout_count += 1
-
-        # Final attempt
-        final_response = "".join(response_buffer)
-        stripped_final = final_response.lstrip()
-        if stripped_final.startswith("{") or stripped_final.startswith("["):
-            try:
-                json.loads(final_response)
-                return final_response
-            except json.JSONDecodeError:
-                cleaned = self._clean_json_response(final_response)
-                if cleaned != final_response:
-                    try:
-                        json.loads(cleaned)
-                        return cleaned
-                    except json.JSONDecodeError:
-                        pass
-
-        return final_response
-
-    def _is_likely_complete_json(self, text: str) -> bool:
-        """Check if a JSON string appears structurally complete.
-
-        Scans the text character-by-character so braces and brackets that appear
-        inside string literals (including escaped quotes) don't skew the count.
-
-        Args:
-            text: Text to check.
-
-        Returns:
-            True if JSON appears structurally complete.
-        """
-        if not text:
-            return False
-
-        text = text.strip()
-        if not text or text[0] not in "{[":
-            return True
-
-        brace_depth = 0
-        bracket_depth = 0
-        in_string = False
-        escape = False
-
-        for ch in text:
-            if escape:
-                escape = False
-                continue
-            if in_string:
-                if ch == "\\":
-                    escape = True
-                elif ch == '"':
-                    in_string = False
-                continue
-            if ch == '"':
-                in_string = True
-            elif ch == "{":
-                brace_depth += 1
-            elif ch == "}":
-                brace_depth -= 1
-            elif ch == "[":
-                bracket_depth += 1
-            elif ch == "]":
-                bracket_depth -= 1
-
-        return not in_string and brace_depth == 0 and bracket_depth == 0
-
-    def _is_valid_chunk(self, chunk: str) -> bool:
-        """Validate that a data chunk contains reasonable text.
-
-        Rejects chunks with excessive control characters or Unicode replacement
-        characters that indicate corrupted data.
-
-        Args:
-            chunk: Text chunk to validate.
-
-        Returns:
-            True if the chunk appears valid.
-        """
-        if not chunk:
-            return False
-
-        control_count = sum(1 for c in chunk if ord(c) < 32 and c not in "\t\n\r")
-        replacement_count = chunk.count("\ufffd")
-        total = len(chunk)
-
-        if total > 0 and (control_count + replacement_count) / total > 0.2:
-            return False
-
-        return True
-
-    def _clean_json_response(self, json_str: str) -> str:
-        """Clean corrupted JSON response fields.
-
-        Handles known corruption patterns in WiFi status responses where IP
-        addresses and other fields may contain invalid characters.
-
-        Args:
-            json_str: Raw JSON string that may contain corrupted data.
-
-        Returns:
-            Cleaned JSON string.
-        """
-        json_str = re.sub(
-            r'"ip":\s*"[^"]*[\u0000-\u001f\u007f-\u009f][^"]*"',
-            '"ip": "0.0.0.0"',
-            json_str,
-        )
-        json_str = re.sub(
-            r'"gateway":\s*"[^"]*[\u0000-\u001f\u007f-\u009f][^"]*"',
-            '"gateway": "0.0.0.0"',
-            json_str,
-        )
-        for field in ["subnet", "ssid"]:
-            pattern = f'"{field}":\\s*"[^"]*[\\u0000-\\u001f\\u007f-\\u009f][^"]*"'
-            json_str = re.sub(pattern, f'"{field}": ""', json_str)
-
-        return json_str
-
     # --- Connection management -------------------------------------------------
 
     def connect(self) -> None:
@@ -473,20 +259,17 @@ class Device(EmptyDevice):
 
         # Enable 4-wire Kelvin mode if requested
         if self.four_wire:
-            response = self._send_command("SYST:4WIR ENA")
-            if isinstance(response, str) and response.startswith("ERROR"):
-                msg = f"Failed to enable 4-wire mode: {response}"
-                raise Exception(msg)
+            self.set_four_wire(True)
             self.four_wire_was_enabled = True
 
     def deinitialize(self) -> None:
         """Restore the miniSMU to a safe default state."""
         # Disable 4-wire mode if we enabled it
         if self.four_wire_was_enabled:
-            self._send_command("SYST:4WIR DIS")
+            self.set_four_wire(False)
 
         # Re-enable autoranging
-        self._send_command(f"CH{self.channel}:AUTORANGE:ENA")
+        self.set_current_autorange(self.channel, True)
 
     def configure(self) -> None:
         """Apply the measurement settings for the current pass.
@@ -508,9 +291,9 @@ class Device(EmptyDevice):
         # Configure current range
         range_idx = self.current_ranges[self.current_range]
         if range_idx == -1:
-            self._send_command(f"CH{self.channel}:AUTORANGE:ENA")
+            self.set_current_autorange(self.channel, True)
         else:
-            self._send_command(f"CH{self.channel}:AUTORANGE:DIS")
+            self.set_current_autorange(self.channel, False)
             self.set_current_range_cmd(self.channel, range_idx)
 
         # Set oversampling ratio
@@ -738,7 +521,221 @@ class Device(EmptyDevice):
         else:
             return [self._measured_voltage, self._measured_current]
 
-    # --- Convenience wrapper functions -----------------------------------------
+    # --- Communication layer ---------------------------------------------------
+
+    def _send_command(self, command: str) -> str:
+        """Send a command to the device and return the response.
+
+        Uses the SweepMe! port manager for both USB (COM) and WiFi (TCPIP)
+        connections. The port manager handles EOL differences between the two
+        transports via the port_properties configured in __init__.
+
+        The miniSMU may return chunked JSON responses that span multiple reads,
+        so non-trivial responses are accumulated by _read_response.
+
+        Args:
+            command: Command string to send (e.g. "SOUR1:VOLT 3.3" or "MEAS1:VOLT?").
+
+        Returns:
+            Response string from the device.
+        """
+        self.port.write(command)
+        return self._read_response(command)
+
+    def _read_response(self, command: str) -> str:
+        """Read the device response, handling chunked JSON data.
+
+        The miniSMU may split large JSON responses (e.g. sweep data, WiFi status)
+        across multiple packets. This method accumulates chunks until a complete
+        JSON object is received or a timeout is reached.
+
+        Args:
+            command: Original command sent (used to detect expected response type).
+
+        Returns:
+            Complete response string from the device.
+        """
+        initial_response = self.port.read()
+
+        # Simple non-JSON responses can be returned immediately. Account for any
+        # leading whitespace the transport may introduce so JSON is not missed.
+        stripped_initial = initial_response.lstrip()
+        if not stripped_initial.startswith("{") and not stripped_initial.startswith("["):
+            return initial_response
+
+        # JSON response - may need to accumulate chunks
+        response_buffer = [initial_response]
+        current_response = initial_response
+
+        if self._is_likely_complete_json(current_response):
+            try:
+                json.loads(current_response)
+                return current_response
+            except json.JSONDecodeError:
+                pass
+
+        # Read additional chunks until complete or timeout
+        max_timeout_iterations = 10
+        timeout_count = 0
+
+        while timeout_count < max_timeout_iterations:
+            if self.is_run_stopped():
+                return "".join(response_buffer)
+
+            try:
+                chunk = self.port.read()
+                if chunk:
+                    # Append every non-empty chunk. Whitespace (including inter-
+                    # chunk newlines) is part of the payload structure and
+                    # dropping it can silently corrupt the reassembled JSON.
+                    if self._is_valid_chunk(chunk):
+                        response_buffer.append(chunk)
+                    timeout_count = 0
+
+                    current_response = "".join(response_buffer)
+
+                    # Only attempt json.loads when braces/brackets balance,
+                    # avoiding redundant parsing on every chunk.
+                    if not self._is_likely_complete_json(current_response):
+                        continue
+
+                    try:
+                        json.loads(current_response)
+                        return current_response
+                    except json.JSONDecodeError:
+                        # Only run the cleanup pass once structure looks complete
+                        # but parsing still fails - a known-corruption signature.
+                        cleaned = self._clean_json_response(current_response)
+                        if cleaned != current_response:
+                            try:
+                                json.loads(cleaned)
+                                return cleaned
+                            except json.JSONDecodeError:
+                                pass
+                        continue
+                else:
+                    timeout_count += 1
+            except Exception:
+                timeout_count += 1
+
+        # Final attempt
+        final_response = "".join(response_buffer)
+        stripped_final = final_response.lstrip()
+        if stripped_final.startswith("{") or stripped_final.startswith("["):
+            try:
+                json.loads(final_response)
+                return final_response
+            except json.JSONDecodeError:
+                cleaned = self._clean_json_response(final_response)
+                if cleaned != final_response:
+                    try:
+                        json.loads(cleaned)
+                        return cleaned
+                    except json.JSONDecodeError:
+                        pass
+
+        return final_response
+
+    def _is_likely_complete_json(self, text: str) -> bool:
+        """Check if a JSON string appears structurally complete.
+
+        Scans the text character-by-character so braces and brackets that appear
+        inside string literals (including escaped quotes) don't skew the count.
+
+        Args:
+            text: Text to check.
+
+        Returns:
+            True if JSON appears structurally complete.
+        """
+        if not text:
+            return False
+
+        text = text.strip()
+        if not text or text[0] not in "{[":
+            return True
+
+        brace_depth = 0
+        bracket_depth = 0
+        in_string = False
+        escape = False
+
+        for ch in text:
+            if escape:
+                escape = False
+                continue
+            if in_string:
+                if ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+            elif ch == "{":
+                brace_depth += 1
+            elif ch == "}":
+                brace_depth -= 1
+            elif ch == "[":
+                bracket_depth += 1
+            elif ch == "]":
+                bracket_depth -= 1
+
+        return not in_string and brace_depth == 0 and bracket_depth == 0
+
+    def _is_valid_chunk(self, chunk: str) -> bool:
+        """Validate that a data chunk contains reasonable text.
+
+        Rejects chunks with excessive control characters or Unicode replacement
+        characters that indicate corrupted data.
+
+        Args:
+            chunk: Text chunk to validate.
+
+        Returns:
+            True if the chunk appears valid.
+        """
+        if not chunk:
+            return False
+
+        control_count = sum(1 for c in chunk if ord(c) < 32 and c not in "\t\n\r")
+        replacement_count = chunk.count("\ufffd")
+        total = len(chunk)
+
+        if total > 0 and (control_count + replacement_count) / total > 0.2:
+            return False
+
+        return True
+
+    def _clean_json_response(self, json_str: str) -> str:
+        """Clean corrupted JSON response fields.
+
+        Handles known corruption patterns in WiFi status responses where IP
+        addresses and other fields may contain invalid characters.
+
+        Args:
+            json_str: Raw JSON string that may contain corrupted data.
+
+        Returns:
+            Cleaned JSON string.
+        """
+        json_str = re.sub(
+            r'"ip":\s*"[^"]*[\u0000-\u001f\u007f-\u009f][^"]*"',
+            '"ip": "0.0.0.0"',
+            json_str,
+        )
+        json_str = re.sub(
+            r'"gateway":\s*"[^"]*[\u0000-\u001f\u007f-\u009f][^"]*"',
+            '"gateway": "0.0.0.0"',
+            json_str,
+        )
+        for field in ["subnet", "ssid"]:
+            pattern = f'"{field}":\\s*"[^"]*[\\u0000-\\u001f\\u007f-\\u009f][^"]*"'
+            json_str = re.sub(pattern, f'"{field}": ""', json_str)
+
+        return json_str
+
+    # --- Communication commands ------------------------------------------------
 
     def set_source_mode(self, channel: int, mode: str) -> None:
         """Set the source mode on a channel.
@@ -764,6 +761,10 @@ class Device(EmptyDevice):
         self._send_command(f"SOUR{channel}:SWEEP:VOLT:START {start}")
         self._send_command(f"SOUR{channel}:SWEEP:VOLT:END {end}")
         self._send_command(f"SOUR{channel}:SWEEP:POINTS {points}")
+        # get_sweep_data reads exactly this many lines; without it a sweep configured through
+        # this command only returns listsweep_points lines (100 by default) and the rest stays
+        # in the port buffer, so every later answer is one line behind
+        self.listsweep_points = int(points)
         self._send_command(f"SOUR{channel}:SWEEP:DWELL {dwell_ms}")
         self._send_command(f"SOUR{channel}:SWEEP:AUTO:ENA")
         # CSV (one "timestamp_us,voltage,current" line per point) instead of
@@ -1006,7 +1007,10 @@ class Device(EmptyDevice):
             enabled: True enables 4-wire mode, False returns to 2-wire.
         """
         state = "ENA" if enabled else "DIS"
-        self._send_command(f"SYST:4WIR {state}")
+        response = self._send_command(f"SYST:4WIR {state}")
+        if isinstance(response, str) and response.startswith("ERROR"):
+            msg = f"Failed to set 4-wire mode to {state}: {response}"
+            raise Exception(msg)
 
     def get_four_wire(self) -> bool:
         """Query whether 4-wire (Kelvin) sensing is enabled.
@@ -1035,8 +1039,12 @@ class Device(EmptyDevice):
     def set_sweep_format(self, channel: int, data_format: str) -> None:
         """Set the format in which the device returns hardware sweep data.
 
-        set_sweep_parameters selects JSON, which is what get_sweep_data parses.
-        Only change this when reading the raw sweep response yourself.
+        set_sweep_parameters selects CSV, which is what get_sweep_data reads: one line per
+        point. The JSON answer of the device spans several lines (header, one line per
+        point, closing brackets), so get_sweep_data would stop reading it too early and
+        leave the rest in the port buffer, which puts every later answer out of step. Only
+        select JSON when reading the whole raw response yourself, and switch back to CSV
+        (or call set_sweep_parameters again) before using get_sweep_data.
 
         Args:
             channel: Channel number (1 or 2).
