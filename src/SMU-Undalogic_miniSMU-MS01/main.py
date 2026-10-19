@@ -1009,7 +1009,7 @@ class Device(EmptyDevice):
         """
         state = "ENA" if enabled else "DIS"
         response = self._send_command(f"SYST:4WIR {state}")
-        if isinstance(response, str) and response.startswith("ERROR"):
+        if isinstance(response, str) and response.lstrip().startswith("ERROR"):
             msg = f"Failed to set 4-wire mode to {state}: {response}"
             raise Exception(msg)
 
