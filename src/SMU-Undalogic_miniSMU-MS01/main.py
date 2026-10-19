@@ -123,6 +123,9 @@ class Device(EmptyDevice):
         self.listsweep_end: float = 1.0
         self.listsweep_points: int = 100
         self.listsweep_dwell_ms: int = 50
+        # Sweep points configured per channel by set_sweep_parameters; get_sweep_data reads
+        # that many lines for the channel it is asked about
+        self._sweep_points: dict[int, int] = {}
 
         # Measurement result buffer
         self._measured_voltage: float = 0.0
@@ -762,10 +765,10 @@ class Device(EmptyDevice):
         self._send_command(f"SOUR{channel}:SWEEP:VOLT:START {start}")
         self._send_command(f"SOUR{channel}:SWEEP:VOLT:END {end}")
         self._send_command(f"SOUR{channel}:SWEEP:POINTS {points}")
-        # get_sweep_data reads exactly this many lines; without it a sweep configured through
-        # this command only returns listsweep_points lines (100 by default) and the rest stays
-        # in the port buffer, so every later answer is one line behind
-        self.listsweep_points = int(points)
+        # get_sweep_data reads exactly this many lines for this channel. The device keeps the
+        # sweep configuration per channel, so the count is kept per channel too: reading too
+        # few lines leaves the rest in the port buffer and every later answer one line behind.
+        self._sweep_points[int(channel)] = int(points)
         self._send_command(f"SOUR{channel}:SWEEP:DWELL {dwell_ms}")
         self._send_command(f"SOUR{channel}:SWEEP:AUTO:ENA")
         # CSV (one "timestamp_us,voltage,current" line per point) instead of
@@ -808,8 +811,9 @@ class Device(EmptyDevice):
 
         The response is multi-line CSV with one "timestamp_us,voltage,current"
         line per point. We bypass _send_command (which only returns the first
-        line) and instead read exactly self.listsweep_points lines, then
-        return them joined with newlines.
+        line) and instead read exactly as many lines as set_sweep_parameters
+        configured for this channel (listsweep_points if it has not been called
+        for the channel), then return them joined with newlines.
 
         Args:
             channel: Channel number (1 or 2).
@@ -819,8 +823,9 @@ class Device(EmptyDevice):
         """
         self.port.write(f"SOUR{channel}:SWEEP:DATA?")
 
+        points = self._sweep_points.get(int(channel), self.listsweep_points)
         lines = []
-        for _ in range(self.listsweep_points):
+        for _ in range(points):
             if self.is_run_stopped():
                 break
             try:
