@@ -45,6 +45,7 @@ from FolderManager import addFolderToPATH
 addFolderToPATH()
 
 import mss
+import mss.tools
 
 import sys, os
 
@@ -147,5 +148,73 @@ class Device(EmptyDevice):
         
     def call(self):
         return self.path_to_file
-        
+
+    # --- communication commands ---------------------------------------------
+    # Coordinates are pixels of the chosen monitor with the origin in its upper
+    # left corner. Each command opens its own mss instance, because an mss
+    # instance must not be shared between threads and a command may be called
+    # from another thread than the one that created the driver.
+
+    def get_monitors(self) -> list:
+        """Return the monitors as a list of dicts with left, top, width and height.
+
+        Index 0 is the whole virtual screen, 1 the primary monitor, 2 the next one.
+        """
+        with mss.mss() as sct:
+            return [dict(monitor) for monitor in sct.monitors]
+
+    def get_screen_size(self, monitor: int = 1) -> tuple:
+        """Return the size of a monitor as (width, height) in pixels."""
+        with mss.mss() as sct:
+            screen = self._monitor(sct, monitor)
+        return screen["width"], screen["height"]
+
+    def take_screenshot(self, path: str, monitor: int = 1,
+                        x1: int = 0, y1: int = 0, x2: int = 0, y2: int = 0) -> str:
+        """Save a screenshot as PNG at `path` and return the path of the file.
+
+        `path` is the full path of the file to write, e.g. in the folder of the
+        running session: it must be absolute, end with .png, lie in a folder
+        that exists, and not exist yet - nothing is overwritten. The region is
+        (x1, y1) to (x2, y2) in pixels of the monitor; leave x2 and y2 at 0 for
+        the whole monitor.
+        """
+        target = str(path)
+        if not os.path.isabs(target):
+            msg = f"path must be absolute, e.g. inside the session folder, got '{path}'."
+            raise ValueError(msg)
+        target = os.path.normpath(target)
+        if not target.lower().endswith(".png"):
+            msg = f"path must end with .png, got '{path}'."
+            raise ValueError(msg)
+        if not os.path.isdir(os.path.dirname(target)):
+            msg = f"the folder of '{target}' does not exist."
+            raise FileNotFoundError(msg)
+        if os.path.exists(target):
+            msg = f"'{target}' exists already - a screenshot never overwrites a file."
+            raise FileExistsError(msg)
+
+        with mss.mss() as sct:
+            screen = self._monitor(sct, monitor)
+            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+            if x2 == 0 and y2 == 0:
+                x2, y2 = screen["width"], screen["height"]
+            if not (0 <= x1 < x2 <= screen["width"] and 0 <= y1 < y2 <= screen["height"]):
+                msg = (f"region ({x1}, {y1}) to ({x2}, {y2}) is not inside monitor {monitor} "
+                       f"of {screen['width']} x {screen['height']} pixels.")
+                raise ValueError(msg)
+            region = {"left": screen["left"] + x1, "top": screen["top"] + y1,
+                      "width": x2 - x1, "height": y2 - y1}
+            image = sct.grab(region)
+            mss.tools.to_png(image.rgb, image.size, output=target)
+        return target
+
+    @staticmethod
+    def _monitor(sct, monitor) -> dict:
+        monitor = int(monitor)
+        if not 0 <= monitor < len(sct.monitors):
+            msg = f"monitor must be between 0 and {len(sct.monitors) - 1}, got {monitor}."
+            raise ValueError(msg)
+        return sct.monitors[monitor]
+
 

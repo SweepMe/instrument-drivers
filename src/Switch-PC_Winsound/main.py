@@ -91,6 +91,38 @@ class Device(EmptyDevice):
     def call(self):
         return self.note
         
-    def play_note(self, note, duration):
+    # --- communication commands ---------------------------------------------
+
+    def play_note(self, note: int, duration: int) -> None:
+        """Play a tone of `note` Hz (37 to 32767) for `duration` milliseconds.
+
+        Blocks until the tone has ended.
+        """
+        note = int(float(note))
+        duration = int(float(duration))
+        if not 37 <= note <= 32767:
+            msg = f"note must be between 37 and 32767 Hz, got {note}."
+            raise ValueError(msg)
+        if duration < 0:
+            msg = f"duration must not be negative, got {duration} ms."
+            raise ValueError(msg)
         winsound.Beep(note, duration)
+
+    def message_beep(self, sound: str = "OK") -> None:
+        """Play a Windows system sound: OK, Asterisk, Exclamation, Hand or Question.
+
+        Returns at once; the sound plays in the background.
+        """
+        kinds = {
+            "ok": winsound.MB_OK,
+            "asterisk": winsound.MB_ICONASTERISK,
+            "exclamation": winsound.MB_ICONEXCLAMATION,
+            "hand": winsound.MB_ICONHAND,
+            "question": winsound.MB_ICONQUESTION,
+        }
+        key = str(sound).strip().lower()
+        if key not in kinds:
+            msg = f"sound must be one of OK, Asterisk, Exclamation, Hand, Question, got '{sound}'."
+            raise ValueError(msg)
+        winsound.MessageBeep(kinds[key])
 

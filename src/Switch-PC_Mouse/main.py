@@ -69,24 +69,62 @@ class Device(EmptyDevice):
         self.Leftclick = parameter["Leftclick"]
         
     def apply(self):
-    
-        x_pos,y_pos = win32api.GetCursorPos()
+
+        x_pos, y_pos = self.get_position()
 
         if self.function == "Position x [pix]":
-            x_pos = int(self.value)
-            
+            x_pos = int(float(self.value))
+
         if self.function == "Position y [pix]":
-            y_pos = int(self.value)
-            
+            y_pos = int(float(self.value))
+
         if self.function == "Coordinates [(pix;pix)]":
-            if ";" in self.value:
-                self.value = self.value.replace(";",",")
-            x_pos, y_pos = eval(self.value)
-            
-        y_pos = self.height - 1 - y_pos
-            
-        win32api.SetCursorPos((x_pos, y_pos))
-            
+            x_pos, y_pos = self._parse_coordinates(self.value)
+
+        self.set_position(x_pos, y_pos)
+
         if self.Leftclick:
-            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN,0,0)
-            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP,0,0)
+            self.left_click()
+
+    @staticmethod
+    def _parse_coordinates(value) -> tuple:
+        """'(x;y)', 'x;y' or 'x,y' as two integers."""
+        text = str(value).strip().strip("()[] ").replace(";", ",")
+        parts = [part.strip() for part in text.split(",")]
+        if len(parts) != 2:
+            msg = f"Coordinates must be given as (x;y), got '{value}'."
+            raise ValueError(msg)
+        return int(float(parts[0])), int(float(parts[1]))
+
+    # --- communication commands ---------------------------------------------
+    # Coordinates are pixels of the primary screen with the origin in the
+    # LOWER left corner, x to the right and y upwards - the convention of this
+    # driver's sweep values, so a position read here can be swept as it is.
+
+    def get_screen_size(self) -> tuple:
+        """Return the size of the primary screen as (width, height) in pixels."""
+        return self.width, self.height
+
+    def get_position(self) -> tuple:
+        """Return the cursor position as (x, y) in pixels, origin lower left."""
+        x_pos, y_pos = win32api.GetCursorPos()
+        return x_pos, self.height - 1 - y_pos
+
+    def set_position(self, x: int, y: int) -> None:
+        """Move the cursor to (x, y) in pixels, origin lower left."""
+        win32api.SetCursorPos((int(x), self.height - 1 - int(y)))
+
+    def left_click(self) -> None:
+        """Click the left mouse button at the current cursor position."""
+        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0)
+        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0)
+
+    def double_click(self) -> None:
+        """Double-click the left mouse button at the current cursor position."""
+        self.left_click()
+        self.left_click()
+
+    def right_click(self) -> None:
+        """Click the right mouse button at the current cursor position."""
+        win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTDOWN, 0, 0)
+        win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTUP, 0, 0)
