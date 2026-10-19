@@ -37,12 +37,6 @@ import time
 from typing import Any
 
 import numpy as np
-
-from pysweepme.FolderManager import addFolderToPATH
-
-addFolderToPATH()
-
-import redpitaya_scpi as scpi
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug
 
@@ -78,9 +72,20 @@ class Device(EmptyDevice):
 
         self.max_time = 10.0
 
-        # Connection
-        self.port: Any = None
-        self.ip_address: str = ""
+        # The board is addressed through its SCPI server, a plain TCP socket that terminates
+        # every line with CR LF. The port manager opens it, so the generator driver of the same
+        # board shares the connection. The port is entered as 'ip:5000'.
+        self.port_manager = True
+        self.port_types = ["SOCKET"]
+        self.port_properties = {
+            "SOCKET_EOLwrite": "\r\n",
+            "SOCKET_EOLread": "\r\n",
+            # A timeout is essential: without it a command the instrument does not know is never
+            # answered and the driver would wait forever, with no error and no way to stop the
+            # run. It bounds the whole answer, a full 16384-sample data buffer included.
+            "timeout": 5,
+            "fixed_port": 5000,  # the SCPI server always listens on 5000
+        }
 
         # GUI parameters, exactly as they arrive from the GUI
         self.gui_parameters: dict[str, Any] = {}
@@ -113,9 +118,6 @@ class Device(EmptyDevice):
         self.read_samples: int = 16384
         self.triggersource: str = "NOW"
         self.triggerdelaysamples: int = 0
-
-        # Timeout in s for receiving an answer from the SCPI server
-        self.port_timeout: float = 5.0
 
         # Instrument capabilities, determined during the run
         self.has_fill_query: bool = True
@@ -201,7 +203,6 @@ class Device(EmptyDevice):
         self.gui_parameters = dict(parameters)
 
         self.sweepmode = parameters.get("SweepMode", "None")
-        self.ip_address = parameters.get("Port", "")
 
         # Channels and returned variables. These are needed before 'configure' is called and
         # require no conversion.
@@ -224,39 +225,27 @@ class Device(EmptyDevice):
             self.savetype.append(True)
 
     def connect(self):
-        # port_timeout is used here to avoid that an unanswered query blocks the driver forever,
-        # which can happen if the instrument runs an ecosystem that does not know a command. The timeout
-        # applies to each received chunk, not to the entire answer, so reading a full data buffer
-        # is not affected.
-        self.port = scpi.scpi(self.ip_address, timeout=self.port_timeout)
+        """Check that the SCPI server answers.
 
-        self.port.write = self.port.tx_txt  # wrap write-scpi command
-        self.port.read = self.port.rx_txt  # wrap read-scpi command
-
-        # identification = self.get_identification()
-        # print("Identification", identification)
-
-        # system_version = self.get_system_version()
-        # print("System version:", system_version)
-
-    def disconnect(self):
-        """Close the connection to the SCPI server.
-
-        This driver does not use the port manager, so it has to close its socket itself. Without
-        it, the socket is only closed when the driver instance is garbage collected, which can be
-        much later than the end of the run: after an exception the traceback keeps a reference to
-        the frame and therefore to the driver instance. A new instance is created for every run,
-        so unclosed sockets accumulate for as long as SweepMe! is open.
+        The socket itself is opened by the port manager, which hands over no port at all when the
+        board cannot be reached. Querying '*IDN?' here makes a stopped SCPI server fail at
+        connect, with a message, instead of on the first command of the run.
         """
+        hint = (
+            "Start the SCPI server on the board (web interface -> Development -> SCPI server) "
+            "and enter the port as 'ip:5000'."
+        )
         if self.port is None:
-            return
-
+            msg = f"Scope-RedPitaya_STEMlab: The connection to the board could not be opened. {hint}"
+            raise ConnectionError(msg)
         try:
-            self.port.close()
-        except OSError:
-            debug("Scope-RedPitaya_STEMlab: Could not close the connection to the instrument.")
-        finally:
-            self.port = None
+            self.get_identification()
+        except (OSError, TimeoutError) as e:
+            msg = (
+                f"Scope-RedPitaya_STEMlab: No SCPI server answers at "
+                f"{self.port.port_properties['ID']}. {hint} Error is: {e}."
+            )
+            raise ConnectionError(msg) from e
 
     def configure(self):
         # general settings
@@ -264,27 +253,24 @@ class Device(EmptyDevice):
         self.convert_gui_parameters()
 
         # 'ACQ:TRig:FILL?' is only available since StemLab OS 2.00. Whether the instrument supports it is
-        # found out on the first use in 'wait_for_buffer'.
+        # found out on the first use in '_wait_for_buffer'.
         self.has_fill_query = True
 
         self.reset_acquisition()  # Reset Device
 
-        self.port.write("ACQ:DATA:UNITS VOLTS")  # set Units
+        self.set_data_units("VOLTS")
 
-        self.port.write("ACQ:BUF:SIZE?")  # get buffersize from device
-        self.buffersize = int(self.port.read())
+        self.buffersize = self.get_buffer_size()
         self.samplerate = 125e6  # sampling rate
 
         if self.triggermode == "Software":
             self.averages = 1  # no averages in Software synchronization
 
         for i in self.channels:  # set Gain for channels
-            self.port.write(
-                "ACQ:SOUR{0}:GAIN {1}".format(i, self.commands[self.channel_ranges[i]])
-            )
+            self.set_gain(i, self.commands[self.channel_ranges[i]])
 
         # time settings
-        self.time_settings()
+        self._time_settings()
         if self.triggertimeout < (self.buffersize * self.decimation / self.samplerate):
             debug(
                 "Scope-RedPitaya_STEMlab: The trigger timeout is too short. This can cause trigger "
@@ -292,46 +278,46 @@ class Device(EmptyDevice):
             )
 
         # trigger settings
-        self.trigger_settings()
+        self._trigger_settings()
 
         # send settings to RedPitaya
-        self.send_settings()
+        self._send_settings()
 
     def apply(self):
         value = float(self.value)
 
         if self.sweepmode == "Time range in s":
             self.timerange = value
-            self.time_settings()
-            self.send_settings()
+            self._time_settings()
+            self._send_settings()
 
         elif self.sweepmode == "Trigger delay in s":
             self.triggerdelay = value
-            self.trigger_settings()
-            self.send_settings()
+            self._trigger_settings()
+            self._send_settings()
 
     def measure(self):
         # creating data list
         self.channel_data = [None for i in self.channels]
 
         # trigger settings
-        self.trigger_settings()
+        self._trigger_settings()
 
         # send settings to RedPitaya
-        self.send_settings()
+        self._send_settings()
 
         for avg in range(self.averages):
             self.start_acquisition()
             self.starttime = time.time()  # set starttime, required for filling buffer
 
             try:
-                # Arm the trigger. This must happen after 'ACQ:START', see 'arm_trigger'.
-                self.arm_trigger()
-                self.wait_for_trigger()
-                self.wait_for_buffer()
+                # Arm the trigger. This must happen after 'ACQ:START', see 'set_trigger_source'.
+                self.set_trigger_source(self.triggersource)
+                self._wait_for_trigger()
+                self._wait_for_buffer()
                 if self.is_run_stopped():  # Do not read data if the run stopped.
                     return
-                self.acquire_channel_data()  # reading data
+                self._acquire_channel_data()  # reading data
             finally:  # Stop the acquisition even if an error occured
                 try:
                     self.stop_acquisition()
@@ -426,7 +412,11 @@ class Device(EmptyDevice):
             )
             raise ValueError(msg)
 
-    def wait_for_trigger(self) -> None:
+    # -- GUI-driven helpers -----------------------------------------------------
+    # They derive the instrument values from the GUI selections and send them through the
+    # communication commands below.
+
+    def _wait_for_trigger(self) -> None:
         """Wait until the trigger condition is met."""
         while True:
             if self.get_trigger_status() == "TD":
@@ -446,7 +436,7 @@ class Device(EmptyDevice):
             if self.is_run_stopped():
                 return
 
-    def wait_for_buffer(self) -> None:
+    def _wait_for_buffer(self) -> None:
         """Wait until the data buffer is completely filled after the trigger event.
 
         The trigger is positioned in the middle of the data buffer, so after the trigger event
@@ -467,12 +457,13 @@ class Device(EmptyDevice):
                 return
 
             try:
-                self.port.write("ACQ:TRig:FILL?")
-                answer = self.port.read().strip()
+                answer = self.port.query("ACQ:TRig:FILL?").strip()
             except OSError:
-                # no answer within the port timeout, the command is not supported
+                # no answer within the port timeout (a TimeoutError is an OSError), so the
+                # command is not supported. A late answer must not be read as the answer to the
+                # next command, hence the clear.
                 self.has_fill_query = False
-                self.clear_port()
+                self.port.clear()
                 debug(
                     "Scope-RedPitaya_STEMlab: 'ACQ:TRig:FILL?' is not supported by this "
                     "instrument, waiting for the calculated buffer fill time instead."
@@ -499,63 +490,22 @@ class Device(EmptyDevice):
 
         time.sleep(max(fill_time - (time.time() - self.starttime), 0))
 
-    def clear_port(self) -> None:
-        """Discard data that is still waiting in the receive buffer.
-
-        Needed after a command was not answered in time, so that a late answer is not read as the
-        answer to the next command.
-        """
-        connection = self.port._socket
-        timeout = connection.gettimeout()
-        connection.settimeout(0.1)
-        try:
-            while connection.recv(4096):
-                pass
-        except OSError:
-            pass
-        finally:
-            connection.settimeout(timeout)
-
-    def acquire_channel_data(self):
+    def _acquire_channel_data(self) -> None:
         """Read the acquired data of all enabled channels and add it to the channel data.
 
-        The oldest samples of the data buffer are requested for each enabled channel and parsed
-        from the comma separated answer. The values are accumulated in 'self.channel_data', so
-        that 'measure' can call this function once per average and divide by the number of
-        averages afterwards. On the first call the accumulator is still None and is initialised
-        with the first trace.
+        The oldest samples of the data buffer are requested for each enabled channel. The values
+        are accumulated in 'self.channel_data', so that 'measure' can call this function once per
+        average and divide by the number of averages afterwards. On the first call the
+        accumulator is still None and is initialised with the first trace.
         """
         for i in range(len(self.channels)):
-            self.port.write(
-                "ACQ:SOUR{0}:DATA:OLD:N? {1}".format(
-                    self.channels[i], self.read_samples
-                )
-            )
-            self.buffer = self.port.read()
-            try:
-                self.data = list(
-                    map(float, self.buffer.strip("{}\n\r").replace("  ", "").split(","))
-                )
-            except ValueError:
-                """If the answer cannot be parsed as numbers, it is parsed again after stripping an 'ERR!'
-                marker, and a message is written to the debug log. The data of that average is kept, so
-                a single faulty readout does not abort the measurement."""
-                self.data = list(
-                    map(
-                        float,
-                        self.buffer.strip("{}ERR!\n\r").replace("  ", "").split(","),
-                    )
-                )
-                debug(
-                    "Scope-RedPitaya_STEMlab: Error while reading the data of channel "
-                    "{0}.".format(self.channels[i])
-                )
+            data = np.array(self.get_data(self.channels[i], self.read_samples))
             if self.channel_data[i] is None:
-                self.channel_data[i] = np.array(self.data)
+                self.channel_data[i] = data
             else:
-                self.channel_data[i] += np.array(self.data)
+                self.channel_data[i] += data
 
-    def trigger_settings(self):
+    def _trigger_settings(self) -> None:
         # create trigger command
         self.triggersource = self.commands[self.triggermode]
         if self.triggersource not in self.edgeless_triggers:
@@ -565,7 +515,7 @@ class Device(EmptyDevice):
             self.triggerdelay * self.real_samplerate + self.buffersize * 0.5
         )
 
-    def time_settings(self):
+    def _time_settings(self) -> None:
         # calculates decimation and read samples parameters
         if isinstance(self.timerange, str):
             try:
@@ -609,96 +559,208 @@ class Device(EmptyDevice):
         if self.read_samples > self.buffersize:
             self.read_samples = self.buffersize
 
-    def send_settings(self):
+    def _send_settings(self) -> None:
         """Send the acquisition settings.
 
         The trigger source is deliberately not sent here. It arms the trigger and must be sent
-        after 'ACQ:START', see 'arm_trigger'.
+        after 'ACQ:START', see 'set_trigger_source'.
         """
-        self.port.write("ACQ:DEC {0}".format(self.decimation))  # set decimation
-        self.port.write(
-            "ACQ:AVG {0}".format(self.commands[self.acquisiton])
-        )  # set decimation average
+        self.set_decimation(self.decimation)
+        self.set_averaging(self.commands[self.acquisiton] == "ON")
 
         if self.triggersource not in self.edgeless_triggers:
-            self.port.write(
-                "ACQ:TRIG:LEV {0}".format(self.triggerlevel)
-            )  # set trigger level
-            self.port.write(
-                "ACQ:TRIG:HYST {0}".format(self.triggerhysteresis)
-            )  # set trigger hysteresis
+            self.set_trigger_level(self.triggerlevel)
+            self.set_trigger_hysteresis(self.triggerhysteresis)
 
         # The trigger delay is sent for every trigger source, also for the edgeless ones. It
         # positions the data buffer relative to the trigger event ("pre-trigger vs post-trigger
         # data") and is therefore meaningful for "Now" as well, which has no level or slope.
         # Skipping it here would leave the instrument at its previous delay while the driver still
         # shifts the returned time axis by the configured value.
-        self.port.write(
-            "ACQ:TRIG:DLY {0}".format(self.triggerdelaysamples)
-        )  # set trigger delay
+        self.set_trigger_delay(self.triggerdelaysamples)
 
-    def arm_trigger(self):
-        """Set the trigger source, which arms the trigger.
+    @staticmethod
+    def _parse_data(answer: str, channel: int) -> list[float]:
+        """Turn the '{v1,v2,...}' answer of a data query into a list of floats.
 
-        This must happen after 'ACQ:START'. The manufacturer's acquisition example states
+        If the answer cannot be parsed as numbers, it is parsed again after removing every 'ERR!'
+        marker (the server may put it anywhere in the answer, e.g. '{1.0,ERR!,2.0}') and the
+        empty fields it leaves, and a message is written to the debug log, so a single faulty
+        readout does not abort a measurement.
+        """
+        try:
+            return list(map(float, answer.strip("{}\n\r").replace("  ", "").split(",")))
+        except ValueError:
+            cleaned = answer.strip("{}\n\r").replace("ERR!", "").replace("  ", "")
+            data = [float(value) for value in cleaned.split(",") if value.strip()]
+            debug(
+                "Scope-RedPitaya_STEMlab: Error while reading the data of channel "
+                "{0}.".format(channel)
+            )
+            return data
+
+    # -- Communication commands -------------------------------------------------
+    # One SCPI command each, with explicit arguments, so that a pysweepme script or an agent can
+    # address every property of the acquisition directly. 'channel' is the input, 1 or 2. The
+    # SCPI server does not acknowledge set commands, so a set does not read back.
+    #
+    # One acquisition by hand: start_acquisition(), set_trigger_source("NOW") - the trigger is
+    # armed by that command and only after ACQ:START -, poll get_trigger_status() until "TD",
+    # poll get_buffer_filled() until True (OS 2.x), then get_data(channel, samples) and
+    # stop_acquisition(). The trigger sits in the middle of the buffer.
+    # Reference:
+    # https://redpitaya.readthedocs.io/en/latest/appsFeatures/remoteControl/command_list/commands-acq.html
+
+    def reset_acquisition(self) -> None:
+        """Stop the acquisition and reset all acquisition parameters to their defaults ('ACQ:RST')."""
+        self.port.write("ACQ:RST")
+
+    def start_acquisition(self) -> None:
+        """Start the acquisition ('ACQ:START'); the trigger is armed separately."""
+        self.port.write("ACQ:START")
+
+    def stop_acquisition(self) -> None:
+        """Stop the acquisition ('ACQ:STOP')."""
+        self.port.write("ACQ:STOP")
+
+    def set_decimation(self, decimation: int) -> None:
+        """Set the decimation, a power of two from 1 to 65536 ('ACQ:DEC').
+
+        The sample rate is 125 MHz / decimation; the 16384-sample buffer then spans
+        16384 * decimation / 125 MHz.
+        """
+        self.port.write("ACQ:DEC {0}".format(int(decimation)))
+
+    def get_decimation(self) -> int:
+        """Return the decimation."""
+        return int(self.port.query("ACQ:DEC?"))
+
+    def set_averaging(self, enabled: bool) -> None:
+        """Switch averaging of the decimated samples on or off ('ACQ:AVG')."""
+        self.port.write("ACQ:AVG {0}".format("ON" if enabled else "OFF"))
+
+    def get_averaging(self) -> bool:
+        """Return whether the decimated samples are averaged."""
+        return self.port.query("ACQ:AVG?").strip().upper() in ("ON", "1")
+
+    def set_data_units(self, units: str) -> None:
+        """Set the units of the returned data: VOLTS or RAW (ADC counts) ('ACQ:DATA:UNITS')."""
+        self.port.write("ACQ:DATA:UNITS {0}".format(str(units).upper()))
+
+    def get_data_units(self) -> str:
+        """Return the units of the returned data, 'VOLTS' or 'RAW'."""
+        return self.port.query("ACQ:DATA:UNITS?")
+
+    def get_buffer_size(self) -> int:
+        """Return the size of the data buffer in samples ('ACQ:BUF:SIZE?')."""
+        return int(self.port.query("ACQ:BUF:SIZE?"))
+
+    def set_gain(self, channel: int, gain: str) -> None:
+        """Select the input range an input is calibrated for: LV (+/- 1 V) or HV (+/- 20 V).
+
+        ('ACQ:SOUR<n>:GAIN'.) On a STEMlab this switches nothing in hardware - the range is set
+        by the jumper behind the SMA connector - it only selects the calibration used to convert
+        ADC counts into volts. The GUI names "Low voltage"/"High voltage" are accepted as well.
+        """
+        gain = self.commands.get(gain, str(gain).upper())
+        self.port.write("ACQ:SOUR{0}:GAIN {1}".format(channel, gain))
+
+    def get_gain(self, channel: int) -> str:
+        """Return the input range setting of an input, 'LV' or 'HV'."""
+        return self.port.query("ACQ:SOUR{0}:GAIN?".format(channel))
+
+    def set_trigger_source(self, source: str) -> None:
+        """Set the trigger source, which arms the trigger ('ACQ:TRIG').
+
+        Sources: DISABLED, NOW, CH1_PE, CH1_NE, CH2_PE, CH2_NE, EXT_PE, EXT_NE, AWG_PE, AWG_NE.
+        This must happen after start_acquisition(). The manufacturer's acquisition example states
         "Trigger source command must be set after ACQ:START". Arming while the acquisition is
         stopped is lost, which makes every acquisition after the first one run into the trigger
         timeout.
         """
-        self.port.write("ACQ:TRIG {}".format(self.triggersource))
+        self.port.write("ACQ:TRIG {0}".format(str(source).upper()))
 
-    def settings_status(self):
-        self.port.write("ACQ:DATA:UNITS?")  # Data units
-        print("Data Units:", self.port.read())
-        self.port.write("ACQ:DEC?")  # Decimation
-        print("Decimation:", self.port.read())
-        self.port.write("ACQ:AVG?")  # Decimation averaging
-        print("Averaging:", self.port.read())
-        self.port.write("ACQ:TRIG:LEV?")  # Trigger Level
-        print("Trigger Level:", self.port.read())
-        self.port.write("ACQ:TRIG:HYST?")  # Trigger Hysteresis
-        print("Trigger Hysteresis:", self.port.read())
-        self.port.write("ACQ:TRIG:DLY?")  # Trigger Delay
-        print("Trigger Delay:", self.port.read())
-        self.port.write("ACQ:SOUR1:GAIN?")  # Channel 1 Gain
-        print("Channel 1 Gain:", self.port.read())
-        self.port.write("ACQ:SOUR2:GAIN?")  # Channel 2 Gain
-        print("Channel 2 Gain:", self.port.read())
-        self.port.write("ACQ:TRIG:STAT?")  # Trigger status
-        print("Trigger Status:", self.port.read())
+    def get_trigger_status(self) -> str:
+        """Return the trigger status: 'WAIT' until the trigger fires, 'TD' afterwards."""
+        return self.port.query("ACQ:TRIG:STAT?")
 
-    def get_identification(self):
-        self.port.write("*IDN?")
-        return self.port.read()
+    def set_trigger_level(self, level: float) -> None:
+        """Set the trigger level in V ('ACQ:TRIG:LEV')."""
+        self.port.write("ACQ:TRIG:LEV {0}".format(float(level)))
 
-    def get_system_version(self):
-        self.port.write("SYST:VERS?")
-        return self.port.read()
+    def get_trigger_level(self) -> float:
+        """Return the trigger level in V."""
+        return float(self.port.query("ACQ:TRIG:LEV?"))
 
-    def start_acquisition(self):
-        self.port.write("ACQ:START")
+    def set_trigger_hysteresis(self, hysteresis: float) -> None:
+        """Set the trigger hysteresis in V ('ACQ:TRIG:HYST')."""
+        self.port.write("ACQ:TRIG:HYST {0}".format(float(hysteresis)))
 
-    def stop_acquisition(self):
-        self.port.write("ACQ:STOP")
+    def get_trigger_hysteresis(self) -> float:
+        """Return the trigger hysteresis in V."""
+        return float(self.port.query("ACQ:TRIG:HYST?"))
 
-    def reset_acquisition(self):
-        self.port.write("ACQ:RST")
+    def set_trigger_delay(self, samples: int) -> None:
+        """Set the trigger delay in samples ('ACQ:TRIG:DLY').
 
-    def get_trigger_status(self):
-        """Returns the trigger status.
-
-        Returns:
-            status:
-                -> "WAIT" if not trigger is received yet
-                -> "TD" if the measurement was triggered
+        It positions the buffer relative to the trigger event: 0 puts the trigger in the middle
+        (8192 samples before, 8192 after), half the buffer size puts it at the start.
         """
+        self.port.write("ACQ:TRIG:DLY {0}".format(int(samples)))
 
-        self.port.write("ACQ:TRIG:STAT?")
-        return self.port.read()
+    def get_trigger_delay(self) -> int:
+        """Return the trigger delay in samples."""
+        return int(self.port.query("ACQ:TRIG:DLY?"))
 
-    def set_average(self, state):
-        self.port.write("ACQ:AVG %s" % str(state))
+    def get_buffer_filled(self) -> bool:
+        """Return whether the buffer has been filled after the trigger event ('ACQ:TRig:FILL?', OS 2.00 and up)."""
+        return self.port.query("ACQ:TRig:FILL?").strip() == "1"
 
-    def get_average(self):
-        self.port.write("ACQ:AVG?")
-        return self.port.read()
+    def get_trigger_position(self) -> int:
+        """Return the buffer position of the trigger event ('ACQ:TPOS?')."""
+        return int(self.port.query("ACQ:TPOS?"))
+
+    def get_write_position(self) -> int:
+        """Return the current write position in the buffer ('ACQ:WPOS?')."""
+        return int(self.port.query("ACQ:WPOS?"))
+
+    def get_data(self, channel: int, samples: int) -> list:
+        """Return the oldest 'samples' samples of an input's buffer ('ACQ:SOUR<n>:DATA:OLD:N?').
+
+        This is the trace from the start of the buffer, i.e. what an acquisition recorded; in
+        the units selected with set_data_units.
+        """
+        answer = self.port.query("ACQ:SOUR{0}:DATA:OLD:N? {1}".format(channel, int(samples)))
+        return self._parse_data(answer, channel)
+
+    def get_latest_data(self, channel: int, samples: int) -> list:
+        """Return the newest 'samples' samples of an input's buffer ('ACQ:SOUR<n>:DATA:LAT:N?')."""
+        answer = self.port.query("ACQ:SOUR{0}:DATA:LAT:N? {1}".format(channel, int(samples)))
+        return self._parse_data(answer, channel)
+
+    def get_buffer(self, channel: int) -> list:
+        """Return the whole buffer of an input ('ACQ:SOUR<n>:DATA?'), 16384 samples."""
+        answer = self.port.query("ACQ:SOUR{0}:DATA?".format(channel))
+        return self._parse_data(answer, channel)
+
+    def get_settings(self) -> dict:
+        """Return the current acquisition settings as a dictionary."""
+        return {
+            "data_units": self.get_data_units(),
+            "buffer_size": self.get_buffer_size(),
+            "decimation": self.get_decimation(),
+            "averaging": self.get_averaging(),
+            "trigger_level": self.get_trigger_level(),
+            "trigger_hysteresis": self.get_trigger_hysteresis(),
+            "trigger_delay": self.get_trigger_delay(),
+            "trigger_status": self.get_trigger_status(),
+            "gain_1": self.get_gain(1),
+            "gain_2": self.get_gain(2),
+        }
+
+    def get_identification(self) -> str:
+        """Return the '*IDN?' string of the board."""
+        return self.port.query("*IDN?")
+
+    def get_system_version(self) -> str:
+        return self.port.query("SYST:VERS?")

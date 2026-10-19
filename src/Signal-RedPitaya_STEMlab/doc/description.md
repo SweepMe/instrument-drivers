@@ -7,7 +7,10 @@ SCPI server over Ethernet.
 
 1. Start the SCPI server on the Red Pitaya (web interface -> Development -> SCPI server, or
    `systemctl start redpitaya_scpi` on the board).
-2. Enter the IP address of the board as the port, e.g. `192.168.178.xxx`.
+2. Enter the IP address of the board with the TCP port of the SCPI server (5000) as the port,
+   e.g. `192.168.178.xxx:5000`. The connection goes through the SweepMe! port manager as a
+   socket, so both outputs of one board share one connection. Settings from earlier driver
+   versions that hold the bare IP address have to be changed to `ip:5000`.
 
 ## Known behavior
 
@@ -53,6 +56,33 @@ SCPI server over Ethernet.
 - Settings from older driver versions that use the operation mode "Stream" have to be changed to
   "Continuous" or "Burst". "Stream" was never a valid value of `SOUR<n>:BURS:STAT`.
 
+
+## Communication commands
+
+Besides the sequencer functions, the driver offers one function per SCPI command for use from
+pysweepme scripts (`driver.list_functions()`). The channel is an explicit argument, so both
+outputs can be driven from one instance:
+
+- `set_waveform(channel, waveform)` / `get_waveform(channel)` - SINE, SQUARE, TRIANGLE, SAWU,
+  SAWD, PWM, ARBITRARY, DC (the GUI names are accepted as well)
+- `set_frequency(channel, frequency)` / `get_frequency(channel)` in Hz
+- `set_phase(channel, phase)` / `get_phase(channel)` in degrees
+- `set_amplitude(channel, amplitude)` / `get_amplitude(channel)` in V (one-way amplitude)
+- `set_offset(channel, offset)` / `get_offset(channel)` in V
+- `set_duty_cycle(channel, duty_cycle)` / `get_duty_cycle(channel)` as fraction 0..1
+- `set_arbitrary_waveform(channel, data)` - 16384 samples in -1..1
+- `set_trigger_source(channel, source)` / `get_trigger_source(channel)` - INT, EXT_PE, EXT_NE, GATED
+- `trigger(channel)` - `SOUR<n>:TRIG:INT`, starts the generation; needed after
+  `set_output_state(channel, True)` on OS 2.x and after `set_frequency`/`set_phase`
+- `set_burst_state(channel, state)` (CONTINUOUS/BURST), `set_burst_cycles`, `set_burst_repetitions`,
+  `set_burst_period` (in us) and their `get_` counterparts
+- `set_output_state(channel, enabled)` / `get_output_state(channel)`
+- `get_settings(channel)` - all of the above as a dictionary
+- `reset_generator()`, `get_identification()`, `get_board_name()`, `get_board_id()`,
+  `get_system_version()`, `get_system_help()`
+
+The set commands do not clip: amplitude plus |offset| beyond the output range is passed to the
+instrument as is. Clipping with a message only happens on the sequencer path (`configure`/`apply`).
 
 ## Reference
 
