@@ -309,20 +309,28 @@ class Device(EmptyDevice):
         self.savetype.append(True)
 
     def connect(self) -> None:
-        """Connect to the SMU."""
+        """Connect to the SMU and resolve the board, module and channel of the port.
+
+        Resolving the channel here makes the communication commands, used e.g. by the SweepMe! Instrument Control,
+        work without 'initialize', which that tool never runs.
+        """
         self.srunner = IdSmuServiceRunner()
+        self._resolve_channel()
 
     def disconnect(self) -> None:
         """Terminate the connection to the SMU."""
         self.srunner.shutdown()
         if self.identifier in self.device_communication:
             del self.device_communication[self.identifier]
+        self.channel = None
+        self.smu = None
+        self.board_model = None
 
     def initialize(self) -> None:
         """Initialize the boards or receive initialized boards from other driver.
 
         The device_communication dictionary contains the following elements:
-            - "Board": aspectdeviceengine.enginecore.IdSmuBoardModel, The board object from service.get_first_board().
+            - "Board": aspectdeviceengine.enginecore.IdSmuBoardModel, The board object, resolved in 'connect'.
             - "List master": str, The name of channel that runs the list sweep.
             - "List receivers": list[str], List of names of all other channels should be measured in parallel.
             - "List creators": dict[str, ListSweepChannelConfiguration], Dictionary with channel name as key and
@@ -333,25 +341,12 @@ class Device(EmptyDevice):
         """
         self.source_mode = ("Voltage" if self.source_identifier.startswith("Voltage") else "Current")
 
-        if self.identifier in self.device_communication:
-            self.board_model = self.device_communication[self.identifier]["Board"]
-        else:
-            service = self.srunner.get_idsmu_service()
-            self.board_model = service.get_first_board()
-            self.device_communication[self.identifier] = {}
-            self.device_communication[self.identifier]["Board"] = self.board_model
-
-        self.smu = self.board_model.idSmu2Modules[self.board_id]
+        # Board and channel were resolved in 'connect'. The board is registered here as well, because
+        # 'device_communication' may have been cleared since then, and the other channels of the board read it there.
+        self.device_communication.setdefault(self.identifier, {}).setdefault("Board", self.board_model)
 
         firmware_version = self.smu.get_firmware_version()
         hardware_id = self.smu.get_hardware_id()
-
-        # must be evaluated in 'initialize' as it makes problems in 'get_GUIparameter' if
-        # self.channel_name is not properly defined at the beginning
-        self.channel_number = int(self.channel_name[-1])
-
-        self.channel = self.smu.smu.channels[self.channel_number]
-        self.channel.name = self.channel_name
 
         # The role is derived anew in every run: 'device_communication' is cleared when a run starts, while the
         # driver instance and thus a role from a previous run survive.
@@ -727,7 +722,6 @@ class Device(EmptyDevice):
                 Setting the value of the other mode in advance is needed before 'set_voltage' or 'set_current' can
                 switch the mode.
         """
-        self._ensure_channel()
         mode = self.source_mode if mode is None else str(mode).strip().capitalize()
         if mode not in self._compliance_by_mode:
             msg = f"Unknown source mode '{mode}'. Allowed: {list(self._compliance_by_mode)}"
@@ -745,15 +739,12 @@ class Device(EmptyDevice):
 
     """Communication commands, used e.g. by the SweepMe! Instrument Control.
 
-    The port names the channel (e.g. 'M1.S1.C1'), so the commands take no channel argument. They resolve the board and
-    the channel on demand and also work when only 'connect' was run, without 'initialize'.
+    The port names the channel (e.g. 'M1.S1.C1'), so the commands take no channel argument. The board and the channel
+    are resolved in 'connect', so the commands also work when only 'connect' was run, without 'initialize'.
     """
 
-    def _ensure_channel(self) -> None:
-        """Resolve board, module and channel from the port, if 'initialize' has not done it yet."""
-        if self.channel is not None:
-            return
-
+    def _resolve_channel(self) -> None:
+        """Resolve board, module and channel from the port. Called by 'connect'."""
         if not self.channel_name:
             msg = "idSMUx: No port selected, the channel cannot be resolved."
             raise ValueError(msg)
@@ -809,7 +800,6 @@ class Device(EmptyDevice):
 
     def get_identification(self) -> str:
         """Return hardware id, firmware version and channel name of the module this channel belongs to."""
-        self._ensure_channel()
         return (
             f"aSpectSystems idSMU2, hardware id {self.smu.get_hardware_id()}, "
             f"firmware {self.smu.get_firmware_version()}, channel {self.channel_name}"
@@ -817,7 +807,6 @@ class Device(EmptyDevice):
 
     def get_output_ranges(self) -> tuple[float, float, float, float]:
         """Return the output ranges of the channel as (min voltage in V, max voltage in V, min current in A, max current in A)."""
-        self._ensure_channel()
         v_min, v_max, i_min, i_max = self.channel.output_ranges
         return float(v_min), float(v_max), float(i_min), float(i_max)
 
@@ -834,7 +823,6 @@ class Device(EmptyDevice):
         Args:
             voltage: Voltage in V, within the output range of the channel.
         """
-        self._ensure_channel()
         voltage = float(voltage)
         v_min, v_max, _, _ = self.channel.output_ranges
         if not v_min <= voltage <= v_max:
@@ -871,7 +859,6 @@ class Device(EmptyDevice):
         Args:
             current: Current in A, within the output range of the channel.
         """
-        self._ensure_channel()
         current = float(current)
         _, _, i_min, i_max = self.channel.output_ranges
         if not i_min <= current <= i_max:
@@ -901,7 +888,6 @@ class Device(EmptyDevice):
             range_name: One of '5 µA - idSMU2', '20 µA - idSMU2', '200 µA - idSMU2', '2 mA - id SMU2' and
                 '70 mA - idSMU2'. The ranges of the DPS module are not supported here.
         """
-        self._ensure_channel()
         allowed = [name for name in self.current_ranges if name.endswith("idSMU2") or name.endswith("id SMU2")]
         if range_name not in allowed:
             msg = f"Unknown current range '{range_name}'. Allowed: {allowed}"
@@ -917,7 +903,6 @@ class Device(EmptyDevice):
         Args:
             enabled: True to switch the internal autoranging on.
         """
-        self._ensure_channel()
         self.channel.autorange = bool(enabled)
 
     def set_speed(self, speed: str) -> None:
@@ -926,7 +911,6 @@ class Device(EmptyDevice):
         Args:
             speed: One of 'Very fast', 'Fast', 'Medium', 'Slow', 'Very slow'.
         """
-        self._ensure_channel()
         if speed not in self.speed_options:
             msg = f"Unknown speed '{speed}'. Allowed: {list(self.speed_options)}"
             raise ValueError(msg)
@@ -935,19 +919,16 @@ class Device(EmptyDevice):
 
     def enable_output(self) -> None:
         """Switch the output of the channel on."""
-        self._ensure_channel()
         if not self.channel.enabled:
             self.channel.enabled = True
 
     def disable_output(self) -> None:
         """Switch the output of the channel off."""
-        self._ensure_channel()
         if self.channel.enabled:
             self.channel.enabled = False
 
     def get_output_state(self) -> bool:
         """Return whether the output of the channel is switched on."""
-        self._ensure_channel()
         return bool(self.channel.enabled)
 
     def get_voltage_and_current(self) -> tuple[float, float]:
@@ -956,7 +937,6 @@ class Device(EmptyDevice):
         Returns:
             Tuple of (voltage in V, current in A).
         """
-        self._ensure_channel()
         return float(self.channel.voltage), float(self.channel.current)
 
     def get_compliance(self) -> float:
@@ -965,12 +945,10 @@ class Device(EmptyDevice):
         Returns:
             The upper clamp value of the channel.
         """
-        self._ensure_channel()
         return float(self.channel.clamp_high_value)
 
     def get_current_range(self) -> str:
         """Return the name of the present current range of the channel, e.g. 'Range_2mA'."""
-        self._ensure_channel()
         return str(self.channel.current_range)
 
     def measure_transient(self, points: int, sample_count: int = 1, measure: str = "current") -> dict:
@@ -988,7 +966,6 @@ class Device(EmptyDevice):
         Returns:
             Dictionary with 'time_us' (device time stamps in µs), 'values' (A or V) and 'measure'.
         """
-        self._ensure_channel()
         points = int(points)
         sample_count = int(sample_count)
         if not 1 <= points <= 1000:
@@ -1043,7 +1020,6 @@ class Device(EmptyDevice):
             Dictionary with 'voltage' (forced values), 'current' (this channel, in A), 'time_us' (device time stamps)
             and 'others' (channel name -> list of currents in A of the other enabled channels).
         """
-        self._ensure_channel()
         points = int(points)
         if not 2 <= points <= 52:
             msg = f"points must be between 2 and 52, not {points}"
