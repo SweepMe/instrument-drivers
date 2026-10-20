@@ -13,6 +13,10 @@ from pysweepme.ErrorMessage import debug
 
 DEBUG = False
 
+# LJM fills scans that were lost after a device buffer overflow (stream auto-recovery) with this value.
+# The stream commands replace it by NaN, so that it cannot be mistaken for a measured value.
+LJM_DUMMY_VALUE = -9999.0
+
 
 def gen_bit_mask(masked_channels: list, num_channels: int, invert_mask=False) -> int:
     """ generate a bit mask for a list of channels
@@ -556,14 +560,22 @@ class LabjackBaseClass(EmptyDevice):
         'data' is a list of scans, each scan a list of values in V in the order of the pins given
         to start_stream. 'device_backlog' and 'ljm_backlog' are the scans waiting in the device
         and in LJM; if they keep growing the stream is read too slowly and data will be lost.
+        After a device buffer overflow LJM fills in the lost scans with the dummy value -9999.0
+        (stream auto-recovery). They keep the timing of the stream intact but carry no
+        measurement, so they are returned as NaN, and 'skipped_scans' is the number of such scans
+        in 'data'.
         The call waits until a block of scans_per_read scans is available.
         """
         if not self._stream_running:
             raise RuntimeError("No stream is running, call start_stream first")
         data, device_backlog, ljm_backlog = ljm.eStreamRead(self.handle)
         scans = np.array(data, dtype=float).reshape(-1, len(self._stream_pins))
+        dummy = scans == LJM_DUMMY_VALUE
+        skipped_scans = int(np.any(dummy, axis=1).sum())
+        scans[dummy] = np.nan
         return {"pins": list(self._stream_pins), "data": scans.tolist(),
-                "device_backlog": int(device_backlog), "ljm_backlog": int(ljm_backlog)}
+                "device_backlog": int(device_backlog), "ljm_backlog": int(ljm_backlog),
+                "skipped_scans": skipped_scans}
 
     def stop_stream(self) -> None:
         """Stop a running stream. Nothing happens if no stream is running."""
@@ -579,12 +591,15 @@ class LabjackBaseClass(EmptyDevice):
 
         The call blocks for number_of_scans / scan_rate seconds, which is limited to 60 s. The
         result has the 'pins', the actual 'scan_rate' in Hz, the 'time' of every scan in s and the
-        'data' as a list of scans in V, like read_stream. Use start_stream and read_stream for
-        longer streams.
+        'data' as a list of scans in V, like read_stream, and 'skipped_scans', the number of scans
+        in 'data' that are missing and returned as NaN (see read_stream). Use start_stream and
+        read_stream for longer streams.
         """
         number_of_scans = int(number_of_scans)
         if number_of_scans < 1:
             raise ValueError("number_of_scans must be at least 1")
+        if float(scan_rate) <= 0:
+            raise ValueError("The scan rate must be positive")
         if number_of_scans / float(scan_rate) > 60:
             raise ValueError("The acquisition would take more than 60 s, "
                              "use start_stream and read_stream instead")
@@ -599,8 +614,10 @@ class LabjackBaseClass(EmptyDevice):
         finally:
             self.stop_stream()
         scans = scans[:number_of_scans]
+        skipped_scans = int(np.any(np.isnan(np.asarray(scans, dtype=float)), axis=1).sum())
         return {"pins": [str(pin).upper() for pin in pins], "scan_rate": actual_rate,
-                "time": [i / actual_rate for i in range(len(scans))], "data": scans}
+                "time": [i / actual_rate for i in range(len(scans))], "data": scans,
+                "skipped_scans": skipped_scans}
 
 
 if __name__ == "__main__":
