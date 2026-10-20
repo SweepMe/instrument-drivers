@@ -13,6 +13,10 @@ from pysweepme.ErrorMessage import debug
 
 DEBUG = False
 
+# LJM fills scans that were lost after a device buffer overflow (stream auto-recovery) with this value.
+# The stream commands replace it by NaN, so that it cannot be mistaken for a measured value.
+LJM_DUMMY_VALUE = -9999.0
+
 
 def gen_bit_mask(masked_channels: list, num_channels: int, invert_mask=False) -> int:
     """ generate a bit mask for a list of channels
@@ -39,6 +43,10 @@ def gen_bit_mask(masked_channels: list, num_channels: int, invert_mask=False) ->
 
 class LabjackBaseClass(EmptyDevice):
     """ class to control the labjack T series"""
+
+    # state of the stream commands, set on the instance when a stream is started
+    _stream_running = False
+    _stream_pins = ()
 
     def __init__(self):
         """Open device and get infos"""
@@ -390,6 +398,226 @@ class LabjackBaseClass(EmptyDevice):
         else:
             return (f"Connected Labjack device {self.dev_type} with SN{self.infos['SN']} "
                     f"connected over {self.infos['CNXN']} at {self.infos['address']}")
+
+
+    # -- Communication commands -------------------------------------------------
+    # One LJM call each, with explicit arguments, so that a pysweepme script or an agent can
+    # address the device directly. Pins carry the names printed on the device (AIN0, DAC0, FIO4,
+    # EIO0, CIO1, DIO8). These commands only add to the methods above: the semantic functions of
+    # the drivers (initialize, configure, measure, apply, ...) do not call them and the methods
+    # above are unchanged. Reference: https://support.labjack.com/docs/t-series-datasheet
+
+    def get_identification(self) -> str:
+        """Return device type, serial number, connection type and versions as text."""
+        infos = self.get_infos()
+        return (f"LabJack {infos['dev_type']}, SN{infos['SN']}, {infos['CNXN']}, "
+                f"hardware {infos['HARDWARE_VERSION']:.4f}, "
+                f"firmware {infos['FIRMWARE_VERSION']:.4f}")
+
+    def get_device_temperature(self) -> float:
+        """Return the temperature of the device in degree C ('TEMPERATURE_DEVICE_K')."""
+        return float(ljm.eReadName(self.handle, "TEMPERATURE_DEVICE_K")) - 273.15
+
+    def get_voltage(self, pin: str) -> float:
+        """Return the voltage of an analog input in V, e.g. pin 'AIN0'.
+
+        On the T4, AIN4 to AIN11 are the flexible pins FIO4-FIO7 and EIO0-EIO3: they have to be
+        switched to analog with set_flex_pins_to_analog first.
+        """
+        if not str(pin).upper().startswith("AIN"):
+            raise ValueError(f"{pin} is not an analog input, use a name like 'AIN0'")
+        return float(ljm.eReadName(self.handle, str(pin).upper()))
+
+    def get_voltages(self, pins: list) -> list:
+        """Return the voltages in V of several analog inputs, e.g. ['AIN0', 'AIN1']."""
+        names = [str(pin).upper() for pin in pins]
+        if not names:
+            return []
+        if not all(name.startswith("AIN") for name in names):
+            raise ValueError(f"Not all pins in {pins} are analog inputs")
+        return [float(value) for value in ljm.eReadNames(self.handle, len(names), names)]
+
+    def set_resolution_index(self, index: int) -> None:
+        """Set the resolution index of all analog inputs ('AIN_ALL_RESOLUTION_INDEX').
+
+        0 is the default. Higher indices give a lower noise at a lower speed, the maximum depends
+        on the model (T4: 5).
+        """
+        ljm.eWriteName(self.handle, "AIN_ALL_RESOLUTION_INDEX", int(index))
+
+    def get_resolution_index(self) -> int:
+        """Return the resolution index of all analog inputs."""
+        return int(ljm.eReadName(self.handle, "AIN_ALL_RESOLUTION_INDEX"))
+
+    def set_dac_voltage(self, channel: int, voltage: float) -> None:
+        """Set the voltage of an analog output in V (channel 0 or 1 for 'DAC0' or 'DAC1', 0 to 5 V)."""
+        if int(channel) not in (0, 1):
+            raise ValueError(f"DAC channel must be 0 or 1, not {channel}")
+        if not 0.0 <= float(voltage) <= 5.0:
+            raise ValueError(f"DAC voltage must be within 0 to 5 V, not {voltage}")
+        ljm.eWriteName(self.handle, f"DAC{int(channel)}", float(voltage))
+
+    def get_dac_voltage(self, channel: int) -> float:
+        """Return the voltage in V that an analog output is set to (channel 0 or 1)."""
+        if int(channel) not in (0, 1):
+            raise ValueError(f"DAC channel must be 0 or 1, not {channel}")
+        return float(ljm.eReadName(self.handle, f"DAC{int(channel)}"))
+
+    def set_digital_output(self, pin: str, state: bool) -> None:
+        """Set a digital pin to an output with the given state (True is high, False is low).
+
+        Other pins are not changed. Flexible pins of the T4 are switched to digital.
+        """
+        pins = [str(pin)]
+        self.set_digital_IO(pins_names_inputs=[],
+                            pin_names_high=pins if state else [],
+                            pin_names_low=[] if state else pins)
+
+    def set_digital_input(self, pin: str) -> None:
+        """Set a digital pin to an input. Other pins are not changed."""
+        self.set_digital_IO(pins_names_inputs=[str(pin)], pin_names_high=[], pin_names_low=[])
+
+    def get_digital_state(self, pin: str) -> int:
+        """Return the level of a digital pin, 1 for high and 0 for low ('DIO_STATE').
+
+        Unlike read_pin this does not change the direction of the pin.
+        """
+        pins = ljm_constants.DIO_PINS[self.dev_type]
+        if str(pin) not in pins:
+            raise ValueError(f"{pin} is not a digital pin. Valid: {list(pins.keys())}")
+        return (int(ljm.eReadName(self.handle, "DIO_STATE")) >> pins[str(pin)]) & 1
+
+    def get_digital_direction(self, pin: str) -> str:
+        """Return the direction of a digital pin, 'IN' or 'OUT' ('DIO_DIRECTION')."""
+        pins = ljm_constants.DIO_PINS[self.dev_type]
+        if str(pin) not in pins:
+            raise ValueError(f"{pin} is not a digital pin. Valid: {list(pins.keys())}")
+        return "OUT" if (int(ljm.eReadName(self.handle, "DIO_DIRECTION")) >> pins[str(pin)]) & 1 else "IN"
+
+    def _counter_dio_name(self, pin: str) -> str:
+        """Return the DIO name of a high speed counter pin, CIOx are translated to DIOx."""
+        pin = str(pin)
+        pin = ljm_constants.EF_DIO_NAMES[self.dev_type].get(pin, pin)
+        if pin not in ljm_constants.COUNTER_PINS[self.dev_type]:
+            raise ValueError(f"{pin} is not a counter pin. "
+                             f"Valid: {ljm_constants.COUNTER_PINS[self.dev_type]}")
+        return pin
+
+    def get_counter(self, pin: str) -> int:
+        """Return the count of a high speed counter without resetting it ('DIOx_EF_READ_A').
+
+        The counter has to be enabled with set_pins_to_hs_counter first.
+        """
+        return int(ljm.eReadName(self.handle, f"{self._counter_dio_name(pin)}_EF_READ_A"))
+
+    def reset_counter(self, pin: str) -> int:
+        """Return the count of a high speed counter and reset it to zero ('DIOx_EF_READ_A_AND_RESET')."""
+        return int(ljm.eReadName(self.handle,
+                                 f"{self._counter_dio_name(pin)}_EF_READ_A_AND_RESET"))
+
+    def disable_counter(self, pin: str) -> None:
+        """Disable the high speed counter of a pin ('DIOx_EF_ENABLE')."""
+        ljm.eWriteName(self.handle, f"{self._counter_dio_name(pin)}_EF_ENABLE", 0)
+
+    def start_stream(self, pins: list, scan_rate: float, scans_per_read: int = 0,
+                     resolution_index: int = 0) -> float:
+        """Start streaming analog inputs at a fixed rate and return the actual scan rate in Hz.
+
+        pins: analog inputs to scan in this order, e.g. ['AIN0', 'AIN1'].
+        scan_rate: scans per second. One scan is one value of every pin.
+        scans_per_read: scans that read_stream returns at once, 0 for half a second of data.
+        resolution_index: resolution index of the stream, 0 is the default.
+        The data is collected with read_stream and the stream ended with stop_stream. A stream
+        that is still running is stopped first.
+        """
+        names = [str(pin).upper() for pin in pins]
+        if not names or not all(name.startswith("AIN") for name in names):
+            raise ValueError(f"Streaming needs analog inputs like ['AIN0'], not {pins}")
+        if float(scan_rate) <= 0:
+            raise ValueError("The scan rate must be positive")
+
+        self.stop_stream()
+
+        # settings that must not be left from earlier use: no triggered stream, internal clock
+        for name, value in (("STREAM_TRIGGER_INDEX", 0), ("STREAM_CLOCK_SOURCE", 0)):
+            try:
+                ljm.eWriteName(self.handle, name, value)
+            except ljm.ljm.LJMError:
+                debug(f"{name} could not be set, the device may not have it")
+        ljm.eWriteName(self.handle, "STREAM_RESOLUTION_INDEX", int(resolution_index))
+
+        scans_per_read = int(scans_per_read) or max(1, int(float(scan_rate) / 2))
+        addresses = ljm.namesToAddresses(len(names), names)[0]
+        actual_rate = ljm.eStreamStart(self.handle, scans_per_read, len(names), addresses,
+                                       float(scan_rate))
+        self._stream_pins = tuple(names)
+        self._stream_running = True
+        return float(actual_rate)
+
+    def read_stream(self) -> dict:
+        """Return the next block of a running stream as a dictionary.
+
+        'data' is a list of scans, each scan a list of values in V in the order of the pins given
+        to start_stream. 'device_backlog' and 'ljm_backlog' are the scans waiting in the device
+        and in LJM; if they keep growing the stream is read too slowly and data will be lost.
+        After a device buffer overflow LJM fills in the lost scans with the dummy value -9999.0
+        (stream auto-recovery). They keep the timing of the stream intact but carry no
+        measurement, so they are returned as NaN, and 'skipped_scans' is the number of such scans
+        in 'data'.
+        The call waits until a block of scans_per_read scans is available.
+        """
+        if not self._stream_running:
+            raise RuntimeError("No stream is running, call start_stream first")
+        data, device_backlog, ljm_backlog = ljm.eStreamRead(self.handle)
+        scans = np.array(data, dtype=float).reshape(-1, len(self._stream_pins))
+        dummy = scans == LJM_DUMMY_VALUE
+        skipped_scans = int(np.any(dummy, axis=1).sum())
+        scans[dummy] = np.nan
+        return {"pins": list(self._stream_pins), "data": scans.tolist(),
+                "device_backlog": int(device_backlog), "ljm_backlog": int(ljm_backlog),
+                "skipped_scans": skipped_scans}
+
+    def stop_stream(self) -> None:
+        """Stop a running stream. Nothing happens if no stream is running."""
+        try:
+            ljm.eStreamStop(self.handle)
+        except ljm.ljm.LJMError:
+            pass  # LJME_STREAM_NOT_RUNNING
+        self._stream_running = False
+
+    def acquire_stream(self, pins: list, scan_rate: float, number_of_scans: int,
+                       resolution_index: int = 0) -> dict:
+        """Stream analog inputs, collect a number of scans and stop; return the result.
+
+        The call blocks for number_of_scans / scan_rate seconds, which is limited to 60 s. The
+        result has the 'pins', the actual 'scan_rate' in Hz, the 'time' of every scan in s and the
+        'data' as a list of scans in V, like read_stream, and 'skipped_scans', the number of scans
+        in 'data' that are missing and returned as NaN (see read_stream). Use start_stream and
+        read_stream for longer streams.
+        """
+        number_of_scans = int(number_of_scans)
+        if number_of_scans < 1:
+            raise ValueError("number_of_scans must be at least 1")
+        if float(scan_rate) <= 0:
+            raise ValueError("The scan rate must be positive")
+        if number_of_scans / float(scan_rate) > 60:
+            raise ValueError("The acquisition would take more than 60 s, "
+                             "use start_stream and read_stream instead")
+
+        actual_rate = self.start_stream(pins, scan_rate,
+                                        scans_per_read=min(number_of_scans, max(1, int(scan_rate / 2))),
+                                        resolution_index=resolution_index)
+        scans = []
+        try:
+            while len(scans) < number_of_scans:
+                scans += self.read_stream()["data"]
+        finally:
+            self.stop_stream()
+        scans = scans[:number_of_scans]
+        skipped_scans = int(np.any(np.isnan(np.asarray(scans, dtype=float)), axis=1).sum())
+        return {"pins": [str(pin).upper() for pin in pins], "scan_rate": actual_rate,
+                "time": [i / actual_rate for i in range(len(scans))], "data": scans,
+                "skipped_scans": skipped_scans}
 
 
 if __name__ == "__main__":
