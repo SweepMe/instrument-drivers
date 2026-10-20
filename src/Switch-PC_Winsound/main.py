@@ -36,14 +36,9 @@ highest tone: 32767 Hz<br>
 Adjust length of tone with duration.<br>
 """
 
+import winsound  # part of the Python standard library on Windows
+
 from EmptyDeviceClass import EmptyDevice
-import os
-import sys
-
-import FolderManager
-FolderManager.addFolderToPATH()
-
-import winsound
 
 
 class Device(EmptyDevice):
