@@ -31,8 +31,9 @@
 # Device: Winsound
 
 """
-smallest tone: 37 Hz<br>
-highest tone: 32767 Hz<br>
+Plays each sweep value as a sine tone with soft edges.<br>
+smallest tone: 20 Hz<br>
+highest tone: 20000 Hz<br>
 Adjust length of tone with duration.<br>
 """
 
@@ -82,14 +83,16 @@ class Device(EmptyDevice):
     
         self.note = int(self.value)
 
-        if self.note < 37:
-            self.note = 37
-         
-        if self.note > 32767:
-            self.note = 32767
+        # the range play_melody accepts
+        if self.note < 20:
+            self.note = 20
+
+        if self.note > 20000:
+            self.note = 20000
 
         # self.c_note = min(self.c_scale, key=lambda x:abs(x-self.note))
-        self.play_note(self.note, self.duration)
+        if self.duration > 0:
+            self.play_melody([self.note], [self.duration])
         
     def call(self):
         return self.note
