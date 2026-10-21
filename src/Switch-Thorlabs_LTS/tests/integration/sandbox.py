@@ -1,66 +1,70 @@
+"""Move a Thorlabs LTS stage with the SweepMe! driver outside of SweepMe! to check the driver with the hardware.
+
+Close Kinesis before running this script. Run it with a Python environment that contains pysweepme and pythonnet and
+has the same bitness as the installed Kinesis.
+"""
+
+# ruff: noqa: T201
+
 from __future__ import annotations
 
-import time
-import sys
-import clr
+from pathlib import Path
+from typing import Any
 
-from System import Decimal
+import pysweepme
+
+SERIAL_NUMBER = ""  # serial number of the stage as listed by Kinesis, empty to use the first listed device
+PARAMETERS = {
+    "SweepMode": "Absolute position in mm",
+    "Velocity in mm/s": 10.0,
+    "Home at start": True,
+    "Home velocity in mm/s": 5.0,
+}  # for a simulated stage of the Kinesis Simulator, set SIMULATION_MODE = True in main.py
+POSITIONS = [10.0, 20.0, 10.0]  # in mm, absolute or relative positions depending on the SweepMode
+
+DRIVERS_FOLDER = Path(__file__).resolve().parents[3]  # folder that contains the driver folder Switch-Thorlabs_LTS
 
 
-# Import Kinesis dll
-bitness = 64 if sys.maxsize > 2**32 else 32
-kinesis_path = "C:\\Program Files\\Thorlabs\\Kinesis" # if bitness == 64 else "C:\\Program Files (x86)\\Thorlabs\\Kinesis"
+def run_check(serial_number: str, parameters: dict[str, Any], positions: list[float]) -> None:
+    """Configure the stage like in a SweepMe! run, move it to each position and print the position read back."""
+    driver = pysweepme.get_driver("Switch-Thorlabs_LTS", folder=str(DRIVERS_FOLDER))
+    driver.set_parameters(parameters)
 
-if kinesis_path not in sys.path:
-    sys.path.insert(0, kinesis_path)
+    # find_ports() lists the simulated stages if SIMULATION_MODE is set, like the Find Ports button in SweepMe!
+    devices = driver.find_ports()
+    print(f"Devices found by Kinesis: {devices}")
+    if not serial_number:
+        serial_number = devices[0]
+    driver.set_parameters({"Port": serial_number})
 
-clr.AddReference("Thorlabs.MotionControl.DeviceManagerCLI")
-clr.AddReference("Thorlabs.MotionControl.GenericMotorCLI")
-clr.AddReference("Thorlabs.MotionControl.IntegratedStepperMotorsCLI")
-
-import Thorlabs.MotionControl.DeviceManagerCLI as DeviceManagerCLI
-# from Thorlabs.MotionControl.GenericMotorCLI import IGenericAdvancedMotor
-# from Thorlabs.MotionControl.GenericMotorCLI.ControlParameters import VelocityParameters
-from Thorlabs.MotionControl.IntegratedStepperMotorsCLI import LongTravelStage#, ThorlabsIntegratedStepperMotorSettings
-
-# DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
-DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
-
-device_list = DeviceManagerCLI.DeviceManagerCLI.GetDeviceList()
-print(f"Found devices: {[str(serial_num) for serial_num in device_list]}")
-port_string = device_list[0]
-print(f"Found device: {port_string}")
-
-device = LongTravelStage.CreateLongTravelStage(port_string)
-time.sleep(1)
-device.Connect(port_string)
-
-time.sleep(2)
-
-# Initialize settings
-if not device.IsSettingsInitialized():
+    driver.connect()
     try:
-        device.WaitForSettingsInitialized(5000)
-    except Exception as e:
-        print(f"Settings failed to initialize: {e}")
+        driver.initialize()
+        print(f"Travel range: {driver.position_min} mm to {driver.position_max} mm")
+
+        driver.configure()
+        print(f"Position after configure: {driver.get_position_mm()} mm")
+
+        # Same order as the SweepMe! sequencer, which calls apply() and reach() only if the sweep value changed
+        previous_position = None
+        for position in positions:
+            driver.value = position
+            driver.start()
+            if position != previous_position:
+                driver.apply()
+                driver.reach()
+            driver.adapt()
+            print(f"Sweep value {position} mm -> position {driver.call()[0]} mm")
+            previous_position = position
+
+    finally:
+        driver.poweroff()
+        driver.disconnect()
 
 
-device.StartPolling(250)
-time.sleep(0.5)
-device.EnableDevice()
-time.sleep(0.5)
-
-# Load motor configuration
-motor_config = device.LoadMotorConfiguration(port_string)
-current_settings = device.MotorDeviceSettings
-
-position = Decimal(60)
-device.MoveTo(position, 60000)
-
-status = device.Status
-# print(status.Position, type(status.Position))
-
-conv = device.AdvancedMotorLimits.UnitConverter
-pos = float(str(conv.DeviceUnitToReal(Decimal(status.Position), conv.UnitType.Length)))
-print(f"Position: {pos} mm")
-
+if __name__ == "__main__":
+    run_check(
+        serial_number=SERIAL_NUMBER,
+        parameters=PARAMETERS,
+        positions=POSITIONS,
+    )
