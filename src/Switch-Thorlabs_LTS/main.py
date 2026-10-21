@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+import math
 import sys
 import threading
 import time
@@ -62,7 +63,7 @@ try:
 except Exception as e:
     kinesis_import_error = e
 
-MAX_HOME_VELOCITY = 20.0  # in mm/s
+MAX_VELOCITY = 20.0  # in mm/s
 MAX_TRAVEL_RANGE = 300.0  # in mm, longest LTS stage, used for the homing timeout if Kinesis reports no travel range
 POSITION_TOLERANCE = 1e-4  # in mm, targets this close outside the travel range are clipped to the travel range
 SIMULATION_MODE = False  # if True, the driver will list simulated devices from Kinesis Simulator
@@ -242,11 +243,11 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called when the device is first activated in a branch."""
-        self.move_velocity = self.check_velocity(self.velocity, "Velocity")
+        self.move_velocity = self.check_velocity(self.velocity, "Velocity", MAX_VELOCITY)
         self.set_velocity(self.move_velocity)
 
         if self.home_at_start:
-            home_velocity = self.check_velocity(self.home_velocity, "Home velocity", MAX_HOME_VELOCITY)
+            home_velocity = self.check_velocity(self.home_velocity, "Home velocity", MAX_VELOCITY)
             self.set_home_velocity(home_velocity)
 
             # Homing can start from any position within the travel range
@@ -315,7 +316,7 @@ class Device(EmptyDevice):
             msg = f"Invalid {name.lower()}: {velocity}. Must be a number."
             raise ValueError(msg) from None
 
-        if velocity_float <= 0:
+        if velocity_float <= 0 or not math.isfinite(velocity_float):
             msg = f"Invalid {name.lower()}: {velocity_float} mm/s. Must be larger than 0 mm/s."
             raise ValueError(msg)
 
