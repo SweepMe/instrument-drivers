@@ -63,7 +63,9 @@ except Exception as e:
     kinesis_import_error = e
 
 MAX_HOME_VELOCITY = 20.0  # in mm/s
+MAX_TRAVEL_RANGE = 300.0  # in mm, longest LTS stage, used for the homing timeout if Kinesis reports no travel range
 POSITION_TOLERANCE = 1e-4  # in mm, targets this close outside the travel range are clipped to the travel range
+SIMULATION_MODE = False  # if True, the driver will list simulated devices from Kinesis Simulator
 
 
 class Device(EmptyDevice):
@@ -83,6 +85,7 @@ class Device(EmptyDevice):
 
         # Communication Parameters
         self.serial_number: str = ""
+        self.simulations_initialized: bool = False  # whether this driver initialized the Kinesis simulations
 
         # Device Parameters
         self.stage: LongTravelStage = None
@@ -91,10 +94,9 @@ class Device(EmptyDevice):
         self.home_at_start: bool = True
         self.home_velocity: float | str = 10.0  # in mm/s, as set in the GUI
 
-        # Travel range and maximum velocity of the stage, read from Kinesis in initialize()
+        # Travel range of the stage, read from Kinesis in initialize(). Both are 0 if Kinesis reports no travel range.
         self.position_min: float = 0.0  # in mm
         self.position_max: float = 0.0  # in mm
-        self.velocity_limit: float = 0.0  # in mm/s
 
         self.move_velocity: float = 10.0  # in mm/s, checked velocity, set in configure()
         self.timeout: float = 60  # in s, updated in apply() based on the distance to travel and the velocity
@@ -102,8 +104,16 @@ class Device(EmptyDevice):
         self.relative_movement_done: bool = False  # whether the relative movement was already performed in apply()
 
     def find_ports(self) -> list[str]:
-        """Returns the serial numbers of all devices connected via Kinesis."""
-        device_list = self.list_devices()
+        """Returns the serial numbers of all devices connected via Kinesis, in simulation mode the simulated ones."""
+        if SIMULATION_MODE:
+            # Outside of try, so that a missing Kinesis raises its ImportError instead of failing in the cleanup
+            self.initialize_simulations()
+            try:
+                device_list = self.list_devices()
+            finally:
+                self.uninitialize_simulations()
+        else:
+            device_list = self.list_devices()
 
         if not device_list:
             device_list = ["No devices found!"]
@@ -111,14 +121,23 @@ class Device(EmptyDevice):
         return device_list
 
     @staticmethod
-    def list_devices() -> list[str]:
-        """Lists all connected devices."""
+    def check_kinesis_imported() -> None:
+        """Raise an ImportError with the reason if the Kinesis .NET dlls could not be imported."""
         if kinesis_import_error is not None:
             msg = (
                 f"Kinesis .NET dlls could not be loaded from {kinesis_path}: {kinesis_import_error}. Please install "
                 "Kinesis with the same bitness as SweepMe!, and ensure it is closed when running this driver."
             )
             raise ImportError(msg) from kinesis_import_error
+
+    @staticmethod
+    def list_devices() -> list[str]:
+        """Lists all connected devices.
+
+        Simulated devices are listed while the Kinesis simulations are initialized, and Kinesis keeps listing them
+        after the simulations are uninitialized again.
+        """
+        Device.check_kinesis_imported()
 
         DeviceManagerCLI.DeviceManagerCLI.BuildDeviceList()
 
@@ -149,6 +168,8 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Connect to the device. This function is called only once at the start of the measurement."""
+        if SIMULATION_MODE:
+            self.initialize_simulations()
         available_devices = self.list_devices()
         if self.serial_number in ["No devices found!", ""]:
             msg = "No device connected! Please connect a Thorlabs LTS device."
@@ -181,11 +202,13 @@ class Device(EmptyDevice):
     def disconnect(self) -> None:
         """Disconnect from the device. This function is called only once at the end of the measurement."""
         # The stage does not exist or is not connected if connect() failed
-        if self.stage is None or not self.stage.IsConnected:
-            return
+        if self.stage is not None and self.stage.IsConnected:
+            self.stage.StopPolling()
+            self.stage.Disconnect(True)
 
-        self.stage.StopPolling()
-        self.stage.Disconnect(True)
+        # Only uninitialize the simulations if connect() initialized them, it may have failed before
+        if self.simulations_initialized:
+            self.uninitialize_simulations()
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
@@ -207,7 +230,10 @@ class Device(EmptyDevice):
         limits = self.stage.AdvancedMotorLimits
         self.position_min = Decimal.ToDouble(limits.LengthMinimum)
         self.position_max = Decimal.ToDouble(limits.LengthMaximum)
-        self.velocity_limit = Decimal.ToDouble(limits.VelocityMaximum)
+        if not self.has_travel_range():
+            # e.g. a simulated stage, for which Kinesis loads the motor configuration "Default" with no travel range
+            msg = f"Kinesis reports no travel range for stage {self.serial_number}, target positions are not checked."
+            self.message_log(msg)
 
     def poweroff(self) -> None:
         """Stop stage movement."""
@@ -216,7 +242,7 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called when the device is first activated in a branch."""
-        self.move_velocity = self.check_velocity(self.velocity, "Velocity", self.velocity_limit)
+        self.move_velocity = self.check_velocity(self.velocity, "Velocity")
         self.set_velocity(self.move_velocity)
 
         if self.home_at_start:
@@ -224,7 +250,8 @@ class Device(EmptyDevice):
             self.set_home_velocity(home_velocity)
 
             # Homing can start from any position within the travel range
-            timeout = self.calculate_timeout(self.position_max - self.position_min, home_velocity)
+            travel_range = self.position_max - self.position_min if self.has_travel_range() else MAX_TRAVEL_RANGE
+            timeout = self.calculate_timeout(travel_range, home_velocity)
             self.wait_for_completion(self.start_homing(), timeout, "home the stage")
 
     def start(self) -> None:
@@ -276,16 +303,24 @@ class Device(EmptyDevice):
             raise ValueError(msg) from None
 
     @staticmethod
-    def check_velocity(velocity: float | str, name: str, maximum: float) -> float:
-        """Convert a velocity in mm/s to float and check that it is larger than 0 and at most maximum."""
+    def check_velocity(velocity: float | str, name: str, maximum: float | None = None) -> float:
+        """Convert a velocity in mm/s to float and check that it is larger than 0 and, if given, at most maximum.
+
+        The maximum velocity reported by Kinesis (AdvancedMotorLimits.VelocityMaximum) is not used, because it is
+        lower than velocities that Kinesis accepts and the stage runs at.
+        """
         try:
             velocity_float = float(velocity)
         except ValueError:
             msg = f"Invalid {name.lower()}: {velocity}. Must be a number."
             raise ValueError(msg) from None
 
-        if not 0 < velocity_float <= maximum:
-            msg = f"Invalid {name.lower()}: {velocity_float} mm/s. Must be larger than 0 and at most {maximum} mm/s."
+        if velocity_float <= 0:
+            msg = f"Invalid {name.lower()}: {velocity_float} mm/s. Must be larger than 0 mm/s."
+            raise ValueError(msg)
+
+        if maximum is not None and velocity_float > maximum:
+            msg = f"Invalid {name.lower()}: {velocity_float} mm/s. Must be at most {maximum} mm/s."
             raise ValueError(msg)
 
         return velocity_float
@@ -298,12 +333,19 @@ class Device(EmptyDevice):
         """
         return max(60.0, 2 * distance / velocity)
 
+    def has_travel_range(self) -> bool:
+        """Return whether Kinesis reported a travel range for the stage."""
+        return self.position_max > self.position_min
+
     def limit_to_travel_range(self, position: float) -> float:
-        """Check that the position in mm is within the travel range of the stage.
+        """Check that the position in mm is within the travel range of the stage, if Kinesis reported one.
 
         Positions outside the travel range by less than POSITION_TOLERANCE are clipped to the travel range, as they
         occur when moving relatively to the end of the travel range due to the resolution of the position readback.
         """
+        if not self.has_travel_range():
+            return position
+
         if not self.position_min - POSITION_TOLERANCE <= position <= self.position_max + POSITION_TOLERANCE:
             msg = (
                 f"Invalid target position: {position} mm. Must be within the travel range of the stage from "
@@ -325,6 +367,17 @@ class Device(EmptyDevice):
                 raise TimeoutError(msg)
 
     """ here, convenience functions start """
+
+    def initialize_simulations(self) -> None:
+        """Initialize the Kinesis simulations, so that the simulated devices of the Kinesis Simulator can be used."""
+        self.check_kinesis_imported()
+        DeviceManagerCLI.SimulationManager.Instance.InitializeSimulations()
+        self.simulations_initialized = True
+
+    def uninitialize_simulations(self) -> None:
+        """Uninitialize the Kinesis simulations."""
+        DeviceManagerCLI.SimulationManager.Instance.UninitializeSimulations()
+        self.simulations_initialized = False
 
     def get_position_mm(self) -> float:
         """Get the current position in mm."""

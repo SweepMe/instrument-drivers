@@ -19,7 +19,7 @@ PARAMETERS = {
     "Velocity in mm/s": 10.0,
     "Home at start": True,
     "Home velocity in mm/s": 5.0,
-}
+}  # for a simulated stage of the Kinesis Simulator, set SIMULATION_MODE = True in main.py
 POSITIONS = [10.0, 20.0, 10.0]  # in mm, absolute or relative positions depending on the SweepMode
 
 DRIVERS_FOLDER = Path(__file__).resolve().parents[3]  # folder that contains the driver folder Switch-Thorlabs_LTS
@@ -28,22 +28,19 @@ DRIVERS_FOLDER = Path(__file__).resolve().parents[3]  # folder that contains the
 def run_check(serial_number: str, parameters: dict[str, Any], positions: list[float]) -> None:
     """Configure the stage like in a SweepMe! run, move it to each position and print the position read back."""
     driver = pysweepme.get_driver("Switch-Thorlabs_LTS", folder=str(DRIVERS_FOLDER))
+    driver.set_parameters(parameters)
 
-    devices = driver.list_devices()
+    # find_ports() lists the simulated stages if SIMULATION_MODE is set, like the Find Ports button in SweepMe!
+    devices = driver.find_ports()
     print(f"Devices found by Kinesis: {devices}")
     if not serial_number:
-        if not devices:
-            msg = "Kinesis does not list any device."
-            raise RuntimeError(msg)
         serial_number = devices[0]
-
-    driver.set_parameters({"Port": serial_number, **parameters})
+    driver.set_parameters({"Port": serial_number})
 
     driver.connect()
     try:
         driver.initialize()
         print(f"Travel range: {driver.position_min} mm to {driver.position_max} mm")
-        print(f"Maximum velocity: {driver.velocity_limit} mm/s")
 
         driver.configure()
         print(f"Position after configure: {driver.get_position_mm()} mm")
