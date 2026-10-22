@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2022-2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -795,10 +795,16 @@ class Device(EmptyDevice):
 
                 # The KXCI command to read out measurement values only retrieves a new value if the set voltage or set
                 # current command has been called before. Otherwise, NaN is returned.
+                # Only the first TV/TI after DV/DI returns a fresh value of the measured quantity, later ones return
+                # the 99.09999E+36 sentinel. The sourced quantity reads back in any order, so query the measured first.
                 for _ in range(averages):
                     self.apply()
-                    voltages.append(self.get_voltage(self.card_name[-1]))
-                    currents.append(self.get_current(self.card_name[-1]))
+                    if self.source == "Voltage in V":
+                        currents.append(self.get_current(self.card_name[-1]))
+                        voltages.append(self.get_voltage(self.card_name[-1]))
+                    else:
+                        voltages.append(self.get_voltage(self.card_name[-1]))
+                        currents.append(self.get_current(self.card_name[-1]))
 
                 self.measured_voltage = np.mean(voltages)
                 self.measured_current = np.mean(currents)
