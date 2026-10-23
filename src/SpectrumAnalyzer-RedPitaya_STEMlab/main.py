@@ -42,7 +42,9 @@ from pysweepme.ErrorMessage import debug
 
 # What the communication commands take and answer (checked by @command on every call)
 Channel = Annotated[int, Range(1, 2)]
-Decimation = Annotated[int, Range(1, 65536)]  # a power of two
+# The values ACQ:DEC accepts - another value is ignored without an error. (ACQ:DEC:Factor, from OS 2.00, would also
+# take any whole number from 16 to 65536.)
+Decimation = Literal[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
 AveragingOn = Annotated[bool, Label("Averaging")]
 DataUnits = Annotated[Literal["VOLTS", "RAW"], Label("Data units")]
 Gain = Literal["LV", "HV"]
