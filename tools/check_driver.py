@@ -33,6 +33,11 @@ driver guidelines of the sweepme plugin (sweepme-driver-writing, SKILL.md and re
     DC019  a pair of semantic functions (connect/disconnect, ...) split by another method
 
 Only the .py files directly in a driver folder are read (main.py and the helper modules beside it, not libraries).
+
+A finding that is deliberate is accepted with a comment on the method (on a decorator or the def line, or the line
+above them) or, for a finding about the file, on its line or the line above, saying why:
+
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a command
 """
 
 from __future__ import annotations
@@ -68,6 +73,8 @@ FRAMEWORK = (
 COMMAND_PREFIXES = ("get_", "set_", "read_", "write_", "measure_", "fetch_", "enable_", "disable_", "start_", "stop_",
                     "reset", "trigger", "abort", "clear_", "is_")
 CHANNEL_PARAMETERS = ("channel",)
+#: A comment accepting a finding where it is deliberate: "# check_driver: ignore DC004, DC010 - why".
+IGNORE = re.compile(r"#\s*check_driver:\s*ignore\s+((?:DC\d{3}[,\s]*)+)", re.IGNORECASE)
 PORT_METHODS = ("write", "query", "read", "write_raw", "read_raw")
 #: What is most likely wrong; every other code is a hint.
 WARNINGS = {"DC000", "DC001", "DC002", "DC005", "DC006", "DC007", "DC011"}
@@ -290,7 +297,47 @@ def check_driver(folder: Path) -> list[Finding]:
     for file, line in driver.description_attributes:
         report.add("DC017", None, line,
                    "a `description` class attribute - write the documentation into doc/description.md", file)
-    return sorted(report.findings, key=lambda f: (f.file, f.line, f.code))
+    return sorted((f for f in report.findings if not _ignored(f, driver)), key=lambda f: (f.file, f.line, f.code))
+
+
+def _ignored(finding: Finding, driver: Driver) -> bool:
+    """Whether a comment accepts the finding.
+
+    It stands on the method's decorators or def line or in the comment block right above them, or for a finding about
+    the file on the finding's line or the line above.
+    """
+    method = driver.methods.get(finding.method) if finding.method else None
+    if method is not None and method.file == finding.file:
+        first = method.node.lineno - len(method.node.decorator_list) - 1
+        last = method.node.body[0].lineno - 1 if method.node.body else method.node.lineno
+        path = method.path
+    else:
+        first, last = finding.line - 1, finding.line
+        path = next((m.path for m in driver.methods.values() if m.file == finding.file), None)
+    if path is None:
+        return False
+    lines = _lines(path)
+    if method is not None:
+        while first > 1 and lines[first - 2].strip().startswith("#"):  # a reason may take several lines
+            first -= 1
+    for line in lines[max(first - 1, 0):last]:
+        match = IGNORE.search(line)
+        if match and finding.code in re.findall(r"DC\d{3}", match.group(1).upper()):
+            return True
+    return False
+
+
+_LINES: dict[Path, list[str]] = {}
+
+
+def _lines(path: Path) -> list[str]:
+    """The lines of a file, read once."""
+    if path not in _LINES:
+        try:
+            _LINES[path] = path.read_text(encoding="utf-8-sig").splitlines()
+        except OSError:
+            _LINES[path] = []
+    return _LINES[path]
 
 
 def _check_command(method: Method, driver: Driver, command_names: set[str], report: Report) -> None:
@@ -355,10 +402,7 @@ def _composite(method: Method, driver: Driver, command_names: set[str], report: 
 
 def _commented(method: Method) -> bool:
     """Whether the method, or the lines right above it, carry a comment (a reason for sending commands itself)."""
-    try:
-        lines = method.path.read_text(encoding="utf-8-sig").splitlines()
-    except OSError:
-        return False
+    lines = _lines(method.path)
     start = method.node.lineno - 1 - len(method.node.decorator_list) - 3
     end = method.node.end_lineno or method.node.lineno
     return any("#" in line for line in lines[max(start, 0):end])
