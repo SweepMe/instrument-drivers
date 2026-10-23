@@ -765,7 +765,7 @@ class Device(EmptyDevice):
         answer = self.port.query("OUTPUT{0}:STATE?".format(channel))
         return answer.strip().upper() in ("ON", "1")
 
-    @command(returns=("settings",), reads="state", composite=True)
+    @command(returns=("settings",), reads="setpoint", composite=True)
     def get_settings(self, channel: Channel) -> dict:
         """Return the current generator settings of a channel as a dictionary."""
         return {
