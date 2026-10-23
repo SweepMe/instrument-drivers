@@ -56,6 +56,7 @@ class LabjackBaseClass(EmptyDevice):
     # state of the stream commands, set on the instance when a stream is started
     _stream_running = False
     _stream_pins = ()
+    _scan_rate = None
 
     def __init__(self):
         """Open device and get infos"""
@@ -559,19 +560,18 @@ class LabjackBaseClass(EmptyDevice):
         """Disable the high speed counter of a pin ('DIOx_EF_ENABLE')."""
         ljm.eWriteName(self.handle, f"{self._counter_dio_name(pin)}_EF_ENABLE", 0)
 
-    # Answers the scan rate the device actually runs at, which a caller needs to time the data. It is the one
-    # command that acts and answers, so it is declared as a reader of that rate.
-    @command(returns=("scan_rate",), reads="state")
+    @command
     def start_stream(self, pins: list, scan_rate: Hertz, scans_per_read: int = 0,
-                     resolution_index: int = 0) -> Hertz:
-        """Start streaming analog inputs at a fixed rate and return the actual scan rate in Hz.
+                     resolution_index: int = 0) -> None:
+        """Start streaming analog inputs at a fixed rate.
 
         pins: analog inputs to scan in this order, e.g. ['AIN0', 'AIN1'].
         scan_rate: scans per second. One scan is one value of every pin.
         scans_per_read: scans that read_stream returns at once, 0 for half a second of data.
         resolution_index: resolution index of the stream, 0 is the default.
         The data is collected with read_stream and the stream ended with stop_stream. A stream
-        that is still running is stopped first.
+        that is still running is stopped first. The device may run at a rate close to the one asked
+        for: get_stream_scan_rate answers the rate it actually runs at.
         """
         names = [str(pin).upper() for pin in pins]
         if not names or not all(name.startswith("AIN") for name in names):
@@ -591,18 +591,28 @@ class LabjackBaseClass(EmptyDevice):
 
         scans_per_read = scans_per_read or max(1, int(scan_rate / 2))
         addresses = ljm.namesToAddresses(len(names), names)[0]
+        # LJM answers the scan rate the device actually runs at; the data is timed by it, so it is kept for
+        # get_stream_scan_rate and read_stream.
         actual_rate = ljm.eStreamStart(self.handle, scans_per_read, len(names), addresses, scan_rate)
+        self._scan_rate = float(actual_rate)
         self._stream_pins = tuple(names)
         self._stream_running = True
-        return float(actual_rate)
+
+    @command(returns=("scan_rate",), reads="state")
+    def get_stream_scan_rate(self) -> Hertz:
+        """Return the scan rate in Hz the last stream started with start_stream actually runs (or ran) at."""
+        if self._scan_rate is None:
+            raise RuntimeError("No stream was started, call start_stream first")
+        return self._scan_rate
 
     @command(returns=("stream_block",))
     def read_stream(self) -> dict:
         """Return the next block of a running stream as a dictionary.
 
         'data' is a list of scans, each scan a list of values in V in the order of the pins given
-        to start_stream. 'device_backlog' and 'ljm_backlog' are the scans waiting in the device
-        and in LJM; if they keep growing the stream is read too slowly and data will be lost.
+        to start_stream, taken at 'scan_rate' scans per second. 'device_backlog' and 'ljm_backlog'
+        are the scans waiting in the device and in LJM; if they keep growing the stream is read too
+        slowly and data will be lost.
         After a device buffer overflow LJM fills in the lost scans with the dummy value -9999.0
         (stream auto-recovery). They keep the timing of the stream intact but carry no
         measurement, so they are returned as NaN, and 'skipped_scans' is the number of such scans
@@ -616,7 +626,7 @@ class LabjackBaseClass(EmptyDevice):
         dummy = scans == LJM_DUMMY_VALUE
         skipped_scans = int(np.any(dummy, axis=1).sum())
         scans[dummy] = np.nan
-        return {"pins": list(self._stream_pins), "data": scans.tolist(),
+        return {"pins": list(self._stream_pins), "scan_rate": self._scan_rate, "data": scans.tolist(),
                 "device_backlog": int(device_backlog), "ljm_backlog": int(ljm_backlog),
                 "skipped_scans": skipped_scans}
 
@@ -648,9 +658,9 @@ class LabjackBaseClass(EmptyDevice):
             raise ValueError("The acquisition would take more than 60 s, "
                              "use start_stream and read_stream instead")
 
-        actual_rate = self.start_stream(pins, scan_rate,
-                                        scans_per_read=min(number_of_scans, max(1, int(scan_rate / 2))),
-                                        resolution_index=resolution_index)
+        self.start_stream(pins, scan_rate, scans_per_read=min(number_of_scans, max(1, int(scan_rate / 2))),
+                          resolution_index=resolution_index)
+        actual_rate = self.get_stream_scan_rate()
         scans = []
         try:
             while len(scans) < number_of_scans:
