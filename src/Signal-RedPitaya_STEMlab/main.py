@@ -252,6 +252,10 @@ class Device(EmptyDevice):
             )
             raise ConnectionError(msg) from e
 
+    def deinitialize(self):
+        # print("Disable Frequency Generator Channel {}!".format(self.channel))
+        self.set_output_state(self.channel, False)
+
     def configure(self):
         self.limits = 1.0  # +/- Voltage limit of frequency generator
 
@@ -337,10 +341,6 @@ class Device(EmptyDevice):
             return [self.value]
         else:
             return []
-
-    def deinitialize(self):
-        # print("Disable Frequency Generator Channel {}!".format(self.channel))
-        self.set_output_state(self.channel, False)
 
     # Functions
 
