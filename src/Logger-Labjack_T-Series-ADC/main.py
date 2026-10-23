@@ -43,16 +43,12 @@ driver_name = os.path.basename(main_path)
 Labjack_T_Series_BaseClass = load_source(driver_name + ".BaseClass",
                                          main_path + os.sep + "Labjack_T_Series_BaseClass.py")
 
-html_docu = load_source(driver_name + ".html_docu", main_path + os.sep + "html_docu.py")
-
 import numpy as np
 
 
 class Device(Labjack_T_Series_BaseClass.LabjackBaseClass):
     """The class that will be used by the switch module to control the instrument.
         Only semantic functions are called by SweepMe!"""
-
-    description = html_docu.html_driver_descript
 
     def __init__(self):
         super().__init__()
