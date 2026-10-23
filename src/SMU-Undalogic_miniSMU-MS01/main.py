@@ -1108,7 +1108,7 @@ class Device(EmptyDevice):
             msg = f"Failed to set 4-wire mode to {state}: {response}"
             raise Exception(msg)
 
-    @command(returns=("four_wire",), reads="state")
+    @command(returns=("four_wire",), reads="setpoint")
     def get_four_wire(self) -> bool:
         """Query whether 4-wire (Kelvin) sensing is enabled.
 
