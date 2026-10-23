@@ -21,6 +21,24 @@ The usable range is limited by the input stage. In 4-terminal mode the bias is r
 roughly +/-3 V by the common mode input range of the voltage inputs. In 2-terminal mode the
 voltage inputs are not connected, so a larger bias is possible.
 
+### Output range
+
+The instrument generates the bias of the sources "Internal" and "Aux Output" as an offset on the
+Signal Output. The output range (`/dev.../imps/0/output/range`, 10 mV, 100 mV, 1 V or 10 V) must
+cover the drive amplitude plus the bias, otherwise the instrument clamps the bias without an
+error, e.g. to +/-1 V in the 1 V range.
+
+The driver therefore selects the smallest output range that covers the peak drive amplitude plus
+the bias. During a bias sweep the range is only increased, never decreased, so that the output is
+not switched back and forth. A smaller range gives a cleaner signal, so a sweep that reaches more
+than about 1 V runs in the 10 V range from that point on.
+
+After every bias change, the driver reads the bias back from the instrument and stops the
+measurement if it differs from the requested value, e.g. because of the 4-terminal limit.
+
+The driver also switches off the automatic drive control (`/dev.../imps/0/auto/output`), so that
+the drive amplitude entered in SweepMe! is used.
+
 ### Aux Output (cable to Aux In 1)
 
 A larger bias range is reached by using an Auxiliary Output as a DC source and adding it to the
