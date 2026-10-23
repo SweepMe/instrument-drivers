@@ -531,7 +531,7 @@ class LabjackBaseClass(EmptyDevice):
 
     # One batch of LJM writes rather than one command per register: the counter is disabled, its mode set and
     # enabled again in one call, so it is never left half configured.
-    @command(composite=True,
+    @command(kind="run", composite=True,
              hazards="Clock 0 and the clock sharing the pin are switched off if they run, so a PWM or other "
                      "clocked output that uses them stops.")
     def enable_counter(self, pin: str) -> None:
@@ -555,12 +555,12 @@ class LabjackBaseClass(EmptyDevice):
         return int(ljm.eReadName(self.handle,
                                  f"{self._counter_dio_name(pin)}_EF_READ_A_AND_RESET"))
 
-    @command
+    @command(kind="run")
     def disable_counter(self, pin: str) -> None:
         """Disable the high speed counter of a pin ('DIOx_EF_ENABLE')."""
         ljm.eWriteName(self.handle, f"{self._counter_dio_name(pin)}_EF_ENABLE", 0)
 
-    @command
+    @command(kind="run")
     def start_stream(self, pins: list, scan_rate: Hertz, scans_per_read: int = 0,
                      resolution_index: int = 0) -> None:
         """Start streaming analog inputs at a fixed rate.
