@@ -246,7 +246,7 @@ class LabjackBaseClass(EmptyDevice):
 
         # If there are flex pins need to set them to DIGITAL in case they were analogue
         if self.dev_type == "T4":
-            all_pin_names = pin_names_high + pin_names_low + pin_names_low
+            all_pin_names = pins_names_inputs + pin_names_high + pin_names_low
             flex = [
                 pin_name for pin_name in all_pin_names if pin_name in ljm_constants.FLEX_PINS_T4
             ]
