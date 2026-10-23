@@ -469,7 +469,7 @@ class LabjackBaseClass(EmptyDevice):
         """
         ljm.eWriteName(self.handle, "AIN_ALL_RESOLUTION_INDEX", int(index))
 
-    @command(returns=("resolution_index",), reads="state")
+    @command(returns=("resolution_index",), reads="setpoint")
     def get_resolution_index(self) -> int:
         """Return the resolution index of all analog inputs."""
         return int(ljm.eReadName(self.handle, "AIN_ALL_RESOLUTION_INDEX"))
@@ -512,7 +512,7 @@ class LabjackBaseClass(EmptyDevice):
             raise ValueError(f"{pin} is not a digital pin. Valid: {list(pins.keys())}")
         return (int(ljm.eReadName(self.handle, "DIO_STATE")) >> pins[str(pin)]) & 1
 
-    @command(returns=("digital_direction",), reads="state")
+    @command(returns=("digital_direction",), reads="setpoint")
     def get_digital_direction(self, pin: str) -> str:
         """Return the direction of a digital pin, 'IN' or 'OUT' ('DIO_DIRECTION')."""
         pins = ljm_constants.DIO_PINS[self.dev_type]
@@ -598,7 +598,7 @@ class LabjackBaseClass(EmptyDevice):
         self._stream_pins = tuple(names)
         self._stream_running = True
 
-    @command(returns=("scan_rate",), reads="state")
+    @command(returns=("scan_rate",), reads="setpoint")
     def get_stream_scan_rate(self) -> Hertz:
         """Return the scan rate in Hz the last stream started with start_stream actually runs (or ran) at."""
         if self._scan_rate is None:
