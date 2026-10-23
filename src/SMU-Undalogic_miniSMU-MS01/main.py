@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2026 Undalogic Ltd
+# Copyright (c) 2026 Undalogic Ltd, SweepMe! GmbH
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -774,7 +774,7 @@ class Device(EmptyDevice):
     ) -> None:
         """Configure hardware sweep parameters on a channel.
 
-        Sends start, end, points and dwell time, enables autoranging during the sweep and
+        Sets start, end, points and dwell time, enables autoranging during the sweep and
         selects the CSV format that get_sweep_data reads.
 
         Args:
@@ -784,22 +784,62 @@ class Device(EmptyDevice):
             points: Number of sweep points (1-1000).
             dwell_ms: Dwell time per point in milliseconds (0-10000).
         """
-        self._send_command(f"SOUR{channel}:SWEEP:VOLT:START {start}")
-        self._send_command(f"SOUR{channel}:SWEEP:VOLT:END {end}")
-        self._send_command(f"SOUR{channel}:SWEEP:POINTS {points}")
-        # get_sweep_data reads exactly this many lines for this channel. The device keeps the
-        # sweep configuration per channel, so the count is kept per channel too: reading too
-        # few lines leaves the rest in the port buffer and every later answer one line behind.
-        self._sweep_points[int(channel)] = int(points)
-        self._send_command(f"SOUR{channel}:SWEEP:DWELL {dwell_ms}")
-        self._send_command(f"SOUR{channel}:SWEEP:AUTO:ENA")
+        self.set_sweep_start(channel, start)
+        self.set_sweep_end(channel, end)
+        self.set_sweep_points(channel, points)
+        self.set_sweep_dwell(channel, dwell_ms)
+        self.set_sweep_autorange(channel, True)
         # CSV (one "timestamp_us,voltage,current" line per point) instead of
         # JSON: the firmware's JSON serializer can drop bytes mid-stream on
         # large responses (observed ~23700 chars in), and the single missing
         # byte poisons the whole document. CSV is line-framed, so a damaged
         # row only loses one point. Switch back to JSON once the firmware
         # serializer is fixed.
-        self._send_command(f"SOUR{channel}:SWEEP:FORMAT CSV")
+        self.set_sweep_format(channel, "CSV")
+
+    @command
+    def set_sweep_start(self, channel: Channel, start: Volts) -> None:
+        """Set the start voltage of the hardware sweep on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+            start: Start voltage in volts.
+        """
+        self._send_command(f"SOUR{channel}:SWEEP:VOLT:START {start}")
+
+    @command
+    def set_sweep_end(self, channel: Channel, end: Volts) -> None:
+        """Set the end voltage of the hardware sweep on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+            end: End voltage in volts.
+        """
+        self._send_command(f"SOUR{channel}:SWEEP:VOLT:END {end}")
+
+    @command
+    def set_sweep_points(self, channel: Channel, points: SweepPoints) -> None:
+        """Set the number of points of the hardware sweep on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+            points: Number of sweep points (1-1000).
+        """
+        self._send_command(f"SOUR{channel}:SWEEP:POINTS {points}")
+        # get_sweep_data reads exactly this many lines for this channel. The device keeps the
+        # sweep configuration per channel, so the count is kept per channel too: reading too
+        # few lines leaves the rest in the port buffer and every later answer one line behind.
+        self._sweep_points[int(channel)] = int(points)
+
+    @command
+    def set_sweep_dwell(self, channel: Channel, dwell_ms: DwellTime) -> None:
+        """Set the dwell time per point of the hardware sweep on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+            dwell_ms: Dwell time per point in milliseconds (0-10000).
+        """
+        self._send_command(f"SOUR{channel}:SWEEP:DWELL {dwell_ms}")
 
     @command
     def execute_sweep(self, channel: Channel) -> None:
