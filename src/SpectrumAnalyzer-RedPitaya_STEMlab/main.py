@@ -51,7 +51,7 @@ TriggerSource = Annotated[
     Label("Trigger source"),
 ]
 TriggerLevel = Annotated[float, Unit("V"), Label("Trigger level")]
-TriggerDelay = Annotated[int, Unit("samples"), Label("Trigger delay")]
+TriggerDelay = Annotated[int, Unit("samples")]
 Samples = Annotated[int, Range(1, 16384)]
 Seconds = Annotated[float, Unit("s")]
 Window = Literal["Hann", "Hamming", "Blackman", "Flat top", "Rectangular"]
@@ -550,12 +550,12 @@ class Device(EmptyDevice):
         return float(self.port.query("ACQ:TRIG:LEV?"))
 
     @command
-    def set_trigger_delay(self, samples: TriggerDelay) -> None:
+    def set_trigger_delay(self, trigger_delay: TriggerDelay) -> None:
         """Set the trigger delay in samples ('ACQ:TRIG:DLY'): 0 puts the trigger in the middle of
         the buffer, half the buffer size puts it at the start."""
-        self.port.write("ACQ:TRIG:DLY {0}".format(samples))
+        self.port.write("ACQ:TRIG:DLY {0}".format(trigger_delay))
 
-    @command(returns=("samples",), reads="setpoint")
+    @command(returns=("trigger_delay",), reads="setpoint")
     def get_trigger_delay(self) -> TriggerDelay:
         """Return the trigger delay in samples."""
         return int(self.port.query("ACQ:TRIG:DLY?"))
