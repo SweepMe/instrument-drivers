@@ -127,6 +127,7 @@ class LabjackBaseClass(EmptyDevice):
         self.infos = None
         self.dev_type = None
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def get_infos(self):
         """ get infos"""
 
@@ -147,6 +148,7 @@ class LabjackBaseClass(EmptyDevice):
 
         return infos
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def write_pin(self, pin_name: str, value, debug=DEBUG):
         """ write a modbus register"""
         if pin_name not in ljm_constants.ALL_PIN_NAMES[self.dev_type]:
@@ -158,6 +160,7 @@ class LabjackBaseClass(EmptyDevice):
         if debug:
             print(f"Set pin {pin_name} to {value}")
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def read_pin(self, pin_name: str, auto_switch_to_input=False, debug=DEBUG):
         """ read a modbus register
             WARNING: READING A DIGITAL INPUT WILL SET IT TO INPUT
@@ -178,6 +181,7 @@ class LabjackBaseClass(EmptyDevice):
 
         return float(value)
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def read_pins(self, pin_names: list, auto_switch_to_input=False):
         """ read several modbus registers to get the pin values
             WARNING: READING A DIGITAL INPUT WILL SET IT TO INPUT
@@ -201,6 +205,7 @@ class LabjackBaseClass(EmptyDevice):
         values = ljm.eReadNames(self.handle, len(pin_names), pin_names)
         return np.array([float(val) for val in values])
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def set_digital_IO(self, pins_names_inputs, pin_names_high, pin_names_low):
         """ A method to set the digital pin states to Input, High or Low.
             Input pin names are validated and cannot appear multiple times
@@ -264,6 +269,7 @@ class LabjackBaseClass(EmptyDevice):
 
         self.output_pin_names = outputs
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def read_DIO_states(self):
         """ get all DIO states"""
         DIO_pin_dict = ljm_constants.DIO_PINS[self.dev_type]
@@ -283,6 +289,7 @@ class LabjackBaseClass(EmptyDevice):
 
         return IO_states_dict
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def set_pins_to_hs_counter(self, pin_names: List[str], reset=True, override_clock=True):
         """ method to set the counter pins to counter mode. See
         https://labjack.com/pages/support?doc=/datasheets/t-series-datasheet/132-dio-extended-features-t-series-datasheet/
@@ -334,6 +341,7 @@ class LabjackBaseClass(EmptyDevice):
 
         self.counter_pins = pin_names
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def set_adc_extended_function(self, adc_channel_names, index):
         """ set the ADC analog in extended functions roles"""
         commands = []
@@ -342,6 +350,7 @@ class LabjackBaseClass(EmptyDevice):
         values = [index] * len(commands)
         ljm.eWriteNames(self.handle, len(commands), commands, values)
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def read_counter_pins(self, count_time, bus_correction=0) -> list:
         """ method to get values from the high speed counter pins
         There are two options: read/reset before (can miss 30us) or read before after and
@@ -361,6 +370,7 @@ class LabjackBaseClass(EmptyDevice):
         return np.array(
             [int(end_values[i]) - int(start_value) for i, start_value in enumerate(start_values)])
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def set_flex_pins_to_analog(self, pin_names: List[str], set_digital=False):
         """ A method for the T4 to switch the flexible pins (FIOx and EIO0-4) to ANALOG or DIGITAL
             Inputs:
@@ -391,16 +401,19 @@ class LabjackBaseClass(EmptyDevice):
         ljm.eWriteName(self.handle, "DIO_INHIBIT", ignore_bit_mask)
         ljm.eWriteName(self.handle, "DIO_ANALOG_ENABLE", set_analog_mask)
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def write_names(self, commands: list, values: list):
         """wrap the ljm command for child classes + convenience"""
         assert len(commands) == len(values), "incompatible command and value lengths"
         ljm.eWriteNames(self.handle, len(commands), commands, values)
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def read_names(self, names_list: list):
 
         values = ljm.eReadNames(self.handle, len(names_list), names_list)
         return np.array(values).astype(float)
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def get_device_status(self):
 
         if not self.handle:
@@ -484,6 +497,8 @@ class LabjackBaseClass(EmptyDevice):
         """Return the voltage in V that an analog output is set to (channel 0 or 1)."""
         return float(ljm.eReadName(self.handle, f"DAC{channel}"))
 
+    # check_driver: ignore DC010 - pin addresses the line, it is not a quantity (open point of the driver API:
+    # a setter of several plain values)
     @command(hazards="The pin becomes an output: a signal that drives the same line from outside is shorted "
                      "against it.")
     def set_digital_output(self, pin: str, state: bool) -> None:
@@ -560,7 +575,7 @@ class LabjackBaseClass(EmptyDevice):
         """Disable the high speed counter of a pin ('DIOx_EF_ENABLE')."""
         ljm.eWriteName(self.handle, f"{self._counter_dio_name(pin)}_EF_ENABLE", 0)
 
-    @command(kind="run")
+    @command(kind="run", composite=True)  # stops a running stream first
     def start_stream(self, pins: list, scan_rate: Hertz, scans_per_read: int = 0,
                      resolution_index: int = 0) -> None:
         """Start streaming analog inputs at a fixed rate.

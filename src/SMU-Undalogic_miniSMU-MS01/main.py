@@ -768,6 +768,7 @@ class Device(EmptyDevice):
         """
         self._send_command(f"SOUR{channel}:{mode} ENA")
 
+    # check_driver: ignore DC009 - set_sweep_format's hazard concerns JSON; this always selects CSV
     @command(composite=True)
     def set_sweep_parameters(
         self, channel: Channel, start: Volts, end: Volts, points: SweepPoints, dwell_ms: DwellTime,
@@ -1078,7 +1079,7 @@ class Device(EmptyDevice):
         return float(self._send_command(f"MEAS{channel}:CURR?"))
 
     @command
-    def set_current_autorange(self, channel: Channel, enabled: bool) -> None:
+    def set_current_autorange(self, channel: Channel, current_autorange: bool) -> None:
         """Enable or disable current autoranging on a channel.
 
         Autoranging must be disabled before a range set via set_current_range_cmd
@@ -1086,13 +1087,13 @@ class Device(EmptyDevice):
 
         Args:
             channel: Channel number (1 or 2).
-            enabled: True enables autoranging, False disables it.
+            current_autorange: True enables autoranging, False disables it.
         """
-        state = "ENA" if enabled else "DIS"
+        state = "ENA" if current_autorange else "DIS"
         self._send_command(f"CH{channel}:AUTORANGE:{state}")
 
     @command
-    def set_four_wire(self, enabled: bool) -> None:
+    def set_four_wire(self, four_wire: bool) -> None:
         """Enable or disable 4-wire (Kelvin) sensing.
 
         This is a device-wide setting, not a per-channel one: channel 1 forces and
@@ -1100,9 +1101,9 @@ class Device(EmptyDevice):
         channel 1 and requires the sense leads to be connected.
 
         Args:
-            enabled: True enables 4-wire mode, False returns to 2-wire.
+            four_wire: True enables 4-wire mode, False returns to 2-wire.
         """
-        state = "ENA" if enabled else "DIS"
+        state = "ENA" if four_wire else "DIS"
         response = self._send_command(f"SYST:4WIR {state}")
         if isinstance(response, str) and response.lstrip().startswith("ERROR"):
             msg = f"Failed to set 4-wire mode to {state}: {response}"
@@ -1121,7 +1122,7 @@ class Device(EmptyDevice):
         return response.strip().upper() in ("1", "ENA", "ENABLED", "ON")
 
     @command
-    def set_sweep_autorange(self, channel: Channel, enabled: bool) -> None:
+    def set_sweep_autorange(self, channel: Channel, sweep_autorange: bool) -> None:
         """Enable or disable autoranging during a hardware sweep.
 
         set_sweep_parameters enables it as part of the sweep configuration, so call
@@ -1129,9 +1130,9 @@ class Device(EmptyDevice):
 
         Args:
             channel: Channel number (1 or 2).
-            enabled: True enables autoranging during the sweep, False disables it.
+            sweep_autorange: True enables autoranging during the sweep, False disables it.
         """
-        state = "ENA" if enabled else "DIS"
+        state = "ENA" if sweep_autorange else "DIS"
         self._send_command(f"SOUR{channel}:SWEEP:AUTO:{state}")
 
     @command(

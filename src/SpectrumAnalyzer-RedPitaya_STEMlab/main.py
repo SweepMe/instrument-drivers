@@ -433,6 +433,7 @@ class Device(EmptyDevice):
                                                    window, segments, impedance)
         return np.asarray(frequencies), np.asarray(power)
 
+    # check_driver: ignore DC004 - arithmetic on a spectrum, it talks to no instrument
     def get_peak(self, frequencies: list, powers: list) -> dict:
         """The strongest bin of a spectrum: {'frequency': Hz, 'power': dBm}."""
         index = int(np.argmax(powers))
