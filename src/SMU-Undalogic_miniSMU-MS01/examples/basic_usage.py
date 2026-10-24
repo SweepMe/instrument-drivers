@@ -27,7 +27,7 @@ print(f"Connected to: {identity}")
 smu.set_voltage(1, 0.0)
 
 # Enable output
-smu.enable_output(1)
+smu.set_output(1, True)
 
 # Apply a voltage and measure
 smu.set_voltage(1, 1.0)
@@ -35,4 +35,4 @@ voltage, current = smu.get_voltage_and_current(1)
 print(f"V = {voltage:.6f} V, I = {current:.9f} A")
 
 # Disable output
-smu.disable_output(1)
+smu.set_output(1, False)
