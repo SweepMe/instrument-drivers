@@ -2,16 +2,26 @@
 
 import time
 from collections import Counter
-from typing import List
+from typing import Annotated, List, Literal
 
 import ljm_constants_wrapped as ljm_constants
 from labjack import ljm
 
 import numpy as np
+from pysweepme import Label, Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug
 
 DEBUG = False
+
+# What the communication commands take and answer (checked by @command on every call). Pin names are model dependent
+# (T4, T7, T8), so they stay text and the commands check them against the connected model.
+Volts = Annotated[float, Unit("V")]
+Celsius = Annotated[float, Unit("°C")]
+Hertz = Annotated[float, Unit("Hz")]
+DacChannel = Annotated[int, Range(0, 1)]
+DacVoltage = Annotated[Volts, Range(0.0, 5.0), Label("DAC voltage")]
+DigitalDirection = Literal["IN", "OUT"]
 
 # LJM fills scans that were lost after a device buffer overflow (stream auto-recovery) with this value.
 # The stream commands replace it by NaN, so that it cannot be mistaken for a measured value.
@@ -47,6 +57,7 @@ class LabjackBaseClass(EmptyDevice):
     # state of the stream commands, set on the instance when a stream is started
     _stream_running = False
     _stream_pins = ()
+    _scan_rate = None
 
     def __init__(self):
         """Open device and get infos"""
@@ -117,6 +128,7 @@ class LabjackBaseClass(EmptyDevice):
         self.infos = None
         self.dev_type = None
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def get_infos(self):
         """ get infos"""
 
@@ -137,6 +149,7 @@ class LabjackBaseClass(EmptyDevice):
 
         return infos
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def write_pin(self, pin_name: str, value, debug=DEBUG):
         """ write a modbus register"""
         if pin_name not in ljm_constants.ALL_PIN_NAMES[self.dev_type]:
@@ -148,6 +161,7 @@ class LabjackBaseClass(EmptyDevice):
         if debug:
             print(f"Set pin {pin_name} to {value}")
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def read_pin(self, pin_name: str, auto_switch_to_input=False, debug=DEBUG):
         """ read a modbus register
             WARNING: READING A DIGITAL INPUT WILL SET IT TO INPUT
@@ -168,6 +182,7 @@ class LabjackBaseClass(EmptyDevice):
 
         return float(value)
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def read_pins(self, pin_names: list, auto_switch_to_input=False):
         """ read several modbus registers to get the pin values
             WARNING: READING A DIGITAL INPUT WILL SET IT TO INPUT
@@ -191,6 +206,7 @@ class LabjackBaseClass(EmptyDevice):
         values = ljm.eReadNames(self.handle, len(pin_names), pin_names)
         return np.array([float(val) for val in values])
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def set_digital_IO(self, pins_names_inputs, pin_names_high, pin_names_low):
         """ A method to set the digital pin states to Input, High or Low.
             Input pin names are validated and cannot appear multiple times
@@ -231,7 +247,7 @@ class LabjackBaseClass(EmptyDevice):
 
         # If there are flex pins need to set them to DIGITAL in case they were analogue
         if self.dev_type == "T4":
-            all_pin_names = pin_names_high + pin_names_low + pin_names_low
+            all_pin_names = pins_names_inputs + pin_names_high + pin_names_low
             flex = [
                 pin_name for pin_name in all_pin_names if pin_name in ljm_constants.FLEX_PINS_T4
             ]
@@ -254,6 +270,7 @@ class LabjackBaseClass(EmptyDevice):
 
         self.output_pin_names = outputs
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def read_DIO_states(self):
         """ get all DIO states"""
         DIO_pin_dict = ljm_constants.DIO_PINS[self.dev_type]
@@ -273,6 +290,7 @@ class LabjackBaseClass(EmptyDevice):
 
         return IO_states_dict
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def set_pins_to_hs_counter(self, pin_names: List[str], reset=True, override_clock=True):
         """ method to set the counter pins to counter mode. See
         https://labjack.com/pages/support?doc=/datasheets/t-series-datasheet/132-dio-extended-features-t-series-datasheet/
@@ -324,6 +342,7 @@ class LabjackBaseClass(EmptyDevice):
 
         self.counter_pins = pin_names
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def set_adc_extended_function(self, adc_channel_names, index):
         """ set the ADC analog in extended functions roles"""
         commands = []
@@ -332,6 +351,7 @@ class LabjackBaseClass(EmptyDevice):
         values = [index] * len(commands)
         ljm.eWriteNames(self.handle, len(commands), commands, values)
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def read_counter_pins(self, count_time, bus_correction=0) -> list:
         """ method to get values from the high speed counter pins
         There are two options: read/reset before (can miss 30us) or read before after and
@@ -351,6 +371,7 @@ class LabjackBaseClass(EmptyDevice):
         return np.array(
             [int(end_values[i]) - int(start_value) for i, start_value in enumerate(start_values)])
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def set_flex_pins_to_analog(self, pin_names: List[str], set_digital=False):
         """ A method for the T4 to switch the flexible pins (FIOx and EIO0-4) to ANALOG or DIGITAL
             Inputs:
@@ -381,16 +402,19 @@ class LabjackBaseClass(EmptyDevice):
         ljm.eWriteName(self.handle, "DIO_INHIBIT", ignore_bit_mask)
         ljm.eWriteName(self.handle, "DIO_ANALOG_ENABLE", set_analog_mask)
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def write_names(self, commands: list, values: list):
         """wrap the ljm command for child classes + convenience"""
         assert len(commands) == len(values), "incompatible command and value lengths"
         ljm.eWriteNames(self.handle, len(commands), commands, values)
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def read_names(self, names_list: list):
 
         values = ljm.eReadNames(self.handle, len(names_list), names_list)
         return np.array(values).astype(float)
 
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a communication command
     def get_device_status(self):
 
         if not self.handle:
@@ -401,12 +425,12 @@ class LabjackBaseClass(EmptyDevice):
 
 
     # -- Communication commands -------------------------------------------------
-    # One LJM call each, with explicit arguments, so that a pysweepme script or an agent can
-    # address the device directly. Pins carry the names printed on the device (AIN0, DAC0, FIO4,
-    # EIO0, CIO1, DIO8). These commands only add to the methods above: the semantic functions of
-    # the drivers (initialize, configure, measure, apply, ...) do not call them and the methods
-    # above are unchanged. Reference: https://support.labjack.com/docs/t-series-datasheet
+    # Declared with pysweepme's @command: only these are the driver's commands, and every call is checked against
+    # the annotations. Pins carry the names printed on the device (AIN0, DAC0, FIO4, EIO0, CIO1, DIO8). The semantic
+    # functions of the drivers (initialize, configure, measure, apply, ...) do not call them, and the methods above are
+    # unchanged. Reference: https://support.labjack.com/docs/t-series-datasheet
 
+    @command(returns=("identification",), reads="state")
     def get_identification(self) -> str:
         """Return device type, serial number, connection type and versions as text."""
         infos = self.get_infos()
@@ -414,20 +438,23 @@ class LabjackBaseClass(EmptyDevice):
                 f"hardware {infos['HARDWARE_VERSION']:.4f}, "
                 f"firmware {infos['FIRMWARE_VERSION']:.4f}")
 
-    def get_device_temperature(self) -> float:
+    @command(returns=("device_temperature",))
+    def get_device_temperature(self) -> Celsius:
         """Return the temperature of the device in degree C ('TEMPERATURE_DEVICE_K')."""
         return float(ljm.eReadName(self.handle, "TEMPERATURE_DEVICE_K")) - 273.15
 
-    def get_voltage(self, pin: str) -> float:
+    @command(returns=("voltage",))
+    def get_voltage(self, pin: str) -> Volts:
         """Return the voltage of an analog input in V, e.g. pin 'AIN0'.
 
         On the T4, AIN4 to AIN11 are the flexible pins FIO4-FIO7 and EIO0-EIO3: they have to be
-        switched to analog with set_flex_pins_to_analog first.
+        switched to analog with set_pin_analog first.
         """
         if not str(pin).upper().startswith("AIN"):
             raise ValueError(f"{pin} is not an analog input, use a name like 'AIN0'")
         return float(ljm.eReadName(self.handle, str(pin).upper()))
 
+    @command(returns=("voltages",))
     def get_voltages(self, pins: list) -> list:
         """Return the voltages in V of several analog inputs, e.g. ['AIN0', 'AIN1']."""
         names = [str(pin).upper() for pin in pins]
@@ -437,46 +464,65 @@ class LabjackBaseClass(EmptyDevice):
             raise ValueError(f"Not all pins in {pins} are analog inputs")
         return [float(value) for value in ljm.eReadNames(self.handle, len(names), names)]
 
-    def set_resolution_index(self, index: int) -> None:
+    @command
+    def set_pin_analog(self, pin: str, pin_analog: bool) -> None:
+        """Switch a flexible pin of the T4 (FIO4-FIO7, EIO0-EIO7) to an analog input (True) or a digital pin (False).
+
+        As an analog input, FIO4 is read as AIN4, ..., EIO3 as AIN11. Other models have no flexible pins.
+        """
+        if self.dev_type != "T4":
+            raise ValueError(f"Only the T4 has flexible pins, this is a {self.dev_type}")
+        self.set_flex_pins_to_analog([str(pin)], set_digital=not pin_analog)
+
+    @command
+    def set_resolution_index(self, resolution_index: int) -> None:
         """Set the resolution index of all analog inputs ('AIN_ALL_RESOLUTION_INDEX').
 
         0 is the default. Higher indices give a lower noise at a lower speed, the maximum depends
         on the model (T4: 5).
         """
-        ljm.eWriteName(self.handle, "AIN_ALL_RESOLUTION_INDEX", int(index))
+        ljm.eWriteName(self.handle, "AIN_ALL_RESOLUTION_INDEX", int(resolution_index))
 
+    @command(returns=("resolution_index",), reads="setpoint")
     def get_resolution_index(self) -> int:
         """Return the resolution index of all analog inputs."""
         return int(ljm.eReadName(self.handle, "AIN_ALL_RESOLUTION_INDEX"))
 
-    def set_dac_voltage(self, channel: int, voltage: float) -> None:
+    @command
+    def set_dac_voltage(self, channel: DacChannel, dac_voltage: DacVoltage) -> None:
         """Set the voltage of an analog output in V (channel 0 or 1 for 'DAC0' or 'DAC1', 0 to 5 V)."""
-        if int(channel) not in (0, 1):
-            raise ValueError(f"DAC channel must be 0 or 1, not {channel}")
-        if not 0.0 <= float(voltage) <= 5.0:
-            raise ValueError(f"DAC voltage must be within 0 to 5 V, not {voltage}")
-        ljm.eWriteName(self.handle, f"DAC{int(channel)}", float(voltage))
+        ljm.eWriteName(self.handle, f"DAC{channel}", dac_voltage)
 
-    def get_dac_voltage(self, channel: int) -> float:
+    @command(returns=("dac_voltage",), reads="setpoint")
+    def get_dac_voltage(self, channel: DacChannel) -> DacVoltage:
         """Return the voltage in V that an analog output is set to (channel 0 or 1)."""
-        if int(channel) not in (0, 1):
-            raise ValueError(f"DAC channel must be 0 or 1, not {channel}")
-        return float(ljm.eReadName(self.handle, f"DAC{int(channel)}"))
+        return float(ljm.eReadName(self.handle, f"DAC{channel}"))
 
-    def set_digital_output(self, pin: str, state: bool) -> None:
-        """Set a digital pin to an output with the given state (True is high, False is low).
+    # check_driver: ignore DC010 - pin addresses the line, it is not a quantity (open point of the driver API:
+    # a setter of several plain values)
+    @command(hazards="The pin becomes an output: a signal that drives the same line from outside is shorted "
+                     "against it.")
+    def set_digital_output(self, pin: str, digital_output: bool) -> None:
+        """Set a digital pin to an output that is high (True) or low (False).
 
         Other pins are not changed. Flexible pins of the T4 are switched to digital.
         """
         pins = [str(pin)]
         self.set_digital_IO(pins_names_inputs=[],
-                            pin_names_high=pins if state else [],
-                            pin_names_low=[] if state else pins)
+                            pin_names_high=pins if digital_output else [],
+                            pin_names_low=[] if digital_output else pins)
 
+    @command(returns=("digital_output",), reads="setpoint", composite=True)
+    def get_digital_output(self, pin: str) -> bool:
+        """Return whether a digital output pin is high ('DIO_STATE') - the read-back of set_digital_output."""
+        return bool(self.get_digital_state(pin))
+
+    @command(kind="run")
     def set_digital_input(self, pin: str) -> None:
         """Set a digital pin to an input. Other pins are not changed."""
         self.set_digital_IO(pins_names_inputs=[str(pin)], pin_names_high=[], pin_names_low=[])
 
+    @command(returns=("digital_state",))
     def get_digital_state(self, pin: str) -> int:
         """Return the level of a digital pin, 1 for high and 0 for low ('DIO_STATE').
 
@@ -487,7 +533,21 @@ class LabjackBaseClass(EmptyDevice):
             raise ValueError(f"{pin} is not a digital pin. Valid: {list(pins.keys())}")
         return (int(ljm.eReadName(self.handle, "DIO_STATE")) >> pins[str(pin)]) & 1
 
-    def get_digital_direction(self, pin: str) -> str:
+    @command(composite=True,
+             hazards="OUT makes the pin an output: a signal that drives the same line from outside is shorted "
+                     "against it.")
+    def set_digital_direction(self, pin: str, digital_direction: DigitalDirection) -> None:
+        """Make a digital pin an input ('IN') or an output ('OUT'); an output keeps the level the pin has now.
+
+        Other pins are not changed. Flexible pins of the T4 are switched to digital.
+        """
+        if str(digital_direction).upper() == "IN":
+            self.set_digital_input(pin)
+        else:
+            self.set_digital_output(pin, bool(self.get_digital_state(pin)))
+
+    @command(returns=("digital_direction",), reads="setpoint")
+    def get_digital_direction(self, pin: str) -> DigitalDirection:
         """Return the direction of a digital pin, 'IN' or 'OUT' ('DIO_DIRECTION')."""
         pins = ljm_constants.DIO_PINS[self.dev_type]
         if str(pin) not in pins:
@@ -503,37 +563,54 @@ class LabjackBaseClass(EmptyDevice):
                              f"Valid: {ljm_constants.COUNTER_PINS[self.dev_type]}")
         return pin
 
+    # One batch of LJM writes rather than one command per register: the counter is disabled, its mode set and
+    # enabled again in one call, so it is never left half configured.
+    @command(kind="run", composite=True,
+             hazards="Clock 0 and the clock sharing the pin are switched off if they run, so a PWM or other "
+                     "clocked output that uses them stops.")
+    def enable_counter(self, pin: str) -> None:
+        """Make a pin a high speed counter and reset its count to zero (e.g. 'CIO1' or 'DIO17').
+
+        The pin becomes a digital input. Read the count with get_counter or reset_counter.
+        """
+        self.set_pins_to_hs_counter([self._counter_dio_name(pin)], reset=True)
+
+    @command(returns=("count",))
     def get_counter(self, pin: str) -> int:
         """Return the count of a high speed counter without resetting it ('DIOx_EF_READ_A').
 
-        The counter has to be enabled with set_pins_to_hs_counter first.
+        The counter has to be enabled with enable_counter first.
         """
         return int(ljm.eReadName(self.handle, f"{self._counter_dio_name(pin)}_EF_READ_A"))
 
+    @command(returns=("count",))
     def reset_counter(self, pin: str) -> int:
         """Return the count of a high speed counter and reset it to zero ('DIOx_EF_READ_A_AND_RESET')."""
         return int(ljm.eReadName(self.handle,
                                  f"{self._counter_dio_name(pin)}_EF_READ_A_AND_RESET"))
 
+    @command(kind="run")
     def disable_counter(self, pin: str) -> None:
         """Disable the high speed counter of a pin ('DIOx_EF_ENABLE')."""
         ljm.eWriteName(self.handle, f"{self._counter_dio_name(pin)}_EF_ENABLE", 0)
 
-    def start_stream(self, pins: list, scan_rate: float, scans_per_read: int = 0,
-                     resolution_index: int = 0) -> float:
-        """Start streaming analog inputs at a fixed rate and return the actual scan rate in Hz.
+    @command(kind="run", composite=True)  # stops a running stream first
+    def start_stream(self, pins: list, scan_rate: Hertz, scans_per_read: int = 0,
+                     resolution_index: int = 0) -> None:
+        """Start streaming analog inputs at a fixed rate.
 
         pins: analog inputs to scan in this order, e.g. ['AIN0', 'AIN1'].
         scan_rate: scans per second. One scan is one value of every pin.
         scans_per_read: scans that read_stream returns at once, 0 for half a second of data.
         resolution_index: resolution index of the stream, 0 is the default.
         The data is collected with read_stream and the stream ended with stop_stream. A stream
-        that is still running is stopped first.
+        that is still running is stopped first. The device may run at a rate close to the one asked
+        for: get_stream_scan_rate answers the rate it actually runs at.
         """
         names = [str(pin).upper() for pin in pins]
         if not names or not all(name.startswith("AIN") for name in names):
             raise ValueError(f"Streaming needs analog inputs like ['AIN0'], not {pins}")
-        if float(scan_rate) <= 0:
+        if scan_rate <= 0:
             raise ValueError("The scan rate must be positive")
 
         self.stop_stream()
@@ -544,22 +621,32 @@ class LabjackBaseClass(EmptyDevice):
                 ljm.eWriteName(self.handle, name, value)
             except ljm.ljm.LJMError:
                 debug(f"{name} could not be set, the device may not have it")
-        ljm.eWriteName(self.handle, "STREAM_RESOLUTION_INDEX", int(resolution_index))
+        ljm.eWriteName(self.handle, "STREAM_RESOLUTION_INDEX", resolution_index)
 
-        scans_per_read = int(scans_per_read) or max(1, int(float(scan_rate) / 2))
+        scans_per_read = scans_per_read or max(1, int(scan_rate / 2))
         addresses = ljm.namesToAddresses(len(names), names)[0]
-        actual_rate = ljm.eStreamStart(self.handle, scans_per_read, len(names), addresses,
-                                       float(scan_rate))
+        # LJM answers the scan rate the device actually runs at; the data is timed by it, so it is kept for
+        # get_stream_scan_rate and read_stream.
+        actual_rate = ljm.eStreamStart(self.handle, scans_per_read, len(names), addresses, scan_rate)
+        self._scan_rate = float(actual_rate)
         self._stream_pins = tuple(names)
         self._stream_running = True
-        return float(actual_rate)
 
+    @command(returns=("scan_rate",), reads="setpoint")
+    def get_stream_scan_rate(self) -> Hertz:
+        """Return the scan rate in Hz the last stream started with start_stream actually runs (or ran) at."""
+        if self._scan_rate is None:
+            raise RuntimeError("No stream was started, call start_stream first")
+        return self._scan_rate
+
+    @command(returns=("stream_block",))
     def read_stream(self) -> dict:
         """Return the next block of a running stream as a dictionary.
 
         'data' is a list of scans, each scan a list of values in V in the order of the pins given
-        to start_stream. 'device_backlog' and 'ljm_backlog' are the scans waiting in the device
-        and in LJM; if they keep growing the stream is read too slowly and data will be lost.
+        to start_stream, taken at 'scan_rate' scans per second. 'device_backlog' and 'ljm_backlog'
+        are the scans waiting in the device and in LJM; if they keep growing the stream is read too
+        slowly and data will be lost.
         After a device buffer overflow LJM fills in the lost scans with the dummy value -9999.0
         (stream auto-recovery). They keep the timing of the stream intact but carry no
         measurement, so they are returned as NaN, and 'skipped_scans' is the number of such scans
@@ -573,10 +660,11 @@ class LabjackBaseClass(EmptyDevice):
         dummy = scans == LJM_DUMMY_VALUE
         skipped_scans = int(np.any(dummy, axis=1).sum())
         scans[dummy] = np.nan
-        return {"pins": list(self._stream_pins), "data": scans.tolist(),
+        return {"pins": list(self._stream_pins), "scan_rate": self._scan_rate, "data": scans.tolist(),
                 "device_backlog": int(device_backlog), "ljm_backlog": int(ljm_backlog),
                 "skipped_scans": skipped_scans}
 
+    @command
     def stop_stream(self) -> None:
         """Stop a running stream. Nothing happens if no stream is running."""
         try:
@@ -585,7 +673,8 @@ class LabjackBaseClass(EmptyDevice):
             pass  # LJME_STREAM_NOT_RUNNING
         self._stream_running = False
 
-    def acquire_stream(self, pins: list, scan_rate: float, number_of_scans: int,
+    @command(returns=("stream",), composite=True)
+    def acquire_stream(self, pins: list, scan_rate: Hertz, number_of_scans: int,
                        resolution_index: int = 0) -> dict:
         """Stream analog inputs, collect a number of scans and stop; return the result.
 
@@ -595,18 +684,17 @@ class LabjackBaseClass(EmptyDevice):
         in 'data' that are missing and returned as NaN (see read_stream). Use start_stream and
         read_stream for longer streams.
         """
-        number_of_scans = int(number_of_scans)
         if number_of_scans < 1:
             raise ValueError("number_of_scans must be at least 1")
-        if float(scan_rate) <= 0:
+        if scan_rate <= 0:
             raise ValueError("The scan rate must be positive")
-        if number_of_scans / float(scan_rate) > 60:
+        if number_of_scans / scan_rate > 60:
             raise ValueError("The acquisition would take more than 60 s, "
                              "use start_stream and read_stream instead")
 
-        actual_rate = self.start_stream(pins, scan_rate,
-                                        scans_per_read=min(number_of_scans, max(1, int(scan_rate / 2))),
-                                        resolution_index=resolution_index)
+        self.start_stream(pins, scan_rate, scans_per_read=min(number_of_scans, max(1, int(scan_rate / 2))),
+                          resolution_index=resolution_index)
+        actual_rate = self.get_stream_scan_rate()
         scans = []
         try:
             while len(scans) < number_of_scans:

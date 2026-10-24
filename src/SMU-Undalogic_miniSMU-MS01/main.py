@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2026 Undalogic Ltd
+# Copyright (c) 2026 Undalogic Ltd, SweepMe! GmbH
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -35,9 +35,26 @@ from __future__ import annotations
 import json
 import re
 import time
+from typing import Annotated, Literal
 
 import numpy as np
+from pysweepme import Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+# What the communication commands take and answer (checked by @command on every call)
+Channel = Annotated[int, Range(1, 2)]
+Volts = Annotated[float, Unit("V")]
+Amperes = Annotated[float, Unit("A")]
+Celsius = Annotated[float, Unit("°C")]
+SourceCurrent = Annotated[Amperes, Range(-0.18, 0.18)]  # the 180 mA range is the largest
+SourceMode = Literal["FVMI", "FIMV"]
+ComplianceMode = Literal["Voltage in V", "Current in A"]
+VoltageRange = Literal["AUTO", "LOW", "HIGH"]
+CurrentRangeIndex = Annotated[int, Range(0, 4)]
+OversamplingRatio = Annotated[int, Range(0, 15)]
+SweepPoints = Annotated[int, Range(1, 1000)]
+DwellTime = Annotated[int, Unit("ms"), Range(0, 10000)]
+SweepFormat = Literal["CSV", "JSON"]
 
 # Current range indices mapped to their maximum current magnitude in amperes
 CURRENT_RANGE_LIMITS = {
@@ -317,13 +334,13 @@ class Device(EmptyDevice):
 
     def poweron(self) -> None:
         """Enable the output of the selected channel."""
-        self.enable_output(self.channel)
+        self.set_output(self.channel, True)
         self._needs_first_apply_settle = True
         self._last_applied_value = None
 
     def poweroff(self) -> None:
         """Disable the output of the selected channel."""
-        self.disable_output(self.channel)
+        self.set_output(self.channel, False)
 
     def apply(self) -> None:
         """Apply the current sweep value to the source.
@@ -741,45 +758,92 @@ class Device(EmptyDevice):
 
     # --- Communication commands ------------------------------------------------
 
-    def set_source_mode(self, channel: int, mode: str) -> None:
+    @command
+    def set_source_mode(self, channel: Channel, mode: SourceMode) -> None:
         """Set the source mode on a channel.
 
         Args:
             channel: Channel number (1 or 2).
-            mode: Source mode ("FVMI" or "FIMV").
+            mode: Source mode: "FVMI" forces voltage and measures current, "FIMV" the reverse.
         """
         self._send_command(f"SOUR{channel}:{mode} ENA")
 
+    # check_driver: ignore DC009 - set_sweep_format's hazard concerns JSON; this always selects CSV
+    @command(composite=True)
     def set_sweep_parameters(
-        self, channel: int, start: float, end: float, points: int, dwell_ms: int,
+        self, channel: Channel, start: Volts, end: Volts, points: SweepPoints, dwell_ms: DwellTime,
     ) -> None:
         """Configure hardware sweep parameters on a channel.
+
+        Sets start, end, points and dwell time, enables autoranging during the sweep and
+        selects the CSV format that get_sweep_data reads.
 
         Args:
             channel: Channel number (1 or 2).
             start: Start voltage in volts.
             end: End voltage in volts.
             points: Number of sweep points (1-1000).
-            dwell_ms: Dwell time per point in milliseconds.
+            dwell_ms: Dwell time per point in milliseconds (0-10000).
         """
-        self._send_command(f"SOUR{channel}:SWEEP:VOLT:START {start}")
-        self._send_command(f"SOUR{channel}:SWEEP:VOLT:END {end}")
-        self._send_command(f"SOUR{channel}:SWEEP:POINTS {points}")
-        # get_sweep_data reads exactly this many lines for this channel. The device keeps the
-        # sweep configuration per channel, so the count is kept per channel too: reading too
-        # few lines leaves the rest in the port buffer and every later answer one line behind.
-        self._sweep_points[int(channel)] = int(points)
-        self._send_command(f"SOUR{channel}:SWEEP:DWELL {dwell_ms}")
-        self._send_command(f"SOUR{channel}:SWEEP:AUTO:ENA")
+        self.set_sweep_start(channel, start)
+        self.set_sweep_end(channel, end)
+        self.set_sweep_points(channel, points)
+        self.set_sweep_dwell(channel, dwell_ms)
+        self.set_sweep_autorange(channel, True)
         # CSV (one "timestamp_us,voltage,current" line per point) instead of
         # JSON: the firmware's JSON serializer can drop bytes mid-stream on
         # large responses (observed ~23700 chars in), and the single missing
         # byte poisons the whole document. CSV is line-framed, so a damaged
         # row only loses one point. Switch back to JSON once the firmware
         # serializer is fixed.
-        self._send_command(f"SOUR{channel}:SWEEP:FORMAT CSV")
+        self.set_sweep_format(channel, "CSV")
 
-    def execute_sweep(self, channel: int) -> None:
+    @command
+    def set_sweep_start(self, channel: Channel, start: Volts) -> None:
+        """Set the start voltage of the hardware sweep on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+            start: Start voltage in volts.
+        """
+        self._send_command(f"SOUR{channel}:SWEEP:VOLT:START {start}")
+
+    @command
+    def set_sweep_end(self, channel: Channel, end: Volts) -> None:
+        """Set the end voltage of the hardware sweep on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+            end: End voltage in volts.
+        """
+        self._send_command(f"SOUR{channel}:SWEEP:VOLT:END {end}")
+
+    @command
+    def set_sweep_points(self, channel: Channel, points: SweepPoints) -> None:
+        """Set the number of points of the hardware sweep on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+            points: Number of sweep points (1-1000).
+        """
+        self._send_command(f"SOUR{channel}:SWEEP:POINTS {points}")
+        # get_sweep_data reads exactly this many lines for this channel. The device keeps the
+        # sweep configuration per channel, so the count is kept per channel too: reading too
+        # few lines leaves the rest in the port buffer and every later answer one line behind.
+        self._sweep_points[int(channel)] = int(points)
+
+    @command
+    def set_sweep_dwell(self, channel: Channel, dwell_ms: DwellTime) -> None:
+        """Set the dwell time per point of the hardware sweep on a channel.
+
+        Args:
+            channel: Channel number (1 or 2).
+            dwell_ms: Dwell time per point in milliseconds (0-10000).
+        """
+        self._send_command(f"SOUR{channel}:SWEEP:DWELL {dwell_ms}")
+
+    @command
+    def execute_sweep(self, channel: Channel) -> None:
         """Start a hardware sweep on a channel.
 
         Args:
@@ -787,7 +851,8 @@ class Device(EmptyDevice):
         """
         self._send_command(f"SOUR{channel}:SWEEP:EXECUTE")
 
-    def abort_sweep(self, channel: int) -> None:
+    @command
+    def abort_sweep(self, channel: Channel) -> None:
         """Abort an in-progress hardware sweep on a channel.
 
         Args:
@@ -795,18 +860,20 @@ class Device(EmptyDevice):
         """
         self._send_command(f"SOUR{channel}:SWEEP:ABORT")
 
-    def get_sweep_status(self, channel: int) -> str:
+    @command(returns=("sweep_status",), reads="state")
+    def get_sweep_status(self, channel: Channel) -> str:
         """Query the sweep status on a channel.
 
         Args:
             channel: Channel number (1 or 2).
 
         Returns:
-            Status string (e.g. "RUNNING,50,100,..." or "COMPLETED").
+            Status string "STATE,done,total,elapsed_ms,remaining_ms" (e.g. "RUNNING,50,100,...").
         """
         return self._send_command(f"SOUR{channel}:SWEEP:STATUS?")
 
-    def get_sweep_data(self, channel: int) -> str:
+    @command(returns=("sweep_data",), reads="last")
+    def get_sweep_data(self, channel: Channel) -> str:
         """Retrieve the sweep data from a completed hardware sweep.
 
         The response is multi-line CSV with one "timestamp_us,voltage,current"
@@ -838,22 +905,35 @@ class Device(EmptyDevice):
 
         return "\n".join(lines)
 
-    def enable_output(self, channel: int) -> None:
-        """Enable the output on a channel.
+    @command(composite=True)
+    def enable_output(self, channel: Channel) -> None:
+        """Enable the output on a channel; released before set_output and kept for the scripts that call it.
 
         Args:
             channel: Channel number (1 or 2).
         """
-        self._send_command(f"OUTP{channel} ON")
+        self.set_output(channel, True)
 
-    def disable_output(self, channel: int) -> None:
-        """Disable the output on a channel.
+    @command(composite=True)
+    def disable_output(self, channel: Channel) -> None:
+        """Disable the output on a channel; released before set_output and kept for the scripts that call it.
 
         Args:
             channel: Channel number (1 or 2).
         """
-        self._send_command(f"OUTP{channel} OFF")
+        self.set_output(channel, False)
 
+    @command
+    def set_output(self, channel: Channel, output: bool) -> None:
+        """Switch the output on a channel on or off.
+
+        Args:
+            channel: Channel number (1 or 2).
+            output: True switches the output on, False switches it off.
+        """
+        self._send_command(f"OUTP{channel} {'ON' if output else 'OFF'}")
+
+    @command(returns=("identification",), reads="state")
     def get_identification(self) -> str:
         """Query the device identification string.
 
@@ -862,11 +942,20 @@ class Device(EmptyDevice):
         """
         return self._send_command("*IDN?")
 
+    @command(
+        hazards=(
+            "Reboots the device: USB re-enumerates and the open port handle is lost, so commands fail until "
+            "the port is reconnected.",
+            "Afterwards the driver still believes its old configuration: set source mode, compliance and "
+            "autorange again.",
+        ),
+    )
     def reset(self) -> None:
         """Reset the device to factory defaults."""
         self._send_command("*RST")
 
-    def set_voltage(self, channel: int, voltage: float) -> None:
+    @command
+    def set_voltage(self, channel: Channel, voltage: Volts) -> None:
         """Set the output voltage on a channel.
 
         Args:
@@ -875,16 +964,18 @@ class Device(EmptyDevice):
         """
         self._send_command(f"SOUR{channel}:VOLT {voltage}")
 
-    def set_current(self, channel: int, current: float) -> None:
+    @command
+    def set_current(self, channel: Channel, current: SourceCurrent) -> None:
         """Set the output current on a channel.
 
         Args:
             channel: Channel number (1 or 2).
-            current: Current value in amperes.
+            current: Current value in amperes (at most +/- 180 mA).
         """
         self._send_command(f"SOUR{channel}:CURR {current}")
 
-    def get_voltage_and_current(self, channel: int) -> tuple[float, float]:
+    @command(returns=("voltage", "current"))
+    def get_voltage_and_current(self, channel: Channel) -> tuple[Volts, Amperes]:
         """Query both voltage and current on a channel atomically.
 
         Args:
@@ -904,32 +995,39 @@ class Device(EmptyDevice):
             raise Exception(msg)
         return float(parts[0]), float(parts[1])
 
-    def set_compliance(self, channel: int, value: float, source_mode: str) -> None:
+    @command
+    def set_compliance(self, channel: Channel, compliance: float, source_mode: ComplianceMode) -> None:
         """Set the protection/compliance limit for a channel.
 
         Args:
             channel: Channel number (1 or 2).
-            value: Compliance limit value.
+            compliance: Compliance limit: a current in A when sourcing voltage, a voltage in V when sourcing current.
             source_mode: Source mode string ("Voltage in V" or "Current in A").
         """
         if source_mode == "Voltage in V":
-            self._send_command(f"SOUR{channel}:CURR:PROT {value}")
+            self._send_command(f"SOUR{channel}:CURR:PROT {compliance}")
         else:
-            self._send_command(f"SOUR{channel}:VOLT:PROT {value}")
+            self._send_command(f"SOUR{channel}:VOLT:PROT {compliance}")
 
-    def set_oversampling(self, channel: int, osr: int) -> None:
+    @command
+    def set_oversampling(self, channel: Channel, osr: OversamplingRatio) -> None:
         """Set the measurement oversampling ratio.
 
         Args:
             channel: Channel number (1 or 2).
             osr: Oversampling ratio (0-15, represents 2^osr samples averaged).
         """
-        if not 0 <= osr <= 15:
-            msg = "Oversampling ratio must be between 0 and 15."
-            raise Exception(msg)
         self._send_command(f"MEAS{channel}:OSR {osr}")
 
-    def set_voltage_range_cmd(self, channel: int, range_type: str) -> None:
+    @command(
+        hazards=(
+            "HIGH drives an applied output up to the current compliance within about 0.3 s, although the "
+            "setpoint is unchanged.",
+            "In HIGH and LOW a new set_voltage is answered OK but the output goes to about 0 V; only AUTO "
+            "followed by a fresh set_voltage recovers it. No error is returned.",
+        ),
+    )
+    def set_voltage_range_cmd(self, channel: Channel, range_type: VoltageRange) -> None:
         """Set the voltage range on a channel.
 
         Args:
@@ -938,21 +1036,20 @@ class Device(EmptyDevice):
         """
         self._send_command(f"SOUR{channel}:VOLT:RANGE {range_type}")
 
-    def set_current_range_cmd(self, channel: int, range_index: int) -> None:
+    @command
+    def set_current_range_cmd(self, channel: Channel, range_index: CurrentRangeIndex) -> None:
         """Manually set the current measurement range.
 
         Autoranging must be disabled first for this to take effect.
 
         Args:
             channel: Channel number (1 or 2).
-            range_index: Range index (0-4).
+            range_index: Range index (0-4: 1 uA, 25 uA, 650 uA, 15 mA, 180 mA).
         """
-        if not 0 <= range_index <= 4:
-            msg = "Current range index must be between 0 and 4."
-            raise Exception(msg)
         self._send_command(f"CH{channel}:IRANGE {range_index}")
 
-    def get_temperatures(self) -> tuple[float, float, float]:
+    @command(returns=("adc_temperature", "ch1_temperature", "ch2_temperature"))
+    def get_temperatures(self) -> tuple[Celsius, Celsius, Celsius]:
         """Query the device temperature sensors.
 
         Returns:
@@ -961,7 +1058,8 @@ class Device(EmptyDevice):
         response = self._send_command("SYST:TEMP?")
         return tuple(float(x) for x in response.split(","))
 
-    def get_voltage(self, channel: int) -> float:
+    @command(returns=("voltage",))
+    def get_voltage(self, channel: Channel) -> Volts:
         """Measure only the voltage on a channel.
 
         Prefer get_voltage_and_current when both quantities are needed - that is a
@@ -975,7 +1073,8 @@ class Device(EmptyDevice):
         """
         return float(self._send_command(f"MEAS{channel}:VOLT?"))
 
-    def get_current(self, channel: int) -> float:
+    @command(returns=("current",))
+    def get_current(self, channel: Channel) -> Amperes:
         """Measure only the current on a channel.
 
         Prefer get_voltage_and_current when both quantities are needed - that is a
@@ -989,7 +1088,8 @@ class Device(EmptyDevice):
         """
         return float(self._send_command(f"MEAS{channel}:CURR?"))
 
-    def set_current_autorange(self, channel: int, enabled: bool) -> None:
+    @command
+    def set_current_autorange(self, channel: Channel, current_autorange: bool) -> None:
         """Enable or disable current autoranging on a channel.
 
         Autoranging must be disabled before a range set via set_current_range_cmd
@@ -997,12 +1097,13 @@ class Device(EmptyDevice):
 
         Args:
             channel: Channel number (1 or 2).
-            enabled: True enables autoranging, False disables it.
+            current_autorange: True enables autoranging, False disables it.
         """
-        state = "ENA" if enabled else "DIS"
+        state = "ENA" if current_autorange else "DIS"
         self._send_command(f"CH{channel}:AUTORANGE:{state}")
 
-    def set_four_wire(self, enabled: bool) -> None:
+    @command
+    def set_four_wire(self, four_wire: bool) -> None:
         """Enable or disable 4-wire (Kelvin) sensing.
 
         This is a device-wide setting, not a per-channel one: channel 1 forces and
@@ -1010,14 +1111,15 @@ class Device(EmptyDevice):
         channel 1 and requires the sense leads to be connected.
 
         Args:
-            enabled: True enables 4-wire mode, False returns to 2-wire.
+            four_wire: True enables 4-wire mode, False returns to 2-wire.
         """
-        state = "ENA" if enabled else "DIS"
+        state = "ENA" if four_wire else "DIS"
         response = self._send_command(f"SYST:4WIR {state}")
         if isinstance(response, str) and response.lstrip().startswith("ERROR"):
             msg = f"Failed to set 4-wire mode to {state}: {response}"
             raise Exception(msg)
 
+    @command(returns=("four_wire",), reads="setpoint")
     def get_four_wire(self) -> bool:
         """Query whether 4-wire (Kelvin) sensing is enabled.
 
@@ -1029,7 +1131,8 @@ class Device(EmptyDevice):
         response = self._send_command("SYST:4WIR?")
         return response.strip().upper() in ("1", "ENA", "ENABLED", "ON")
 
-    def set_sweep_autorange(self, channel: int, enabled: bool) -> None:
+    @command
+    def set_sweep_autorange(self, channel: Channel, sweep_autorange: bool) -> None:
         """Enable or disable autoranging during a hardware sweep.
 
         set_sweep_parameters enables it as part of the sweep configuration, so call
@@ -1037,12 +1140,18 @@ class Device(EmptyDevice):
 
         Args:
             channel: Channel number (1 or 2).
-            enabled: True enables autoranging during the sweep, False disables it.
+            sweep_autorange: True enables autoranging during the sweep, False disables it.
         """
-        state = "ENA" if enabled else "DIS"
+        state = "ENA" if sweep_autorange else "DIS"
         self._send_command(f"SOUR{channel}:SWEEP:AUTO:{state}")
 
-    def set_sweep_format(self, channel: int, data_format: str) -> None:
+    @command(
+        hazards=(
+            "JSON spans several lines, so get_sweep_data stops reading it early and the rest stays in the port "
+            "buffer: every later answer is out of step until the port is reconnected.",
+        ),
+    )
+    def set_sweep_format(self, channel: Channel, data_format: SweepFormat) -> None:
         """Set the format in which the device returns hardware sweep data.
 
         set_sweep_parameters selects CSV, which is what get_sweep_data reads: one line per
@@ -1058,6 +1167,7 @@ class Device(EmptyDevice):
         """
         self._send_command(f"SOUR{channel}:SWEEP:FORMAT {data_format}")
 
+    @command(returns=("wifi_status",), reads="state")
     def get_wifi_status(self) -> dict:
         """Query the network status of the device.
 
