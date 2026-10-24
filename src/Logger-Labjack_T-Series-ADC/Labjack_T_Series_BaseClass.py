@@ -2,13 +2,13 @@
 
 import time
 from collections import Counter
-from typing import Annotated, List
+from typing import Annotated, List, Literal
 
 import ljm_constants_wrapped as ljm_constants
 from labjack import ljm
 
 import numpy as np
-from pysweepme import Range, Unit, command
+from pysweepme import Label, Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug
 
@@ -20,7 +20,8 @@ Volts = Annotated[float, Unit("V")]
 Celsius = Annotated[float, Unit("°C")]
 Hertz = Annotated[float, Unit("Hz")]
 DacChannel = Annotated[int, Range(0, 1)]
-DacVoltage = Annotated[Volts, Range(0.0, 5.0)]
+DacVoltage = Annotated[Volts, Range(0.0, 5.0), Label("DAC voltage")]
+DigitalDirection = Literal["IN", "OUT"]
 
 # LJM fills scans that were lost after a device buffer overflow (stream auto-recovery) with this value.
 # The stream commands replace it by NaN, so that it cannot be mistaken for a measured value.
@@ -464,23 +465,23 @@ class LabjackBaseClass(EmptyDevice):
         return [float(value) for value in ljm.eReadNames(self.handle, len(names), names)]
 
     @command
-    def set_pin_analog(self, pin: str, analog: bool) -> None:
+    def set_pin_analog(self, pin: str, pin_analog: bool) -> None:
         """Switch a flexible pin of the T4 (FIO4-FIO7, EIO0-EIO7) to an analog input (True) or a digital pin (False).
 
         As an analog input, FIO4 is read as AIN4, ..., EIO3 as AIN11. Other models have no flexible pins.
         """
         if self.dev_type != "T4":
             raise ValueError(f"Only the T4 has flexible pins, this is a {self.dev_type}")
-        self.set_flex_pins_to_analog([str(pin)], set_digital=not analog)
+        self.set_flex_pins_to_analog([str(pin)], set_digital=not pin_analog)
 
     @command
-    def set_resolution_index(self, index: int) -> None:
+    def set_resolution_index(self, resolution_index: int) -> None:
         """Set the resolution index of all analog inputs ('AIN_ALL_RESOLUTION_INDEX').
 
         0 is the default. Higher indices give a lower noise at a lower speed, the maximum depends
         on the model (T4: 5).
         """
-        ljm.eWriteName(self.handle, "AIN_ALL_RESOLUTION_INDEX", int(index))
+        ljm.eWriteName(self.handle, "AIN_ALL_RESOLUTION_INDEX", int(resolution_index))
 
     @command(returns=("resolution_index",), reads="setpoint")
     def get_resolution_index(self) -> int:
@@ -488,12 +489,12 @@ class LabjackBaseClass(EmptyDevice):
         return int(ljm.eReadName(self.handle, "AIN_ALL_RESOLUTION_INDEX"))
 
     @command
-    def set_dac_voltage(self, channel: DacChannel, voltage: DacVoltage) -> None:
+    def set_dac_voltage(self, channel: DacChannel, dac_voltage: DacVoltage) -> None:
         """Set the voltage of an analog output in V (channel 0 or 1 for 'DAC0' or 'DAC1', 0 to 5 V)."""
-        ljm.eWriteName(self.handle, f"DAC{channel}", voltage)
+        ljm.eWriteName(self.handle, f"DAC{channel}", dac_voltage)
 
-    @command(returns=("voltage",), reads="setpoint")
-    def get_dac_voltage(self, channel: DacChannel) -> Volts:
+    @command(returns=("dac_voltage",), reads="setpoint")
+    def get_dac_voltage(self, channel: DacChannel) -> DacVoltage:
         """Return the voltage in V that an analog output is set to (channel 0 or 1)."""
         return float(ljm.eReadName(self.handle, f"DAC{channel}"))
 
@@ -501,17 +502,22 @@ class LabjackBaseClass(EmptyDevice):
     # a setter of several plain values)
     @command(hazards="The pin becomes an output: a signal that drives the same line from outside is shorted "
                      "against it.")
-    def set_digital_output(self, pin: str, state: bool) -> None:
-        """Set a digital pin to an output with the given state (True is high, False is low).
+    def set_digital_output(self, pin: str, digital_output: bool) -> None:
+        """Set a digital pin to an output that is high (True) or low (False).
 
         Other pins are not changed. Flexible pins of the T4 are switched to digital.
         """
         pins = [str(pin)]
         self.set_digital_IO(pins_names_inputs=[],
-                            pin_names_high=pins if state else [],
-                            pin_names_low=[] if state else pins)
+                            pin_names_high=pins if digital_output else [],
+                            pin_names_low=[] if digital_output else pins)
 
-    @command
+    @command(returns=("digital_output",), reads="setpoint", composite=True)
+    def get_digital_output(self, pin: str) -> bool:
+        """Return whether a digital output pin is high ('DIO_STATE') - the read-back of set_digital_output."""
+        return bool(self.get_digital_state(pin))
+
+    @command(kind="run")
     def set_digital_input(self, pin: str) -> None:
         """Set a digital pin to an input. Other pins are not changed."""
         self.set_digital_IO(pins_names_inputs=[str(pin)], pin_names_high=[], pin_names_low=[])
@@ -527,8 +533,21 @@ class LabjackBaseClass(EmptyDevice):
             raise ValueError(f"{pin} is not a digital pin. Valid: {list(pins.keys())}")
         return (int(ljm.eReadName(self.handle, "DIO_STATE")) >> pins[str(pin)]) & 1
 
+    @command(composite=True,
+             hazards="OUT makes the pin an output: a signal that drives the same line from outside is shorted "
+                     "against it.")
+    def set_digital_direction(self, pin: str, digital_direction: DigitalDirection) -> None:
+        """Make a digital pin an input ('IN') or an output ('OUT'); an output keeps the level the pin has now.
+
+        Other pins are not changed. Flexible pins of the T4 are switched to digital.
+        """
+        if str(digital_direction).upper() == "IN":
+            self.set_digital_input(pin)
+        else:
+            self.set_digital_output(pin, bool(self.get_digital_state(pin)))
+
     @command(returns=("digital_direction",), reads="setpoint")
-    def get_digital_direction(self, pin: str) -> str:
+    def get_digital_direction(self, pin: str) -> DigitalDirection:
         """Return the direction of a digital pin, 'IN' or 'OUT' ('DIO_DIRECTION')."""
         pins = ljm_constants.DIO_PINS[self.dev_type]
         if str(pin) not in pins:
