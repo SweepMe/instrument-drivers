@@ -334,13 +334,13 @@ class Device(EmptyDevice):
 
     def poweron(self) -> None:
         """Enable the output of the selected channel."""
-        self.enable_output(self.channel)
+        self.set_output(self.channel, True)
         self._needs_first_apply_settle = True
         self._last_applied_value = None
 
     def poweroff(self) -> None:
         """Disable the output of the selected channel."""
-        self.disable_output(self.channel)
+        self.set_output(self.channel, False)
 
     def apply(self) -> None:
         """Apply the current sweep value to the source.
@@ -905,23 +905,33 @@ class Device(EmptyDevice):
 
         return "\n".join(lines)
 
-    @command
+    @command(composite=True)
     def enable_output(self, channel: Channel) -> None:
-        """Enable the output on a channel.
+        """Enable the output on a channel; released before set_output and kept for the scripts that call it.
 
         Args:
             channel: Channel number (1 or 2).
         """
-        self._send_command(f"OUTP{channel} ON")
+        self.set_output(channel, True)
+
+    @command(composite=True)
+    def disable_output(self, channel: Channel) -> None:
+        """Disable the output on a channel; released before set_output and kept for the scripts that call it.
+
+        Args:
+            channel: Channel number (1 or 2).
+        """
+        self.set_output(channel, False)
 
     @command
-    def disable_output(self, channel: Channel) -> None:
-        """Disable the output on a channel.
+    def set_output(self, channel: Channel, output: bool) -> None:
+        """Switch the output on a channel on or off.
 
         Args:
             channel: Channel number (1 or 2).
+            output: True switches the output on, False switches it off.
         """
-        self._send_command(f"OUTP{channel} OFF")
+        self._send_command(f"OUTP{channel} {'ON' if output else 'OFF'}")
 
     @command(returns=("identification",), reads="state")
     def get_identification(self) -> str:
