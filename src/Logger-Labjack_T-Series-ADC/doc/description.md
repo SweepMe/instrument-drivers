@@ -36,5 +36,5 @@ The device is identified by its serial number: use *Find ports* and select it.
 ## Communication commands
 
 For scripts and agents the driver also offers communication commands, among them `get_voltage(pin)`,
-`set_dac_voltage(channel, voltage)`, digital pins, high speed counters and streaming of analog inputs
+`set_dac_voltage(channel, dac_voltage)`, digital pins, high speed counters and streaming of analog inputs
 (`start_stream`, `read_stream`, `stop_stream`, `acquire_stream`).

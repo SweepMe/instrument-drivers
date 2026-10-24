@@ -26,5 +26,5 @@ The device is identified by its serial number: use *Find ports* and select it.
 
 ## Communication commands
 
-For scripts and agents the driver also offers communication commands, among them `set_digital_output(pin, state)`,
+For scripts and agents the driver also offers communication commands, among them `set_digital_output(pin, digital_output)`,
 `set_digital_input(pin)`, `get_digital_state(pin)` and the analog commands of the LabJack T-series drivers.
