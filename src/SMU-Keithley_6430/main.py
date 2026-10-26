@@ -94,6 +94,7 @@ class Device(EmptyDevice):
             "EOLread": "\r",
         }
         self.port_types = ["GPIB", "COM", "TCPIP"]
+        self.port_string: str = ""  # port as selected in the GUI, shared key for all instances on that port
 
         # Measurement parameters
         self.sweep_mode: str = "None"
@@ -186,18 +187,28 @@ class Device(EmptyDevice):
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
+        self.port_string = parameters.get("Port", "")
         self.sweep_mode = parameters.get("SweepMode", "None")
         self.compliance = parameters.get("Compliance", 0.0)
 
         self.current_measurement_range = parameters.get("Range", "Auto")
         self.voltage_measurement_range = parameters.get("RangeVoltage", "Auto")
 
-        try:
-            self.speed = self.speeds[parameters.get("Speed", "Medium")]
-        except KeyError:
-            self.speed = float(parameters.get("Speed", 1.0))
+        # While SweepMe! builds the GUI, fields can arrive empty. Fall back to the defaults instead of failing, because
+        # an exception here makes SweepMe! drop the remaining values of the module when a sequence is loaded.
+        speed = parameters.get("Speed", "Medium")
+        if speed in self.speeds:
+            self.speed = self.speeds[speed]
+        else:
+            try:
+                self.speed = float(speed)
+            except ValueError:
+                self.speed = self.speeds["Medium"]
 
-        self.averages = int(float(parameters.get("Average", 1)))
+        try:
+            self.averages = int(float(parameters.get("Average", 1)))
+        except ValueError:
+            self.averages = 1
         self.source_delay = str(parameters.get("Source delay in s", "Auto"))
 
         # Reset return variables
@@ -231,9 +242,14 @@ class Device(EmptyDevice):
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
-        # A run that failed mid-exchange can leave an unread answer in the input buffer, which
-        # would then be handed to the first read of this run. Start from a known-empty buffer.
-        self.port.clear()
+        # A run that failed mid-exchange can leave an unread answer in the input buffer, which would then be handed to
+        # the first read of this run, so start from an empty buffer. Only the first instance on a port may do this: on
+        # a COM port clear() also drops bytes still waiting to be sent, which cuts off the commands another instance
+        # on the same port has just written and leaves the instrument stuck on half a command.
+        clear_key = f"SMU-Keithley_6430 {self.port_string} cleared"
+        if clear_key not in self.device_communication:
+            self.port.clear()
+            self.device_communication[clear_key] = True
 
         self.port.write("*RST")  # reset instrument state
         self.port.write(":SYSTem:CLEar")  # clear error queue
@@ -250,14 +266,17 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        # set compliance, range and speed
+        # set source function, compliance, range and speed. The source function goes first, because the measurement
+        # ranges that can be set depend on it (manual 17-58).
         if self.sweep_mode.startswith("Voltage"):
+            self.set_source_function("VOLTage")
             self.set_compliance_current(self.compliance)
             self.set_current_measurement_range(self.current_measurement_range)
             if not self.list_mode:
                 self.port.write("SOURce:VOLTage:MODE FIXed")  # Alternative: list, sweep
 
         elif self.sweep_mode.startswith("Current"):
+            self.set_source_function("CURRent")
             self.set_compliance_voltage(self.compliance)
             self.set_voltage_measurement_range(self.voltage_measurement_range)
 
@@ -280,12 +299,10 @@ class Device(EmptyDevice):
         if self.averages < 1 or self.averages > 100:
             msg = f"Invalid average: {self.averages}. Averages must be between 1 and 100"
             raise ValueError(msg)
-        if self.averages > 1:
-            # Moving filter average
-            self.port.write(f":SENSe:AVERage:COUNt {self.averages}")
-            self.port.write(":SENSe:AVERage:STATe ON")
-        else:
-            self.port.write(":SENSe:AVERage:STATe OFF")
+        self.configure_filters(self.averages)
+
+        # The instrument needs about a second to work through *RST and the configuration above.
+        self.wait_for_complete()
 
         if self.list_mode:
             self.configure_list_mode()
@@ -584,6 +601,25 @@ class Device(EmptyDevice):
         self.port.write(":SOURce:DELay:AUTO OFF")
         self.port.write(f":SOURce:DELay {delay_seconds}")
 
+    def configure_filters(self, repeat_count: int = 1) -> None:
+        """Average with the repeat filter only; switch the auto, median and moving filters off.
+
+        After *RST the auto filter is on and runs a median filter on the pA ranges (manual tables 6-5 to 6-7). A new
+        source level in fixed source mode does not reset the filter stacks (manual 6-9), so the median returns the
+        reading of the previous point: the first point after a range change is measured twice and the following points
+        lag one step behind until the next range change. The moving filter mixes earlier points in the same way. The
+        repeat filter only averages conversions of the present reading, which is what a sweep needs.
+        """
+        # Switching the auto filter off keeps the counts it chose for the present range, so set every stage afterwards.
+        self.port.write(":SENSe:AVERage:AUTO OFF")
+        self.port.write(":SENSe:MEDian:STATe OFF")
+        self.port.write(":SENSe:AVERage:STATe OFF")
+        if repeat_count > 1:
+            self.port.write(f":SENSe:AVERage:REPeat:COUNt {repeat_count}")
+            self.port.write(":SENSe:AVERage:REPeat:STATe ON")
+        else:
+            self.port.write(":SENSe:AVERage:REPeat:STATe OFF")
+
     def set_measurement_speed(self, mode: str, nplc: float) -> None:
         """Set the measurement speed in NPLC."""
         if nplc > 10 or nplc < 0.01:
@@ -601,6 +637,10 @@ class Device(EmptyDevice):
         self.port.write(":SOURce1:CLEar:IMMediate")
 
     # Sourcing
+    def set_source_function(self, function: str) -> None:
+        """Select the source function: VOLTage or CURRent. *RST selects VOLTage."""
+        self.port.write(f":SOURce:FUNCtion:MODE {function}")
+
     def set_voltage(self, value: float) -> None:
         """Set source voltage level (V-Source). Uses SOURce:VOLTage:LEVel."""
         self.port.write(f":SOURce:VOLTage:LEVel {value}")
@@ -652,30 +692,24 @@ class Device(EmptyDevice):
         # couldn't parse numeric value; raise error
         raise RuntimeError(f"Could not parse numeric measurement from response: '{raw}'")
 
-    def wait_for_complete(self) -> None:
-        """Waits for the operation queue to be completed."""
-        self.port.query("*OPC?")
+    def wait_for_complete(self, timeout: float = 10.0) -> None:
+        """Wait until the instrument has worked through all commands sent so far (*OPC?).
+
+        Switching the output on or working through *RST and a configuration can keep the instrument busy for longer
+        than the port timeout, so the answer is awaited without re-sending the query.
+        """
+        self.query_and_wait("*OPC?", time.monotonic() + timeout)
 
     def wait_for_list_complete(self) -> None:
-        """Poll *OPC? with 1 s port timeout intervals until the list sweep finishes or the run is stopped.
+        """Wait until the list sweep has finished or the run is stopped.
 
-        Sending *OPC? causes the instrument to respond with "1" only after all pending operations are done.
-        With a 1 s port timeout, each poll attempt either returns quickly (sweep done) or raises a timeout
-        exception (sweep still running). This loop avoids blocking the whole program for the entire sweep
-        duration while still detecting a true instrument error if the elapsed time greatly exceeds the
-        expected sweep duration.
+        The instrument answers *OPC? only once the sweep is done. The query is sent once and only the read is retried
+        (see query_and_wait): re-sending it after every port timeout made the instrument answer each copy later, and
+        FETCh? then read one of these answers instead of the sweep data.
         """
-        start_time = time.monotonic()
         max_wait = self.list_expected_time * 3 + 30  # allow 3x expected time plus a fixed 30 s margin
-
-        while not self.is_run_stopped():
-            try:
-                self.port.query("*OPC?")
-                return  # instrument confirmed all operations complete
-            except Exception:
-                elapsed = time.monotonic() - start_time
-                if elapsed > max_wait:
-                    raise TimeoutError(
-                        f"List sweep did not complete within {max_wait:.0f} s "
-                        f"(expected ~{self.list_expected_time:.1f} s)"
-                    )
+        try:
+            self.query_and_wait("*OPC?", time.monotonic() + max_wait)
+        except TimeoutError:
+            msg = f"List sweep did not complete within {max_wait:.0f} s (expected ~{self.list_expected_time:.1f} s)"
+            raise TimeoutError(msg) from None
