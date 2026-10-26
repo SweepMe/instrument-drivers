@@ -29,9 +29,10 @@ cover the drive amplitude plus the bias, otherwise the instrument clamps the bia
 error, e.g. to +/-1 V in the 1 V range.
 
 The driver therefore selects the smallest output range that covers the peak drive amplitude plus
-the bias. During a bias sweep the range is only increased, never decreased, so that the output is
-not switched back and forth. A smaller range gives a cleaner signal, so a sweep that reaches more
-than about 1 V runs in the 10 V range from that point on.
+the bias, but at least the 1 V range when a bias source is used. During a bias sweep the range is
+only increased, never decreased, so that the output is not switched back and forth. A smaller
+range gives a cleaner signal, so a sweep that reaches more than about 1 V runs in the 10 V range
+from that point on.
 
 After every bias change, the driver reads the bias back from the instrument and stops the
 measurement if it differs from the requested value, e.g. because of the 4-terminal limit.
