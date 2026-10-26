@@ -61,6 +61,8 @@ class Device(EmptyDevice):
         self.timeout_autorange = 20 # in s
         self.sampling_rate = 10.0 # in 1/s
 
+        self.daq = None  # LabOne API session, created in connect()
+
         # Sources that can supply the DC bias across the device under test, see doc/description.md
         # "Internal":         internal bias source of the instrument, nodes /imps/0/bias/*
         # "Aux Output (cable to Aux In 1)": DC level of an Auxiliary Output, added to the Signal Output
@@ -168,8 +170,10 @@ class Device(EmptyDevice):
 
 
     def disconnect(self):
-        if self.daq:
+        # connect() may have failed before the API session was created, e.g. if the device was not found
+        if self.daq is not None:
             self.daq.disconnectDevice(self.devID)
+            self.daq = None
 
     def initialize(self):
 
