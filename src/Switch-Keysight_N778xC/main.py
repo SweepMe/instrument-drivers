@@ -48,6 +48,13 @@ CORRECTION_WAVELENGTH_TOLERANCE_NM = 0.5
 # A warning is printed to the Debug widget if the correction file is older than this
 CORRECTION_MAXIMUM_AGE = datetime.timedelta(days=1)
 
+# Each point of a polarization controller sequence consists of the DAC values of the 12 controller stages
+DAC_VALUES_PER_POINT = 12
+
+# :PCONtroller:SEQuence:HOLDoff is given in units of 1/32 µs
+HOLDOFF_UNITS_PER_US = 32
+MAXIMUM_HOLDOFF = 32766
+
 
 class Device(EmptyDevice):
     """Driver for the Keysight N778xC polarization synthesizer."""
@@ -336,6 +343,103 @@ class Device(EmptyDevice):
     def set_stabilization(self, state: bool) -> None:
         """Switch the polarization stabilizer for the SOP function on or off."""
         self.write_and_wait(f":STABilizer:STABilize {int(state)},SOP")
+
+    """ here, the SOP sequence of the polarization controller is handled, e.g. for hardware-triggered PDL sweeps """
+
+    def get_polarimeter_power(self) -> str:
+        """Return the input power of the polarimeter in the configured power unit, e.g. to check for light."""
+        return str(self.port.query(":POLarimeter:POWer?")).strip()
+
+    def get_stabilizer_difference(self) -> float:
+        """Return the remaining angle in rad between the measured and the target SOP of the stabilizer."""
+        return float(self.port.query(":STABilizer:STABilize:DIFFerence?"))
+
+    def wait_for_stabilized_sop(self, tolerance: float, timeout: float = 15.0) -> float:
+        """Wait until the stabilizer reached its target SOP within the tolerance in rad and return the difference."""
+        start_time = time.monotonic()
+
+        # The difference is only meaningful once the stabilizer started to move towards the new target
+        time.sleep(0.3)
+        differences = [self.get_stabilizer_difference()]
+
+        while differences[-1] > tolerance:
+            if self.is_run_stopped():
+                break
+
+            if time.monotonic() - start_time > timeout:
+                msg = (
+                    f"The stabilizer did not reach the target SOP {self.get_sop()} within {timeout} s. Remaining "
+                    f"difference in rad over time: {', '.join(f'{value:.3f}' for value in differences[::10])}, "
+                    f"{differences[-1]:.3f}. Input power: {self.get_polarimeter_power()}. Check that light at the "
+                    f"polarimeter wavelength reaches the instrument."
+                )
+                raise TimeoutError(msg)
+
+            time.sleep(0.1)
+            differences.append(self.get_stabilizer_difference())
+
+        return differences[-1]
+
+    def get_controller_dac_values(self) -> list[int]:
+        """Return the DAC values of the 12 polarization controller stages, i.e. the actuator positions of the SOP."""
+        response = self.port.query(":PCONtroller:STAGe:DAC:ALL?")
+        dac_values = [int(value) for value in response.split(",")]
+
+        if len(dac_values) != DAC_VALUES_PER_POINT:
+            msg = f"Expected {DAC_VALUES_PER_POINT} DAC values from the instrument, got '{response}'."
+            raise RuntimeError(msg)
+
+        return dac_values
+
+    def set_sequence_dac_values(self, dac_values: list[int]) -> None:
+        """Upload a polarization controller sequence, 12 DAC values per point, as 488.2 binary block of uint16."""
+        if not dac_values or len(dac_values) % DAC_VALUES_PER_POINT != 0:
+            msg = f"The number of DAC values must be a multiple of {DAC_VALUES_PER_POINT}, got {len(dac_values)}."
+            raise ValueError(msg)
+
+        self.port.port.write_binary_values(
+            ":PCONtroller:SEQuence:SEQVoltage ",
+            dac_values,
+            datatype="H",
+            is_big_endian=False,
+        )
+        self.wait_for_operation_complete()
+
+    def configure_sequence(self, length: int, repetition_rate_khz: float, holdoff_us: float, mode: int) -> None:
+        """Configure the uploaded sequence.
+
+        Args:
+            length: Number of points of the sequence.
+            repetition_rate_khz: Rate at which the sequence steps from one point to the next.
+            holdoff_us: Delay of the output trigger after each SOP change, at most 1023 µs.
+            mode: 0/1 free running (restart/once), 2/3 start on trigger (restart/once), 4-6 stepped by trigger.
+        """
+        holdoff = round(holdoff_us * HOLDOFF_UNITS_PER_US)
+        if not 0 <= holdoff <= MAXIMUM_HOLDOFF:
+            msg = f"The trigger holdoff must be between 0 and {MAXIMUM_HOLDOFF / HOLDOFF_UNITS_PER_US:.0f} µs."
+            raise ValueError(msg)
+
+        self.write_and_wait(f":PCONtroller:SEQuence:LENGth {int(length)}")
+        self.write_and_wait(":PCONtroller:REPetition 1")
+        self.write_and_wait(f":PCONtroller:SEQuence:RRATe {float(repetition_rate_khz)}")
+        self.write_and_wait(f":PCONtroller:SEQuence:HOLDoff {holdoff}")
+        self.write_and_wait(f":PCONtroller:SEQuence:SMODe {int(mode)}")
+
+    def set_trigger_configuration(self, configuration: int) -> None:
+        """Set the trigger connectors: 0 disabled, 1 default (input active), 2 passthrough, 3 loopback."""
+        self.write_and_wait(f":TRIGger:CONFiguration {int(configuration)}")
+
+    def generate_input_trigger(self) -> None:
+        """Generate a trigger that acts like a trigger at the input trigger connector."""
+        self.port.write(":TRIGger 1")
+
+    def start_sequence(self) -> None:
+        """Start the sequence function, which then waits for a trigger in the trigger modes 2 to 6."""
+        self.write_and_wait(":PCONtroller:STARt")
+
+    def stop_sequence(self) -> None:
+        """Stop the sequence function."""
+        self.port.write(":PCONtroller:STOP")
 
     def write_and_wait(self, command: str) -> None:
         """Writes a command to the device, then waits for the command execution to be completed."""
