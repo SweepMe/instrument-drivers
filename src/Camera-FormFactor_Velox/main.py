@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -32,6 +32,8 @@
 from __future__ import annotations
 
 import os
+import time
+from typing import Any
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.FolderManager import addFolderToPATH
@@ -42,24 +44,6 @@ import velox
 
 class Device(EmptyDevice):
     """Device Class for Cameras in Velox Wafer Prober Systems."""
-
-    description = """
-    <h3>Velox Camera</h3>
-    <p>This driver controls the camera functions of FormFactor Velox wafer probers.</p>
-    <h4>Setup</h4>
-    <ul>
-        <li>Requires Velox Installation</li>
-    </ul>
-    <h4>Parameters</h4>
-    <ul>
-        <li>Port: Use 'localhost' when running SweepMe! on the same PC as Velox. For TCP/IP remote control, enter
-         the Velox PCs IP address either as blank string "192.168.XXX.XXX" or containing a specific port 
-         "IP:xxx.xxx.xxx.xxx; Port:xxxx" </li>
-        <li>Custom save folder: Velox allows only for saving the acquired images, but not to send it via TCP/IP. When
-         using remote control, choose a folder on the Velox PC or on a common fileshare. For local control, the images
-         are saved in the SweepMe! Temp folder together with your other measurement data.</li>
-    </ul>
-    """
 
     def __init__(self) -> None:
         """Initialize the Velox Camera."""
@@ -105,6 +89,9 @@ class Device(EmptyDevice):
         self.save_path: str = ""
         self.keep_only_last: bool = False
 
+        self.light_settle_time: float = 0.2
+        """Wait time in s after switching the camera light on, so that the image brightness is stable."""
+
     def __del__(self) -> None:
         """Exit Velox Communication before instance is deleted."""
         self.disconnect_from_velox()
@@ -114,7 +101,7 @@ class Device(EmptyDevice):
         """Return a placeholder to enter an IP address and socket."""
         return ["localhost", "IP:xxx.xxx.xxx.xxx; Port:xxxx"]
 
-    def set_GUIparameter(self) -> dict:  # noqa: N802
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
         """Define standard GUI parameter values."""
         return {
             "FileFormat": ["bmp", "jpg", "png"],
@@ -125,16 +112,16 @@ class Device(EmptyDevice):
             "Custom save folder": "",
         }
 
-    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Handle GUI parameter values."""
-        self.handle_port_string(parameter["Port"])
-        self.camera = parameter["Camera"]
-        self.camera_mode = self.camera_modes[parameter["Mode"]]
-        self.save_name = parameter["Custom save name"]
-        self.save_folder = parameter["Custom save folder"]
+        self.handle_port_string(parameters.get("Port", "localhost"))
+        self.camera = parameters.get("Camera", "Scope")
+        self.camera_mode = self.camera_modes.get(parameters.get("Mode", "Raw image"), 0)
+        self.save_name = parameters.get("Custom save name", "")
+        self.save_folder = parameters.get("Custom save folder", "")
 
-        self.file_format = str(parameter["FileFormat"]).lower()
-        self.keep_only_last = bool(parameter["KeepLast"])
+        self.file_format = str(parameters.get("FileFormat", "bmp")).lower()
+        self.keep_only_last = bool(parameters.get("KeepLast", False))
 
     def handle_port_string(self, port_string: str) -> None:
         """Extract IP address and socket from port string."""
@@ -172,14 +159,27 @@ class Device(EmptyDevice):
     def save_image(self, camera: str) -> str:
         """Save image of given camera and return save path as string."""
         file_name = self.save_name if self.save_name else f"Velox_{camera}"
-        file_name += f"_{self.progress:0{self.progress_digits}d}"
+        if not self.keep_only_last:
+            # Without a running number, every image overwrites the previous one
+            file_name += f"_{self.progress:0{self.progress_digits}d}"
 
         base_path = self.tempfolder if not self.save_folder else self.save_folder
         save_path = f"{base_path}{os.sep}{file_name}.{self.file_format}"
 
-        velox.SnapImage(camera, save_path, self.camera_mode)
+        # Switch the light on only for the capture; the finally block turns it off again even if the snap fails
+        self.set_camera_light(camera, on=True)
+        try:
+            time.sleep(self.light_settle_time)
+            velox.SnapImage(camera, save_path, self.camera_mode)
+        finally:
+            self.set_camera_light(camera, on=False)
 
         return save_path
+
+    @staticmethod
+    def set_camera_light(camera: str, on: bool) -> None:
+        """Switch the light of the given camera on or off, leaving shutter, gain and other light settings unchanged."""
+        velox.SetCameraLight(camera, int(on))
 
     def call(self) -> str:
         """Return the path to the saved image. If cameras = ALL was chosen, return last path."""
@@ -198,7 +198,7 @@ class Device(EmptyDevice):
                     msg = "Unable to connect to Velox software. Please start Velox and try again."
                     raise Exception(msg) from e
 
-                raise e
+                raise
 
     def disconnect_from_velox(self) -> None:
         """Disconnect from Velox Software."""
