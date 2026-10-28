@@ -13,7 +13,14 @@ This driver can be used to control **x, y, z** and **r (rotation)** of a Dobot M
   2. Tab **Network** -> **Internet Protocol Version 4 (TCP/IPv4)** -> **Properties**  
   3. Select **Static IP Address** and **255.255.255.0** as subnet mask.  
      Use an address that is different from the robot but in the same subnet, e.g., `192.168.1.5` if using the first Ethernet port.
+
+---
+
+### Connection:
+
 - Connect to the robot via DobotStudioPro and set: Configuration -> Remote Control -> Current Mode = **TCP/IP Secondary Development**. Otherwise, the robot might not respond to commands from this driver.
+- In DobotStudioPro, set the robot to **Enabled**
+- Now the robot should be ready to receive commands from this driver.
 
 ---
 
@@ -24,6 +31,10 @@ This driver can be used to control **x, y, z** and **r (rotation)** of a Dobot M
 - The Robot module works best in combination with add-on modules such as **ReadValues** or **TableValues**, where you create a list of `x, y, z, r` values and hand them over to the Robot module using the parameter syntax `{...}`.
 - Home position is fixed at `x = 350 mm`, `y = 0 mm`, `z = 0 mm`, `r = 0 deg`.
 - **Jump mode**: When activated, the robot will make all lateral and rotational movements at the given movement height.
+- The **Go home** button of the Robot module connects to the robot but does not run the initialization. If the
+  robot is disabled, the driver enables it temporarily for the homing move and disables it again afterwards.
+  If the robot is in an error state, the driver reports the active alarms instead of moving — clear the error
+  first, e.g. by starting a run.
 
 ---
 
@@ -43,13 +54,62 @@ This driver can be used to control **x, y, z** and **r (rotation)** of a Dobot M
 - **Global speed factor** affects all moves: 1-100
 - **Acceleration factor**: 1-100
 - **Speed factor**: the speed of a linear move in the range 1-100. It can be changed at each step using the parameter syntax.
+- **Collision response**: the driver always sets the robot to **pause** after a collision at the start of
+  each run. Other responses selectable in DobotStudioPro ("stop", "continue after 5 s") can make the robot
+  resume or retract by itself, which is unexpected during a measurement. When a collision pauses a
+  movement, the driver reports it within a second and the robot stays at its current position; the next
+  run clears the state. If the firmware does not support the command, a note appears in the Debug log —
+  set the response to "pause" in DobotStudioPro in that case.
 
 ---
 
 ### Caution:
 
 - The home position is fixed and independent of an individual position set in Dobot Studio Pro. Please check whether **Go home before or after the run** works for you.
+- If a movement fails during the run (e.g. a collision detection stop), **Go home at end** is skipped for
+  safety: the robot pauses at the position where it stopped instead of moving home through a possibly
+  blocked path, and is then disabled. The same applies to the **Go home** button while the robot has
+  active alarms.
 
+
+### Error messages:
+
+- The driver reads the robot alarms via `GetErrorID()` after each movement and reports them with their official
+  Dobot descriptions, e.g. "Controller alarm 17: Inverse kinematics error with no solution" or
+  "Controller alarm 112: Collision detection stop".
+- Command responses are checked for their error code. For example, if the robot is in alarm or emergency-stop
+  state, the driver reports this instead of running into an unexplained timeout.
+- Alarms are cleared automatically at the start of each run. To clear an alarm manually, use DobotStudioPro.
+
+### Troubleshooting connection problems:
+
+If the driver cannot connect at the start of a run, check the following:
+
+1. **Robot still booting**: after power-on, the controller needs about one minute before it accepts TCP
+   connections. Wait and start the run again.
+2. **Remote control mode**: the robot accepts the TCP connection but does not answer commands if
+   Configuration -> Remote Control -> Current Mode is not set to **TCP/IP Secondary Development** in
+   DobotStudioPro.
+3. **Network configuration**: the PC needs a static IP address in the robot's subnet (e.g. `192.168.1.5`,
+   subnet mask `255.255.255.0`, when using the first Ethernet port with the fixed address `192.168.1.6`).
+4. **Another client is connected**: the MG400 only serves the **first** client that connects to each TCP
+   port (29999/30003). Further connections are accepted on TCP level but closed again without answering any
+   command — the driver reports this as "The robot closed the connection". Whichever PC or program connects
+   first owns the TCP interface: make sure no other PC, SweepMe! instance, or Python script is connected.
+   In our tests (direct PC-to-robot connection) the controller freed the slot immediately when the client
+   process ended (even after a crash or kill) and also cleaned up half-open connections by itself as soon as
+   its Ethernet link went down (unplugged cable). Note that this self-healing relies on the robot seeing the
+   link go down: if the robot is connected through a switch, the link stays up when a PC vanishes and the
+   stale connection may keep blocking the port. If a blocked port persists, restarting the robot frees it
+   reliably.
+   Note: DobotStudioPro communicates through its own channel (DobotLink) and does **not** occupy these
+   ports. It can stay open in parallel to monitor the robot, but avoid jogging or changing settings there
+   while a SweepMe! run is active, as both channels command the same robot.
+5. **Old firmware**: controller firmware below **1.6.0.0** has a known issue where the TCP ports occasionally
+   fail to connect or accept commands. If connecting fails repeatedly, update the robot firmware.
+
+If a movement does not finish and the driver reports a blocked motion queue, the queue can be reopened by
+sending `ClearError()` and `Continue()` on port 29999, or by restarting the robot.
 
 ### Known Issues
 
