@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,7 +31,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 # must be done before 'import propar' to make sure libs folder is added to PATH
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme import FolderManager as FoMa
@@ -44,37 +44,16 @@ import propar
 class Device(EmptyDevice):
     """Driver for Bronkhorst Propar devices such as EL-Flow, ES-Flow, (mini) CORI-FLOW, IQ+FLOW, and EL-PRESS."""
 
-    description =   """
-                    <p><strong>Bronkhorst Propar<br /><br /></strong></p>
-                    <p>This device class can be used to connect to different devices such as&nbsp;EL-Flow, ES-Flow,
-                     (mini) CORI-FLOW, IQ+FLOW, and others), Pressure Meters and Controllers (EL-PRESS).</p>
-                    <p>&nbsp;</p>
-                    <p><strong>Handling:</strong></p>
-                    <ul>
-                    <li>Flow is a value 0 and 100 with unit %.</li>
-                    <li>Choose between RS-232 or FLOW-BUS. In case of FLOW-BUS that is based on RS-485, please select
-                     the corresponding address your controller unit has.</li>
-                    <li>The baudrate is only used for communication via RS-232. Otherwise, the default value is used.
-                    </li>
-                    </ul>
-                    <p><strong>Custom unit:</strong></p>
-                    <ul>
-                    <li>Calculating a custom unit can be activated by entering a unit, e.g. 'l/min'.</li>
-                    <li>If a custom unit is given, please enter a float-type conversion factor.</li>
-                    <li>The conversion factor has the unit 'custom unit per %'.</li>
-                    <li>If a custom unit is used, the sweep mode "Flow in custom unit" can be used.&nbsp;</li>
-                    </ul>
-                    <p><strong>Information:</strong></p>
-                    <ul>
-                    <li>Not all devices are tested yet and returned variables might have to be adapted later to certain
-                     types of controllers.</li>
-                    </ul>
-                    <p>&nbsp;</p>
-                    <p><strong>Acknowledgement:</strong></p>
-                    <p>This device class is based on the python package bronkhorst-propar<br />
-                    <a href="https://pypi.org/project/bronkhorst-propar/"> https://pypi.org/project/bronkhorst-propar/
-                    </a><br />that has been released under MIT license by Bronkhorst.</p>
-                    """
+    GAS_INDEX: ClassVar[dict[str, int]] = {
+        "N2": 0,
+        "Air": 1,
+        "O2": 2,
+        "H2": 3,
+        "Ar": 4,
+        "He": 5,
+        "CH4": 6,
+        "CO2": 7,
+    }
 
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters.
@@ -113,10 +92,15 @@ class Device(EmptyDevice):
 
         self.measure_capacity: bool = False
         self.capacity: float = 0.0
-        self.measure_fluid_name: bool = False
-        self.fluid_name: str = ""
         self.measure_valve_output: bool = False
         self.valve_output: float = 0.0
+
+        self.gas_mode: str = "Do not set"
+        self.gas_type_readout: str = ""
+        self.measure_inlet_pressure: bool = False
+        self.inlet_pressure: float = 0.0
+        self.measure_outlet_pressure: bool = False
+        self.outlet_pressure: float = 0.0
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
@@ -129,13 +113,20 @@ class Device(EmptyDevice):
         if parameters.get("Address", "RS232") == "RS232":
             new_parameters["Baudrate"] = ["38400", "115200"]
 
+        if parameters.get("SweepMode", "Flow in %") == "Flow in custom unit":
+            new_parameters.update({
+                "": None,  # empty line
+                "Custom unit (c.u.)": "",
+                "Flow in c.u. at 100%": "",
+            })
+
         new_parameters.update({
-            "": None,  # empty line
-            "Custom unit (c.u.)": "",
-            "Flow in c.u. at 100%": "",
+            " ": None,  # empty line
+            "Gas type": ["Do not set", "Read only", *self.GAS_INDEX],
             "Measure capacity": False,
-            "Measure fluid name": False,
             "Measure valve output": False,
+            "Measure inlet pressure": False,
+            "Measure outlet pressure": False,
         })
 
         return new_parameters
@@ -169,13 +160,21 @@ class Device(EmptyDevice):
             self.measure_capacity = True
             self.add_return_variable("Capacity", "ln/min", plottype = True, savetype = True)
 
-        if parameters.get("Measure fluid name", False):
-            self.measure_fluid_name = True
-            self.add_return_variable("Fluid name", "", plottype = False, savetype = True)
-
         if parameters.get("Measure valve output", False):
             self.measure_valve_output = True
             self.add_return_variable("Valve output", "%", plottype = True, savetype = True)
+
+        self.gas_mode = parameters.get("Gas type", "Do not set")
+        if self.gas_mode == "Read only":
+            self.add_return_variable("Gas type", "", plottype=False, savetype=True)
+
+        self.measure_inlet_pressure = parameters.get("Measure inlet pressure", False)
+        if self.measure_inlet_pressure:
+            self.add_return_variable("Inlet pressure", "bar", plottype=True, savetype=True)
+
+        self.measure_outlet_pressure = parameters.get("Measure outlet pressure", False)
+        if self.measure_outlet_pressure:
+            self.add_return_variable("Outlet pressure", "bar", plottype=True, savetype=True)
 
     def add_return_variable(self, name: str, unit: str = "", plottype: bool = True, savetype: bool = True) -> None:
         """Add a return variable to the device class."""
@@ -217,6 +216,9 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
+        if self.gas_mode not in ("Do not set", "Read only"):
+            self.set_fluid_index(self.gas_mode)
+
         if self.use_custom_unit:
             try:
                 # we divide by 100.0 to have the conversion factor in c.u per %, so that it can be multiplied directly
@@ -249,9 +251,8 @@ class Device(EmptyDevice):
     def request_result(self) -> None:
         """Write command to ask the instrument to send measured data.
 
-        Pressure is not read out yet, as not all controllers provide a pressure sensor
-        It means that one needs to check whether the controller has a pressure sensor first or whether the value is
-        returned with status Ok
+        Inlet/outlet pressure readout requires a Flexi-Flow or other device with pressure sensors.
+        Enable them via 'Measure inlet pressure' / 'Measure outlet pressure' in the GUI.
         """
         self.flow_rate = self.get_measured_flow_rate()
         self.temperature = self.get_temperature()
@@ -260,13 +261,19 @@ class Device(EmptyDevice):
         if self.measure_capacity:
             self.capacity = self.get_capacity()
 
-        if self.measure_fluid_name:
-            self.fluid_name = self.get_fluid_name()
-
         if self.measure_valve_output:
             self.valve_output = self.get_valve_output()
 
-    def call(self) -> list:
+        if self.gas_mode == "Read only":
+            self.gas_type_readout = self.get_fluid_name()
+
+        if self.measure_inlet_pressure:
+            self.inlet_pressure = self.get_inlet_pressure()
+
+        if self.measure_outlet_pressure:
+            self.outlet_pressure = self.get_outlet_pressure()
+
+    def call(self) -> list[float | str]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         if self.use_custom_unit:
             results = [self.flow_rate*self.conversion_factor, self.flow_rate]
@@ -284,11 +291,17 @@ class Device(EmptyDevice):
         if self.measure_capacity:
             results.append(self.capacity)
 
-        if self.measure_fluid_name:
-            results.append(self.fluid_name)
-
         if self.measure_valve_output:
             results.append(self.valve_output)
+
+        if self.gas_mode == "Read only":
+            results.append(self.gas_type_readout)
+
+        if self.measure_inlet_pressure:
+            results.append(self.inlet_pressure)
+
+        if self.measure_outlet_pressure:
+            results.append(self.outlet_pressure)
 
         return results
 
@@ -414,6 +427,18 @@ class Device(EmptyDevice):
     def get_fluid_name(self) -> str:
         """Get the fluid name as string."""
         return self.get_parameter(25)
+
+    def set_fluid_index(self, gas_name: str) -> None:
+        """Set the gas/fluid type by name. Writes the fluidset index (dde_nr 24)."""
+        self.set_parameter(24, self.GAS_INDEX[gas_name])
+
+    def get_inlet_pressure(self) -> float:
+        """Get the inlet pressure in bar."""
+        return float(self.flow_controller.read(34, 0, 65))
+
+    def get_outlet_pressure(self) -> float:
+        """Get the outlet pressure in bar."""
+        return float(self.flow_controller.read(35, 0, 65))
 
     def get_valve_output(self) -> float:
         """Get the valve output signal in % ."""
