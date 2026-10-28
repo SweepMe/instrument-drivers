@@ -34,7 +34,7 @@
 from __future__ import annotations
 
 import time
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from pysweepme import Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -45,26 +45,18 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 Channel = Annotated[int, Selector(stateful=True), Range(1, 4)]
 Volts = Annotated[float, Unit("V")]
 Amperes = Annotated[float, Unit("A")]
-# The measurement ranges of all series: NGU 20 V, 6 V and 10 µA to 10 A; NGL/NGM 20 V, 5 V and 10 mA, 100 mA, 1 A, 10 A
-VoltageRange = Literal["Auto", "20 V", "6 V", "5 V"]
-CurrentRange = Literal["Auto", "10 µA", "1 mA", "10 mA", "100 mA", "1 A", "3 A", "10 A"]
-
-# The measurement range commands per range choice
-VOLTAGE_RANGE_COMMANDS: dict[str, str] = {
-    "Auto": "SENS:VOLT:RANG:AUTO 1",
-    "20 V": "SENS:VOLT:RANG 20",
-    "6 V": "SENS:VOLT:RANG 6",
-    "5 V": "SENS:VOLT:RANG 5",
-}
-CURRENT_RANGE_COMMANDS: dict[str, str] = {
-    "Auto": "SENS:CURR:RANG:AUTO 1",
-    "10 µA": "SENS:CURR:RANG 0.00001",
-    "1 mA": "SENS:CURR:RANG 0.001",
-    "10 mA": "SENS:CURR:RANG 0.01",
-    "100 mA": "SENS:CURR:RANG 0.1",
-    "1 A": "SENS:CURR:RANG 1",
-    "3 A": "SENS:CURR:RANG 3",
-    "10 A": "SENS:CURR:RANG 10",
+# The measurement ranges by GUI choice ("Auto" switches the autorange on). The commands take any value: the ranges
+# known so far are NGU 20 V, 6 V and 10 A, 3 A, 100 mA, 10 mA, 1 mA, 10 µA; NGL/NGM 20 V, 5 V and 10 A, 1 A, 100 mA,
+# 10 mA; the NGE and NGP series are not checked yet.
+VOLTAGE_RANGES: dict[str, float] = {"20 V": 20, "6 V": 6, "5 V": 5}
+CURRENT_RANGES: dict[str, float] = {
+    "10 µA": 0.00001,
+    "1 mA": 0.001,
+    "10 mA": 0.01,
+    "100 mA": 0.1,
+    "1 A": 1,
+    "3 A": 3,
+    "10 A": 10,
 }
 
 # NPLC per speed; only the NGU series has NPLC (the NGL/NGM manual has no such command)
@@ -110,8 +102,8 @@ class Device(EmptyDevice):
             "Channel": [1, 2],
             "RouteOut": ["Front"],
             "Compliance": 5.0,
-            "Range": ["Auto", "10 µA", "1 mA", "10 mA", "100 mA", "1 A", "3 A", "10 A"],
-            "RangeVoltage": ["Auto", "20 V", "6 V", "5 V"],
+            "Range": ["Auto", *CURRENT_RANGES],
+            "RangeVoltage": ["Auto", *VOLTAGE_RANGES],
             "Speed": ["Very fast", "Fast", "Medium", "Slow", "Very slow"],
         }
 
@@ -158,8 +150,14 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Set ranges, limits, the start value and the speed of the selected channel."""
-        self.set_voltage_range(self.channel, self.voltage_range)
-        self.set_current_range(self.channel, self.current_range)
+        if self.voltage_range in VOLTAGE_RANGES:
+            self.set_voltage_range(self.channel, VOLTAGE_RANGES[self.voltage_range])
+        else:
+            self.set_voltage_autorange(self.channel, True)
+        if self.current_range in CURRENT_RANGES:
+            self.set_current_range(self.channel, CURRENT_RANGES[self.current_range])
+        else:
+            self.set_current_autorange(self.channel, True)
 
         if self.source.startswith("Voltage"):
             self.set_current_limit(self.channel, self.protection)
@@ -355,14 +353,45 @@ class Device(EmptyDevice):
         return float(voltage), float(current)
 
     @command
-    def set_voltage_range(self, channel: Channel, voltage_range: VoltageRange) -> None:
-        """Set the voltage measurement range of the channel: 20 V or 6 V on the NGU, 20 V or 5 V on the NGL/NGM."""
-        self.port.write(VOLTAGE_RANGE_COMMANDS[voltage_range])
+    def set_voltage_range(self, channel: Channel, voltage_range: Volts) -> None:
+        """Set the voltage measurement range of the channel, e.g. 20 or 6 V on the NGU, 20 or 5 V on the NGL/NGM."""
+        self.port.write(f"SENS:VOLT:RANG {voltage_range:g}")
+
+    @command(returns=("voltage_range",), reads="setpoint")
+    def get_voltage_range(self, channel: Channel) -> Volts:
+        """Return the voltage measurement range of the channel."""
+        return float(self.port.query("SENS:VOLT:RANG?"))
 
     @command
-    def set_current_range(self, channel: Channel, current_range: CurrentRange) -> None:
-        """Set the current measurement range of the channel; doc/description.md lists the ranges of each series."""
-        self.port.write(CURRENT_RANGE_COMMANDS[current_range])
+    def set_voltage_autorange(self, channel: Channel, voltage_autorange: bool) -> None:
+        """Switch the autorange of the voltage measurement of the channel on (True) or off (False)."""
+        self.port.write(f"SENS:VOLT:RANG:AUTO {1 if voltage_autorange else 0}")
+
+    @command(returns=("voltage_autorange",), reads="setpoint")
+    def get_voltage_autorange(self, channel: Channel) -> bool:
+        """Return whether the voltage measurement of the channel ranges automatically."""
+        return self.port.query("SENS:VOLT:RANG:AUTO?").strip() in ("1", "ON")
+
+    @command
+    def set_current_range(self, channel: Channel, current_range: Amperes) -> None:
+        """Set the current measurement range of the channel; doc/description.md lists the ranges known per series."""
+        # A plain decimal (0.00001, not 1e-05), as the manuals write the ranges
+        self.port.write(f"SENS:CURR:RANG {current_range:.6f}".rstrip("0").rstrip("."))
+
+    @command(returns=("current_range",), reads="setpoint")
+    def get_current_range(self, channel: Channel) -> Amperes:
+        """Return the current measurement range of the channel."""
+        return float(self.port.query("SENS:CURR:RANG?"))
+
+    @command
+    def set_current_autorange(self, channel: Channel, current_autorange: bool) -> None:
+        """Switch the autorange of the current measurement of the channel on (True) or off (False)."""
+        self.port.write(f"SENS:CURR:RANG:AUTO {1 if current_autorange else 0}")
+
+    @command(returns=("current_autorange",), reads="setpoint")
+    def get_current_autorange(self, channel: Channel) -> bool:
+        """Return whether the current measurement of the channel ranges automatically."""
+        return self.port.query("SENS:CURR:RANG:AUTO?").strip() in ("1", "ON")
 
     @command
     def set_nplc(self, channel: Channel, nplc: float) -> None:
