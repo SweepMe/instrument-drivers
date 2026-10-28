@@ -31,6 +31,7 @@ driver guidelines of the sweepme plugin (sweepme-driver-writing, SKILL.md and re
     DC017  a `description` class attribute (legacy; the documentation goes into doc/description.md)
     DC018  a command without a docstring
     DC019  a pair of semantic functions (connect/disconnect, ...) split by another method
+    DC020  a setter's value parameter named generically (value, state, mode, ...) instead of after its quantity
 
 Only the .py files directly in a driver folder are read (main.py and the helper modules beside it, not libraries).
 
@@ -74,6 +75,8 @@ FRAMEWORK = (
 COMMAND_PREFIXES = ("get_", "set_", "read_", "write_", "measure_", "fetch_", "enable_", "disable_", "start_", "stop_",
                     "reset", "trigger", "abort", "clear_", "is_")
 CHANNEL_PARAMETERS = ("channel",)
+#: Value parameter names that say nothing about the quantity a setter sets (DC020): renamed when a driver is touched.
+GENERIC_VALUE_NAMES = ("value", "val", "state", "mode", "setting", "x", "v")
 #: A comment accepting a finding where it is deliberate: "# check_driver: ignore DC004, DC010 - why".
 IGNORE = re.compile(r"#\s*check_driver:\s*ignore\s+((?:DC\d{3}[,\s]*)+)", re.IGNORECASE)
 PORT_METHODS = ("write", "query", "read", "write_raw", "read_raw")
@@ -292,6 +295,7 @@ def check_driver(folder: Path) -> list[Finding]:
                 report.add("DC004", method, method.node.lineno,
                            "looks like a command but is not decorated - in a driver using @command it is not offered")
         _duplicate_quantities(commands, report)
+    _generic_value_names(commands, report)
     _semantic_raw_commands(driver, commands, report)
     _semantic_order(driver, report)
     _split_pairs(driver, report)
@@ -484,6 +488,24 @@ def _duplicate_quantities(commands: list[Method], report: Report) -> None:
             report.add("DC010", methods[1], methods[1].node.lineno,
                        f"the value parameter '{name}' is set by {listed} - name each after what it sets, "
                        f"or they are one quantity in the recorded values")
+
+
+def _generic_value_names(commands: list[Method], report: Report) -> None:
+    """DC020: a setter's value parameter named `value`, `state`, `mode`, ... - the recorded series takes its name.
+
+    A setter is a method annotated -> None, or in an undeclared driver one named set_...; the renaming break is
+    accepted whenever a driver is touched (Driver API concept, review point 4).
+    """
+    for method in commands:
+        if method.kind_run or method.composite:
+            continue
+        if not (method.returns_none or (not method.decorated and method.name.startswith("set_"))):
+            continue
+        for parameter in method.parameters:
+            if parameter.arg.lower() in GENERIC_VALUE_NAMES:
+                report.add("DC020", method, method.node.lineno,
+                           f"the value parameter '{parameter.arg}' does not say what it sets - name it after its "
+                           f"quantity (voltage, operation_mode, current_range), which names the recorded series")
 
 
 def _semantic_raw_commands(driver: Driver, commands: list[Method], report: Report) -> None:
