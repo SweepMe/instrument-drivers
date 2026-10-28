@@ -37,12 +37,12 @@ import time
 from typing import Annotated, Any, Literal
 
 import numpy as np
-from pysweepme import Label, Range, Unit, command
+from pysweepme import Label, Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug
 
 # What the communication commands take and answer (checked by @command on every call)
-Channel = Annotated[int, Range(1, 2)]
+Channel = Annotated[int, Selector(), Range(1, 2)]
 # The values ACQ:DEC accepts - another value is ignored without an error. (ACQ:DEC:Factor, from OS 2.00, would also
 # take any whole number from 16 to 65536.)
 Decimation = Literal[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]

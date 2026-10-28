@@ -8,7 +8,7 @@ import ljm_constants_wrapped as ljm_constants
 from labjack import ljm
 
 import numpy as np
-from pysweepme import Label, Range, Unit, command
+from pysweepme import Label, Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug
 
@@ -19,7 +19,7 @@ DEBUG = False
 Volts = Annotated[float, Unit("V")]
 Celsius = Annotated[float, Unit("°C")]
 Hertz = Annotated[float, Unit("Hz")]
-DacChannel = Annotated[int, Range(0, 1)]
+DacChannel = Annotated[int, Selector(), Range(0, 1)]
 DacVoltage = Annotated[Volts, Range(0.0, 5.0), Label("DAC voltage")]
 DigitalDirection = Literal["IN", "OUT"]
 

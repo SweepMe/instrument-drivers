@@ -38,11 +38,11 @@ import time
 from typing import Annotated, Literal
 
 import numpy as np
-from pysweepme import Range, Unit, command
+from pysweepme import Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 # What the communication commands take and answer (checked by @command on every call)
-Channel = Annotated[int, Range(1, 2)]
+Channel = Annotated[int, Selector(), Range(1, 2)]
 Volts = Annotated[float, Unit("V")]
 Amperes = Annotated[float, Unit("A")]
 Celsius = Annotated[float, Unit("°C")]
@@ -232,6 +232,10 @@ class Device(EmptyDevice):
             self.savetype = [True, True]
 
     # --- Connection management -------------------------------------------------
+
+    def apply_selectors(self, channel: int) -> None:
+        """Take over the channel a bench entry binds, so that the stages act on it (Instrument Control)."""
+        self.channel = int(channel)
 
     def connect(self) -> None:
         """Open a connection to the miniSMU and verify the device identity.
