@@ -45,28 +45,30 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 Channel = Annotated[int, Selector(stateful=True), Range(1, 4)]
 Volts = Annotated[float, Unit("V")]
 Amperes = Annotated[float, Unit("A")]
-VoltageRange = Literal["Auto", "20 V", "6 V"]
-CurrentRange = Literal["Auto", "10 µA", "1 mA", "10 mA", "100 mA", "3 A", "10 A"]
+# The measurement ranges of all series: NGU 20 V, 6 V and 10 µA to 10 A; NGL/NGM 20 V, 5 V and 10 mA, 100 mA, 1 A, 10 A
+VoltageRange = Literal["Auto", "20 V", "6 V", "5 V"]
+CurrentRange = Literal["Auto", "10 µA", "1 mA", "10 mA", "100 mA", "1 A", "3 A", "10 A"]
 
 # The measurement range commands per range choice
 VOLTAGE_RANGE_COMMANDS: dict[str, str] = {
     "Auto": "SENS:VOLT:RANG:AUTO 1",
     "20 V": "SENS:VOLT:RANG 20",
     "6 V": "SENS:VOLT:RANG 6",
+    "5 V": "SENS:VOLT:RANG 5",
 }
 CURRENT_RANGE_COMMANDS: dict[str, str] = {
     "Auto": "SENS:CURR:RANG:AUTO 1",
-    "10 µA": "SENS:CURR:RANG 0.0001",
+    "10 µA": "SENS:CURR:RANG 0.00001",
     "1 mA": "SENS:CURR:RANG 0.001",
     "10 mA": "SENS:CURR:RANG 0.01",
     "100 mA": "SENS:CURR:RANG 0.1",
+    "1 A": "SENS:CURR:RANG 1",
     "3 A": "SENS:CURR:RANG 3",
     "10 A": "SENS:CURR:RANG 10",
 }
 
-# NPLC per speed: the NGU series and the other models
+# NPLC per speed; only the NGU series has NPLC (the NGL/NGM manual has no such command)
 NPLC_NGU: dict[str, float] = {"Very fast": 0, "Fast": 5, "Medium": 10, "Slow": 50, "Very slow": 100}
-NPLC_OTHERS: dict[str, float] = {"Very fast": 0, "Fast": 0.1, "Medium": 1, "Slow": 10, "Very slow": 10}
 
 
 class Device(EmptyDevice):
@@ -108,8 +110,8 @@ class Device(EmptyDevice):
             "Channel": [1, 2],
             "RouteOut": ["Front"],
             "Compliance": 5.0,
-            "Range": ["Auto", "10 µA", "1 mA", "10 mA", "100 mA", "3 A", "10 A"],
-            "RangeVoltage": ["Auto", "20 V", "6 V"],
+            "Range": ["Auto", "10 µA", "1 mA", "10 mA", "100 mA", "1 A", "3 A", "10 A"],
+            "RangeVoltage": ["Auto", "20 V", "6 V", "5 V"],
             "Speed": ["Very fast", "Fast", "Medium", "Slow", "Very slow"],
         }
 
@@ -168,10 +170,9 @@ class Device(EmptyDevice):
             self.set_current(self.channel, 0.0)
             self.set_voltage(self.channel, self.protection)
 
-        # The NPLC values are only known for the NGU series; those of the other models are not checked yet
-        nplc = NPLC_NGU if self.model == "NGU" else NPLC_OTHERS
-        if self.speed in nplc:
-            self.set_nplc(self.channel, nplc[self.speed])
+        # Speed sets the NPLC, which only the NGU series has; on the other models it is not sent
+        if self.model == "NGU" and self.speed in NPLC_NGU:
+            self.set_nplc(self.channel, NPLC_NGU[self.speed])
 
     def unconfigure(self) -> None:
         """Set the source back to zero and unlock the front panel."""
@@ -355,15 +356,15 @@ class Device(EmptyDevice):
 
     @command
     def set_voltage_range(self, channel: Channel, voltage_range: VoltageRange) -> None:
-        """Set the voltage measurement range of the channel."""
+        """Set the voltage measurement range of the channel: 20 V or 6 V on the NGU, 20 V or 5 V on the NGL/NGM."""
         self.port.write(VOLTAGE_RANGE_COMMANDS[voltage_range])
 
     @command
     def set_current_range(self, channel: Channel, current_range: CurrentRange) -> None:
-        """Set the current measurement range of the channel."""
+        """Set the current measurement range of the channel; doc/description.md lists the ranges of each series."""
         self.port.write(CURRENT_RANGE_COMMANDS[current_range])
 
     @command
     def set_nplc(self, channel: Channel, nplc: float) -> None:
-        """Set the integration time in power line cycles: a high NPLC measures slowly and precisely."""
+        """Set the integration time in power line cycles (NGU series only): a high NPLC measures slowly."""
         self.port.write(f"NPLC {nplc:0.1f}")
