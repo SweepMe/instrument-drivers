@@ -14,6 +14,10 @@ Please note that for the KXCI mode, some features like Pulse Mode, List Mode, an
 - Current range: Limited: Sets the lowest current range of the SMU to be used when measuring with auto range to save time. Current range denotes the measurement range. The source range is set to auto by default.
 - Speed/Integration: Sets the integration time to NPLC (Power Line Cycles) or to a predefined speed setting very fast (0.01 NPLC), Fast (0.1 NPLC), Medium (1 NPLC), or Slow (10 NPLC). Custom speed requires delay factor, filter factor, and A/D aperture time to be set. See the manual for more information.
 
+## Compliance warning
+
+In KXCI mode, the driver writes a warning to the Debug widget at every measurement point at which the SMU channel is in compliance. To turn it off, set `WARN_ON_COMPLIANCE = False` at the top of `main.py`.
+
 ## List Mode
 
 - Activate Sweep value: List sweep
