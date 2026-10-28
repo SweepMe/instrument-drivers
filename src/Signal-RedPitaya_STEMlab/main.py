@@ -715,11 +715,11 @@ class Device(EmptyDevice):
         self.port.write("SOUR{0}:TRIG:INT".format(channel))
 
     @command
-    def set_burst_state(self, channel: Channel, state: BurstState) -> None:
+    def set_burst_state(self, channel: Channel, burst_state: BurstState) -> None:
         """Set the operation mode: CONTINUOUS or BURST ('SOUR<n>:BURS:STAT')."""
-        self.port.write("SOUR{0}:BURS:STAT {1}".format(channel, state))
+        self.port.write("SOUR{0}:BURS:STAT {1}".format(channel, burst_state))
 
-    @command(returns=("state",), reads="setpoint")
+    @command(returns=("burst_state",), reads="setpoint")
     def get_burst_state(self, channel: Channel) -> BurstState:
         """Return the operation mode, 'CONTINUOUS' or 'BURST'."""
         return self.port.query("SOUR{0}:BURS:STAT?".format(channel))
