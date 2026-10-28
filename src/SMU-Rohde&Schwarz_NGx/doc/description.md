@@ -19,12 +19,20 @@ The instrument keeps the selected output (`INST:OUT<n>`), and every command acts
 command of the driver therefore takes its `channel`, and the driver selects the output only when it differs from
 the one selected last. Several modules or scripts on one instrument share that knowledge through the port.
 
-- The NGU series has one output and does not understand `INST:OUT`: channel 1 is the only channel there.
+- The NGU series has one output: channel 1 is the only channel there, and the driver sends no `INST:OUT` to it.
 - A change made at the front panel, or a raw `INST:OUT` sent past the driver, is not noticed: the next command may
   then act on the wrong output. `reset_instrument` makes the driver select again.
 - `set_channel(channel)` is kept for existing scripts, but is no longer needed.
 
 ## Parameters
 
-- **Speed** sets the integration time in power line cycles (NPLC). The values are known for the NGU series only
-  (0, 5, 10, 50, 100); the other models are not checked yet.
+- **Range** and **RangeVoltage** set the measurement ranges. Each series has its own; choose one your instrument has:
+
+  | Series | Voltage ranges | Current ranges |
+  |---|---|---|
+  | NGU | 20 V, 6 V | 10 A, 3 A, 100 mA, 10 mA, 1 mA, 10 µA |
+  | NGL, NGM | 20 V, 5 V | 10 A, 1 A, 100 mA, 10 mA |
+
+  The ranges of the NGE and NGP series are not checked yet.
+- **Speed** sets the integration time in power line cycles (NPLC) on the NGU series (0, 5, 10, 50 and 100 from
+  Very fast to Very slow). The other series have no NPLC command, so Speed has no effect there.
