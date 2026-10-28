@@ -4,19 +4,19 @@
 # find those in the corresponding folders or contact the maintainer.
 #
 # MIT License
-# 
-# Copyright (c) 2022-2024 SweepMe! GmbH (sweep-me.net)
-# 
+#
+# Copyright (c) 2022-2026 SweepMe! GmbH (sweep-me.net)
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -29,28 +29,52 @@
 # * Module: SMU
 # * Instrument: Rohde&Schwarz NGx
 
-import time
+# ruff: noqa: ARG002  # a command does not send the channel: @command selects it through apply_selectors
 
-from pysweepme.ErrorMessage import error
+from __future__ import annotations
+
+import time
+from typing import Annotated, Any, Literal
+
+from pysweepme import Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+# What the communication commands take and answer (checked by @command on every call).
+# The instrument keeps the selected output (INST:OUT<n>), so the channel is a stateful selector: @command selects it
+# through apply_selectors only when it differs from the output selected last.
+Channel = Annotated[int, Selector(stateful=True), Range(1, 4)]
+Volts = Annotated[float, Unit("V")]
+Amperes = Annotated[float, Unit("A")]
+VoltageRange = Literal["Auto", "20 V", "6 V"]
+CurrentRange = Literal["Auto", "10 µA", "1 mA", "10 mA", "100 mA", "3 A", "10 A"]
+
+# The measurement range commands per range choice
+VOLTAGE_RANGE_COMMANDS: dict[str, str] = {
+    "Auto": "SENS:VOLT:RANG:AUTO 1",
+    "20 V": "SENS:VOLT:RANG 20",
+    "6 V": "SENS:VOLT:RANG 6",
+}
+CURRENT_RANGE_COMMANDS: dict[str, str] = {
+    "Auto": "SENS:CURR:RANG:AUTO 1",
+    "10 µA": "SENS:CURR:RANG 0.0001",
+    "1 mA": "SENS:CURR:RANG 0.001",
+    "10 mA": "SENS:CURR:RANG 0.01",
+    "100 mA": "SENS:CURR:RANG 0.1",
+    "3 A": "SENS:CURR:RANG 3",
+    "10 A": "SENS:CURR:RANG 10",
+}
+
+# NPLC per speed: the NGU series and the other models
+NPLC_NGU: dict[str, float] = {"Very fast": 0, "Fast": 5, "Medium": 10, "Slow": 50, "Very slow": 100}
+NPLC_OTHERS: dict[str, float] = {"Very fast": 0, "Fast": 0.1, "Medium": 1, "Slow": 10, "Very slow": 10}
 
 
 class Device(EmptyDevice):
-    description = """
-    <p><strong>Usage:</strong></p>
-    <ul>
-    <li>The default channel is 1. The rear terminal also works with this channel. 
-    Do not change it unless you need it.</li>
-    <li>The USB protocol needs to be set to TMC manually from the front panel. 
-    The setting can be found under "USB Class" from the "Network Connections" dialog.</li>
-    <li>To use '4-wire' just include the Sense connectors of the instrument into your circuit and 
-    it will automatically change to 4-wire mode.</li>
-    </ul> 
-    """
+    """Driver for the Rohde & Schwarz NGx power supplies and source measure units (NGE, NGL, NGM, NGP, NGU)."""
 
-    def __init__(self):
-
-        EmptyDevice.__init__(self)
+    def __init__(self) -> None:
+        """Define the returned variables and the port."""
+        super().__init__()
 
         self.shortname = "NGx"
 
@@ -61,15 +85,25 @@ class Device(EmptyDevice):
 
         self.port_manager = True
         self.port_types = ["COM", "USBTMC", "GPIB", "TCPIP"]
+        self.port_properties = {"timeout": 1}
 
-        self.port_properties = {"timeout": 1,
-                                }
+        # "NGU" once connect() identified an NGU, which has one output and does not understand INST:OUT
+        self.model: str | None = None
 
-        self.model = None
+        self.port_string: str = ""
+        self.source: str = "Voltage in V"
+        self.protection: float = 5.0
+        self.channel: int = 1
+        self.current_range: str = "Auto"
+        self.voltage_range: str = "Auto"
+        self.speed: str = "Very fast"
 
-    def set_GUIparameter(self):
+        self.v: float = float("nan")
+        self.i: float = float("nan")
 
-        gui_parameter = {
+    def set_GUIparameter(self) -> dict[str, Any]:  # noqa: N802
+        """Return the GUI fields of the SMU module."""
+        return {
             "SweepMode": ["Voltage in V", "Voltage in V (with wait)", "Current in A", "Current in A (with wait)"],
             "Channel": [1, 2],
             "RouteOut": ["Front"],
@@ -77,390 +111,259 @@ class Device(EmptyDevice):
             "Range": ["Auto", "10 µA", "1 mA", "10 mA", "100 mA", "3 A", "10 A"],
             "RangeVoltage": ["Auto", "20 V", "6 V"],
             "Speed": ["Very fast", "Fast", "Medium", "Slow", "Very slow"],
-            # "4wire": False,
         }
 
-        return gui_parameter
+    def get_GUIparameter(self, parameter: dict[str, Any]) -> None:  # noqa: N802
+        """Store the user selections."""
+        self.port_string = str(parameter.get("Port", ""))
+        self.source = str(parameter.get("SweepMode", "Voltage in V"))
+        self.protection = float(parameter.get("Compliance", 5.0))
+        self.channel = int(parameter.get("Channel", 1))
+        self.current_range = str(parameter.get("Range", "Auto"))
+        self.voltage_range = str(parameter.get("RangeVoltage", "Auto"))
+        self.speed = str(parameter.get("Speed", "Very fast"))
 
-    def get_GUIparameter(self, parameter={}):
-        self.port_string = parameter["Port"]
-        self.source = parameter["SweepMode"]
-        self.protection = parameter["Compliance"]
-        self.channel = int(parameter["Channel"])
-        self.current_range = parameter["Range"]
-        self.voltage_range = parameter["RangeVoltage"]
-        self.speed = parameter["Speed"]
+    def apply_selectors(self, channel: int) -> None:
+        """Select the output the following commands act on, and let the stages act on it too.
 
-    """ here, semantic standard functions start that are called by SweepMe! during a measurement """
+        @command calls it when a command takes another channel than the one selected last, Instrument Control after
+        connect() with the channel a bench entry binds. pysweepme remembers the selection on the port.
+        """
+        if self.model == "NGU":
+            if int(channel) != 1:
+                msg = f"The NGU has one output, channel {channel} does not exist."
+                raise ValueError(msg)
+        else:
+            self.port.write(f"INST:OUT{int(channel)}")
+        self.channel = int(channel)
 
-    def connect(self):
-        if self.port_string.startswith("TCPIP"):
-            if self.port_string.endswith("SOCKET"):
-                self.port.port.write_termination = '\n'
-                self.port.port.read_termination = '\n'
+    def connect(self) -> None:
+        """Set the socket terminations and identify the model."""
+        if self.port_string.startswith("TCPIP") and self.port_string.endswith("SOCKET"):
+            self.port.port.write_termination = "\n"
+            self.port.port.read_termination = "\n"
 
-        # we do identification in connect as knowing the model is essential for further communication, e.g. because
-        # commands like set_channel do not work for NGU series
-        identifier = self.get_identification()
-        #print("Identifier:", identifier)  # can be used to check the instrument
-
-        if identifier.find("NGU") > 0:
+        # The model decides how outputs are selected (the NGU has one and no INST:OUT), so it is identified first
+        if "NGU" in self.get_identification():
             self.model = "NGU"
 
-    def initialize(self):
-
+    def initialize(self) -> None:
+        """Reset the instrument."""
         self.reset_instrument()
 
-    def configure(self):
+    def deinitialize(self) -> None:
+        """Nothing to do."""
 
-        # Range
-        self.set_voltage_range(self.voltage_range)
-        self.set_current_range(self.current_range)
-
-        # Channel
-        self.set_channel(self.channel)
-
-        # Source
-        if self.source.startswith("Voltage"):
-            self.set_current_limit(self.protection)
-            self.set_voltage(0.0)
-            self.set_current(self.protection)
-        elif self.source.startswith("Current"):
-            self.set_voltage_limit(self.protection)
-            self.set_current(0.0)
-            self.set_voltage(self.protection)
-
-        # Speed
-        # Possible NPLC settings for model NGU are 0, 5, 10, 50 and 100
-        # TODO: the entire Speed section needs a revision as the NPLC settings are only known for the NGU series
-        if self.speed == "Very fast":
-            if self.model == "NGU":
-                self.set_nplc(0)
-            else:
-                self.set_nplc(0)  # TODO: check whether other models support 0
-        elif self.speed == "Fast":
-            if self.model == "NGU":
-                self.set_nplc(5)
-            else:
-                self.set_nplc(0.1)  # TODO: check whether other models support 0.1
-        elif self.speed == "Medium":
-            if self.model == "NGU":
-                self.set_nplc(10)
-            else:
-                self.set_nplc(1)  # TODO: check whether other models support 1
-        elif self.speed == "Slow":
-            if self.model == "NGU":
-                self.set_nplc(50)
-            else:
-                self.set_nplc(10)  # TODO: check whether other models support 10
-        elif self.speed == "Very slow":
-            if self.model == "NGU":
-                self.set_nplc(100)
-            else:
-                self.set_nplc(10)  # TODO: check whether other models support 10
-
-    def unconfigure(self):
+    def configure(self) -> None:
+        """Set ranges, limits, the start value and the speed of the selected channel."""
+        self.set_voltage_range(self.channel, self.voltage_range)
+        self.set_current_range(self.channel, self.current_range)
 
         if self.source.startswith("Voltage"):
-            self.set_voltage(0.0)
+            self.set_current_limit(self.channel, self.protection)
+            self.set_voltage(self.channel, 0.0)
+            self.set_current(self.channel, self.protection)
         elif self.source.startswith("Current"):
-            self.set_current(0.0)
+            self.set_voltage_limit(self.channel, self.protection)
+            self.set_current(self.channel, 0.0)
+            self.set_voltage(self.channel, self.protection)
+
+        # The NPLC values are only known for the NGU series; those of the other models are not checked yet
+        nplc = NPLC_NGU if self.model == "NGU" else NPLC_OTHERS
+        if self.speed in nplc:
+            self.set_nplc(self.channel, nplc[self.speed])
+
+    def unconfigure(self) -> None:
+        """Set the source back to zero and unlock the front panel."""
+        if self.source.startswith("Voltage"):
+            self.set_voltage(self.channel, 0.0)
+        elif self.source.startswith("Current"):
+            self.set_current(self.channel, 0.0)
 
         self.unlock_local_interface()
 
-    def deinitialize(self):
-        pass
-
-    def poweron(self):
-        self.set_channel(self.channel)
-        self.set_output_on()
+    def poweron(self) -> None:
+        """Arm the output of the channel and switch the output generation on."""
+        self.set_output_on(self.channel)
         self.set_generation_on()
 
-    def poweroff(self):
-        self.set_channel(self.channel)
+    def poweroff(self) -> None:
+        """Switch the output generation off and disarm the output of the channel."""
         self.set_generation_off()
-        self.set_output_off()
+        self.set_output_off(self.channel)
 
-    def apply(self):
-        self.set_channel(self.channel)
+    def apply(self) -> None:
+        """Set the new sweep value."""
         if self.source.startswith("Voltage"):
-            self.set_voltage(self.value)
-
+            self.set_voltage(self.channel, float(self.value))
         elif self.source.startswith("Current"):
-            self.set_current(self.value)
+            self.set_current(self.channel, float(self.value))
 
-        # wait for achieving the set voltage or set current before
-        # other channels are changed
+        # wait for achieving the set voltage or set current before other channels are changed
         if "(with wait)" in self.source:
             time.sleep(0.5)
 
-    def measure(self):
-        self.set_channel(self.channel)
-        self.v, self.i = self.read_data()
-        # print(self.v, self.i)
+    def measure(self) -> None:
+        """Measure voltage and current of the channel."""
+        self.v, self.i = self.read_data(self.channel)
 
-    def call(self):
+    def call(self) -> list[float]:
+        """Return the measured voltage and current."""
         return [self.v, self.i]
 
-    """ here, convenience functions start """
+    @command(returns=("identification",), reads="state")
+    def get_identification(self) -> str:
+        """Return the identification: Rohde&Schwarz,<device type>,<part number>/<serial number>,<firmware version>."""
+        return self.port.query("*IDN?")
 
-    def get_identification(self):
-        """
-        This function return the identification number of the instrument, with the following format:
-        Rohde&Schwarz,<device type>,<part number>/<serial number>,<firmware version>
-        Returns:
-            str: identification number
-        """
-        self.port.write("*IDN?")
-        answer = self.port.read()
-        
-        return answer
+    @command(returns=("options",), reads="state")
+    def get_options(self) -> str:
+        """Return the options installed in the instrument."""
+        return self.port.query("*OPT?")
 
-    def get_options(self):
-        """
-        This function returns the options included in the instrument.
-        Returns:
-            str: option number
-        """
-        self.port.write("*OPT?")
-        answer = self.port.read()
-        
-        return answer
-
-    def reset_instrument(self):
-        """
-        This function resets the device to its default settings.
-        Returns:
-            None
-        """
+    @command(hazards="Resets every setting of the instrument to its default.")
+    def reset_instrument(self) -> None:
+        """Reset the instrument to its default settings (*RST)."""
         self.port.write("*RST")
-        
+        # the reset also changes the selected output
+        self.forget_selections()
 
-    def set_voltage_limit(self, protection):
-        """
-        This function turns on the safety limits of the instrument and sets a high threshold for the voltage. Note that
-        a lower threshold is also available with these instruments.
-        Args:
-            protection: float or str
-        Returns:
-            None
-        """
-        self.port.write("ALIM 1")  # To make sure that the safety limits are on beforehand.
-        
-        self.port.write("VOLT:ALIM %1.3f" % float(protection))
+    def set_channel(self, channel: int) -> None:  # check_driver: ignore DC004 - kept for scripts; no command
+        """Select the output the following commands act on; kept for scripts, every command takes its channel now."""
+        self.apply_selectors(channel=channel)
 
-    def get_voltage_limit(self):
-        """
-        This function gets the voltage limit of the instrument.
-        Returns:
-            float: answer
-        """
-        self.port.write("VOLT:ALIM?")
-        answer = self.port.read()
-        
-        return answer
+    @command
+    def set_safety_limits(self, channel: Channel, safety_limits: bool) -> None:
+        """Switch the safety limits of the channel on (True) or off (False)."""
+        self.port.write(f"ALIM {1 if safety_limits else 0}")
 
-    def set_current_limit(self, protection):
-        """
-        This function turns on the safety limits of the instrument and sets a high threshold for the current. Note that
-        a lower threshold is also available with this instrument.
-        Args:
-            protection: float ot str
-        Returns:
-            None
-        """
-        self.port.write("ALIM 1")
-        
-        self.port.write("CURR:ALIM %1.4f" % float(protection))
-        
-    def get_current_limit(self):
-        """
-        This function gets the current limit of the instrument.
-        Returns:
-            float: answer
-        """
-        self.port.write("CURR:ALIM?")
-        answer = self.port.read()
-        
-        return answer
+    @command(returns=("safety_limits",), reads="setpoint")
+    def get_safety_limits(self, channel: Channel) -> bool:
+        """Return whether the safety limits of the channel are on."""
+        return self.port.query("ALIM?").strip() in ("1", "ON")
 
-    def set_channel(self, channel):
-        """
-        This function selects a channel as the active channel of the instrument. Then the channel does not need to be
-        specified anymore with other commands.
+    # check_driver: ignore DC008 - the upper limit has no command of its own; switching the limits on stays part of it
+    @command(composite=True)
+    def set_voltage_limit(self, channel: Channel, voltage_limit: Volts) -> None:
+        """Switch the safety limits of the channel on and set the upper voltage limit."""
+        self.set_safety_limits(channel, True)
+        self.port.write(f"VOLT:ALIM {voltage_limit:1.3f}")
 
-        It seems that this commands does not work with the NGU series
-        Args:
-            channel: int
+    @command(returns=("voltage_limit",), reads="setpoint")
+    def get_voltage_limit(self, channel: Channel) -> Volts:
+        """Return the upper voltage limit of the channel."""
+        return float(self.port.query("VOLT:ALIM?"))
 
-        Returns:
-            None
-        """
+    # check_driver: ignore DC008 - the upper limit has no command of its own; switching the limits on stays part of it
+    @command(composite=True)
+    def set_current_limit(self, channel: Channel, current_limit: Amperes) -> None:
+        """Switch the safety limits of the channel on and set the upper current limit."""
+        self.set_safety_limits(channel, True)
+        self.port.write(f"CURR:ALIM {current_limit:1.4f}")
 
-        # set channel is often used in the driver to change the activated driver before further commands are sent.
-        # This is why the model is checked here, because the NGU model does not seem to understand the INST:OUT command.
-        if self.model != "NGU":
-            self.port.write("INST:OUT%i" % int(channel))
+    @command(returns=("current_limit",), reads="setpoint")
+    def get_current_limit(self, channel: Channel) -> Amperes:
+        """Return the upper current limit of the channel."""
+        return float(self.port.query("CURR:ALIM?"))
 
-    def set_voltage(self, voltage):
-        """
-        This function sets a voltage to a selected output channel. The output then needs to be turned on.
-        Args:
-            voltage: float or str
+    @command
+    def set_voltage(self, channel: Channel, voltage: Volts) -> None:
+        """Set the voltage of the channel; the output is switched on with set_output_on and set_generation_on."""
+        self.port.write(f"VOLT {voltage:1.3f}")
 
-        Returns:
-            None
-        """
-        self.port.write("VOLT %1.3f" % float(voltage))
-        
-    def get_voltage(self):
-        """
-        This function measures the voltage difference of the terminals for a selected channel.
-        Returns:
-            float: voltage
-        """
-        self.port.write("MEAS:VOLT?")
-        answer = float(self.port.read())
-        
-        return answer
+    @command(returns=("voltage",), reads="setpoint")
+    def get_voltage_setpoint(self, channel: Channel) -> Volts:
+        """Return the voltage the channel is set to."""
+        return float(self.port.query("VOLT?"))
 
-    def set_current(self, current):
-        """
-        This function sets a current to a selected output channel. The output then needs to be turned on.
-        Args:
-            current: float or str
+    @command(returns=("voltage",))
+    def get_voltage(self, channel: Channel) -> Volts:
+        """Measure the voltage at the terminals of the channel."""
+        return float(self.port.query("MEAS:VOLT?"))
 
-        Returns:
-            None
-        """
-        self.port.write("CURR %1.4f" % float(current))
-        
-    def get_current(self):
-        """
-        This function measures the current through the terminals for a selected channel.
-        Returns:
-            float: current
-        """
-        self.port.write("MEAS:CURR?")
-        answer = float(self.port.read())
-        
-        return answer
+    @command
+    def set_current(self, channel: Channel, current: Amperes) -> None:
+        """Set the current of the channel; the output is switched on with set_output_on and set_generation_on."""
+        self.port.write(f"CURR {current:1.4f}")
 
-    def set_output_on(self):
-        """
-        This function switches the currently selected output on.
-        Returns:
-            None
-        """
+    @command(returns=("current",), reads="setpoint")
+    def get_current_setpoint(self, channel: Channel) -> Amperes:
+        """Return the current the channel is set to."""
+        return float(self.port.query("CURR?"))
+
+    @command(returns=("current",))
+    def get_current(self, channel: Channel) -> Amperes:
+        """Measure the current through the terminals of the channel."""
+        return float(self.port.query("MEAS:CURR?"))
+
+    @command
+    def set_output_on(self, channel: Channel) -> None:
+        """Arm the output of the channel; it delivers once set_generation_on switches the output generation on."""
         self.port.write("OUTP:SEL 1")
 
-    def set_output_off(self):
-        """
-        This function switches the currently selected output off.
-        Returns:
-            None
-        """
+    @command
+    def set_output_off(self, channel: Channel) -> None:
+        """Disarm the output of the channel."""
         self.port.write("OUTP:SEL 0")
 
-    def set_generation_on(self):
-        """
-        This function starts to generate the signal for the currently selected output.
-        Returns:
-            None
-        """
+    @command(composite=True)
+    def set_output(self, channel: Channel, output: bool) -> None:
+        """Arm (True) or disarm (False) the output of the channel."""
+        if output:
+            self.set_output_on(channel)
+        else:
+            self.set_output_off(channel)
+
+    @command(returns=("output",), reads="setpoint")
+    def get_output(self, channel: Channel) -> bool:
+        """Return whether the output of the channel is armed."""
+        return self.port.query("OUTP:SEL?").strip() in ("1", "ON")
+
+    @command
+    def set_generation_on(self) -> None:
+        """Switch the output generation on: every armed output delivers."""
         self.port.write("OUTP:GEN 1")
 
-    def set_generation_off(self):
-        """
-        This function stops to generate the signal for the currently selected output.
-        Returns:
-            None
-        """
+    @command
+    def set_generation_off(self) -> None:
+        """Switch the output generation off: no output delivers."""
         self.port.write("OUTP:GEN 0")
 
-    def unlock_local_interface(self):
-        """
-        This function unlocks the front panel of the instrument, which has been locked with sending the first remote
-        command.
-        Returns:
-            None
-        """
+    @command(composite=True)
+    def set_generation(self, generation: bool) -> None:
+        """Switch the output generation on (True) or off (False), for every armed output at once."""
+        if generation:
+            self.set_generation_on()
+        else:
+            self.set_generation_off()
+
+    @command(returns=("generation",), reads="setpoint")
+    def get_generation(self) -> bool:
+        """Return whether the output generation is on."""
+        return self.port.query("OUTP:GEN?").strip() in ("1", "ON")
+
+    @command
+    def unlock_local_interface(self) -> None:
+        """Unlock the front panel, which the first remote command has locked."""
         self.port.write("SYST:LOCal")
 
-    def read_data(self):
-        """
-        This function reads both voltage and current simultaneously.
-        Returns:
-            float: voltage
-            float: current
-        """
-        self.port.write("READ?")
-        voltage, current = self.port.read().split(",")
-        
+    @command(returns=("voltage", "current"))
+    def read_data(self, channel: Channel) -> tuple[Volts, Amperes]:
+        """Measure voltage and current of the channel at once."""
+        voltage, current = self.port.query("READ?").split(",")
         return float(voltage), float(current)
 
-    def set_voltage_range(self, voltage_range):
-        """
-        This function sets the voltage measurement range of the instrument. Available ranges are:
-        "20 V", "6 V", and "Auto".
-        Args:
-            voltage_range
+    @command
+    def set_voltage_range(self, channel: Channel, voltage_range: VoltageRange) -> None:
+        """Set the voltage measurement range of the channel."""
+        self.port.write(VOLTAGE_RANGE_COMMANDS[voltage_range])
 
-        Returns:
-            None
-        """
-        if voltage_range == "20 V":
-            self.port.write("SENS:VOLT:RANG 20")
-            
-        elif voltage_range == "6 V":
-            self.port.write("SENS:VOLT:RANG 6")
-            
-        elif voltage_range == "Auto":
-            self.port.write("SENS:VOLT:RANG:AUTO 1")
+    @command
+    def set_current_range(self, channel: Channel, current_range: CurrentRange) -> None:
+        """Set the current measurement range of the channel."""
+        self.port.write(CURRENT_RANGE_COMMANDS[current_range])
 
-        else:
-            raise Exception("The input voltage range is not valid.")
-
-    def set_current_range(self, current_range):
-        """
-        This function sets the current measurement range of the instrument. Available ranges are:
-        "10 A", "3 A", "100 mA", "10 mA", "1 mA", "10 µA", and "Auto".
-        Args:
-            current_range
-
-        Returns:
-            None
-        """
-        if current_range == "10 A":
-            self.port.write("SENS:CURR:RANG 10")
-        elif current_range == "3 A":
-            self.port.write("SENS:CURR:RANG 3")
-        elif current_range == "100 mA":
-            self.port.write("SENS:CURR:RANG 0.1")
-        elif current_range == "10 mA":
-            self.port.write("SENS:CURR:RANG 0.01")
-        elif current_range == "1 mA":
-            self.port.write("SENS:CURR:RANG 0.001")
-        elif current_range == "10 µA":
-            self.port.write("SENS:CURR:RANG 0.0001")
-        elif current_range == "Auto":
-            self.port.write("SENS:CURR:RANG:AUTO 1")
-        else:
-            raise Exception("The input current range is not valid.")
-            
-    def set_nplc(self, nplc):
-        """
-        This function sets the number of power line cycles value. high NPLC means slow integration/speed and vice versa.
-        Args:
-            nplc
-        Returns:
-            None
-        """
-        self.port.write("NPLC %0.1f" % nplc)
-
-if __name__ == "__main__":
-
-    ngx = Device()
-    print("Driver instance:", ngx)
-    print("Options:", ngx.get_options())
-    print("Identifier:", ngx.get_identification())
+    @command
+    def set_nplc(self, channel: Channel, nplc: float) -> None:
+        """Set the integration time in power line cycles: a high NPLC measures slowly and precisely."""
+        self.port.write(f"NPLC {nplc:0.1f}")
