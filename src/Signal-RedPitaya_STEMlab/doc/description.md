@@ -74,7 +74,7 @@ outputs can be driven from one instance:
 - `set_trigger_source(channel, source)` / `get_trigger_source(channel)` - INT, EXT_PE, EXT_NE, GATED
 - `trigger(channel)` - `SOUR<n>:TRIG:INT`, starts the generation; needed after
   `set_output_state(channel, True)` on OS 2.x and after `set_frequency`/`set_phase`
-- `set_burst_state(channel, state)` (CONTINUOUS/BURST), `set_burst_cycles`, `set_burst_repetitions`,
+- `set_burst_state(channel, burst_state)` (CONTINUOUS/BURST), `set_burst_cycles`, `set_burst_repetitions`,
   `set_burst_period` (in us) and their `get_` counterparts
 - `set_output_state(channel, enabled)` / `get_output_state(channel)`
 - `get_settings(channel)` - all of the above as a dictionary
