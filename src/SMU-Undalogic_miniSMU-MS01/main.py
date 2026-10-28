@@ -763,14 +763,14 @@ class Device(EmptyDevice):
     # --- Communication commands ------------------------------------------------
 
     @command
-    def set_source_mode(self, channel: Channel, mode: SourceMode) -> None:
+    def set_source_mode(self, channel: Channel, source_mode: SourceMode) -> None:
         """Set the source mode on a channel.
 
         Args:
             channel: Channel number (1 or 2).
-            mode: Source mode: "FVMI" forces voltage and measures current, "FIMV" the reverse.
+            source_mode: "FVMI" forces voltage and measures current, "FIMV" the reverse.
         """
-        self._send_command(f"SOUR{channel}:{mode} ENA")
+        self._send_command(f"SOUR{channel}:{source_mode} ENA")
 
     # check_driver: ignore DC009 - set_sweep_format's hazard concerns JSON; this always selects CSV
     @command(composite=True)
@@ -999,6 +999,7 @@ class Device(EmptyDevice):
             raise Exception(msg)
         return float(parts[0]), float(parts[1])
 
+    # check_driver: ignore DC010 - source_mode is a choice beside the value: it qualifies the compliance series
     @command
     def set_compliance(self, channel: Channel, compliance: float, source_mode: ComplianceMode) -> None:
         """Set the protection/compliance limit for a channel.
