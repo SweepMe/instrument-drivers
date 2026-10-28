@@ -21,15 +21,15 @@ port_string = "GPIB0::1::INSTR"
 
 ngx = pysweepme.get_driver(driver_name, driver_path, port_string)
 
-ngx.set_channel(1)
-ngx.set_voltage(0.1)
-ngx.set_output_on()
+# every command acting on an output takes its channel; the driver selects the output when it changes
+ngx.set_voltage(1, 0.1)
+ngx.set_output_on(1)
 ngx.set_generation_on()
 
 print("Voltage applied")
 
-voltage, current = ngx.read_data()
-print("Voltge:", voltage, "Current:", current)
+voltage, current = ngx.read_data(1)
+print("Voltage:", voltage, "Current:", current)
 
 ngx.set_generation_off()
-ngx.set_output_off()
+ngx.set_output_off(1)
