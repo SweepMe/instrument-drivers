@@ -31,9 +31,20 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+# Power line frequency in Hz, used to convert NPLC into seconds
+LINE_FREQUENCY = 50.0
+
+# Upper bound on how many source-delay-plus-measure cycles one reading can cost. Autoranging
+# repeats the whole cycle, source delay included, once per range it steps through, so the worst
+# case scales with the number of current ranges rather than with the measurement time alone.
+# Measured on a 6430 sweeping into the pA ranges: at a 1 s source delay a single reading took up
+# to 19 s, and at 5 s it exceeded 60 s. Raise this if a slow but healthy sweep still times out.
+MAX_CYCLES_PER_READING = 20
 
 
 class Device(EmptyDevice):
@@ -44,9 +55,16 @@ class Device(EmptyDevice):
                     <p>Setup:</p>
                     <ul>
                     <li>Enable remote control at device</li>
+                    <li>RS-232 only: set MENU &rarr; COMMUNICATION &rarr; RS-232 &rarr; TERMINATOR to
+                    &lt;CR&gt;. The driver reads until &lt;CR&gt;; with &lt;LF&gt; every read runs into
+                    the port timeout instead, which silently slows the measurement down.</li>
                     <li>Current range: -105e-3 - 105e-3 A</li>
                     <li>Voltage range: -210 - 210 V</li>
                     <li>Speed in NPLC (0.01 - 10)</li>
+                    <li>Source delay: time the instrument waits after applying a new source level
+                    before it measures. &quot;Auto&quot; scales it with the active current range. On the
+                    low current ranges a fixed value may be needed so that a reading is not taken
+                    before the new level has been applied.</li>
                     </ul>
                 """
 
@@ -63,9 +81,20 @@ class Device(EmptyDevice):
         self.savetype = [True, True]
 
         # Communication Parameters
-        self.port_string: str = ""
         self.port_manager = True
+        self.port_properties = {
+            # Communication timeout only. Waiting for a measurement to finish is handled by the
+            # polling loop in read_result, so that a run stays abortable.
+            "timeout": 1,  # seconds
+            # The 6430 terminates what it sends to the controller with <CR>, <CR+LF>, <LF> or
+            # <LF+CR>, selected at MENU -> COMMUNICATION -> RS-232 -> TERMINATOR and not readable
+            # over SCPI (manual 13-17). Reading with the wrong terminator does not fail, it burns a
+            # full timeout on every read. Carriage return covers <CR>, <CR+LF> and <LF+CR>. Only
+            # the read direction is affected; the instrument accepts our commands either way.
+            "EOLread": "\r",
+        }
         self.port_types = ["GPIB", "COM", "TCPIP"]
+        self.port_string: str = ""  # port as selected in the GUI, shared key for all instances on that port
 
         # Measurement parameters
         self.sweep_mode: str = "None"
@@ -78,18 +107,30 @@ class Device(EmptyDevice):
         }
         self.speed: float = 1.0  # NPLC
         self.averages: int = 1
+        self.source_delay: str = "Auto"  # "Auto" or a number of seconds
+        # Source delay in seconds once resolved, 0.0 while the instrument chooses it itself.
+        # Only used to size the read timeout; the instrument is configured from self.source_delay.
+        self.source_delay_seconds: float = 0.0
         self.measured_current: float = 0.0
         self.measured_voltage: float = 0.0
+        self.time_stamps: list[float] = []
 
-        # Current range
+        # Current Ranges: Auto, Auto Limited, and fixed are supported
         self.current_measurement_ranges: dict[str, float] = {"Auto": 0.0}
         # Add current ranges from 1 pA to 100 mA for limited and fixed mode
         for prefix in ["m", "µ", "n", "p"]:
             for number in [100, 10, 1]:
                 exponent = {"m": -3, "µ": -6, "n": -9, "p": -12}[prefix]
-                value = number * 10**exponent
+                value = number * 10 ** exponent
                 key = f"{number} {prefix}A"
                 self.current_measurement_ranges[key] = value
+
+        self.autorange_limited_prefix = "Auto - Limited "
+        self.current_range_options: list[str] = [
+            "Auto",
+            *[f"{self.autorange_limited_prefix}{key}" for key in self.current_measurement_ranges if key != "Auto"],
+            *[key for key in self.current_measurement_ranges if key != "Auto"],
+        ]
         self.current_measurement_range: str = "Auto"
 
         self.voltage_measurement_ranges: dict[str, float] = {
@@ -101,40 +142,119 @@ class Device(EmptyDevice):
         }
         self.voltage_measurement_range: str = "Auto"
 
+        # List Mode
+        self.list_mode: bool = False
+        self.list_type: str = "Sweep"
+        self.list_start: float = 0.0
+        self.list_end: float = 1.0
+        self.list_step_points_type: str = "Step width:"
+        self.list_step_points_value: float = 0.0
+        self.list_custom_values: str = ""  # comma separated list of values for custom list mode
+        self.list_hold_time: float = 0.1
+        self.list_delay_time: float = 0.1
+        self.list_expected_time: float = 0.0  # estimated sweep duration in seconds, set in configure_list_mode
+
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters."""
-        del parameters
-        return {
+        new_parameters = {
             "SweepMode": ["None", "Voltage in V", "Current in A"],
-            "Compliance": 0.0,
-            "Range": list(self.current_measurement_ranges.keys()),
-            "RangeVoltage": list(self.voltage_measurement_ranges.keys()),
+            "Compliance": "0.0",
             "Speed": list(self.speeds.keys()),
             "Average": 1,
+            "Source delay in s": "Auto",
+
+            # List Mode Parameters
+            "ListSweepCheck": False,
+            "ListSweepType": ["Sweep", "Custom"],
+            "ListSweepStart": 0.5,
+            "ListSweepEnd": 1.0,
+            "ListSweepStepPointsType": ["Step width:", "Points (lin.):", "Points (log.):"],
+            "ListSweepStepPointsValue": 0.1,
+            "ListSweepCustomValues": "",
+            # "ListSweepDual": False,
+            "ListSweepHoldtime": 0.1,
+            "ListSweepDelaytime": 0.1,
         }
+
+        # Measurement ranges can only be set for the non-source parameter
+        selected_sweepmode = parameters.get("SweepMode", "None").lower()
+        if "voltage" in  selected_sweepmode:
+            new_parameters["Range"] = self.current_range_options
+        elif "current" in selected_sweepmode:
+            new_parameters["RangeVoltage"] = list(self.voltage_measurement_ranges.keys())
+
+        return new_parameters
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
         self.port_string = parameters.get("Port", "")
-
         self.sweep_mode = parameters.get("SweepMode", "None")
         self.compliance = parameters.get("Compliance", 0.0)
 
         self.current_measurement_range = parameters.get("Range", "Auto")
         self.voltage_measurement_range = parameters.get("RangeVoltage", "Auto")
 
-        try:
-            self.speed = self.speeds[parameters.get("Speed", "Medium")]
-        except KeyError:
-            self.speed = float(parameters.get("Speed", 1.0))
+        # While SweepMe! builds the GUI, fields can arrive empty. Fall back to the defaults instead of failing, because
+        # an exception here makes SweepMe! drop the remaining values of the module when a sequence is loaded.
+        speed = parameters.get("Speed", "Medium")
+        if speed in self.speeds:
+            self.speed = self.speeds[speed]
+        else:
+            try:
+                self.speed = float(speed)
+            except ValueError:
+                self.speed = self.speeds["Medium"]
 
-        self.averages = int(float(parameters.get("Average", 1)))
+        try:
+            self.averages = int(float(parameters.get("Average", 1)))
+        except ValueError:
+            self.averages = 1
+        self.source_delay = str(parameters.get("Source delay in s", "Auto"))
+
+        # Reset return variables
+        self.variables = ["Voltage", "Current"]
+        self.units = ["V", "A"]
+        self.plottype = [True, True]
+        self.savetype = [True, True]
+
+        self.list_mode = False
+
+        if parameters.get("SweepValue", "") == "List sweep":
+            self.list_mode = True
+            self.list_type = parameters.get("ListSweepType", "Sweep")
+
+            if self.list_type == "Sweep":
+                self.list_start = parameters.get("ListSweepStart", 0.0)
+                self.list_end = parameters.get("ListSweepEnd", 1.0)
+                self.list_step_points_type = parameters.get("ListSweepStepPointsType", "Step width:")
+                self.list_step_points_value = parameters.get("ListSweepStepPointsValue", 0.)
+
+            else:  # Custom"
+                self.list_custom_values = parameters.get("ListSweepCustomValues", "")
+
+            self.list_hold_time = parameters.get("ListSweepHoldtime", 0.1)
+            self.list_delay_time = parameters.get("ListSweepDelaytime", 0.1)
+
+            self.variables.append("Timestamp")
+            self.units.append("s")
+            self.plottype.append(True)
+            self.savetype.append(True)
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
-        self.port.write("*RST")          # reset instrument state
-        self.port.write(":SYSTem:CLEar") # clear error queue
+        # A run that failed mid-exchange can leave an unread answer in the input buffer, which would then be handed to
+        # the first read of this run, so start from an empty buffer. Only the first instance on a port may do this: on
+        # a COM port clear() also drops bytes still waiting to be sent, which cuts off the commands another instance
+        # on the same port has just written and leaves the instrument stuck on half a command.
+        clear_key = f"SMU-Keithley_6430 {self.port_string} cleared"
+        if clear_key not in self.device_communication:
+            self.port.clear()
+            self.device_communication[clear_key] = True
+
+        self.port.write("*RST")  # reset instrument state
+        self.port.write(":SYSTem:CLEar")  # clear error queue
         self.port.write(":OUTPut:STATe OFF")  # explicit safety
+        self.port.write("SYSTem:BEEPer:STATe OFF")  # turn off beeper
 
     def poweron(self) -> None:
         """Turn on the device when entering a sequencer branch if it was not already used in the previous branch."""
@@ -146,40 +266,124 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure the device. This function is called every time the device is used in the sequencer."""
-        self.port.write("SYSTem:BEEPer:STATe OFF")  # turn off beeper
-
-        # set compliance, range and speed
+        # set source function, compliance, range and speed. The source function goes first, because the measurement
+        # ranges that can be set depend on it (manual 17-58).
         if self.sweep_mode.startswith("Voltage"):
+            self.set_source_function("VOLTage")
             self.set_compliance_current(self.compliance)
             self.set_current_measurement_range(self.current_measurement_range)
-            self.set_measurement_speed("CURR", self.speed)
-
-            self.port.write("SOURce:VOLTage:MODE FIXed")  # Alternative: list, sweep
+            if not self.list_mode:
+                self.port.write("SOURce:VOLTage:MODE FIXed")  # Alternative: list, sweep
 
         elif self.sweep_mode.startswith("Current"):
+            self.set_source_function("CURRent")
             self.set_compliance_voltage(self.compliance)
             self.set_voltage_measurement_range(self.voltage_measurement_range)
-            self.set_measurement_speed("VOLT", self.speed)
 
-            self.port.write("SOURce:CURRent:MODE FIXed")  # Alternative: list, sweep
+            if not self.list_mode:
+                self.port.write("SOURce:CURRent:MODE FIXed")  # Alternative: list, sweep
+
+        self.set_source_delay(self.source_delay)
+
+        self.set_measurement_speed("CURR", self.speed)
+        self.set_measurement_speed("VOLT", self.speed)
 
         self.port.write("SENSe:FUNCtion:OFF:ALL")  # reset measurement functions
         self.set_measurement_functions(["VOLT", "CURR"])
 
-        self.port.query(":SENSe:FUNCtion:ON?")
+        if not self.list_mode:
+            self.configure_measurement_buffer()
+
+        # self.port.query(":SENSe:FUNCtion:ON?")
 
         if self.averages < 1 or self.averages > 100:
             msg = f"Invalid average: {self.averages}. Averages must be between 1 and 100"
             raise ValueError(msg)
-        if self.averages > 1:
-            # Moving filter average
-            self.port.write(f":SENSe:AVERage:COUNt {self.averages}")
-            self.port.write(":SENSe:AVERage:STATe ON")
+        self.configure_filters(self.averages)
+
+        # The instrument needs about a second to work through *RST and the configuration above.
+        self.wait_for_complete()
+
+        if self.list_mode:
+            self.configure_list_mode()
+
+    def configure_list_mode(self) -> None:
+        """Configure list mode parameters."""
+        source_type = "VOLT" if self.sweep_mode.startswith("Voltage") else "CURR"
+
+        if self.list_type == "Sweep":
+            # Type conversions
+            self.list_start = float(self.list_start)
+            self.list_end = float(self.list_end)
+            self.list_step_points_value = float(self.list_step_points_value)
+
+            # Some devices take longer than 1s to set up the list parameters
+            # Add some queries to prevent stacking commands surpass the timeout
+            self.port.write(f"SOURce:{source_type}:MODE SWEep")
+            self.wait_for_complete()
+
+            self.port.write(f":SOURce:{source_type}:STARt {self.list_start}")
+            self.port.write(f":SOURce:{source_type}:STOP {self.list_end}")
+            self.wait_for_complete()
+
+            if self.list_step_points_type == "Step width:":
+                self.port.write(f":SOURce:{source_type}:STEP {self.list_step_points_value}")
+            else:  # Linear or logarithmic points
+                spacing = "LINear" if self.list_step_points_type == "Points (lin.):" else "LOGarithmic"
+                self.port.write(f":SOURce:SWEep:SPACing {spacing}")
+                self.port.write(f":SOURce:SWEep:POINts {self.list_step_points_value}")
+
+            number_of_points = int(self.port.query(f":SOURce:SWEep:POINts?"))
+
+        else:  # self.list_type == "Custom"
+            self.port.write(f":SOURce:{source_type}:MODE LIST")
+            # ensure that custom values are formatted as comma-separated list
+            custom_values_list = [v.strip() for v in self.list_custom_values.split(",")]
+            for value in custom_values_list:
+                try:
+                    float(value)  # validate that each value can be parsed as float
+                except ValueError:
+                    raise ValueError(f"Invalid custom list value: '{value}' is not a number")
+
+            number_of_points = len(custom_values_list)
+            if number_of_points > 100:
+                msg = f"Too many points in custom list: {number_of_points}. Maximum is 100."
+                # TODO: more than 100 points can be set by appending to an existing list
+                raise ValueError(msg)
+
+            self.port.write(f":SOURce:LIST:{source_type} {self.list_custom_values}")
+
+        # Source ranging
+        self.port.write(f":SOURce:SWEep:RANGing AUTO")
+
+        # Number of triggers
+        self.port.write(f"TRIGger:COUNt {number_of_points}")
+
+        # Store expected sweep duration for the timeout guard in wait_for_list_complete.
+        # speed / 50 converts NPLC to approximate measurement time in seconds (50 Hz line frequency).
+        expected_time_per_point = self.speed / LINE_FREQUENCY
+
+        # Source delay
+        if self.list_delay_time:
+            self.list_delay_time = float(self.list_delay_time)
+            self.port.write(f":SOURce:DELay {self.list_delay_time}")
+            expected_time_per_point += self.list_delay_time
+
+        # Trigger delay
+        if self.list_hold_time:
+            self.list_hold_time = float(self.list_hold_time)
+            self.port.write(f":TRIGger:DELay {self.list_hold_time}")
+            expected_time_per_point += self.list_hold_time
         else:
-            self.port.write(":SENSe:AVERage:STATe OFF")
+            self.port.write(":TRIGger:DELay AUTO")
+
+        self.list_expected_time = number_of_points * expected_time_per_point
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        if self.list_mode:
+            return
+
         if self.sweep_mode.startswith("Voltage"):
             self.set_voltage(self.value)
         elif self.sweep_mode.startswith("Current"):
@@ -191,46 +395,94 @@ class Device(EmptyDevice):
 
     def measure(self) -> None:
         """Trigger the acquisition of new data."""
-        # self.port.write("TRIGger:INITiate:IMMediate")
-        self.port.write("INIT")
+        if self.list_mode:
+            # INIT starts the full list/sweep; completion is polled in request_result before FETCh? is sent.
+            self.port.write("INIT")
+        else:
+            # READ? is ABORt; INIT; FETCh?, and its fetch does not in fact wait for the source-measure
+            # cycle to finish. On the low current ranges that produced replies assembled from two
+            # acquisitions, one element carried over from the previous reading and one new, so a point
+            # was measured twice at the same source level and every later row carried the previous
+            # setvalue. Storing into the buffer instead lets read_result wait for a reading that has
+            # actually been stored rather than trust the timing of the fetch.
+            self.port.write(":ABORt")  # back to idle, so that arming the buffer below takes effect
+            self.port.write(":TRACe:CLEar")
+            self.port.write(":TRACe:FEED:CONTrol NEXT")  # store the next reading, then stop
+            self.port.write(":INITiate")
 
     def request_result(self) -> None:
         """Write command to ask the instrument to send measured data."""
-        self.port.write("FETCh?")
-        # self.port.write("READ?")
+        if self.list_mode:
+            # Poll until the sweep finishes, then request the buffered results.
+            self.wait_for_list_complete()
+            self.port.write("FETCh?")
 
     def read_result(self) -> None:
         """Read the measured data from a buffer that was requested during 'request_result'."""
         # When using FETCh?, the response is a comma-separated list of values:
         # voltage, current, resistance, time_stamp, status code
-        results = self.port.read()
-        values = results.split(",")
-        self.measured_voltage = float(values[0])
-        self.measured_current = float(values[1])
+        if self.list_mode:
+            results = self.port.read()
+            # the results should be multiples of 5 values (voltage, current, resistance, time_stamp, status code)
+            values = [float(res) for res in results.split(",")]
+            self.measured_voltage = values[0::5]
+            self.measured_current = values[1::5]
+            self.time_stamps = values[3::5]
 
-        if self.measured_voltage >= 9.9E37:
-            self.measured_voltage = float("nan")
-        if self.measured_current >= 9.9E37:
-            self.measured_current = float("nan")
+        else:
+            # self.speed is NPLC, a number of power line cycles, and has to be converted to seconds.
+            # A fixed source delay is paid again on every cycle of an autorange search, so the
+            # timeout has to scale with it instead of with the measurement time alone. The loop
+            # below returns as soon as the response is complete and checks is_run_stopped() every
+            # 100 ms, so a generous limit neither slows a measurement down nor makes a run harder
+            # to abort; it only keeps a slow sweep from being killed.
+            cycle_time = self.speed / LINE_FREQUENCY * self.averages + self.source_delay_seconds
+            deadline = time.monotonic() + max(cycle_time * MAX_CYCLES_PER_READING, 60)
 
-        status_int = int(float(values[4]))
-        # Extract 24 bits
-        bits = [(status_int >> i) & 1 for i in range(24)]
-        status_bits = {
-            0: "Over range",
-            # 1: "Filter enabled",  # no error
-            3: "In compliance",  # 2 is not used
-            4: "Over voltage protection reached",
-            16: "In range compliance"
-        }
-        for bit_index, description in status_bits.items():
-            if bits[bit_index]:
-                print(f"Measurement status: {description}")
+            # measure() cleared the buffer before triggering, so a stored reading can only be one
+            # taken after the new source level was applied.
+            while True:
+                stored = self.query_and_wait(":TRACe:POINts:ACTual?", deadline)
+                if stored is None:
+                    return  # run was stopped
+                if int(float(stored)) >= 1:
+                    break
+                time.sleep(0.1)
 
-    def call(self) -> list[float]:
+            reply = self.query_and_wait(":TRACe:DATA?", deadline, min_fields=5)
+            if reply is None:
+                return  # run was stopped
+
+            values = reply.split(",")  # VOLT, CURR, RES, TIME, STATUS
+
+            self.measured_voltage = float(values[0])
+            self.measured_current = float(values[1])
+
+            if self.measured_voltage >= 9.9E37 or self.measured_voltage <= -9.9E37:
+                self.measured_voltage = float("nan")
+            if self.measured_current >= 9.9E37 or self.measured_current <= -9.9E37:
+                self.measured_current = float("nan")
+
+            status_int = int(float(values[4]))
+            # Extract 24 bits
+            bits = [(status_int >> i) & 1 for i in range(24)]
+            status_bits = {
+                0: "Over range",
+                # 1: "Filter enabled",  # no error
+                3: "In compliance",  # 2 is not used
+                4: "Over voltage protection reached",
+                16: "In range compliance"
+            }
+            for bit_index, description in status_bits.items():
+                if bits[bit_index]:
+                    print(f"Measurement status: {description}")
+
+    def call(self) -> list[float] | list[list[float]]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
+        if self.list_mode:
+            return [self.measured_voltage, self.measured_current, self.time_stamps]
         return [self.measured_voltage, self.measured_current]
-    
+
     # Wrapped Functions
 
     def get_identification(self) -> str:
@@ -258,15 +510,115 @@ class Device(EmptyDevice):
             self.port.write(f":SENSe:VOLTage:RANGe {self.voltage_measurement_ranges[range_value]}")
 
     def set_current_measurement_range(self, range_value: str = "Auto") -> None:
-        """Set the current measurement range."""
-        if range_value not in self.current_measurement_ranges:
-            msg = f"Invalid current range: {range_value}. Valid ranges are: {list(self.current_measurement_ranges.keys())}"
+        """Set the current measurement range.
+
+        "Auto" autoranges across all ranges, "Auto - Limited <range>" autoranges but never switches
+        below <range>, and any plain range fixes the measurement range.
+        """
+        if range_value not in self.current_range_options:
+            msg = f"Invalid current range: {range_value}. Valid ranges are: {self.current_range_options}"
             raise ValueError(msg)
 
         if range_value == "Auto":
-            self.port.write(f":SENSe:CURRent:RANGe:AUTO ON")
+            self.port.write(":SENSe:CURRent:RANGe:AUTO ON")
+            # Drop a lower limit that an earlier configure() may have left on the instrument.
+            # "Auto" carries a 0.0 placeholder and must not be taken as the lowest range.
+            lowest_range = min(v for k, v in self.current_measurement_ranges.items() if k != "Auto")
+            self.port.write(f":SENSe:CURRent:RANGe:AUTO:LLIMit {lowest_range}")
+
+        elif range_value.startswith(self.autorange_limited_prefix):
+            lowest_range = self.current_measurement_ranges[range_value[len(self.autorange_limited_prefix):]]
+            self.port.write(":SENSe:CURRent:RANGe:AUTO ON")
+            self.port.write(f":SENSe:CURRent:RANGe:AUTO:LLIMit {lowest_range}")
+
         else:
             self.port.write(f":SENSe:CURRent:RANGe {self.current_measurement_ranges[range_value]}")
+
+    def configure_measurement_buffer(self) -> None:
+        """Prepare the one-reading buffer that measure() stores into.
+
+        The feed cannot be changed while storage is active (manual 17-101), so storage is disabled
+        first.
+        """
+        self.port.write(":TRACe:FEED:CONTrol NEVer")
+        self.port.write(":TRACe:FEED SENSe1")  # store raw readings, not Calc results
+        self.port.write(":TRACe:POINts 1")
+        self.port.write(":TRACe:CLEar")
+
+    def query_and_wait(self, command: str, deadline: float, min_fields: int = 1) -> str | None:
+        """Send a query once and wait for a complete answer. Returns None if the run was stopped.
+
+        The query is deliberately not re-sent while an answer is still outstanding. The instrument
+        answers every copy of a query it receives, so re-sending one that is merely slow leaves the
+        extra answers queued, and a later read then returns one of them instead of what it asked
+        for - which is how a ':TRACe:DATA?' came back as '1' and broke the parsing.
+
+        Only the read is retried, so a run stays abortable while the instrument is busy with a long
+        source-delay-plus-measure cycle, during which it does not answer queries at all.
+        """
+        self.port.write(command)
+
+        answer = ""
+        while not self.is_run_stopped():
+            try:
+                answer += self.port.read()
+            except Exception:
+                pass  # not answered yet; waiting is correct here, re-sending is not
+
+            if answer.strip() and answer.count(",") >= min_fields - 1:
+                return answer
+
+            if time.monotonic() > deadline:
+                msg = f"No complete answer to '{command}' within the timeout"
+                raise TimeoutError(msg)
+            time.sleep(0.1)
+
+        return None
+
+    def set_source_delay(self, delay: str = "Auto") -> None:
+        """Set the delay between applying a new source level and starting the measurement.
+
+        "Auto" lets the instrument derive the delay from the active current range. A fixed value
+        overrides it, which is what keeps a reading from being taken before the new source level
+        has been applied on the low current ranges.
+        """
+        if str(delay).strip().lower() == "auto":
+            self.source_delay_seconds = 0.0
+            self.port.write(":SOURce:DELay:AUTO ON")
+            return
+
+        try:
+            delay_seconds = float(delay)
+        except ValueError:
+            msg = f"Invalid source delay: {delay!r}. Use 'Auto' or a number of seconds."
+            raise ValueError(msg) from None
+
+        if not 0.0 <= delay_seconds <= 9999.999:
+            msg = f"Source delay must be between 0 and 9999.999 s, got {delay_seconds}"
+            raise ValueError(msg)
+
+        self.source_delay_seconds = delay_seconds
+        self.port.write(":SOURce:DELay:AUTO OFF")
+        self.port.write(f":SOURce:DELay {delay_seconds}")
+
+    def configure_filters(self, repeat_count: int = 1) -> None:
+        """Average with the repeat filter only; switch the auto, median and moving filters off.
+
+        After *RST the auto filter is on and runs a median filter on the pA ranges (manual tables 6-5 to 6-7). A new
+        source level in fixed source mode does not reset the filter stacks (manual 6-9), so the median returns the
+        reading of the previous point: the first point after a range change is measured twice and the following points
+        lag one step behind until the next range change. The moving filter mixes earlier points in the same way. The
+        repeat filter only averages conversions of the present reading, which is what a sweep needs.
+        """
+        # Switching the auto filter off keeps the counts it chose for the present range, so set every stage afterwards.
+        self.port.write(":SENSe:AVERage:AUTO OFF")
+        self.port.write(":SENSe:MEDian:STATe OFF")
+        self.port.write(":SENSe:AVERage:STATe OFF")
+        if repeat_count > 1:
+            self.port.write(f":SENSe:AVERage:REPeat:COUNt {repeat_count}")
+            self.port.write(":SENSe:AVERage:REPeat:STATe ON")
+        else:
+            self.port.write(":SENSe:AVERage:REPeat:STATe OFF")
 
     def set_measurement_speed(self, mode: str, nplc: float) -> None:
         """Set the measurement speed in NPLC."""
@@ -285,6 +637,10 @@ class Device(EmptyDevice):
         self.port.write(":SOURce1:CLEar:IMMediate")
 
     # Sourcing
+    def set_source_function(self, function: str) -> None:
+        """Select the source function: VOLTage or CURRent. *RST selects VOLTage."""
+        self.port.write(f":SOURce:FUNCtion:MODE {function}")
+
     def set_voltage(self, value: float) -> None:
         """Set source voltage level (V-Source). Uses SOURce:VOLTage:LEVel."""
         self.port.write(f":SOURce:VOLTage:LEVel {value}")
@@ -336,6 +692,24 @@ class Device(EmptyDevice):
         # couldn't parse numeric value; raise error
         raise RuntimeError(f"Could not parse numeric measurement from response: '{raw}'")
 
-    def wait_for_complete(self) -> None:
-        """Waits for the operation queue to be completed."""
-        self.port.query("*OPC?")
+    def wait_for_complete(self, timeout: float = 10.0) -> None:
+        """Wait until the instrument has worked through all commands sent so far (*OPC?).
+
+        Switching the output on or working through *RST and a configuration can keep the instrument busy for longer
+        than the port timeout, so the answer is awaited without re-sending the query.
+        """
+        self.query_and_wait("*OPC?", time.monotonic() + timeout)
+
+    def wait_for_list_complete(self) -> None:
+        """Wait until the list sweep has finished or the run is stopped.
+
+        The instrument answers *OPC? only once the sweep is done. The query is sent once and only the read is retried
+        (see query_and_wait): re-sending it after every port timeout made the instrument answer each copy later, and
+        FETCh? then read one of these answers instead of the sweep data.
+        """
+        max_wait = self.list_expected_time * 3 + 30  # allow 3x expected time plus a fixed 30 s margin
+        try:
+            self.query_and_wait("*OPC?", time.monotonic() + max_wait)
+        except TimeoutError:
+            msg = f"List sweep did not complete within {max_wait:.0f} s (expected ~{self.list_expected_time:.1f} s)"
+            raise TimeoutError(msg) from None
