@@ -39,12 +39,12 @@ import sys
 from typing import Annotated, Any, Literal
 
 import numpy as np
-from pysweepme import Label, Range, Unit, command
+from pysweepme import Label, Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug
 
 # What the communication commands take and answer (checked by @command on every call)
-Channel = Annotated[int, Range(1, 2)]
+Channel = Annotated[int, Selector(), Range(1, 2)]
 Volts = Annotated[float, Unit("V")]
 Hertz = Annotated[float, Unit("Hz")]
 Phase = Annotated[float, Unit("°"), Range(-360.0, 360.0)]
@@ -228,6 +228,10 @@ class Device(EmptyDevice):
             self.units = [unit]
             self.plottype = [True]
             self.savetype = [True]
+
+    def apply_selectors(self, channel: int) -> None:
+        """Take over the channel a bench entry binds, so that the stages act on it (Instrument Control)."""
+        self.channel = int(channel)
 
     def connect(self):
         """Check that the SCPI server answers.
