@@ -89,7 +89,7 @@ class Device(EmptyDevice):
         self.save_path: str = ""
         self.keep_only_last: bool = False
 
-        self.light_settle_time: float = 0.2
+        self.light_settle_time: float = 0.0
         """Wait time in s after switching the camera light on, so that the image brightness is stable."""
 
     def __del__(self) -> None:

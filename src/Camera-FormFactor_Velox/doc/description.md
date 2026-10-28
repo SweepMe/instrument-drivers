@@ -34,6 +34,5 @@ every measurement point, it saves an image of the selected camera and returns th
 ### Camera light:
 
 The light of the selected camera is switched on right before each image is taken and switched off afterwards, also
-if taking the image fails. After switching the light on, the driver waits 0.2 s so that the image brightness is
-stable. Shutter, gain, brightness and the other light settings of the camera are not changed; set
+if taking the image fails. Shutter, gain, brightness and the other light settings of the camera are not changed; set
 them in Velox.
