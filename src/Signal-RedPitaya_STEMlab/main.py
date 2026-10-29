@@ -41,7 +41,6 @@ from typing import Annotated, Any, Literal
 import numpy as np
 from pysweepme import Label, Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
-from pysweepme.ErrorMessage import debug
 
 # What the communication commands take and answer (checked by @command on every call)
 Channel = Annotated[int, Selector(), Range(1, 2)]
@@ -56,6 +55,20 @@ BurstCycles = Annotated[int, Range(1, 65535), Label("Burst cycles")]  # 65536 is
 BurstRepetitions = Annotated[int, Range(1, 65536), Label("Burst repetitions")]  # 65536 means infinite
 BurstPeriod = Annotated[float, Unit("µs"), Label("Burst period")]
 OutputOn = Annotated[bool, Label("Output on")]
+
+# +/- V of the fast analog outputs (STEMlab): the one-way amplitude plus the absolute offset must stay within it. Beyond
+# it the board clips the signal without a word, so the driver refuses such a combination; it never clips.
+OUTPUT_RANGE = 1.0
+
+
+def _check_output_range(amplitude: float, offset: float) -> None:
+    """Refuse amplitude and offset whose sum leaves the output range; the board would clip the signal."""
+    if abs(amplitude) + abs(offset) > OUTPUT_RANGE + 1e-9:
+        msg = (
+            f"Amplitude {amplitude:g} V plus offset {offset:g} V exceed the output range of +/- {OUTPUT_RANGE:g} V: "
+            f"amplitude plus absolute offset must stay within it."
+        )
+        raise ValueError(msg)
 
 
 class Device(EmptyDevice):
@@ -148,10 +161,6 @@ class Device(EmptyDevice):
         self.dutycycle: float = 0.5
         self.burstperiod: float = 0.0
 
-        self.limits: float = 1.0  # +/- voltage limit of the fast analog outputs
-        self.limits_message_shown: bool = (
-            False  # whether the clipping message was shown already
-        )
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Return the GUI fields, depending on the currently selected waveform and operation mode.
@@ -261,12 +270,6 @@ class Device(EmptyDevice):
         self.set_output_state(self.channel, False)
 
     def configure(self):
-        self.limits = 1.0  # +/- Voltage limit of frequency generator
-
-        # Amplitude and offset are also set during a sweep in 'apply'. The clipping message is
-        # only shown once per run to not flood the user with message boxes.
-        self.limits_message_shown = False
-
         self.convert_gui_parameters()
 
         self.reset_generator()
@@ -475,7 +478,7 @@ class Device(EmptyDevice):
             self.trigger(self.channel)
 
     def _apply_amplitude_offset(self) -> None:
-        """Convert high level / low level to amplitude and offset, clip them and send them."""
+        """Convert high level / low level to amplitude and offset and send them; refused beyond the output range."""
         if (
             self.amplitudehilevel == "High level in V"
             and self.offsetlolevel == "Low level in V"
@@ -503,19 +506,14 @@ class Device(EmptyDevice):
             self.amplitude = self.amplitudehilevelvalue
             self.offset = self.offsetlolevelvalue
 
-        self._clip_to_output_range()
-
-        self.set_amplitude(self.channel, self.amplitude)
-        self.set_offset(self.channel, self.offset)
+        self.set_amplitude_and_offset(self.channel, self.amplitude, self.offset)
 
     def _apply_duty_cycle(self) -> None:
         """Convert the duty cycle in % from the GUI to 0..1 and send it."""
-        if self.dutycyclepulsewidthvalue < 0.0:
-            self.dutycycle = 0.0
-        elif self.dutycyclepulsewidthvalue > 100.0:
-            self.dutycycle = 1.0
-        else:
-            self.dutycycle = self.dutycyclepulsewidthvalue / 100.0
+        if not 0.0 <= self.dutycyclepulsewidthvalue <= 100.0:  # noqa: PLR2004  # percent
+            msg = f"The duty cycle must lie between 0 and 100 %, not {self.dutycyclepulsewidthvalue:g} %."
+            raise ValueError(msg)
+        self.dutycycle = self.dutycyclepulsewidthvalue / 100.0
 
         self.set_duty_cycle(self.channel, self.dutycycle)
 
@@ -541,41 +539,6 @@ class Device(EmptyDevice):
             self.frequency = self.periodfrequencyvalue
 
         self.set_frequency(self.channel, self.frequency)
-
-    def _clip_to_output_range(self) -> None:
-        """Clip amplitude and offset to the output range of the instrument.
-
-        The sum of the one-way amplitude and the absolute offset must not exceed the output
-        range of the fast analog outputs (+/- 1 V). Values that violate this condition are
-        clipped and the user is informed, as the resulting signal differs from the requested one.
-        """
-        requested_amplitude = self.amplitude
-        requested_offset = self.offset
-
-        if self.amplitude > self.limits:
-            self.amplitude = self.limits
-        if abs(self.offset) > self.limits:
-            self.offset = self.limits * np.sign(self.offset)
-        if abs(abs(self.offset) + self.amplitude) > self.limits:
-            self.offset = np.sign(self.offset) * (self.limits - self.amplitude)
-
-        if self.amplitude != requested_amplitude or self.offset != requested_offset:
-            msg = (
-                "Signal-RedPitaya_STEMlab: Amplitude and offset exceed the output range of "
-                "+/- {0} V and have been clipped.\n"
-                "Requested: amplitude {1} V, offset {2} V\n"
-                "Used: amplitude {3} V, offset {4} V".format(
-                    self.limits,
-                    requested_amplitude,
-                    requested_offset,
-                    self.amplitude,
-                    self.offset,
-                )
-            )
-            debug(msg)
-            if not self.limits_message_shown:
-                self.limits_message_shown = True
-                self.message_box(msg)
 
     def _apply_burst_mode(self) -> None:
         """Send the operation mode and, for bursts, the burst timing from the GUI."""
@@ -658,13 +621,14 @@ class Device(EmptyDevice):
         """Return the phase in degrees."""
         return float(self.port.query("SOUR{0}:PHAS?".format(channel)))
 
-    @command
+    @command(composite=True)  # reads the offset to check the output range
     def set_amplitude(self, channel: Channel, amplitude: Volts) -> None:
         """Set the one-way amplitude in V ('SOUR<n>:VOLT').
 
-        Amplitude plus absolute offset must stay within the output range (+/- 1 V on STEMlab).
-        The amplitude is applied without restarting the signal.
+        Amplitude plus absolute offset must stay within the output range (+/- 1 V on STEMlab), else the amplitude is
+        refused; set_amplitude_and_offset changes both. The amplitude is applied without restarting the signal.
         """
+        _check_output_range(amplitude, self.get_offset(channel))
         self.port.write("SOUR{0}:VOLT {1:1.7f}".format(channel, amplitude))
 
     @command(returns=("amplitude",), reads="setpoint")
@@ -672,15 +636,35 @@ class Device(EmptyDevice):
         """Return the one-way amplitude in V."""
         return float(self.port.query("SOUR{0}:VOLT?".format(channel)))
 
-    @command
+    @command(composite=True)  # reads the amplitude to check the output range
     def set_offset(self, channel: Channel, offset: Volts) -> None:
-        """Set the DC offset in V ('SOUR<n>:VOLT:OFFS'). Applied without restarting the signal."""
+        """Set the DC offset in V ('SOUR<n>:VOLT:OFFS'). Applied without restarting the signal.
+
+        Amplitude plus absolute offset must stay within the output range (+/- 1 V on STEMlab), else the offset is
+        refused; set_amplitude_and_offset changes both.
+        """
+        _check_output_range(self.get_amplitude(channel), offset)
         self.port.write("SOUR{0}:VOLT:OFFS {1:1.7f}".format(channel, offset))
 
     @command(returns=("offset",), reads="setpoint")
     def get_offset(self, channel: Channel) -> Volts:
         """Return the DC offset in V."""
         return float(self.port.query("SOUR{0}:VOLT:OFFS?".format(channel)))
+
+    @command(composite=True)
+    def set_amplitude_and_offset(self, channel: Channel, amplitude: Volts, offset: Volts) -> None:
+        """Set amplitude and offset in V together, in the order that keeps the output range at every step.
+
+        Refused, with nothing sent, when amplitude plus absolute offset exceed the output range (+/- 1 V on STEMlab).
+        """
+        _check_output_range(amplitude, offset)
+        # One of the two orders always stays within the range when the old and the new pair do
+        if abs(amplitude) + abs(self.get_offset(channel)) <= OUTPUT_RANGE:
+            self.set_amplitude(channel, amplitude)
+            self.set_offset(channel, offset)
+        else:
+            self.set_offset(channel, offset)
+            self.set_amplitude(channel, amplitude)
 
     @command
     def set_duty_cycle(self, channel: Channel, duty_cycle: DutyCycle) -> None:
