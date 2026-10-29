@@ -121,7 +121,7 @@ class Device(EmptyDevice):
         """Select the output the following commands act on, and let the stages act on it too.
 
         @command calls it when a command takes another channel than the one selected last, Instrument Control after
-        connect() with the channel a bench entry binds. pysweepme remembers the selection on the port.
+        connect() with the channel a bench entry binds. pysweepme remembers the selection per Port.
         """
         if self.model == "NGU":
             if int(channel) != 1:

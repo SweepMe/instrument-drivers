@@ -109,7 +109,7 @@ class Device(EmptyDevice):
         """Select the output the following commands act on; TRACK25V switches tracking on as well.
 
         @command calls it when a command takes another channel than the one selected last, Instrument Control after
-        connect() with the channel a bench entry binds. pysweepme remembers the selection on the port.
+        connect() with the channel a bench entry binds. pysweepme remembers the selection per Port.
         """
         if channel == "TRACK25V":
             self.port.write("OUTP:TRAC ON")
