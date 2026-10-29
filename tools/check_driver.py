@@ -69,7 +69,7 @@ FRAMEWORK = (
     "set_GUIparameter", "get_GUIparameter", "update_gui_parameters", "apply_gui_parameters", "find_ports",
     "set_parameters", "get_parameters", "update_gui_parameters_with_fallback", "convert_gui_parameters",
     "message_box", "message_info", "message_log", "is_run_stopped", "get_folder", "get_variables", "get_units",
-    "apply_selectors", "forget_selections",
+    "apply_selectors", "forget_selections", "selection_scope",
 )
 #: A public method whose name starts like this looks like a command.
 COMMAND_PREFIXES = ("get_", "set_", "read_", "write_", "measure_", "fetch_", "enable_", "disable_", "start_", "stop_",
