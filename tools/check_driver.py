@@ -133,6 +133,7 @@ class Driver:
     methods: dict[str, Method] = field(default_factory=dict)
     order: list[tuple[str, str, int]] = field(default_factory=list)  # (file, name, line) in definition order
     checked_aliases: set[str] = field(default_factory=set)  # aliases with a Literal or a Range inside
+    selector_aliases: set[str] = field(default_factory=set)  # aliases with a Selector(...) inside
     description_attributes: list[tuple[str, int]] = field(default_factory=list)
     unreadable: list[tuple[str, int, str]] = field(default_factory=list)
 
@@ -231,6 +232,8 @@ def _read_module(tree: ast.Module, file: str, path: Path, driver: Driver) -> Non
             value = ast.unparse(node.value)
             if value.startswith(("Literal[", "Annotated[")) and ("Literal[" in value or "Range(" in value):
                 driver.checked_aliases.add(node.targets[0].id)
+            if value.startswith("Annotated[") and "Selector(" in value:
+                driver.selector_aliases.add(node.targets[0].id)
         if not isinstance(node, ast.ClassDef):
             continue
         for item in node.body:
@@ -255,13 +258,27 @@ def read_driver(folder: Path) -> Driver:
             continue
         trees.append(tree)
         _read_module(tree, file, path, driver)
-    # an alias built on an alias that has a choice or a range has it too
+    # an alias built on an alias that has a choice, a range or a selector has it too
     for tree in trees:
         for node in tree.body:
-            if (isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
-                    and _uses_names(node.value) & driver.checked_aliases):
-                driver.checked_aliases.add(node.targets[0].id)
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                if _uses_names(node.value) & driver.checked_aliases:
+                    driver.checked_aliases.add(node.targets[0].id)
+                if _uses_names(node.value) & driver.selector_aliases:
+                    driver.selector_aliases.add(node.targets[0].id)
     return driver
+
+
+def _is_selector(parameter: ast.arg, driver: Driver) -> bool:
+    """A parameter that addresses a part of the instrument: marked Selector() through an alias or inline, or channel.
+
+    Its value says where a setter acts, not what it sets, so it is no quantity of DC010 and DC020.
+    """
+    annotation = parameter.annotation
+    if annotation is not None and (_uses_names(annotation) & driver.selector_aliases
+                                   or "Selector(" in ast.unparse(annotation)):
+        return True
+    return parameter.arg in CHANNEL_PARAMETERS
 
 
 def _is_command_like(method: Method) -> bool:
@@ -294,8 +311,8 @@ def check_driver(folder: Path) -> list[Finding]:
             if not method.decorated and _is_command_like(method):
                 report.add("DC004", method, method.node.lineno,
                            "looks like a command but is not decorated - in a driver using @command it is not offered")
-        _duplicate_quantities(commands, report)
-    _generic_value_names(commands, report)
+        _duplicate_quantities(commands, driver, report)
+    _generic_value_names(commands, driver, report)
     _semantic_raw_commands(driver, commands, report)
     _semantic_order(driver, report)
     _split_pairs(driver, report)
@@ -473,14 +490,14 @@ def _string_constants(node: ast.expr) -> list[str]:
     return []
 
 
-def _duplicate_quantities(commands: list[Method], report: Report) -> None:
+def _duplicate_quantities(commands: list[Method], driver: Driver, report: Report) -> None:
     """DC010: setters whose value parameters share a name, so two quantities would share one recorded series."""
     owners: dict[str, list[Method]] = {}
     for method in commands:
         if not method.returns_none or method.kind_run or method.composite:
             continue
         for parameter in method.parameters:
-            if parameter.arg not in CHANNEL_PARAMETERS:
+            if not _is_selector(parameter, driver):
                 owners.setdefault(parameter.arg, []).append(method)
     for name, methods in sorted(owners.items()):
         if len(methods) > 1:
@@ -490,7 +507,7 @@ def _duplicate_quantities(commands: list[Method], report: Report) -> None:
                        f"or they are one quantity in the recorded values")
 
 
-def _generic_value_names(commands: list[Method], report: Report) -> None:
+def _generic_value_names(commands: list[Method], driver: Driver, report: Report) -> None:
     """DC020: a setter's value parameter named `value`, `state`, `mode`, ... - the recorded series takes its name.
 
     A setter is a method annotated -> None, or in an undeclared driver one named set_...; the renaming break is
@@ -502,7 +519,7 @@ def _generic_value_names(commands: list[Method], report: Report) -> None:
         if not (method.returns_none or (not method.decorated and method.name.startswith("set_"))):
             continue
         for parameter in method.parameters:
-            if parameter.arg.lower() in GENERIC_VALUE_NAMES:
+            if parameter.arg.lower() in GENERIC_VALUE_NAMES and not _is_selector(parameter, driver):
                 report.add("DC020", method, method.node.lineno,
                            f"the value parameter '{parameter.arg}' does not say what it sets - name it after its "
                            f"quantity (voltage, operation_mode, current_range), which names the recorded series")
