@@ -38,7 +38,7 @@ import time
 from typing import Annotated, Literal
 
 import numpy as np
-from pysweepme import Range, Selector, Unit, command
+from pysweepme.commands import Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 # What the communication commands take and answer (checked by @command on every call)
