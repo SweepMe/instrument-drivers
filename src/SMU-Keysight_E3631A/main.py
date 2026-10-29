@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pysweepme import Selector, Unit, command
+from pysweepme.commands import Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 # What the communication commands take and answer (checked by @command on every call).

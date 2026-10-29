@@ -8,7 +8,7 @@ import ljm_constants_wrapped as ljm_constants
 from labjack import ljm
 
 import numpy as np
-from pysweepme import Label, Range, Selector, Unit, command
+from pysweepme.commands import Label, Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug
 
