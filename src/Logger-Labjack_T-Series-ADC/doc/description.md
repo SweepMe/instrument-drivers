@@ -38,3 +38,7 @@ The device is identified by its serial number: use *Find ports* and select it.
 For scripts and agents the driver also offers communication commands, among them `get_voltage(pin)`,
 `set_dac_voltage(channel, dac_voltage)`, digital pins, high speed counters and streaming of analog inputs
 (`start_stream`, `read_stream`, `stop_stream`, `acquire_stream`).
+
+A pin name addresses one line of the device, and several names reach the same line: DIO4 is FIO4 on every model,
+and on the T4 the flexible pins FIO4-FIO7 and EIO0-EIO3 are also AIN4-AIN11. The driver declares these names, so
+that Instrument Control does not let two bench entries split one line under two names.

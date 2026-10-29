@@ -15,7 +15,10 @@ from pysweepme.ErrorMessage import debug
 DEBUG = False
 
 # What the communication commands take and answer (checked by @command on every call). Pin names are model dependent
-# (T4, T7, T8), so they stay text and the commands check them against the connected model.
+# (T4, T7, T8), so they stay text and the commands check them against the connected model. A pin addresses a line of
+# the device (a selector); several names reach one line (DIO4 is FIO4, and on the T4 also AIN4), which pin_overlaps
+# answers for the model connected.
+Pin = Annotated[str, Selector(overlaps="pin_overlaps")]
 Volts = Annotated[float, Unit("V")]
 Celsius = Annotated[float, Unit("°C")]
 Hertz = Annotated[float, Unit("Hz")]
@@ -424,6 +427,23 @@ class LabjackBaseClass(EmptyDevice):
                     f"connected over {self.infos['CNXN']} at {self.infos['address']}")
 
 
+    def pin_overlaps(self) -> dict[str, tuple[str, ...]] | None:
+        """The pin names reaching one line on the connected model, {name: (other names, ...)}; None unconnected.
+
+        DIOn is FIOn, EIOn, CIOn or MIOn on every model; on the T4 the flexible FIO4-FIO7 and EIO0-EIO3 are also the
+        analog inputs AIN4-AIN11.
+        """
+        if self.dev_type not in ljm_constants.DIO_PINS:
+            return None
+        lines: dict[int, list[str]] = {}
+        for name, line in ljm_constants.DIO_PINS[self.dev_type].items():
+            lines.setdefault(line, []).append(name)
+        if self.dev_type == "T4":
+            for line in sorted(set(ljm_constants.FLEX_PINS_T4.values())):
+                lines[line].append(f"AIN{line}")
+        return {name: tuple(other for other in names if other != name)
+                for names in lines.values() if len(names) > 1 for name in names}
+
     # -- Communication commands -------------------------------------------------
     # Declared with pysweepme's @command: only these are the driver's commands, and every call is checked against
     # the annotations. Pins carry the names printed on the device (AIN0, DAC0, FIO4, EIO0, CIO1, DIO8). The semantic
@@ -444,7 +464,7 @@ class LabjackBaseClass(EmptyDevice):
         return float(ljm.eReadName(self.handle, "TEMPERATURE_DEVICE_K")) - 273.15
 
     @command(returns=("voltage",))
-    def get_voltage(self, pin: str) -> Volts:
+    def get_voltage(self, pin: Pin) -> Volts:
         """Return the voltage of an analog input in V, e.g. pin 'AIN0'.
 
         On the T4, AIN4 to AIN11 are the flexible pins FIO4-FIO7 and EIO0-EIO3: they have to be
@@ -465,7 +485,7 @@ class LabjackBaseClass(EmptyDevice):
         return [float(value) for value in ljm.eReadNames(self.handle, len(names), names)]
 
     @command
-    def set_pin_analog(self, pin: str, pin_analog: bool) -> None:
+    def set_pin_analog(self, pin: Pin, pin_analog: bool) -> None:
         """Switch a flexible pin of the T4 (FIO4-FIO7, EIO0-EIO7) to an analog input (True) or a digital pin (False).
 
         As an analog input, FIO4 is read as AIN4, ..., EIO3 as AIN11. Other models have no flexible pins.
@@ -498,11 +518,9 @@ class LabjackBaseClass(EmptyDevice):
         """Return the voltage in V that an analog output is set to (channel 0 or 1)."""
         return float(ljm.eReadName(self.handle, f"DAC{channel}"))
 
-    # check_driver: ignore DC010 - pin addresses the line, it is not a quantity (open point of the driver API:
-    # a setter of several plain values)
     @command(hazards="The pin becomes an output: a signal that drives the same line from outside is shorted "
                      "against it.")
-    def set_digital_output(self, pin: str, digital_output: bool) -> None:
+    def set_digital_output(self, pin: Pin, digital_output: bool) -> None:
         """Set a digital pin to an output that is high (True) or low (False).
 
         Other pins are not changed. Flexible pins of the T4 are switched to digital.
@@ -513,17 +531,17 @@ class LabjackBaseClass(EmptyDevice):
                             pin_names_low=[] if digital_output else pins)
 
     @command(returns=("digital_output",), reads="setpoint", composite=True)
-    def get_digital_output(self, pin: str) -> bool:
+    def get_digital_output(self, pin: Pin) -> bool:
         """Return whether a digital output pin is high ('DIO_STATE') - the read-back of set_digital_output."""
         return bool(self.get_digital_state(pin))
 
     @command(kind="run")
-    def set_digital_input(self, pin: str) -> None:
+    def set_digital_input(self, pin: Pin) -> None:
         """Set a digital pin to an input. Other pins are not changed."""
         self.set_digital_IO(pins_names_inputs=[str(pin)], pin_names_high=[], pin_names_low=[])
 
     @command(returns=("digital_state",))
-    def get_digital_state(self, pin: str) -> int:
+    def get_digital_state(self, pin: Pin) -> int:
         """Return the level of a digital pin, 1 for high and 0 for low ('DIO_STATE').
 
         Unlike read_pin this does not change the direction of the pin.
@@ -536,7 +554,7 @@ class LabjackBaseClass(EmptyDevice):
     @command(composite=True,
              hazards="OUT makes the pin an output: a signal that drives the same line from outside is shorted "
                      "against it.")
-    def set_digital_direction(self, pin: str, digital_direction: DigitalDirection) -> None:
+    def set_digital_direction(self, pin: Pin, digital_direction: DigitalDirection) -> None:
         """Make a digital pin an input ('IN') or an output ('OUT'); an output keeps the level the pin has now.
 
         Other pins are not changed. Flexible pins of the T4 are switched to digital.
@@ -547,7 +565,7 @@ class LabjackBaseClass(EmptyDevice):
             self.set_digital_output(pin, bool(self.get_digital_state(pin)))
 
     @command(returns=("digital_direction",), reads="setpoint")
-    def get_digital_direction(self, pin: str) -> DigitalDirection:
+    def get_digital_direction(self, pin: Pin) -> DigitalDirection:
         """Return the direction of a digital pin, 'IN' or 'OUT' ('DIO_DIRECTION')."""
         pins = ljm_constants.DIO_PINS[self.dev_type]
         if str(pin) not in pins:
@@ -568,7 +586,7 @@ class LabjackBaseClass(EmptyDevice):
     @command(kind="run", composite=True,
              hazards="Clock 0 and the clock sharing the pin are switched off if they run, so a PWM or other "
                      "clocked output that uses them stops.")
-    def enable_counter(self, pin: str) -> None:
+    def enable_counter(self, pin: Pin) -> None:
         """Make a pin a high speed counter and reset its count to zero (e.g. 'CIO1' or 'DIO17').
 
         The pin becomes a digital input. Read the count with get_counter or reset_counter.
@@ -576,7 +594,7 @@ class LabjackBaseClass(EmptyDevice):
         self.set_pins_to_hs_counter([self._counter_dio_name(pin)], reset=True)
 
     @command(returns=("count",))
-    def get_counter(self, pin: str) -> int:
+    def get_counter(self, pin: Pin) -> int:
         """Return the count of a high speed counter without resetting it ('DIOx_EF_READ_A').
 
         The counter has to be enabled with enable_counter first.
@@ -584,13 +602,13 @@ class LabjackBaseClass(EmptyDevice):
         return int(ljm.eReadName(self.handle, f"{self._counter_dio_name(pin)}_EF_READ_A"))
 
     @command(returns=("count",))
-    def reset_counter(self, pin: str) -> int:
+    def reset_counter(self, pin: Pin) -> int:
         """Return the count of a high speed counter and reset it to zero ('DIOx_EF_READ_A_AND_RESET')."""
         return int(ljm.eReadName(self.handle,
                                  f"{self._counter_dio_name(pin)}_EF_READ_A_AND_RESET"))
 
     @command(kind="run")
-    def disable_counter(self, pin: str) -> None:
+    def disable_counter(self, pin: Pin) -> None:
         """Disable the high speed counter of a pin ('DIOx_EF_ENABLE')."""
         ljm.eWriteName(self.handle, f"{self._counter_dio_name(pin)}_EF_ENABLE", 0)
 
