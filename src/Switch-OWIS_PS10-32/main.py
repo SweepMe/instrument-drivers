@@ -95,7 +95,6 @@ class Device(EmptyDevice):
         self.homeposition = parameter["Home @ start"]
         self.motortype = parameter["Motor type"][0]
         self.sweepmode = parameter["SweepMode"]
-        self.sweepvalue = parameter["SweepValue"]
         self.limitmin = int(float(parameter["Limit, min"]))
         self.limitmax = int(float(parameter["Limit, max"]))
         self.controller = parameter["Controller"]
