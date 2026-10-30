@@ -43,14 +43,10 @@ driver_name = os.path.basename(main_path)
 Labjack_T_Series_BaseClass = load_source(driver_name + ".BaseClass",
                                          main_path + os.sep + "Labjack_T_Series_BaseClass.py")
 
-html_docu = load_source(driver_name + ".html_docu", main_path + os.sep + "html_docu.py")
-
 
 class Device(Labjack_T_Series_BaseClass.LabjackBaseClass):
     """ the Class that will be used by the switch module to control the instrument.
         Only semantic functions are called by SweepMe!"""
-
-    description = html_docu.html_driver_descript
 
     def __init__(self):
         super().__init__()
@@ -109,12 +105,12 @@ class Device(Labjack_T_Series_BaseClass.LabjackBaseClass):
         ]
         self.set_pins_to_hs_counter(self.counter_pins, override_clock=self.override_clock)
 
-    def call(self):
-        """
-        """
-        return list(self.results)
-
     def measure(self):
 
         self.results = self.read_counter_pins(count_time=self.count_time,
                                               bus_correction=self.bus_correction)
+
+    def call(self):
+        """
+        """
+        return list(self.results)

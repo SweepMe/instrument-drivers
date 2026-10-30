@@ -36,11 +36,40 @@ from __future__ import annotations
 
 import math
 import sys
-from typing import Any
+from typing import Annotated, Any, Literal
 
 import numpy as np
+from pysweepme.commands import Label, Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
-from pysweepme.ErrorMessage import debug
+
+# What the communication commands take and answer (checked by @command on every call)
+Channel = Annotated[int, Selector(), Range(1, 2)]
+Volts = Annotated[float, Unit("V")]
+Hertz = Annotated[float, Unit("Hz")]
+Phase = Annotated[float, Unit("°"), Range(-360.0, 360.0)]
+DutyCycle = Annotated[float, Range(0.0, 1.0)]
+WaveformSample = Annotated[float, Range(-1.0, 1.0)]  # one point of an arbitrary waveform, normalized
+Waveform = Literal["SINE", "SQUARE", "TRIANGLE", "SAWU", "SAWD", "PWM", "ARBITRARY", "DC"]
+TriggerSource = Annotated[Literal["INT", "EXT_PE", "EXT_NE", "GATED"], Label("Trigger source")]
+BurstState = Annotated[Literal["CONTINUOUS", "BURST"], Label("Burst state")]
+BurstCycles = Annotated[int, Range(1, 65535), Label("Burst cycles")]  # 65536 is ignored by the board
+BurstRepetitions = Annotated[int, Range(1, 65536), Label("Burst repetitions")]  # 65536 means infinite
+BurstPeriod = Annotated[float, Unit("µs"), Label("Burst period")]
+OutputOn = Annotated[bool, Label("Output on")]
+
+# +/- V of the fast analog outputs (STEMlab): the one-way amplitude plus the absolute offset must stay within it. Beyond
+# it the board clips the signal without a word, so the driver refuses such a combination; it never clips.
+OUTPUT_RANGE = 1.0
+
+
+def _check_output_range(amplitude: float, offset: float) -> None:
+    """Refuse amplitude and offset whose sum leaves the output range; the board would clip the signal."""
+    if abs(amplitude) + abs(offset) > OUTPUT_RANGE + 1e-9:
+        msg = (
+            f"Amplitude {amplitude:g} V plus offset {offset:g} V exceed the output range of +/- {OUTPUT_RANGE:g} V: "
+            f"amplitude plus absolute offset must stay within it."
+        )
+        raise ValueError(msg)
 
 
 class Device(EmptyDevice):
@@ -133,10 +162,6 @@ class Device(EmptyDevice):
         self.dutycycle: float = 0.5
         self.burstperiod: float = 0.0
 
-        self.limits: float = 1.0  # +/- voltage limit of the fast analog outputs
-        self.limits_message_shown: bool = (
-            False  # whether the clipping message was shown already
-        )
 
     def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Return the GUI fields, depending on the currently selected waveform and operation mode.
@@ -214,6 +239,10 @@ class Device(EmptyDevice):
             self.plottype = [True]
             self.savetype = [True]
 
+    def apply_selectors(self, channel: int) -> None:
+        """Take over the channel a bench entry binds, so that the stages act on it (Instrument Control)."""
+        self.channel = int(channel)
+
     def connect(self):
         """Check that the SCPI server answers.
 
@@ -237,13 +266,11 @@ class Device(EmptyDevice):
             )
             raise ConnectionError(msg) from e
 
+    def deinitialize(self):
+        # print("Disable Frequency Generator Channel {}!".format(self.channel))
+        self.set_output_state(self.channel, False)
+
     def configure(self):
-        self.limits = 1.0  # +/- Voltage limit of frequency generator
-
-        # Amplitude and offset are also set during a sweep in 'apply'. The clipping message is
-        # only shown once per run to not flood the user with message boxes.
-        self.limits_message_shown = False
-
         self.convert_gui_parameters()
 
         self.reset_generator()
@@ -322,10 +349,6 @@ class Device(EmptyDevice):
             return [self.value]
         else:
             return []
-
-    def deinitialize(self):
-        # print("Disable Frequency Generator Channel {}!".format(self.channel))
-        self.set_output_state(self.channel, False)
 
     # Functions
 
@@ -456,7 +479,7 @@ class Device(EmptyDevice):
             self.trigger(self.channel)
 
     def _apply_amplitude_offset(self) -> None:
-        """Convert high level / low level to amplitude and offset, clip them and send them."""
+        """Convert high level / low level to amplitude and offset and send them; refused beyond the output range."""
         if (
             self.amplitudehilevel == "High level in V"
             and self.offsetlolevel == "Low level in V"
@@ -484,19 +507,14 @@ class Device(EmptyDevice):
             self.amplitude = self.amplitudehilevelvalue
             self.offset = self.offsetlolevelvalue
 
-        self._clip_to_output_range()
-
-        self.set_amplitude(self.channel, self.amplitude)
-        self.set_offset(self.channel, self.offset)
+        self.set_amplitude_and_offset(self.channel, self.amplitude, self.offset)
 
     def _apply_duty_cycle(self) -> None:
         """Convert the duty cycle in % from the GUI to 0..1 and send it."""
-        if self.dutycyclepulsewidthvalue < 0.0:
-            self.dutycycle = 0.0
-        elif self.dutycyclepulsewidthvalue > 100.0:
-            self.dutycycle = 1.0
-        else:
-            self.dutycycle = self.dutycyclepulsewidthvalue / 100.0
+        if not 0.0 <= self.dutycyclepulsewidthvalue <= 100.0:  # noqa: PLR2004  # percent
+            msg = f"The duty cycle must lie between 0 and 100 %, not {self.dutycyclepulsewidthvalue:g} %."
+            raise ValueError(msg)
+        self.dutycycle = self.dutycyclepulsewidthvalue / 100.0
 
         self.set_duty_cycle(self.channel, self.dutycycle)
 
@@ -523,41 +541,6 @@ class Device(EmptyDevice):
 
         self.set_frequency(self.channel, self.frequency)
 
-    def _clip_to_output_range(self) -> None:
-        """Clip amplitude and offset to the output range of the instrument.
-
-        The sum of the one-way amplitude and the absolute offset must not exceed the output
-        range of the fast analog outputs (+/- 1 V). Values that violate this condition are
-        clipped and the user is informed, as the resulting signal differs from the requested one.
-        """
-        requested_amplitude = self.amplitude
-        requested_offset = self.offset
-
-        if self.amplitude > self.limits:
-            self.amplitude = self.limits
-        if abs(self.offset) > self.limits:
-            self.offset = self.limits * np.sign(self.offset)
-        if abs(abs(self.offset) + self.amplitude) > self.limits:
-            self.offset = np.sign(self.offset) * (self.limits - self.amplitude)
-
-        if self.amplitude != requested_amplitude or self.offset != requested_offset:
-            msg = (
-                "Signal-RedPitaya_STEMlab: Amplitude and offset exceed the output range of "
-                "+/- {0} V and have been clipped.\n"
-                "Requested: amplitude {1} V, offset {2} V\n"
-                "Used: amplitude {3} V, offset {4} V".format(
-                    self.limits,
-                    requested_amplitude,
-                    requested_offset,
-                    self.amplitude,
-                    self.offset,
-                )
-            )
-            debug(msg)
-            if not self.limits_message_shown:
-                self.limits_message_shown = True
-                self.message_box(msg)
-
     def _apply_burst_mode(self) -> None:
         """Send the operation mode and, for bursts, the burst timing from the GUI."""
         self.set_burst_state(self.channel, self.operationmodes[self.operationmode])
@@ -571,29 +554,29 @@ class Device(EmptyDevice):
             self.set_burst_cycles(self.channel, self.periodnumber)
 
     # -- Communication commands -------------------------------------------------
-    # One SCPI command each, with explicit arguments, so that a pysweepme script or an agent can
-    # address every property of the generator directly. 'channel' is the output, 1 or 2. The
-    # SCPI server does not acknowledge set commands, so a set does not read back.
+    # One SCPI command each, declared with pysweepme's @command, so that a pysweepme script or an agent can address
+    # every property of the generator directly and every call is checked against the annotations. 'channel' is the
+    # output, 1 or 2. The SCPI server does not acknowledge set commands, so a set does not read back.
     # Reference:
     # https://redpitaya.readthedocs.io/en/latest/appsFeatures/remoteControl/command_list/commands-gen.html
 
+    @command(warnings="Resets both outputs of the board, also one that another driver instance drives.")
     def reset_generator(self) -> None:
         """Reset both generator channels to their default settings ('GEN:RST')."""
         self.port.write("GEN:RST")
 
-    def set_waveform(self, channel: int, waveform: str) -> None:
-        """Set the waveform: SINE, SQUARE, TRIANGLE, SAWU, SAWD, PWM, ARBITRARY or DC.
-
-        The GUI names ("Sine", "Saw up", ...) are accepted as well.
-        """
-        waveform = self.waveforms.get(waveform, str(waveform).upper())
+    @command
+    def set_waveform(self, channel: Channel, waveform: Waveform) -> None:
+        """Set the waveform: SINE, SQUARE, TRIANGLE, SAWU, SAWD, PWM, ARBITRARY or DC ('SOUR<n>:FUNC')."""
         self.port.write("SOUR{0}:FUNC {1}".format(channel, waveform))
 
-    def get_waveform(self, channel: int) -> str:
+    @command(returns=("waveform",), reads="setpoint")
+    def get_waveform(self, channel: Channel) -> str:
         """Return the waveform as SCPI name, e.g. 'SINE'."""
         return self.port.query("SOUR{0}:FUNC?".format(channel))
 
-    def set_arbitrary_waveform(self, channel: int, data: list) -> None:
+    @command
+    def set_arbitrary_waveform(self, channel: Channel, data: list[WaveformSample]) -> None:
         """Upload an arbitrary waveform: 16384 samples normalized to -1..1 ('SOUR<n>:TRAC:DATA:DATA').
 
         With fewer samples the output frequency is higher than the configured one. The waveform
@@ -611,67 +594,101 @@ class Device(EmptyDevice):
             )
         )
 
-    def set_frequency(self, channel: int, frequency: float) -> None:
+    @command
+    def set_frequency(self, channel: Channel, frequency: Hertz) -> None:
         """Set the frequency in Hz ('SOUR<n>:FREQ:FIX', 1 Hz to 50 MHz, board dependent).
 
         The instrument rebuilds the signal; with the internal trigger source the generation
         has to be started again with trigger(channel) afterwards.
         """
-        self.port.write("SOUR{0}:FREQ:FIX {1:1.7f}".format(channel, float(frequency)))
+        self.port.write("SOUR{0}:FREQ:FIX {1:1.7f}".format(channel, frequency))
 
-    def get_frequency(self, channel: int) -> float:
+    @command(returns=("frequency",), reads="setpoint")
+    def get_frequency(self, channel: Channel) -> Hertz:
         """Return the frequency in Hz."""
         return float(self.port.query("SOUR{0}:FREQ:FIX?".format(channel)))
 
-    def set_phase(self, channel: int, phase: float) -> None:
+    @command
+    def set_phase(self, channel: Channel, phase: Phase) -> None:
         """Set the phase in degrees ('SOUR<n>:PHAS', -360 to 360).
 
         The phase is only taken over when the signal starts from the beginning, i.e. after
         trigger(channel).
         """
-        self.port.write("SOUR{0}:PHAS {1:1.7f}".format(channel, float(phase)))
+        self.port.write("SOUR{0}:PHAS {1:1.7f}".format(channel, phase))
 
-    def get_phase(self, channel: int) -> float:
+    @command(returns=("phase",), reads="setpoint")
+    def get_phase(self, channel: Channel) -> Phase:
         """Return the phase in degrees."""
         return float(self.port.query("SOUR{0}:PHAS?".format(channel)))
 
-    def set_amplitude(self, channel: int, amplitude: float) -> None:
+    @command(composite=True)  # reads the offset to check the output range
+    def set_amplitude(self, channel: Channel, amplitude: Volts) -> None:
         """Set the one-way amplitude in V ('SOUR<n>:VOLT').
 
-        Amplitude plus absolute offset must stay within the output range (+/- 1 V on STEMlab).
-        The amplitude is applied without restarting the signal.
+        Amplitude plus absolute offset must stay within the output range (+/- 1 V on STEMlab), else the amplitude is
+        refused; set_amplitude_and_offset changes both. The amplitude is applied without restarting the signal.
         """
-        self.port.write("SOUR{0}:VOLT {1:1.7f}".format(channel, float(amplitude)))
+        _check_output_range(amplitude, self.get_offset(channel))
+        self.port.write("SOUR{0}:VOLT {1:1.7f}".format(channel, amplitude))
 
-    def get_amplitude(self, channel: int) -> float:
+    @command(returns=("amplitude",), reads="setpoint")
+    def get_amplitude(self, channel: Channel) -> Volts:
         """Return the one-way amplitude in V."""
         return float(self.port.query("SOUR{0}:VOLT?".format(channel)))
 
-    def set_offset(self, channel: int, offset: float) -> None:
-        """Set the DC offset in V ('SOUR<n>:VOLT:OFFS'). Applied without restarting the signal."""
-        self.port.write("SOUR{0}:VOLT:OFFS {1:1.7f}".format(channel, float(offset)))
+    @command(composite=True)  # reads the amplitude to check the output range
+    def set_offset(self, channel: Channel, offset: Volts) -> None:
+        """Set the DC offset in V ('SOUR<n>:VOLT:OFFS'). Applied without restarting the signal.
 
-    def get_offset(self, channel: int) -> float:
+        Amplitude plus absolute offset must stay within the output range (+/- 1 V on STEMlab), else the offset is
+        refused; set_amplitude_and_offset changes both.
+        """
+        _check_output_range(self.get_amplitude(channel), offset)
+        self.port.write("SOUR{0}:VOLT:OFFS {1:1.7f}".format(channel, offset))
+
+    @command(returns=("offset",), reads="setpoint")
+    def get_offset(self, channel: Channel) -> Volts:
         """Return the DC offset in V."""
         return float(self.port.query("SOUR{0}:VOLT:OFFS?".format(channel)))
 
-    def set_duty_cycle(self, channel: int, duty_cycle: float) -> None:
-        """Set the duty cycle of the PWM waveform as a fraction 0..1 ('SOUR<n>:DCYC')."""
-        self.port.write("SOUR{0}:DCYC {1:1.7f}".format(channel, float(duty_cycle)))
+    @command(composite=True)
+    def set_amplitude_and_offset(self, channel: Channel, amplitude: Volts, offset: Volts) -> None:
+        """Set amplitude and offset in V together, in the order that keeps the output range at every step.
 
-    def get_duty_cycle(self, channel: int) -> float:
+        Refused, with nothing sent, when amplitude plus absolute offset exceed the output range (+/- 1 V on STEMlab).
+        """
+        _check_output_range(amplitude, offset)
+        # One of the two orders always stays within the range when the old and the new pair do
+        if abs(amplitude) + abs(self.get_offset(channel)) <= OUTPUT_RANGE:
+            self.set_amplitude(channel, amplitude)
+            self.set_offset(channel, offset)
+        else:
+            self.set_offset(channel, offset)
+            self.set_amplitude(channel, amplitude)
+
+    @command
+    def set_duty_cycle(self, channel: Channel, duty_cycle: DutyCycle) -> None:
+        """Set the duty cycle of the PWM waveform as a fraction 0..1 ('SOUR<n>:DCYC')."""
+        self.port.write("SOUR{0}:DCYC {1:1.7f}".format(channel, duty_cycle))
+
+    @command(returns=("duty_cycle",), reads="setpoint")
+    def get_duty_cycle(self, channel: Channel) -> DutyCycle:
         """Return the PWM duty cycle as a fraction 0..1."""
         return float(self.port.query("SOUR{0}:DCYC?".format(channel)))
 
-    def set_trigger_source(self, channel: int, source: str) -> None:
+    @command
+    def set_trigger_source(self, channel: Channel, source: TriggerSource) -> None:
         """Set the trigger source: INT, EXT_PE, EXT_NE or GATED ('SOUR<n>:TRIG:SOUR')."""
-        self.port.write("SOUR{0}:TRIG:SOUR {1}".format(channel, str(source).upper()))
+        self.port.write("SOUR{0}:TRIG:SOUR {1}".format(channel, source))
 
-    def get_trigger_source(self, channel: int) -> str:
+    @command(returns=("source",), reads="setpoint")
+    def get_trigger_source(self, channel: Channel) -> TriggerSource:
         """Return the trigger source, e.g. 'INT'."""
         return self.port.query("SOUR{0}:TRIG:SOUR?".format(channel))
 
-    def trigger(self, channel: int) -> None:
+    @command(warnings="Restarts the signal from its start phase: a signal that is running jumps.")
+    def trigger(self, channel: Channel) -> None:
         """Trigger the channel, i.e. (re)start the generation from the start phase ('SOUR<n>:TRIG:INT').
 
         Required once after set_output_state(channel, True) since Red Pitaya OS 2.00, and again
@@ -682,39 +699,48 @@ class Device(EmptyDevice):
         """
         self.port.write("SOUR{0}:TRIG:INT".format(channel))
 
-    def set_burst_state(self, channel: int, state: str) -> None:
+    @command
+    def set_burst_state(self, channel: Channel, burst_state: BurstState) -> None:
         """Set the operation mode: CONTINUOUS or BURST ('SOUR<n>:BURS:STAT')."""
-        self.port.write("SOUR{0}:BURS:STAT {1}".format(channel, str(state).upper()))
+        self.port.write("SOUR{0}:BURS:STAT {1}".format(channel, burst_state))
 
-    def get_burst_state(self, channel: int) -> str:
+    @command(returns=("burst_state",), reads="setpoint")
+    def get_burst_state(self, channel: Channel) -> BurstState:
         """Return the operation mode, 'CONTINUOUS' or 'BURST'."""
         return self.port.query("SOUR{0}:BURS:STAT?".format(channel))
 
-    def set_burst_cycles(self, channel: int, cycles: int) -> None:
+    @command
+    def set_burst_cycles(self, channel: Channel, cycles: BurstCycles) -> None:
         """Set the number of signal periods in one burst ('SOUR<n>:BURS:NCYC')."""
-        self.port.write("SOUR{0}:BURS:NCYC {1}".format(channel, int(cycles)))
+        self.port.write("SOUR{0}:BURS:NCYC {1}".format(channel, cycles))
 
-    def get_burst_cycles(self, channel: int) -> int:
+    @command(returns=("cycles",), reads="setpoint")
+    def get_burst_cycles(self, channel: Channel) -> BurstCycles:
         """Return the number of signal periods in one burst."""
         return int(self.port.query("SOUR{0}:BURS:NCYC?".format(channel)))
 
-    def set_burst_repetitions(self, channel: int, repetitions: int) -> None:
+    @command
+    def set_burst_repetitions(self, channel: Channel, repetitions: BurstRepetitions) -> None:
         """Set the number of bursts ('SOUR<n>:BURS:NOR'); 65536 means infinite."""
-        self.port.write("SOUR{0}:BURS:NOR {1}".format(channel, int(repetitions)))
+        self.port.write("SOUR{0}:BURS:NOR {1}".format(channel, repetitions))
 
-    def get_burst_repetitions(self, channel: int) -> int:
+    @command(returns=("repetitions",), reads="setpoint")
+    def get_burst_repetitions(self, channel: Channel) -> BurstRepetitions:
         """Return the number of bursts."""
         return int(self.port.query("SOUR{0}:BURS:NOR?".format(channel)))
 
-    def set_burst_period(self, channel: int, period: float) -> None:
+    @command
+    def set_burst_period(self, channel: Channel, period: BurstPeriod) -> None:
         """Set the burst period in us, i.e. signal plus delay until the next burst ('SOUR<n>:BURS:INT:PER')."""
-        self.port.write("SOUR{0}:BURS:INT:PER {1}".format(channel, int(round(float(period)))))
+        self.port.write("SOUR{0}:BURS:INT:PER {1}".format(channel, int(round(period))))
 
-    def get_burst_period(self, channel: int) -> float:
+    @command(returns=("period",), reads="setpoint")
+    def get_burst_period(self, channel: Channel) -> BurstPeriod:
         """Return the burst period in us."""
         return float(self.port.query("SOUR{0}:BURS:INT:PER?".format(channel)))
 
-    def set_output_state(self, channel: int, enabled: bool) -> None:
+    @command
+    def set_output_state(self, channel: Channel, enabled: OutputOn) -> None:
         """Switch the output on or off ('OUTPUT<n>:STATE').
 
         Since OS 2.00 switching on only applies the initial voltage; trigger(channel) starts
@@ -722,12 +748,14 @@ class Device(EmptyDevice):
         """
         self.port.write("OUTPUT{0}:STATE {1}".format(channel, "ON" if enabled else "OFF"))
 
-    def get_output_state(self, channel: int) -> bool:
+    @command(returns=("enabled",), reads="setpoint")
+    def get_output_state(self, channel: Channel) -> OutputOn:
         """Return whether the output is switched on."""
         answer = self.port.query("OUTPUT{0}:STATE?".format(channel))
         return answer.strip().upper() in ("ON", "1")
 
-    def get_settings(self, channel: int) -> dict:
+    @command(returns=("settings",), reads="setpoint", composite=True)
+    def get_settings(self, channel: Channel) -> dict:
         """Return the current generator settings of a channel as a dictionary."""
         return {
             "output": self.get_output_state(channel),
@@ -744,18 +772,27 @@ class Device(EmptyDevice):
             "burst_period": self.get_burst_period(channel),
         }
 
+    @command(returns=("identification",), reads="state")
     def get_identification(self) -> str:
         """Return the '*IDN?' string of the board."""
         return self.port.query("*IDN?")
 
+    @command(returns=("board_name",), reads="state")
     def get_board_name(self) -> str:
+        """Return the name of the board ('SYSTem:BRD:Name?')."""
         return self.port.query("SYSTem:BRD:Name?")
 
+    @command(returns=("board_id",), reads="state")
     def get_board_id(self) -> str:
+        """Return the id of the board ('SYSTem:BRD:ID?')."""
         return self.port.query("SYSTem:BRD:ID?")
 
+    @command(returns=("system_help",), reads="state")
     def get_system_help(self) -> str:
+        """Return the list of SCPI commands the server knows ('SYSTem:Help?', several kB)."""
         return self.port.query("SYSTem:Help?")
 
+    @command(returns=("system_version",), reads="state")
     def get_system_version(self) -> str:
+        """Return the ecosystem version of the board ('SYST:VERS?')."""
         return self.port.query("SYST:VERS?")

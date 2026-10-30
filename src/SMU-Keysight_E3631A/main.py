@@ -29,23 +29,45 @@
 # * Module: SMU
 # * Instrument: Agilent/Keysight E3631A
 
-import time
+# ruff: noqa: ARG002  # a command does not send the channel: @command selects it through apply_selectors
 
-# from pysweepme.ErrorMessage import error
+from __future__ import annotations
+
+from typing import Annotated, Any, Literal
+
+from pysweepme.commands import Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+# What the communication commands take and answer (checked by @command on every call).
+# The instrument keeps the selected output (INST:SEL), so the channel is a stateful selector: @command selects it
+# through apply_selectors only when it differs from the output selected last. TRACK25V is the +25V output with
+# tracking on, which drives the -25V output to the same voltage with the opposite sign: it overlaps both 25 V outputs.
+Channel = Annotated[
+    Literal["+6V", "+25V", "-25V", "TRACK25V"],
+    Selector(stateful=True, overlaps={"TRACK25V": ("+25V", "-25V")}),
+]
+Volts = Annotated[float, Unit("V")]
+Amperes = Annotated[float, Unit("A")]
+
+# Per channel the output selected (INST:SEL); TRACK25V also switches tracking on, set_tracking(False) switches it off
+OUTPUTS: dict[str, str] = {"+6V": "P6V", "+25V": "P25V", "-25V": "N25V", "TRACK25V": "P25V"}
+# The rated voltage and current of each channel; tracking is set by the positive voltage of the +25V output
+VOLTAGE_RATINGS: dict[str, tuple[float, float]] = {
+    "+6V": (0.0, 6.0),
+    "+25V": (0.0, 25.0),
+    "-25V": (-25.0, 0.0),
+    "TRACK25V": (0.0, 25.0),
+}
+CURRENT_RATINGS: dict[str, float] = {"+6V": 5.0, "+25V": 1.0, "-25V": 1.0, "TRACK25V": 1.0}
+# The channels as the GUI names them; sequences saved "Synced +/-25V" for tracking
+GUI_CHANNELS: dict[str, str] = {"+6V": "+6V", "+25V": "+25V", "-25V": "-25V", "Synced +/-25V": "TRACK25V"}
 
 
 class Device(EmptyDevice):
-    """description =
-    <p><strong>Notes:</strong></p>
-    <ul>
-    <li>COM Port untested as of 20240807</li>
-    <li>Calibration commands not implemented</li>
-    <li>-</li>
-    </ul>
-    """
+    """Driver for the Agilent/Keysight E3631A triple output power supply (+6 V, +25 V, -25 V)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Define the returned variables and the port."""
         super().__init__()
 
         self.shortname = "E3631A"
@@ -57,177 +79,177 @@ class Device(EmptyDevice):
 
         self.port_manager = True
         self.port_types = ["COM", "GPIB"]
+        self.port_properties = {"timeout": 3}
 
-        self.port_properties = {
-            "timeout": 3,
-        }
+        self.channel: str = "+6V"
+        self.current_limit: float = 1.0
+        self.average: int = 1
 
-        self.channels_commands = {
-            "+6V": "P6V",
-            "+25V": "P25V",
-            "-25V": "N25V",
-            "Synced +/-25V": "TRACK25V",  # only a positive voltage is handed over
-        }
+        self.v: float = float("nan")
+        self.i: float = float("nan")
 
-    def set_GUIparameter(self):
-        gui_parameter = {
+    def set_GUIparameter(self) -> dict[str, Any]:  # noqa: N802
+        """Return the GUI fields of the SMU module."""
+        return {
             "SweepMode": ["Voltage in V"],
-            "Channel": list(self.channels_commands.keys()),
+            "Channel": list(GUI_CHANNELS),
             "RouteOut": ["Front"],
             "Compliance": 1,
             "Average": 1,
-            # "RangeVoltage": ["15 V / 7 A", "30 V / 4 A"],  # no voltage range per channel on the E3631A
         }
 
-        return gui_parameter
+    def get_GUIparameter(self, parameter: dict[str, Any]) -> None:  # noqa: N802
+        """Store the user selections."""
+        channel = str(parameter.get("Channel", "+6V"))
+        self.channel = GUI_CHANNELS.get(channel, channel)
+        self.current_limit = float(parameter.get("Compliance", 1.0))
+        self.average = int(parameter.get("Average", 1))
 
-    def get_GUIparameter(self, parameter={}):
-        self.port_string = parameter["Port"]
-        self.source = parameter["SweepMode"]
-        # self.route_out = parameter["RouteOut"]
-        self.currentlimit = parameter["Compliance"]
-        self.average = int(parameter["Average"])
+    def apply_selectors(self, channel: str) -> None:
+        """Select the output the following commands act on; TRACK25V switches tracking on as well.
 
+        @command calls it when a command takes another channel than the one selected last, Instrument Control after
+        connect() with the channel a bench entry binds. pysweepme remembers the selection per Port.
+        """
+        if channel == "TRACK25V":
+            self.port.write("OUTP:TRAC ON")
+        self.port.write(f"INST:SEL {OUTPUTS[channel]}")
+        self.channel = channel
+
+    def initialize(self) -> None:
+        """Check the average and clear the status of the instrument."""
         if self.average < 1:
             msg = "Average smaller 1 not possible. Disable average by setting it to 1."
-            raise Exception(msg)
+            raise ValueError(msg)
+        self.clear_status()
 
-        self.device = parameter["Device"]
+    def deinitialize(self) -> None:
+        """Nothing to do."""
 
-        channel_selection = parameter["Channel"]
-        self.channel = self.channels_commands[channel_selection]
+    def configure(self) -> None:
+        """Switch tracking off for a single 25 V output, then set the current limit of the channel."""
+        if self.channel in ("+25V", "-25V"):
+            self.set_tracking(False)
+        self.set_current(self.channel, self.current_limit)
 
-    def initialize(self):
-        # self.port.write("*IDN?")
-        # identifier = self.port.read()
-        # print("Identifier:", identifier)  # can be used to check the instrument
+    def unconfigure(self) -> None:
+        """Set the voltage of the channel back to zero."""
+        self.set_voltage(self.channel, 0.0)
 
-        self.port.write("*CLS")
+    def poweron(self) -> None:
+        """Switch the outputs on (all three at once)."""
+        self.set_output(True)
 
-        self.unique_identifier = self.device + "_" + self.port_string + "_channel"
+    def poweroff(self) -> None:
+        """Switch the outputs off (all three at once)."""
+        self.set_output(False)
 
-    def configure(self):
-        # NOT AVAILABLE ON E3631A: self.port.write("VOLT:PROT:STAT OFF") # output voltage protection disabled
-        # NOT AVAILABLE ON E3631A: self.port.write("CURR:PROT:STAT OFF") # output current protection disabled
+    def apply(self) -> None:
+        """Set the new sweep value."""
+        self.set_voltage(self.channel, float(self.value))
 
-        # NOT AVAILABLE ON E3631A:
-        # hardcoded overvoltage protection limit, causes switch-off of channel; set to PSU protection default value
-        # self.port.write("VOLT:PROT:LEV 32")
+    def measure(self) -> None:
+        """Measure voltage and current of the channel, averaged."""
+        voltages, currents = [], []
+        for _ in range(self.average):
+            voltages.append(self.get_voltage(self.channel))
+            currents.append(self.get_current(self.channel))
+        self.v = sum(voltages) / self.average
+        self.i = sum(currents) / self.average
 
-        # NOT AVAILABLE ON E3631A:
-        # hardcoded overcurrent protection limit, causes switch-off of channel; set to PSU protection default value
-        # self.port.write("CURR:PROT:LEV 7.5")
-
-        # checking if requested compliance is within PSU capabilities and
-        # enabling TRACK mode if channel option was selected in GUI"
-        if self.channel == "P6V":
-            if float(self.currentlimit) > 5:
-                msg = "Lower compliance limit to max 5 A"
-                raise Exception(msg)
-
-        elif self.channel in ("P25V", "N25V", "TRACK25V"):
-            if float(self.currentlimit) > 1:
-                msg = "Lower compliance limit to max 1 A"
-                raise Exception(msg)
-            if self.channel == "TRACK25V":
-                self.port.write("OUTPUT:TRAC:STAT ON")  # activate sync of both 25V channels
-            else:
-                self.port.write("OUTPUT:TRAC:STAT OFF")  # make sure, sync of +25V and -25V channel is disabled
-        else:
-            msg = "The input channel selection is not valid."
-            raise Exception(msg)
-
-        self.select_channel()
-        # set compliance limit for selected channel.
-        self.port.write("CURR:LEV:IMM %1.4f" % float(self.currentlimit))
-
-    def unconfigure(self):
-        self.select_channel()
-
-        # Safety measure, setting voltage back to minimum before output switch-off. hint: this command differs
-        # slightly from the one used in the E3632A driver
-        self.port.write("VOLT:LEV MIN")
-
-        # if self.port_string.startswith("COM"):
-        #     self.port.write("SYST:LOC")  # On the E3631A, ONLY ALLOWED WITH RS232
-
-    def deinitialize(self):
-        pass
-
-    def poweron(self):
-        self.port.write("OUTP:STAT ON")
-
-    def poweroff(self):
-        self.port.write("OUTP:STAT OFF")
-
-    def apply(self):
-        self.value = float(self.value)
-        if self.channel == "P6V" and self.value > 6:
-            msg = "Requested voltage out of range for this channel (max. 6 V)"
-            raise Exception(msg)
-
-        if self.channel in ("P25V", "TRACK25V"):
-            if abs(self.value) > 25:
-                msg = "Requested voltage out of range for this channel (max. +25 V)"
-                raise Exception(msg)
-            elif self.channel == "TRACK25V" and self.value < 0:
-                msg = "Use positive values only in TRACK mode to request symmetric voltage on both channels."
-                raise Exception(msg)
-
-        if self.channel == "N25V":
-            if abs(self.value) > 25:
-                msg = "Requested voltage out of range for this channel (max. -25 V)"
-                raise Exception(msg)
-            elif self.value > 0:
-                msg = "Positive voltages not possible on this channel (N25V)."
-                raise Exception(msg)
-
-        self.select_channel()
-        self.port.write("VOLT:LEV:IMM %1.4f" % self.value)
-
-    def measure(self):
-        self.v = 0
-        self.i = 0
-
-        self.select_channel()
-        for n in range(self.average):
-            self.port.write("MEAS:VOLT?")
-            self.v = self.v + float(self.port.read())
-            self.port.write("MEAS:CURR?")
-            self.i = self.i + float(self.port.read())
-
-        self.v = self.v / self.average
-        self.i = self.i / self.average
-
-    def call(self):
+    def call(self) -> list[float]:
+        """Return the measured voltage and current."""
         return [self.v, self.i]
 
-    def display_off(self):
-        self.port.write("DISP:STAT OFF")
-        # wait for display shutdown procedure to complete
-        # time.sleep(0.5)
+    @command(returns=("identification",), reads="state")
+    def get_identification(self) -> str:
+        """Return the identification (*IDN?): manufacturer, model, 0 and the firmware versions."""
+        return self.port.query("*IDN?")
 
-    def display_on(self):
-        self.port.write("DISP:STAT ON")
-        # wait for display switch-on procedure to complete
-        # time.sleep(0.5)
+    @command(warnings="Resets every setting of the instrument to its default, the outputs switched off.")
+    def reset_instrument(self) -> None:
+        """Reset the instrument to its default settings (*RST)."""
+        self.port.write("*RST")
+        # the reset also selects another output and switches tracking off
+        self.forget_selections()
 
-    def select_channel(self):
-        """Selects the current channel as the receipt for following SCPI configuration commands."""
-        # only if a channel was not set so far or another channel is request, we change the channel
-        if (
-            self.unique_identifier not in self.device_communication
-            or self.device_communication[self.unique_identifier] != self.channel
-        ):
-            if self.channel == "TRACK25V":
-                # when in TRACK mode (synced +/-25V channels), voltage on both channels can be set by
-                # setting P25V channel or N25V channel arbitrarily.
-                # Here, P25V is used to positive values can be used
-                # as the negative channel only accepts negative voltage values.
-                self.port.write("INST:SEL P25V")
-            else:
-                # select channel to configure
-                self.port.write("INST:SEL %s" % self.channel)
+    @command
+    def clear_status(self) -> None:
+        """Clear the status registers and the error queue (*CLS)."""
+        self.port.write("*CLS")
 
-            # updating the current channel information
-            self.device_communication[self.unique_identifier] = self.channel
+    @command
+    def set_voltage(self, channel: Channel, voltage: Volts) -> None:
+        """Set the voltage of the channel: +6V 0 to 6 V, +25V and TRACK25V 0 to 25 V, -25V -25 to 0 V.
+
+        With TRACK25V the -25V output follows with the opposite sign.
+        """
+        low, high = VOLTAGE_RATINGS[channel]
+        if not low <= voltage <= high:
+            msg = f"The voltage of the {channel} output must lie between {low:g} and {high:g} V, not {voltage:g} V."
+            raise ValueError(msg)
+        self.port.write(f"VOLT {voltage:1.4f}")
+
+    @command(returns=("voltage",), reads="setpoint")
+    def get_voltage_setpoint(self, channel: Channel) -> Volts:
+        """Return the voltage the channel is set to."""
+        return float(self.port.query("VOLT?"))
+
+    @command(returns=("voltage",))
+    def get_voltage(self, channel: Channel) -> Volts:
+        """Measure the voltage at the terminals of the channel."""
+        return float(self.port.query("MEAS:VOLT?"))
+
+    @command
+    def set_current(self, channel: Channel, current: Amperes) -> None:
+        """Set the current limit of the channel: +6V up to 5 A, the 25 V outputs up to 1 A."""
+        high = CURRENT_RATINGS[channel]
+        if not 0 <= current <= high:
+            msg = f"The current limit of the {channel} output must lie between 0 and {high:g} A, not {current:g} A."
+            raise ValueError(msg)
+        self.port.write(f"CURR {current:1.4f}")
+
+    @command(returns=("current",), reads="setpoint")
+    def get_current_setpoint(self, channel: Channel) -> Amperes:
+        """Return the current limit the channel is set to."""
+        return float(self.port.query("CURR?"))
+
+    @command(returns=("current",))
+    def get_current(self, channel: Channel) -> Amperes:
+        """Measure the current through the terminals of the channel."""
+        return float(self.port.query("MEAS:CURR?"))
+
+    @command
+    def set_output(self, output: bool) -> None:
+        """Switch the outputs on (True) or off (False): the E3631A switches all three at once."""
+        self.port.write(f"OUTP {'ON' if output else 'OFF'}")
+
+    @command(returns=("output",), reads="setpoint")
+    def get_output(self) -> bool:
+        """Return whether the outputs are on."""
+        return self.port.query("OUTP?").strip() in ("1", "ON")
+
+    @command
+    def set_tracking(self, tracking: bool) -> None:
+        """Switch tracking on (True) or off (False): the -25V output follows the +25V output with the opposite sign.
+
+        Commands on TRACK25V switch it on by themselves.
+        """
+        self.port.write(f"OUTP:TRAC {'ON' if tracking else 'OFF'}")
+        # a selection of TRACK25V promised tracking: the next command selects again
+        self.forget_selections()
+
+    @command(returns=("tracking",), reads="setpoint")
+    def get_tracking(self) -> bool:
+        """Return whether tracking is on: the -25V output follows the +25V output with the opposite sign."""
+        return self.port.query("OUTP:TRAC?").strip() in ("1", "ON")
+
+    @command
+    def set_display(self, display: bool) -> None:
+        """Switch the front panel display on (True) or off (False)."""
+        self.port.write(f"DISP {'ON' if display else 'OFF'}")
+
+    @command(returns=("display",), reads="setpoint")
+    def get_display(self) -> bool:
+        """Return whether the front panel display is on."""
+        return self.port.query("DISP?").strip() in ("1", "ON")
