@@ -185,7 +185,7 @@ class Device(EmptyDevice):
     not need 'initialize' or 'configure'.
     """
 
-    @command(hazards="Heats or cools the connected sample.")
+    @command(warnings="Heats or cools the connected sample.")
     def set_temperature_setpoint(self, temperature: Annotated[Celsius, Range(ABSOLUTE_ZERO, 1000.0)]) -> None:
         """Set the target temperature in °C, above absolute zero. The temperature then moves towards it."""
         if temperature <= ABSOLUTE_ZERO:
