@@ -48,6 +48,7 @@ Volts = Annotated[float, Unit("V")]
 Hertz = Annotated[float, Unit("Hz")]
 Phase = Annotated[float, Unit("°"), Range(-360.0, 360.0)]
 DutyCycle = Annotated[float, Range(0.0, 1.0)]
+WaveformSample = Annotated[float, Range(-1.0, 1.0)]  # one point of an arbitrary waveform, normalized
 Waveform = Literal["SINE", "SQUARE", "TRIANGLE", "SAWU", "SAWD", "PWM", "ARBITRARY", "DC"]
 TriggerSource = Annotated[Literal["INT", "EXT_PE", "EXT_NE", "GATED"], Label("Trigger source")]
 BurstState = Annotated[Literal["CONTINUOUS", "BURST"], Label("Burst state")]
@@ -575,7 +576,7 @@ class Device(EmptyDevice):
         return self.port.query("SOUR{0}:FUNC?".format(channel))
 
     @command
-    def set_arbitrary_waveform(self, channel: Channel, data: list) -> None:
+    def set_arbitrary_waveform(self, channel: Channel, data: list[WaveformSample]) -> None:
         """Upload an arbitrary waveform: 16384 samples normalized to -1..1 ('SOUR<n>:TRAC:DATA:DATA').
 
         With fewer samples the output frequency is higher than the configured one. The waveform
