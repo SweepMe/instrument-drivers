@@ -31,11 +31,20 @@
 
 from __future__ import annotations
 
+import math
 import random
+from typing import Annotated, Literal
 
 import numpy as np
+from pysweepme.commands import Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
-import math
+
+MAX_VOLTAGE = 20.0
+"""Largest voltage magnitude in V the simulated SMU can force."""
+
+Volts = Annotated[float, Unit("V")]
+Amperes = Annotated[float, Unit("A")]
+Speed = Literal["Fast", "Medium", "Slow"]
 
 
 def proof_average(average) -> int:
@@ -250,66 +259,63 @@ class Device(EmptyDevice):
 
     _voltage_setpoint: float = 0.0
     _output_enabled: bool = False
-    _max_voltage: float = 20.0
 
-    def set_compliance(self, compliance: float) -> None:
+    @command(hazards="A higher compliance lets more current flow through the connected device.")
+    def set_compliance(self, compliance: Annotated[Amperes, Range(0.0, 1.0)]) -> None:
         """Set the current compliance in A. It must be greater than 0 A and at most 1 A."""
-        compliance = float(compliance)
-        if not 0 < compliance <= 1.0:
-            msg = f"Compliance {compliance} A must be greater than 0 A and at most 1 A."
+        if compliance <= 0:
+            msg = f"Compliance {compliance} A must be greater than 0 A."
             raise ValueError(msg)
         self.protection = compliance
 
-    def get_compliance(self) -> float:
+    @command(returns=("compliance",), reads="setpoint")
+    def get_compliance(self) -> Amperes:
         """Return the current compliance in A."""
         return float(self.protection)
 
-    def set_speed(self, speed: str) -> None:
-        """Set the measurement speed, which defines the voltage noise: "Fast", "Medium" or "Slow"."""
-        valid_speeds = tuple(self.speedvalues)
-        if speed not in valid_speeds:
-            msg = f"Speed '{speed}' is not supported. Choose one of {valid_speeds}."
-            raise ValueError(msg)
+    @command
+    def set_speed(self, speed: Speed) -> None:
+        """Set the measurement speed, which defines the voltage noise."""
         self.speed = speed
 
-    def get_speed(self) -> str:
+    @command(returns=("speed",), reads="setpoint")
+    def get_speed(self) -> Speed:
         """Return the measurement speed."""
-        return str(self.speed)
+        return self.speed  # type: ignore[return-value]  # set from the GUI or set_speed, both one of Speed
 
-    def set_average(self, average: int) -> None:
-        """Set the number of current readings that are averaged for one measurement (1 to 100)."""
-        average = int(average)
-        if not 1 <= average <= 100:
-            msg = f"Average {average} must be between 1 and 100."
-            raise ValueError(msg)
+    @command
+    def set_average(self, average: Annotated[int, Range(1, 100)]) -> None:
+        """Set the number of current readings that are averaged for one measurement."""
         self.average = average
 
-    def set_voltage(self, voltage: float) -> None:
-        """Force a voltage in V (-20 V to 20 V). The voltage reaches the diode only while the output is enabled."""
-        voltage = float(voltage)
-        if abs(voltage) > self._max_voltage:
-            msg = f"Voltage {voltage} V is out of range, the maximum is +/-{self._max_voltage} V."
-            raise ValueError(msg)
+    @command(hazards="Changes the voltage at the connected device at once while the output is on.")
+    def set_voltage(self, voltage: Annotated[Volts, Range(-MAX_VOLTAGE, MAX_VOLTAGE)]) -> None:
+        """Force a voltage in V. The voltage reaches the diode only while the output is enabled."""
         self.source = "Voltage in V"
         self._voltage_setpoint = voltage
 
-    def get_voltage_setpoint(self) -> float:
+    @command(returns=("voltage",), reads="setpoint")
+    def get_voltage_setpoint(self) -> Volts:
         """Return the voltage in V that was set with 'set_voltage'."""
         return float(self._voltage_setpoint)
 
+    @command(hazards="Applies the set voltage to the connected device.")
     def enable_output(self) -> None:
         """Switch the output on."""
         self._output_enabled = True
 
+    @command
     def disable_output(self) -> None:
         """Switch the output off. The simulated diode then sees 0 V."""
         self._output_enabled = False
 
+    @command(returns=("output_enabled",), reads="setpoint")
     def get_output_state(self) -> bool:
         """Return True if the output is on."""
         return bool(self._output_enabled)
 
-    def get_voltage_and_current(self) -> tuple[float, float]:
+    @command(returns=("voltage", "current"))
+    def get_voltage_and_current(self) -> tuple[Volts, Amperes]:
         """Measure the diode and return (voltage in V, current in A). The current is limited by the compliance."""
         self.source = "Voltage in V"
         self.value = self._voltage_setpoint if self._output_enabled else 0.0
