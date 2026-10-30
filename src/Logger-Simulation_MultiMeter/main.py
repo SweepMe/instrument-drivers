@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -32,8 +32,13 @@
 from __future__ import annotations
 
 import random
+from typing import Annotated
 
+from pysweepme.commands import Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+Channel = Annotated[int, Selector(), Range(1, None)]
+Percent = Annotated[float, Unit("%")]
 
 
 class Device(EmptyDevice):
@@ -130,31 +135,22 @@ class Device(EmptyDevice):
     each with some noise. The commands do not need 'initialize' or 'configure'.
     """
 
-    @staticmethod
-    def _check_channel(channel: int) -> int:
-        """Return the channel as integer or raise an error if it is not a positive number."""
-        channel = int(channel)
-        if channel < 1:
-            msg = f"Channel {channel} must be 1 or higher."
-            raise ValueError(msg)
-        return channel
-
-    def read_voltage(self, channel: int) -> float:
+    @command(returns=("voltage",))
+    def read_voltage(self, channel: Channel) -> Annotated[float, Unit("V")]:
         """Measure the voltage in V of a channel (1 or higher)."""
-        return float(self.simulate_voltage(self._check_channel(channel)))
+        return float(self.simulate_voltage(channel))
 
-    def read_current(self, channel: int) -> float:
+    @command(returns=("current",))
+    def read_current(self, channel: Channel) -> Annotated[float, Unit("A")]:
         """Measure the current in A of a channel (1 or higher)."""
-        return float(self.simulate_current(self._check_channel(channel)))
+        return float(self.simulate_current(channel))
 
-    def set_noise_level(self, noise_level: float) -> None:
-        """Set the noise of the simulated readings in percent of the value (0 to 100). Use 0 for no noise."""
-        noise_level = float(noise_level)
-        if not 0 <= noise_level <= 100:
-            msg = f"Noise level {noise_level} % must be between 0 and 100."
-            raise ValueError(msg)
+    @command
+    def set_noise_level(self, noise_level: Annotated[Percent, Range(0.0, 100.0)]) -> None:
+        """Set the noise of the simulated readings in percent of the value. Use 0 for no noise."""
         self.noise_level = noise_level / 100
 
-    def get_noise_level(self) -> float:
+    @command(returns=("noise_level",), reads="setpoint")
+    def get_noise_level(self) -> Percent:
         """Return the noise of the simulated readings in percent."""
         return float(self.noise_level * 100)
