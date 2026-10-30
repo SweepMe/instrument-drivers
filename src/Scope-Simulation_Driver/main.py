@@ -247,7 +247,7 @@ class Device(EmptyDevice):
     def acquire_waveform(
         self,
         channel: Channel,
-    ) -> tuple[Annotated[list[float], Unit("s")], Annotated[list[float], Unit("V")]]:
+    ) -> tuple[list[Seconds], list[Volts]]:
         """Acquire the waveform of an enabled channel and return (time in s, voltage in V) as lists."""
         if not getattr(self, f"channel{channel}"):
             msg = f"Channel {channel} is not enabled. Use 'set_channel' first."
