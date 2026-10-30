@@ -171,7 +171,7 @@ class Device(EmptyDevice):
     _voltage_setpoint: float = 0.0
     _output: bool = False
 
-    @command(hazards="A higher compliance lets more current flow through the connected device.")
+    @command(warnings="A higher compliance lets more current flow through the connected device.")
     def set_compliance(self, compliance: Annotated[Amperes, Range(0.0, 1.0)]) -> None:
         """Set the current compliance in A. It must be greater than 0 A and at most 1 A."""
         if compliance <= 0:
@@ -199,7 +199,7 @@ class Device(EmptyDevice):
         """Set the number of current readings that are averaged for one measurement."""
         self.average = average
 
-    @command(hazards="Changes the voltage at the connected device at once while the output is on.")
+    @command(warnings="Changes the voltage at the connected device at once while the output is on.")
     def set_voltage(self, voltage: Annotated[Volts, Range(-MAX_VOLTAGE, MAX_VOLTAGE)]) -> None:
         """Force a voltage in V. The voltage reaches the diode only while the output is enabled."""
         self.source = "Voltage in V"
@@ -210,7 +210,7 @@ class Device(EmptyDevice):
         """Return the voltage in V that was set with 'set_voltage'."""
         return float(self._voltage_setpoint)
 
-    @command(hazards="Switching the output on applies the set voltage to the connected device.")
+    @command(warnings="Switching the output on applies the set voltage to the connected device.")
     def set_output(self, output: bool) -> None:
         """Switch the output on (True) or off (False). While it is off, the simulated diode sees 0 V."""
         self._output = output
