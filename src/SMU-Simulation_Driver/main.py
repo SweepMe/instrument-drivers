@@ -254,11 +254,11 @@ class Device(EmptyDevice):
 
     The simulated SMU forces a voltage on a simulated diode and measures voltage and current. The commands do not need
     'initialize' or 'configure' and therefore also work when the instrument was only connected. As on a real SMU, the
-    output is off after connecting: enable it with 'enable_output' to measure the diode, otherwise 0 V is forced.
+    output is off after connecting: switch it on with 'set_output' to measure the diode, otherwise 0 V is forced.
     """
 
     _voltage_setpoint: float = 0.0
-    _output_enabled: bool = False
+    _output: bool = False
 
     @command(hazards="A higher compliance lets more current flow through the connected device.")
     def set_compliance(self, compliance: Annotated[Amperes, Range(0.0, 1.0)]) -> None:
@@ -299,25 +299,20 @@ class Device(EmptyDevice):
         """Return the voltage in V that was set with 'set_voltage'."""
         return float(self._voltage_setpoint)
 
-    @command(hazards="Applies the set voltage to the connected device.")
-    def enable_output(self) -> None:
-        """Switch the output on."""
-        self._output_enabled = True
+    @command(hazards="Switching the output on applies the set voltage to the connected device.")
+    def set_output(self, output: bool) -> None:
+        """Switch the output on (True) or off (False). While it is off, the simulated diode sees 0 V."""
+        self._output = output
 
-    @command
-    def disable_output(self) -> None:
-        """Switch the output off. The simulated diode then sees 0 V."""
-        self._output_enabled = False
-
-    @command(returns=("output_enabled",), reads="setpoint")
-    def get_output_state(self) -> bool:
+    @command(returns=("output",), reads="setpoint")
+    def get_output(self) -> bool:
         """Return True if the output is on."""
-        return bool(self._output_enabled)
+        return bool(self._output)
 
     @command(returns=("voltage", "current"))
     def get_voltage_and_current(self) -> tuple[Volts, Amperes]:
         """Measure the diode and return (voltage in V, current in A). The current is limited by the compliance."""
         self.source = "Voltage in V"
-        self.value = self._voltage_setpoint if self._output_enabled else 0.0
+        self.value = self._voltage_setpoint if self._output else 0.0
         voltage, current = self.call()
         return float(voltage), float(current)
