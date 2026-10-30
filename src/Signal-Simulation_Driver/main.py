@@ -235,12 +235,12 @@ class Device(EmptyDevice):
             raise ValueError(msg)
         self.frequency = frequency
 
-    @command(hazards="Changes the signal level at the connected device at once.")
+    @command(warnings="Changes the signal level at the connected device at once.")
     def set_amplitude(self, amplitude: Annotated[Volts, Range(0.0, None)]) -> None:
         """Set the amplitude in V (0 V or more)."""
         self.amplitude = amplitude
 
-    @command(hazards="Changes the signal level at the connected device at once.")
+    @command(warnings="Changes the signal level at the connected device at once.")
     def set_offset(self, offset: Volts) -> None:
         """Set the offset in V."""
         self.offset = offset
@@ -266,7 +266,7 @@ class Device(EmptyDevice):
         self,
         duration: Annotated[Seconds, Range(0.0, None)],
         points: Annotated[int, Range(2, 100000)],
-    ) -> tuple[Annotated[list[float], Unit("s")], Annotated[list[float], Unit("V")]]:
+    ) -> tuple[list[Seconds], list[Volts]]:
         """Return (time in s, voltage in V) of the set waveform at 'points' times from 0 s to 'duration' in s."""
         if duration <= 0:
             msg = f"Duration {duration} s must be greater than 0 s."
