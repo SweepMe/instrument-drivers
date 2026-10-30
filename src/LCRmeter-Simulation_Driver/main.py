@@ -34,8 +34,8 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 Hertz = Annotated[float, Unit("Hz")]
 Ohms = Annotated[float, Unit("Ohm")]
-HertzList = Annotated[list[float], Unit("Hz")]
-OhmsList = Annotated[list[float], Unit("Ohm")]
+HertzList = list[Hertz]
+OhmsList = list[Ohms]
 BiasMode = Literal["Voltage bias", "Current bias"]
 
 
@@ -198,7 +198,7 @@ class Device(EmptyDevice):
         """Return the measurement frequency in Hz."""
         return float(self.frequency)
 
-    @command(hazards="Applies a DC bias voltage or current to the connected device.")
+    @command(warnings="Applies a DC bias voltage or current to the connected device.")
     def set_bias(self, bias: float) -> None:
         """Set the bias value. Its unit is V for the mode 'Voltage bias' and A for 'Current bias'."""
         self.bias = bias
