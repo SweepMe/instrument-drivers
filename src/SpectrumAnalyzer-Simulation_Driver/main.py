@@ -39,8 +39,8 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 Hertz = Annotated[float, Unit("Hz")]
 DecibelMilliwatts = Annotated[float, Unit("dBm")]
-HertzList = Annotated[list[float], Unit("Hz")]
-DecibelMilliwattsList = Annotated[list[float], Unit("dBm")]
+HertzList = list[Hertz]
+DecibelMilliwattsList = list[DecibelMilliwatts]
 TraceMode = Literal["Current", "Max hold", "Min hold", "Average"]
 
 
