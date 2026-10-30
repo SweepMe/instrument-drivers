@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -34,10 +34,16 @@ import math
 import os
 import random
 import time
+from typing import Annotated, Literal
 
 import numpy as np
-
+from pysweepme.commands import Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+Seconds = Annotated[float, Unit("s")]
+NanometersList = Annotated[list[float], Unit("nm")]
+CountsPerSecondList = Annotated[list[float], Unit("counts/s")]
+SpectrumMode = Literal["Test spectrum.txt", "Raman Spectrum", "Background Spectrum", "Silicon Photonics", "No Noise"]
 
 
 class Device(EmptyDevice):
@@ -229,50 +235,46 @@ class Device(EmptyDevice):
     'set_spectrum_mode'.
     """
 
-    def set_spectrum_mode(self, mode: str) -> None:
-        """Select: 'Test spectrum.txt', 'Raman Spectrum', 'Background Spectrum', 'Silicon Photonics' or 'No Noise'."""
-        valid_modes = self.find_ports()
-        if mode not in valid_modes:
-            msg = f"Spectrum mode '{mode}' is not supported. Choose one of {valid_modes}."
-            raise ValueError(msg)
+    @command
+    def set_spectrum_mode(self, mode: SpectrumMode) -> None:
+        """Select which spectrum the simulation returns."""
         self.port_string = mode
         if mode == "Silicon Photonics":
             self.siph_peak_wl = self.SIPH_PEAK_WL_START
 
-    def get_spectrum_mode(self) -> str:
+    @command(returns=("mode",), reads="setpoint")
+    def get_spectrum_mode(self) -> SpectrumMode:
         """Return the selected simulated spectrum."""
-        return str(self.port_string)
+        return self.port_string  # type: ignore[return-value]  # set from the Port field or set_spectrum_mode
 
-    def set_integration_time(self, integration_time: float) -> None:
-        """Set the integration time in s (greater than 0 s and at most 10 s)."""
-        integration_time = float(integration_time)
-        if not 0 < integration_time <= 10:
-            msg = f"Integration time {integration_time} s must be greater than 0 s and at most 10 s."
+    @command
+    def set_integration_time(self, integration_time: Annotated[Seconds, Range(0.0, 10.0)]) -> None:
+        """Set the integration time in s. It must be greater than 0 s."""
+        if integration_time <= 0:
+            msg = f"Integration time {integration_time} s must be greater than 0 s."
             raise ValueError(msg)
         self.integration_time = integration_time
 
-    def get_integration_time(self) -> float:
+    @command(returns=("integration_time",), reads="setpoint")
+    def get_integration_time(self) -> Seconds:
         """Return the integration time in s."""
         return float(self.integration_time)
 
-    def set_average(self, average: int) -> None:
-        """Set the number of spectra that are averaged for one acquisition (1 to 100)."""
-        average = int(average)
-        if not 1 <= average <= 100:
-            msg = f"Average {average} must be between 1 and 100."
-            raise ValueError(msg)
+    @command
+    def set_average(self, average: Annotated[int, Range(1, 100)]) -> None:
+        """Set the number of spectra that are averaged for one acquisition."""
         self.average = average
 
-    def acquire_spectrum(self) -> dict:
+    @command(returns=("wavelength", "intensity"))
+    def acquire_spectrum(self) -> tuple[NanometersList, CountsPerSecondList]:
         """Acquire a spectrum. It takes as long as integration time times average.
 
-        Returns a dictionary with the lists 'wavelength' in nm and 'intensity' in counts/s (in dB for the mode
-        'Silicon Photonics') and the 'integration_time' in s.
+        Returns the lists of the wavelengths in nm and the intensities in counts/s (in dB for the mode
+        'Silicon Photonics'). The integration time is returned by 'get_integration_time'.
         """
         self.measure()
-        wavelengths, intensities, integration_time = self.call()
-        return {
-            "wavelength": np.asarray(wavelengths, dtype=float).tolist(),
-            "intensity": np.asarray(intensities, dtype=float).tolist(),
-            "integration_time": float(integration_time),
-        }
+        wavelengths, intensities, _integration_time = self.call()
+        return (
+            np.asarray(wavelengths, dtype=float).tolist(),
+            np.asarray(intensities, dtype=float).tolist(),
+        )
