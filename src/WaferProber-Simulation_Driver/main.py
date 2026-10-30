@@ -88,6 +88,7 @@ class Device(EmptyDevice):
 
     # here functions start that only exists for the WaferProber module and are called by this module
 
+    # check_driver: ignore DC004 - a hook of the WaferProber module (Update button)
     def get_probeplan(self) -> tuple[list[str], list[str], list[str]]:
         """This function is called when the 'Update' button is pressed in the GUI.
 
@@ -128,6 +129,7 @@ class Device(EmptyDevice):
 
         return dies
 
+    # check_driver: ignore DC004 - a hook of the WaferProber module, which needs a dict back
     def get_wafer_geometry(self) -> dict[str, Any]:
         """Return the geometry of the simulated wafer.
 
