@@ -36,7 +36,7 @@ import time
 from typing import Annotated, Any, Literal
 
 import numpy as np
-from pysweepme.commands import Label, Range, Selector, Unit, command
+from pysweepme.commands import Elements, Label, Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug
 
@@ -59,8 +59,10 @@ Seconds = Annotated[float, Unit("s")]
 Window = Literal["Hann", "Hamming", "Blackman", "Flat top", "Rectangular"]
 Segments = Annotated[int, Range(1, 64)]
 Impedance = Annotated[float, Unit("Ohm")]
-Frequencies = Annotated[np.ndarray, Unit("Hz"), Label("Frequency")]
-Powers = Annotated[np.ndarray, Unit("dBm"), Label("Power")]
+Hertz = Annotated[float, Unit("Hz"), Label("Frequency")]
+Dbm = Annotated[float, Unit("dBm"), Label("Power")]
+Frequencies = Annotated[np.ndarray, Elements(Hertz)]
+Powers = Annotated[np.ndarray, Elements(Dbm)]
 
 
 class Device(EmptyDevice):
