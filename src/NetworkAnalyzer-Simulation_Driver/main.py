@@ -40,9 +40,11 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 Hertz = Annotated[float, Unit("Hz")]
 DecibelMilliwatts = Annotated[float, Unit("dBm")]
-HertzList = Annotated[list[float], Unit("Hz")]
-DecibelsList = Annotated[list[float], Unit("dB")]
-DegreesList = Annotated[list[float], Unit("deg")]
+HertzList = list[Hertz]
+Decibels = Annotated[float, Unit("dB")]
+DecibelsList = list[Decibels]
+Degrees = Annotated[float, Unit("deg")]
+DegreesList = list[Degrees]
 SParameter = Literal["S11", "S12", "S21", "S22"]
 
 
@@ -205,7 +207,7 @@ class Device(EmptyDevice):
         """Return (start frequency in Hz, stop frequency in Hz, number of points) of the sweep."""
         return float(self.frequency_start), float(self.frequency_end), int(self._points)
 
-    @command(hazards="A higher source power reaches the connected device and can overdrive or damage it.")
+    @command(warnings="A higher source power reaches the connected device and can overdrive or damage it.")
     def set_source_power(self, source_power: Annotated[DecibelMilliwatts, Range(-60.0, 30.0)]) -> None:
         """Set the source power in dBm. A higher power lowers the noise of the traces."""
         self.power = source_power
