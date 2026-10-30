@@ -32,10 +32,18 @@
 from __future__ import annotations
 
 from random import random
+from typing import Annotated
 
 import numpy as np
-
+from pysweepme.commands import Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+Hertz = Annotated[float, Unit("Hz")]
+Volts = Annotated[float, Unit("V")]
+Degrees = Annotated[float, Unit("deg")]
+HertzList = Annotated[list[float], Unit("Hz")]
+VoltsList = Annotated[list[float], Unit("V")]
+DegreesList = Annotated[list[float], Unit("deg")]
 
 
 class Device(EmptyDevice):
@@ -108,68 +116,66 @@ class Device(EmptyDevice):
     'initialize' or 'configure'.
     """
 
-    def set_frequency(self, frequency: float) -> None:
-        """Set the reference frequency in Hz (greater than 0 Hz)."""
-        frequency = float(frequency)
+    @command
+    def set_frequency(self, frequency: Annotated[Hertz, Range(0.0, None)]) -> None:
+        """Set the reference frequency in Hz. It must be greater than 0 Hz."""
         if frequency <= 0:
             msg = f"Frequency {frequency} Hz must be greater than 0 Hz."
             raise ValueError(msg)
         self.frequency = frequency
 
-    def get_frequency(self) -> float:
+    @command(returns=("frequency",), reads="setpoint")
+    def get_frequency(self) -> Hertz:
         """Return the reference frequency in Hz."""
         return float(self.frequency)
 
-    def set_amplitude(self, amplitude: float) -> None:
-        """Set the excitation amplitude in V (0 V or more)."""
-        amplitude = float(amplitude)
-        if amplitude < 0:
-            msg = f"Amplitude {amplitude} V must not be negative."
-            raise ValueError(msg)
+    @command(hazards="Changes the excitation voltage at the connected device at once.")
+    def set_amplitude(self, amplitude: Annotated[Volts, Range(0.0, None)]) -> None:
+        """Set the excitation amplitude in V."""
         self.amplitude = amplitude
 
-    def get_amplitude(self) -> float:
+    @command(returns=("amplitude",), reads="setpoint")
+    def get_amplitude(self) -> Volts:
         """Return the excitation amplitude in V."""
         return float(self.amplitude)
 
-    def set_noise_level(self, noise_level: float) -> None:
+    @command
+    def set_noise_level(self, noise_level: Annotated[float, Range(0.0, None)]) -> None:
         """Set the noise: magnitude +/- noise_level/2 in V, phase +/- 50 * noise_level in deg. 0 is deterministic."""
-        noise_level = float(noise_level)
-        if noise_level < 0:
-            msg = f"Noise level {noise_level} must not be negative."
-            raise ValueError(msg)
         self.noise_level = noise_level
 
-    def get_magnitude_and_phase(self) -> tuple[float, float]:
+    @command(returns=("magnitude", "phase"))
+    def get_magnitude_and_phase(self) -> tuple[Volts, Degrees]:
         """Measure and return (magnitude in V, phase in degrees) at the set frequency and amplitude."""
         magnitude, phase = self._simulate(self.frequency)
         return float(magnitude), float(phase)
 
-    def get_xy(self) -> tuple[float, float]:
+    @command(returns=("x", "y"))
+    def get_xy(self) -> tuple[Volts, Volts]:
         """Measure and return the in-phase and quadrature components (X in V, Y in V)."""
         magnitude, phase = self._simulate(self.frequency)
         phase_rad = np.deg2rad(phase)
         return float(magnitude * np.cos(phase_rad)), float(magnitude * np.sin(phase_rad))
 
-    def measure_frequency_sweep(self, start_frequency: float, stop_frequency: float, points: int) -> dict:
-        """Measure at 'points' linearly spaced frequencies from start to stop in Hz (2 to 10000 points).
+    @command(returns=("frequency", "magnitude", "phase"))
+    def measure_frequency_sweep(
+        self,
+        start_frequency: Annotated[Hertz, Range(0.0, None)],
+        stop_frequency: Annotated[Hertz, Range(0.0, None)],
+        points: Annotated[int, Range(2, 10000)],
+    ) -> tuple[HertzList, VoltsList, DegreesList]:
+        """Measure at 'points' linearly spaced frequencies from start to stop in Hz.
 
-        Returns a dictionary with the lists 'frequency' in Hz, 'magnitude' in V and 'phase' in degrees. The set
-        frequency stays unchanged.
+        Returns the lists of the frequencies in Hz, the magnitudes in V and the phases in degrees. The set frequency
+        stays unchanged.
         """
-        start_frequency = float(start_frequency)
-        stop_frequency = float(stop_frequency)
-        points = int(points)
         if start_frequency <= 0 or stop_frequency <= 0:
             msg = "Start and stop frequency must be greater than 0 Hz."
             raise ValueError(msg)
-        if not 2 <= points <= 10000:
-            msg = f"Points {points} must be between 2 and 10000."
-            raise ValueError(msg)
         frequencies = np.linspace(start_frequency, stop_frequency, points)
         results = [self._simulate(float(frequency)) for frequency in frequencies]
-        return {
-            "frequency": frequencies.tolist(),
-            "magnitude": [float(magnitude) for magnitude, _ in results],
-            "phase": [float(phase) for _, phase in results],
-        }
+        return (
+            frequencies.tolist(),
+            [float(magnitude) for magnitude, _ in results],
+            [float(phase) for _, phase in results],
+        )
