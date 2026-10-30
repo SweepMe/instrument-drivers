@@ -207,7 +207,6 @@ class Device(EmptyDevice):
         self.offsetlolevelvalue         = float(parameter['OffsetLoLevelValue'])
         self.dutycyclepulsewidth        = parameter['DutyCyclePulseWidth']
         self.dutycyclepulsewidthvalue   = float(parameter['DutyCyclePulseWidthValue'])
-        self.delayphase                 = parameter['DelayPhase']
         self.arbitraryWaveformFilePath = parameter['ArbitraryWaveformFile']
         if self.sweep_mode == 'None':
             self.variables =[]
