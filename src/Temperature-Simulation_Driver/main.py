@@ -77,11 +77,13 @@ class Device(EmptyDevice):
     def temperature(self, value: float) -> None:
         self.store_parameter(self.identifier_temp, value)
 
+    # check_driver: ignore DC004 - a property holding the setpoint across instances, not a command
     @property
     def set_temperature(self) -> float:
         temperature = self.restore_parameter(self.identifier_settemp)
         return temperature
 
+    # check_driver: ignore DC004 - the setter of the set_temperature property, not a command
     @set_temperature.setter
     def set_temperature(self, value: float) -> None:
         self.store_parameter(self.identifier_settemp, value)
@@ -171,6 +173,7 @@ class Device(EmptyDevice):
         # add some noise to the temperature
         return self.temperature + 0.005 * (2 * random() - 1)
 
+    # check_driver: ignore DC004 - the simulation model used by call(), not a command
     def measure_temperature(self) -> float:
         """Returns the calculated temperature."""
         self.measure()
