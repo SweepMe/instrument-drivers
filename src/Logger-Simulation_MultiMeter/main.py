@@ -43,14 +43,6 @@ Percent = Annotated[float, Unit("%")]
 
 class Device(EmptyDevice):
     """Device class to implement functionalities of a simulation multi meter."""
-    description = """
-                    <h3>Simulated Multi Meter</h3>
-                    <p>Setup:</p>
-                    <ul>
-                    <li>Choose comma-separated list of channels (maximum 4) to read out.</li>
-                    </ul>
-                    """
-
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters."""
         super().__init__()
