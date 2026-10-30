@@ -39,12 +39,6 @@ Volts = Annotated[float, Unit("V")]
 
 class Device(EmptyDevice):
     """Device class to simulate a switch to turn on a Voltage source."""
-    description = """
-                    <h3>Simulation Switch</h3>
-                    <p>This device class simulates a switch for a Voltage source. The same voltage that is set is also 
-                    returned.</p>
-                    """
-
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters."""
         super().__init__()
