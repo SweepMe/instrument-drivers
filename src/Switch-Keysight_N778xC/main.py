@@ -430,8 +430,13 @@ class Device(EmptyDevice):
         self.write_and_wait(f":TRIGger:CONFiguration {int(configuration)}")
 
     def generate_input_trigger(self) -> None:
-        """Generate a trigger that acts like a trigger at the input trigger connector."""
-        self.port.write(":TRIGger 1")
+        """Generate a trigger that acts like a trigger at the input trigger connector, e.g. to start the sequence."""
+        # NODEA is the input node, NODEB the output connector. Both only work if the trigger connectors are enabled.
+        self.port.write(":TRIGger NODEA")
+
+    def generate_output_trigger(self) -> None:
+        """Generate a trigger at the output trigger connector, e.g. to test the cable to the next instrument."""
+        self.port.write(":TRIGger NODEB")
 
     def start_sequence(self) -> None:
         """Start the sequence function, which then waits for a trigger in the trigger modes 2 to 6."""
