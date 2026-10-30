@@ -242,6 +242,7 @@ class Device(EmptyDevice):
         setattr(self, f"channel{channel}_range", voltage_range)
         setattr(self, f"channel{channel}_offset", offset)
 
+    # check_driver: ignore DC012 - checks whether the channel is enabled, not its range
     @command(returns=("time", "voltage"))
     def acquire_waveform(
         self,
