@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -29,7 +29,12 @@
 # * Module: Switch
 # * Instrument: Simulation Driver
 
+from typing import Annotated
+
+from pysweepme.commands import Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+Volts = Annotated[float, Unit("V")]
 
 
 class Device(EmptyDevice):
@@ -80,10 +85,12 @@ class Device(EmptyDevice):
     The commands do not need 'initialize' or 'configure'.
     """
 
-    def set_voltage(self, voltage: float) -> None:
+    @command(hazards="Changes the voltage at the connected device at once.")
+    def set_voltage(self, voltage: Volts) -> None:
         """Set the voltage in V that the simulated switch passes on."""
-        self.voltage = float(voltage)
+        self.voltage = voltage
 
-    def get_voltage(self) -> float:
+    @command(returns=("voltage",), reads="setpoint")
+    def get_voltage(self) -> Volts:
         """Return the voltage in V that the simulated switch passes on."""
         return float(self.voltage)
