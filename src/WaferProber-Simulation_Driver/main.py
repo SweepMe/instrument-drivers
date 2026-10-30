@@ -260,13 +260,14 @@ class Device(EmptyDevice):
 
         self.skip = False
 
-        if wafer != self.current_wafer:
+        # None: the sequence does not sweep it ("Current wafer", ...), so the prober stays where it is
+        if wafer is not None and wafer != self.current_wafer:
             self.load_wafer(wafer)
 
-        if die != self.current_die:
+        if die is not None and die != self.current_die:
             self.step_to_die(die)
 
-        if subsite != self.current_subsite:
+        if subsite is not None and subsite != self.current_subsite:
             self.step_to_subsite(subsite)
 
     def reach(self) -> None:
