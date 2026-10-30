@@ -41,8 +41,10 @@ from pysweepme.commands import Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 Seconds = Annotated[float, Unit("s")]
-NanometersList = Annotated[list[float], Unit("nm")]
-CountsPerSecondList = Annotated[list[float], Unit("counts/s")]
+Nanometers = Annotated[float, Unit("nm")]
+NanometersList = list[Nanometers]
+CountsPerSecond = Annotated[float, Unit("counts/s")]
+CountsPerSecondList = list[CountsPerSecond]
 SpectrumMode = Literal["Test spectrum.txt", "Raman Spectrum", "Background Spectrum", "Silicon Photonics", "No Noise"]
 
 
