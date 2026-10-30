@@ -560,7 +560,7 @@ class Device(EmptyDevice):
     # Reference:
     # https://redpitaya.readthedocs.io/en/latest/appsFeatures/remoteControl/command_list/commands-gen.html
 
-    @command(hazards="Resets both outputs of the board, also one that another driver instance drives.")
+    @command(warnings="Resets both outputs of the board, also one that another driver instance drives.")
     def reset_generator(self) -> None:
         """Reset both generator channels to their default settings ('GEN:RST')."""
         self.port.write("GEN:RST")
@@ -687,7 +687,7 @@ class Device(EmptyDevice):
         """Return the trigger source, e.g. 'INT'."""
         return self.port.query("SOUR{0}:TRIG:SOUR?".format(channel))
 
-    @command(hazards="Restarts the signal from its start phase: a signal that is running jumps.")
+    @command(warnings="Restarts the signal from its start phase: a signal that is running jumps.")
     def trigger(self, channel: Channel) -> None:
         """Trigger the channel, i.e. (re)start the generation from the start phase ('SOUR<n>:TRIG:INT').
 

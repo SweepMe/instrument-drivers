@@ -772,7 +772,7 @@ class Device(EmptyDevice):
         """
         self._send_command(f"SOUR{channel}:{source_mode} ENA")
 
-    # check_driver: ignore DC009 - set_sweep_format's hazard concerns JSON; this always selects CSV
+    # check_driver: ignore DC009 - set_sweep_format's warning concerns JSON; this always selects CSV
     @command(composite=True)
     def set_sweep_parameters(
         self, channel: Channel, start: Volts, end: Volts, points: SweepPoints, dwell_ms: DwellTime,
@@ -947,7 +947,7 @@ class Device(EmptyDevice):
         return self._send_command("*IDN?")
 
     @command(
-        hazards=(
+        warnings=(
             "Reboots the device: USB re-enumerates and the open port handle is lost, so commands fail until "
             "the port is reconnected.",
             "Afterwards the driver still believes its old configuration: set source mode, compliance and "
@@ -1025,7 +1025,7 @@ class Device(EmptyDevice):
         self._send_command(f"MEAS{channel}:OSR {osr}")
 
     @command(
-        hazards=(
+        warnings=(
             "HIGH drives an applied output up to the current compliance within about 0.3 s, although the "
             "setpoint is unchanged.",
             "In HIGH and LOW a new set_voltage is answered OK but the output goes to about 0 V; only AUTO "
@@ -1151,7 +1151,7 @@ class Device(EmptyDevice):
         self._send_command(f"SOUR{channel}:SWEEP:AUTO:{state}")
 
     @command(
-        hazards=(
+        warnings=(
             "JSON spans several lines, so get_sweep_data stops reading it early and the rest stays in the port "
             "buffer: every later answer is out of step until the port is reconnected.",
         ),
