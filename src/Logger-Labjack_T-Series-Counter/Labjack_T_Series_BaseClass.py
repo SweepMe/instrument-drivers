@@ -475,7 +475,7 @@ class LabjackBaseClass(EmptyDevice):
         return float(ljm.eReadName(self.handle, str(pin).upper()))
 
     @command(returns=("voltages",))
-    def get_voltages(self, pins: list) -> list:
+    def get_voltages(self, pins: list) -> list[Volts]:
         """Return the voltages in V of several analog inputs, e.g. ['AIN0', 'AIN1']."""
         names = [str(pin).upper() for pin in pins]
         if not names:
