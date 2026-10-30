@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -32,9 +32,16 @@
 import math
 import time
 from random import random
-from typing import Any
+from typing import Annotated, Any, Literal
 
+from pysweepme.commands import Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+ABSOLUTE_ZERO = -273.15
+"""Absolute zero in °C: the setpoint must lie above it."""
+
+Celsius = Annotated[float, Unit("°C")]
+SensorMode = Literal["Realistic", "No Noise"]
 
 
 class Device(EmptyDevice):
@@ -70,11 +77,13 @@ class Device(EmptyDevice):
     def temperature(self, value: float) -> None:
         self.store_parameter(self.identifier_temp, value)
 
+    # check_driver: ignore DC004 - a property holding the setpoint across instances, not a command
     @property
     def set_temperature(self) -> float:
         temperature = self.restore_parameter(self.identifier_settemp)
         return temperature
 
+    # check_driver: ignore DC004 - the setter of the set_temperature property, not a command
     @set_temperature.setter
     def set_temperature(self, value: float) -> None:
         self.store_parameter(self.identifier_settemp, value)
@@ -164,6 +173,7 @@ class Device(EmptyDevice):
         # add some noise to the temperature
         return self.temperature + 0.005 * (2 * random() - 1)
 
+    # check_driver: ignore DC004 - the simulation model used by call(), not a command
     def measure_temperature(self) -> float:
         """Returns the calculated temperature."""
         self.measure()
@@ -175,16 +185,17 @@ class Device(EmptyDevice):
     not need 'initialize' or 'configure'.
     """
 
-    def set_temperature_setpoint(self, temperature: float) -> None:
-        """Set the target temperature in °C (-273 °C to 1000 °C). The temperature then moves towards it."""
-        temperature = float(temperature)
-        if not -273.15 < temperature <= 1000:
-            msg = f"Temperature {temperature} °C must be above -273.15 °C and at most 1000 °C."
+    @command(hazards="Heats or cools the connected sample.")
+    def set_temperature_setpoint(self, temperature: Annotated[Celsius, Range(ABSOLUTE_ZERO, 1000.0)]) -> None:
+        """Set the target temperature in °C, above absolute zero. The temperature then moves towards it."""
+        if temperature <= ABSOLUTE_ZERO:
+            msg = f"Temperature {temperature} °C must be above {ABSOLUTE_ZERO} °C."
             raise ValueError(msg)
         self.set_temperature = temperature
         self.last_time = time.time()
 
-    def get_temperature_setpoint(self) -> float:
+    @command(returns=("temperature",), reads="setpoint")
+    def get_temperature_setpoint(self) -> Celsius:
         """Return the target temperature in °C that was set last."""
         setpoint = self.set_temperature
         if setpoint is None:
@@ -192,13 +203,12 @@ class Device(EmptyDevice):
             raise ValueError(msg)
         return float(setpoint)
 
-    def get_temperature(self) -> float:
+    @command(returns=("temperature",))
+    def get_temperature(self) -> Celsius:
         """Return the current temperature in °C after letting it move towards the setpoint for the elapsed time."""
         return float(self.measure_temperature())
 
-    def set_sensor_mode(self, sensor: str) -> None:
+    @command
+    def set_sensor_mode(self, sensor: SensorMode) -> None:
         """Set the sensor to 'Realistic' (exponential settling, noise) or 'No Noise' (linear ramp, reproducible)."""
-        if sensor not in ("Realistic", "No Noise"):
-            msg = f"Sensor mode '{sensor}' is not supported. Choose 'Realistic' or 'No Noise'."
-            raise ValueError(msg)
         self.sensor = sensor

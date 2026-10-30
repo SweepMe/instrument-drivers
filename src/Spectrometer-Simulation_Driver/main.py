@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -34,26 +34,20 @@ import math
 import os
 import random
 import time
+from typing import Annotated, Literal
 
 import numpy as np
-
+from pysweepme.commands import Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+Seconds = Annotated[float, Unit("s")]
+NanometersList = Annotated[list[float], Unit("nm")]
+CountsPerSecondList = Annotated[list[float], Unit("counts/s")]
+SpectrumMode = Literal["Test spectrum.txt", "Raman Spectrum", "Background Spectrum", "Silicon Photonics", "No Noise"]
 
 
 class Device(EmptyDevice):
     """Device class to implement functionalities of a simulated spectrometer."""
-
-    description = """
-        <h3>Simulated Spectrometer</h3>
-        <p>The <b>Port</b> field is reused to select which spectrum the simulation returns:</p>
-        <ul>
-        <li><b>Test spectrum.txt</b>: replays the bundled <i>test_spectrum.txt</i> file.</li>
-        <li><b>Raman Spectrum</b>: a Gaussian Raman peak on a simulated background.</li>
-        <li><b>Background Spectrum</b>: the background only, without the Raman peak.</li>
-        <li><b>Silicon Photonics</b>: a Gaussian transmission dip in dB that drifts during the run.</li>
-        <li><b>No Noise</b>: the Raman spectrum without random noise for reproducible tests.</li>
-        </ul>
-        """
 
     # Initial silicon-photonics peak wavelength in nm; reset in initialize() so it does not drift across runs.
     SIPH_PEAK_WL_START: float = 1530.0
@@ -119,16 +113,16 @@ class Device(EmptyDevice):
         """Reset the silicon-photonics peak so it does not drift out of range across runs."""
         self.siph_peak_wl = self.SIPH_PEAK_WL_START
 
+    def apply(self) -> None:
+        """Apply the sweep values."""
+        if self.sweep_mode == "Integration time in s":
+            self.integration_time = self.value
+
     def measure(self) -> None:
         """Trigger acquisition of new data."""
         time.sleep(self.trigger_delay)
         for _ in range(self.average):
             time.sleep(self.integration_time)
-
-    def apply(self) -> None:
-        """Apply the sweep values."""
-        if self.sweep_mode == "Integration time in s":
-            self.integration_time = self.value
 
     def call(self) -> list:
         """Return the measurement results. Must return as many values as defined in self.variables."""
@@ -149,6 +143,7 @@ class Device(EmptyDevice):
         intensities_per_second = intensities / self.integration_time
         return [wavelengths, intensities_per_second, self.integration_time]
 
+    # check_driver: ignore DC004 - a hook of the Spectrometer module, which needs an ndarray back
     def get_wavelengths(self) -> np.ndarray:
         """Return a list of all wavelengths at which the spectrum is measured."""
         if self.port_string == "Silicon Photonics":
@@ -159,10 +154,12 @@ class Device(EmptyDevice):
         spectrum = np.loadtxt(spectrum_file, skiprows=3)
         return spectrum[:, 0]
 
+    # check_driver: ignore DC004 - the hook of older Spectrometer module versions
     def read_Wavelengths(self) -> np.ndarray:
         """For compatibility with the old version of the module."""
         return self.get_wavelengths()
 
+    # check_driver: ignore DC004 - a helper of call() and acquire_spectrum, not a command
     def get_intensities(self) -> np.ndarray:
         """Return one raw reading in counts per integration time (dB for 'Silicon Photonics'), not averaged.
 
@@ -229,50 +226,46 @@ class Device(EmptyDevice):
     'set_spectrum_mode'.
     """
 
-    def set_spectrum_mode(self, mode: str) -> None:
-        """Select: 'Test spectrum.txt', 'Raman Spectrum', 'Background Spectrum', 'Silicon Photonics' or 'No Noise'."""
-        valid_modes = self.find_ports()
-        if mode not in valid_modes:
-            msg = f"Spectrum mode '{mode}' is not supported. Choose one of {valid_modes}."
-            raise ValueError(msg)
-        self.port_string = mode
-        if mode == "Silicon Photonics":
+    @command
+    def set_spectrum_mode(self, spectrum_mode: SpectrumMode) -> None:
+        """Select which spectrum the simulation returns."""
+        self.port_string = spectrum_mode
+        if spectrum_mode == "Silicon Photonics":
             self.siph_peak_wl = self.SIPH_PEAK_WL_START
 
-    def get_spectrum_mode(self) -> str:
+    @command(returns=("spectrum_mode",), reads="setpoint")
+    def get_spectrum_mode(self) -> SpectrumMode:
         """Return the selected simulated spectrum."""
-        return str(self.port_string)
+        return self.port_string  # type: ignore[return-value]  # set from the Port field or set_spectrum_mode
 
-    def set_integration_time(self, integration_time: float) -> None:
-        """Set the integration time in s (greater than 0 s and at most 10 s)."""
-        integration_time = float(integration_time)
-        if not 0 < integration_time <= 10:
-            msg = f"Integration time {integration_time} s must be greater than 0 s and at most 10 s."
+    @command
+    def set_integration_time(self, integration_time: Annotated[Seconds, Range(0.0, 10.0)]) -> None:
+        """Set the integration time in s. It must be greater than 0 s."""
+        if integration_time <= 0:
+            msg = f"Integration time {integration_time} s must be greater than 0 s."
             raise ValueError(msg)
         self.integration_time = integration_time
 
-    def get_integration_time(self) -> float:
+    @command(returns=("integration_time",), reads="setpoint")
+    def get_integration_time(self) -> Seconds:
         """Return the integration time in s."""
         return float(self.integration_time)
 
-    def set_average(self, average: int) -> None:
-        """Set the number of spectra that are averaged for one acquisition (1 to 100)."""
-        average = int(average)
-        if not 1 <= average <= 100:
-            msg = f"Average {average} must be between 1 and 100."
-            raise ValueError(msg)
+    @command
+    def set_average(self, average: Annotated[int, Range(1, 100)]) -> None:
+        """Set the number of spectra that are averaged for one acquisition."""
         self.average = average
 
-    def acquire_spectrum(self) -> dict:
+    @command(returns=("wavelength", "intensity"))
+    def acquire_spectrum(self) -> tuple[NanometersList, CountsPerSecondList]:
         """Acquire a spectrum. It takes as long as integration time times average.
 
-        Returns a dictionary with the lists 'wavelength' in nm and 'intensity' in counts/s (in dB for the mode
-        'Silicon Photonics') and the 'integration_time' in s.
+        Returns the lists of the wavelengths in nm and the intensities in counts/s (in dB for the mode
+        'Silicon Photonics'). The integration time is returned by 'get_integration_time'.
         """
         self.measure()
-        wavelengths, intensities, integration_time = self.call()
-        return {
-            "wavelength": np.asarray(wavelengths, dtype=float).tolist(),
-            "intensity": np.asarray(intensities, dtype=float).tolist(),
-            "integration_time": float(integration_time),
-        }
+        wavelengths, intensities, _integration_time = self.call()
+        return (
+            np.asarray(wavelengths, dtype=float).tolist(),
+            np.asarray(intensities, dtype=float).tolist(),
+        )

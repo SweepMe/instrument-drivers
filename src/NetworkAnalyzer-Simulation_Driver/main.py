@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -32,9 +32,18 @@
 from __future__ import annotations
 
 import time
+from typing import Annotated, Literal
 
 import numpy as np
+from pysweepme.commands import Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+Hertz = Annotated[float, Unit("Hz")]
+DecibelMilliwatts = Annotated[float, Unit("dBm")]
+HertzList = Annotated[list[float], Unit("Hz")]
+DecibelsList = Annotated[list[float], Unit("dB")]
+DegreesList = Annotated[list[float], Unit("deg")]
+SParameter = Literal["S11", "S12", "S21", "S22"]
 
 
 class Device(EmptyDevice):
@@ -176,54 +185,56 @@ class Device(EmptyDevice):
 
     _points: int = 51
 
-    def set_frequency_range(self, start_frequency: float, stop_frequency: float, points: int) -> None:
-        """Set the sweep to 'points' linearly spaced frequencies from start to stop in Hz (2 to 10001 points)."""
-        start_frequency = float(start_frequency)
-        stop_frequency = float(stop_frequency)
-        points = int(points)
+    @command
+    def set_frequency_range(
+        self,
+        start_frequency: Annotated[Hertz, Range(0.0, None)],
+        stop_frequency: Annotated[Hertz, Range(0.0, None)],
+        points: Annotated[int, Range(2, 10001)],
+    ) -> None:
+        """Set the sweep to 'points' linearly spaced frequencies from start to stop in Hz."""
         if start_frequency <= 0 or stop_frequency <= start_frequency:
             msg = "The start frequency must be greater than 0 Hz and lower than the stop frequency."
-            raise ValueError(msg)
-        if not 2 <= points <= 10001:
-            msg = f"Points {points} must be between 2 and 10001."
             raise ValueError(msg)
         self.frequency_start = start_frequency
         self.frequency_end = stop_frequency
         self._points = points
 
-    def get_frequency_range(self) -> tuple[float, float, int]:
+    @command(returns=("start_frequency", "stop_frequency", "points"), reads="setpoint")
+    def get_frequency_range(self) -> tuple[Hertz, Hertz, int]:
         """Return (start frequency in Hz, stop frequency in Hz, number of points) of the sweep."""
         return float(self.frequency_start), float(self.frequency_end), int(self._points)
 
-    def set_source_power(self, power: float) -> None:
-        """Set the source power in dBm (-60 dBm to 30 dBm). A higher power lowers the noise of the traces."""
-        power = float(power)
-        if not -60 <= power <= 30:
-            msg = f"Power {power} dBm must be between -60 dBm and 30 dBm."
-            raise ValueError(msg)
-        self.power = power
+    @command(hazards="A higher source power reaches the connected device and can overdrive or damage it.")
+    def set_source_power(self, source_power: Annotated[DecibelMilliwatts, Range(-60.0, 30.0)]) -> None:
+        """Set the source power in dBm. A higher power lowers the noise of the traces."""
+        self.power = source_power
 
-    def get_source_power(self) -> float:
+    @command(returns=("source_power",), reads="setpoint")
+    def get_source_power(self) -> DecibelMilliwatts:
         """Return the source power in dBm."""
         return float(self.power)
 
-    def set_noise_enabled(self, enabled: bool) -> None:
-        """Switch the simulated noise on or off. Without noise the traces are reproducible."""
-        self.no_noise = not enabled
+    @command
+    def set_noise(self, noise: bool) -> None:
+        """Switch the simulated noise on (True) or off (False). Without noise the traces are reproducible."""
+        self.no_noise = not noise
 
-    def measure_s_parameter(self, s_parameter: str = "S21") -> dict:
-        """Measure one S-parameter over the sweep, e.g. 'S11' or 'S21'.
+    @command(returns=("noise",), reads="setpoint")
+    def get_noise(self) -> bool:
+        """Return True if the simulated noise is on."""
+        return not self.no_noise
 
-        Returns a dictionary with the lists 'frequency' in Hz, 'magnitude_db' in dB and 'phase_deg' in degrees.
+    @command(returns=("frequency", "magnitude", "phase"))
+    def measure_s_parameter(self, s_parameter: SParameter = "S21") -> tuple[HertzList, DecibelsList, DegreesList]:
+        """Measure one S-parameter over the sweep.
+
+        Returns the lists of the frequencies in Hz, the magnitudes in dB and the phases in degrees.
         """
-        name = str(s_parameter).strip().upper()
-        if len(name) != 3 or name[0] != "S" or not name[1:].isdigit() or "0" in name[1:]:
-            msg = f"'{s_parameter}' is not an S-parameter. Use a name like 'S11' or 'S21'."
-            raise ValueError(msg)
         frequencies = np.linspace(self.frequency_start, self.frequency_end, self._points)
-        trace = self.simulate_s_parameter(len(frequencies), phase=float(int(name[1]) + int(name[2])))
-        return {
-            "frequency": frequencies.tolist(),
-            "magnitude_db": (20 * np.log10(np.abs(trace) + 1e-12)).tolist(),
-            "phase_deg": np.angle(trace, deg=True).tolist(),
-        }
+        trace = self.simulate_s_parameter(len(frequencies), phase=float(int(s_parameter[1]) + int(s_parameter[2])))
+        return (
+            frequencies.tolist(),
+            (20 * np.log10(np.abs(trace) + 1e-12)).tolist(),
+            np.angle(trace, deg=True).tolist(),
+        )

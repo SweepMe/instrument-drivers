@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2024 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2024-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,10 +26,17 @@
 from __future__ import annotations
 
 from random import random
+from typing import Annotated, Literal
 
 import numpy as np
-
+from pysweepme.commands import Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+Hertz = Annotated[float, Unit("Hz")]
+Ohms = Annotated[float, Unit("Ohm")]
+HertzList = Annotated[list[float], Unit("Hz")]
+OhmsList = Annotated[list[float], Unit("Ohm")]
+BiasMode = Literal["Voltage bias", "Current bias"]
 
 
 class Device(EmptyDevice):
@@ -178,72 +185,68 @@ class Device(EmptyDevice):
     The simulated LCR meter measures a series resonant circuit. The commands do not need 'initialize' or 'configure'.
     """
 
-    def set_frequency(self, frequency: float) -> None:
-        """Set the measurement frequency in Hz (greater than 0 Hz)."""
-        frequency = float(frequency)
+    @command
+    def set_frequency(self, frequency: Annotated[Hertz, Range(0.0, None)]) -> None:
+        """Set the measurement frequency in Hz. It must be greater than 0 Hz."""
         if frequency <= 0:
             msg = f"Frequency {frequency} Hz must be greater than 0 Hz."
             raise ValueError(msg)
         self.frequency = frequency
 
-    def get_frequency(self) -> float:
+    @command(returns=("frequency",), reads="setpoint")
+    def get_frequency(self) -> Hertz:
         """Return the measurement frequency in Hz."""
         return float(self.frequency)
 
+    @command(hazards="Applies a DC bias voltage or current to the connected device.")
     def set_bias(self, bias: float) -> None:
         """Set the bias value. Its unit is V for the mode 'Voltage bias' and A for 'Current bias'."""
-        self.bias = float(bias)
+        self.bias = bias
 
+    @command(returns=("bias",), reads="setpoint")
     def get_bias(self) -> float:
         """Return the bias value."""
         return float(self.bias)
 
-    def set_bias_mode(self, mode: str) -> None:
-        """Set the bias mode to 'Voltage bias' or 'Current bias'."""
-        if mode not in ("Voltage bias", "Current bias"):
-            msg = f"Bias mode '{mode}' is not supported. Choose 'Voltage bias' or 'Current bias'."
-            raise ValueError(msg)
-        self.bias_mode = mode
+    @command
+    def set_bias_mode(self, bias_mode: BiasMode) -> None:
+        """Set the bias mode."""
+        self.bias_mode = bias_mode
 
-    def set_average(self, average: int) -> None:
-        """Set the number of readings that are averaged for one measurement (at least 1)."""
-        average = int(average)
-        if average < 1:
-            msg = f"Average {average} must be at least 1."
-            raise ValueError(msg)
+    @command
+    def set_average(self, average: Annotated[int, Range(1, None)]) -> None:
+        """Set the number of readings that are averaged for one measurement."""
         self.average = average
 
-    def set_noise_level(self, noise_level: float) -> None:
+    @command
+    def set_noise_level(self, noise_level: Annotated[float, Range(0.0, None)]) -> None:
         """Set the relative noise of the simulated readings as a fraction, e.g. 0.05 for 5 %. Use 0 for no noise."""
-        noise_level = float(noise_level)
-        if noise_level < 0:
-            msg = f"Noise level {noise_level} must not be negative."
-            raise ValueError(msg)
         self.noise_level = noise_level
 
-    def get_resistance_and_reactance(self) -> tuple[float, float]:
+    @command(returns=("resistance", "reactance"))
+    def get_resistance_and_reactance(self) -> tuple[Ohms, Ohms]:
         """Measure at the set frequency and bias and return (resistance R in Ohm, reactance X in Ohm)."""
         resistance = np.mean([self.simulate_resistance(self.frequency) for _ in range(self.average)])
         reactance = np.mean([self.simulate_reactance(self.frequency) for _ in range(self.average)])
         return float(resistance), float(reactance)
 
-    def measure_frequency_sweep(self, start_frequency: float, stop_frequency: float, points: int) -> dict:
-        """Measure R and X at 'points' linearly spaced frequencies from start to stop in Hz (2 to 10000 points).
+    @command(returns=("frequency", "resistance", "reactance"))
+    def measure_frequency_sweep(
+        self,
+        start_frequency: Annotated[Hertz, Range(0.0, None)],
+        stop_frequency: Annotated[Hertz, Range(0.0, None)],
+        points: Annotated[int, Range(2, 10000)],
+    ) -> tuple[HertzList, OhmsList, OhmsList]:
+        """Measure R and X at 'points' linearly spaced frequencies from start to stop in Hz.
 
-        Returns a dictionary with the lists 'frequency' in Hz, 'R' in Ohm and 'X' in Ohm.
+        Returns the lists of the frequencies in Hz, the resistances R in Ohm and the reactances X in Ohm.
         """
-        start_frequency = float(start_frequency)
-        stop_frequency = float(stop_frequency)
-        points = int(points)
         if start_frequency <= 0 or stop_frequency <= 0:
             msg = "Start and stop frequency must be greater than 0 Hz."
             raise ValueError(msg)
-        if not 2 <= points <= 10000:
-            msg = f"Points {points} must be between 2 and 10000."
-            raise ValueError(msg)
         frequencies = np.linspace(start_frequency, stop_frequency, points)
-        return {
-            "frequency": frequencies.tolist(),
-            "R": np.asarray(self.simulate_resistance(frequencies), dtype=float).tolist(),
-            "X": np.asarray(self.simulate_reactance(frequencies), dtype=float).tolist(),
-        }
+        return (
+            frequencies.tolist(),
+            np.asarray(self.simulate_resistance(frequencies), dtype=float).tolist(),
+            np.asarray(self.simulate_reactance(frequencies), dtype=float).tolist(),
+        )

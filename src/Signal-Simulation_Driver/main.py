@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,8 +31,16 @@
 
 from __future__ import annotations
 
+from typing import Annotated, Literal
+
 import numpy as np
+from pysweepme.commands import Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+Seconds = Annotated[float, Unit("s")]
+Hertz = Annotated[float, Unit("Hz")]
+Volts = Annotated[float, Unit("V")]
+Waveform = Literal["Sine", "Square", "Triangle", "Sawtooth"]
 
 
 class Device(EmptyDevice):
@@ -214,64 +222,58 @@ class Device(EmptyDevice):
     The commands do not need 'initialize' or 'configure'.
     """
 
-    def set_waveform(self, waveform: str) -> None:
-        """Set the waveform to 'Sine', 'Square', 'Triangle' or 'Sawtooth'."""
-        valid_waveforms = ("Sine", "Square", "Triangle", "Sawtooth")
-        if waveform not in valid_waveforms:
-            msg = f"Waveform '{waveform}' is not supported. Choose one of {valid_waveforms}."
-            raise ValueError(msg)
+    @command
+    def set_waveform(self, waveform: Waveform) -> None:
+        """Set the waveform."""
         self.waveform = waveform
 
-    def set_frequency(self, frequency: float) -> None:
+    @command
+    def set_frequency(self, frequency: Annotated[Hertz, Range(0.0, None)]) -> None:
         """Set the frequency in Hz (greater than 0 Hz)."""
-        frequency = float(frequency)
         if frequency <= 0:
             msg = f"Frequency {frequency} Hz must be greater than 0 Hz."
             raise ValueError(msg)
         self.frequency = frequency
 
-    def set_amplitude(self, amplitude: float) -> None:
+    @command(hazards="Changes the signal level at the connected device at once.")
+    def set_amplitude(self, amplitude: Annotated[Volts, Range(0.0, None)]) -> None:
         """Set the amplitude in V (0 V or more)."""
-        amplitude = float(amplitude)
-        if amplitude < 0:
-            msg = f"Amplitude {amplitude} V must not be negative."
-            raise ValueError(msg)
         self.amplitude = amplitude
 
-    def set_offset(self, offset: float) -> None:
+    @command(hazards="Changes the signal level at the connected device at once.")
+    def set_offset(self, offset: Volts) -> None:
         """Set the offset in V."""
-        self.offset = float(offset)
+        self.offset = offset
 
-    def set_delay(self, delay: float) -> None:
+    @command
+    def set_delay(self, delay: Seconds) -> None:
         """Set the delay of the signal in s. A positive delay shifts the waveform to later times."""
-        self.delay = float(delay)
+        self.delay = delay
 
-    def get_settings(self) -> dict:
-        """Return the waveform, frequency in Hz, amplitude in V, offset in V and delay in s."""
-        return {
-            "waveform": self.waveform,
-            "frequency": float(self.frequency),
-            "amplitude": float(self.amplitude),
-            "offset": float(self.offset),
-            "delay": float(self.delay),
-        }
+    @command(returns=("waveform", "frequency", "amplitude", "offset", "delay"), reads="setpoint")
+    def get_settings(self) -> tuple[Waveform, Hertz, Volts, Volts, Seconds]:
+        """Return (waveform, frequency in Hz, amplitude in V, offset in V, delay in s)."""
+        return (
+            self.waveform,  # type: ignore[return-value]  # set from the GUI or set_waveform, both one of Waveform
+            float(self.frequency),
+            float(self.amplitude),
+            float(self.offset),
+            float(self.delay),
+        )
 
-    def sample_signal(self, duration: float, points: int) -> dict:
-        """Return the signal of the set waveform at 'points' times from 0 s to 'duration' in s (2 to 100000 points).
-
-        Returns a dictionary with the lists 'time' in s and 'signal' in V.
-        """
-        duration = float(duration)
-        points = int(points)
+    @command(returns=("time", "voltage"))
+    def sample_signal(
+        self,
+        duration: Annotated[Seconds, Range(0.0, None)],
+        points: Annotated[int, Range(2, 100000)],
+    ) -> tuple[Annotated[list[float], Unit("s")], Annotated[list[float], Unit("V")]]:
+        """Return (time in s, voltage in V) of the set waveform at 'points' times from 0 s to 'duration' in s."""
         if duration <= 0:
             msg = f"Duration {duration} s must be greater than 0 s."
             raise ValueError(msg)
-        if not 2 <= points <= 100000:
-            msg = f"Points {points} must be between 2 and 100000."
-            raise ValueError(msg)
         time_stamps = np.linspace(0, duration, points)
         signal = self.generate_waveform(time_stamps.copy())
-        return {"time": time_stamps.tolist(), "signal": np.asarray(signal, dtype=float).tolist()}
+        return time_stamps.tolist(), np.asarray(signal, dtype=float).tolist()
 
     def _share_signal(self) -> None:
         """Put generate_waveform into device_communication, where a simulated oscilloscope can find it.

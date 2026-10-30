@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,20 +31,20 @@
 
 from __future__ import annotations
 
+from typing import Annotated, Literal
+
 import numpy as np
+from pysweepme.commands import Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+Hertz = Annotated[float, Unit("Hz")]
+DecibelMilliwatts = Annotated[float, Unit("dBm")]
+HertzList = Annotated[list[float], Unit("Hz")]
+DecibelMilliwattsList = Annotated[list[float], Unit("dBm")]
+TraceMode = Literal["Current", "Max hold", "Min hold", "Average"]
 
 
 class Device(EmptyDevice):
-    description = """
-        <h3>Simulated Spectrum Analyzer</h3>
-        <p>The <b>Port</b> field is reused to select the simulation mode:</p>
-        <ul>
-        <li><b>Port 1: Simulated Spectrum</b>: three Gaussian peaks with additive random noise.</li>
-        <li><b>Port 2: No Noise</b>: the same spectrum without noise for reproducible tests.</li>
-        </ul>
-    """
-
     def __init__(self) -> None:
         """Set up parameters for the simulated spectrum analyzer."""
         super().__init__()
@@ -195,13 +195,13 @@ class Device(EmptyDevice):
     The commands do not need 'initialize' or 'configure'. Set the frequency range before acquiring a trace.
     """
 
-    def set_frequency_range(self, min_frequency: float, max_frequency: float) -> None:
-        """Set the frequency range of the trace in Hz. The minimum must be 0 Hz or more and lower than the maximum."""
-        min_frequency = float(min_frequency)
-        max_frequency = float(max_frequency)
-        if min_frequency < 0:
-            msg = f"The minimum frequency {min_frequency} Hz must not be negative."
-            raise ValueError(msg)
+    @command
+    def set_frequency_range(
+        self,
+        min_frequency: Annotated[Hertz, Range(0.0, None)],
+        max_frequency: Annotated[Hertz, Range(0.0, None)],
+    ) -> None:
+        """Set the frequency range of the trace in Hz. The minimum must be lower than the maximum."""
         if max_frequency <= min_frequency:
             msg = "The minimum frequency must be lower than the maximum frequency."
             raise ValueError(msg)
@@ -210,38 +210,41 @@ class Device(EmptyDevice):
         self.frequency_center = (min_frequency + max_frequency) / 2
         self.frequency_span = max_frequency - min_frequency
 
-    def get_frequency_range(self) -> tuple[float, float]:
+    @command(returns=("min_frequency", "max_frequency"), reads="setpoint")
+    def get_frequency_range(self) -> tuple[Hertz, Hertz]:
         """Return (minimum frequency in Hz, maximum frequency in Hz)."""
         return float(self.frequency_min), float(self.frequency_max)
 
-    def set_reference_level(self, reference_level: float) -> None:
+    @command
+    def set_reference_level(self, reference_level: DecibelMilliwatts) -> None:
         """Set the reference level in dBm, the top of the display. It does not change the simulated trace."""
-        self.reference_level = float(reference_level)
+        self.reference_level = reference_level
 
-    def set_trace_mode(self, trace_mode: str, repetitions: int = 1) -> None:
-        """Set the trace mode ('Current', 'Max hold', 'Min hold' or 'Average') and the number of repetitions (1 to 100)."""
-        repetitions = int(repetitions)
-        if trace_mode not in self.trace_modes:
-            msg = f"Trace mode '{trace_mode}' is not supported. Choose one of {self.trace_modes}."
-            raise ValueError(msg)
-        if not 1 <= repetitions <= 100:
-            msg = f"Repetitions {repetitions} must be between 1 and 100."
-            raise ValueError(msg)
+    @command
+    def set_trace_mode(self, trace_mode: TraceMode, repetitions: Annotated[int, Range(1, 100)] = 1) -> None:
+        """Set the trace mode and the number of repetitions that it combines."""
         self.trace_mode = trace_mode
         self.trace_integration = repetitions
 
-    def set_noise_enabled(self, enabled: bool) -> None:
-        """Switch the simulated noise on or off. Without noise the traces are reproducible."""
-        self.port_string = "Simulated Spectrum" if enabled else "No Noise"
+    @command
+    def set_noise(self, noise: bool) -> None:
+        """Switch the simulated noise on (True) or off (False). Without noise the traces are reproducible."""
+        self.port_string = "Simulated Spectrum" if noise else "No Noise"
 
-    def acquire_trace(self) -> dict:
+    @command(returns=("noise",), reads="setpoint")
+    def get_noise(self) -> bool:
+        """Return True if the simulated noise is on."""
+        return "No Noise" not in self.port_string
+
+    @command(returns=("frequency", "power"))
+    def acquire_trace(self) -> tuple[HertzList, DecibelMilliwattsList]:
         """Acquire a trace of 100 points over the set frequency range.
 
-        Returns a dictionary with the lists 'frequency' in Hz and 'power' in dBm.
+        Returns the lists of the frequencies in Hz and the powers in dBm.
         """
         if self.frequency_max <= self.frequency_min:
             msg = "The frequency range is empty. Use 'set_frequency_range' first."
             raise ValueError(msg)
         self.measure()
         frequencies, power = self.call()
-        return {"frequency": list(frequencies), "power": list(power)}
+        return list(frequencies), list(power)
