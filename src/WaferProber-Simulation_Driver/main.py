@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -34,6 +34,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from pysweepme.commands import command
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 # Geometry of the simulated wafer. Both the probe plan and get_wafer_geometry() are derived from
@@ -148,6 +149,7 @@ class Device(EmptyDevice):
             "origin": None,
         }
 
+    @command(returns=("wafer",), reads="state")
     def get_current_wafer(self) -> str:
         """Returns the current wafer.
 
@@ -155,6 +157,7 @@ class Device(EmptyDevice):
         """
         return self.current_wafer
 
+    @command(returns=("die",), reads="state")
     def get_current_die(self) -> str:
         """Returns the current die.
 
@@ -162,6 +165,7 @@ class Device(EmptyDevice):
         """
         return self.current_die
 
+    @command(returns=("subsite",), reads="state")
     def get_current_subsite(self) -> str:
         """Returns the current subsite.
 
@@ -169,6 +173,7 @@ class Device(EmptyDevice):
         """
         return self.current_subsite
 
+    @command(kind="run", hazards="Moves the chuck and the wafer handler to exchange the wafer.")
     def load_wafer(self, wafer: str) -> None:
         """Checks if a wafer is loaded, unloads it if necessary, and loads the new wafer into the prober.
 
@@ -181,11 +186,13 @@ class Device(EmptyDevice):
         if self.current_wafer != wafer:
             self.current_wafer = wafer
 
+    @command(hazards="Moves the chuck and the wafer handler to take the wafer off.")
     def unload_wafer(self) -> None:
         """Unloads a wafer from the prober. It is called when 'Unload wafer' action of the wafer table is performed."""
         self.is_contacted = False
         self.current_wafer = ""
 
+    @command(kind="run", hazards="Moves the chuck to another die; in contact this can scratch the wafer.")
     def step_to_die(self, die: str) -> None:
         """Move to given die. It is called when 'Step to die' action of the die table is performed."""
         die = str(die).replace(" ", "")
@@ -195,6 +202,7 @@ class Device(EmptyDevice):
         if self.current_die != die:
             self.current_die = die
 
+    @command(kind="run", hazards="Moves the chuck to another subsite; in contact this can scratch the wafer.")
     def step_to_subsite(self, subsite: int | str) -> None:
         """Move to given subsite. It is called when the 'Step to subsite' action of the Subsite table is performed."""
         subsites = self.get_probeplan()[2]
@@ -203,6 +211,7 @@ class Device(EmptyDevice):
             raise ValueError(msg)
         self.current_subsite = str(subsite)
 
+    @command(hazards="Lowers the probes onto the wafer.")
     def contact(self) -> None:
         """Raise the chuck to contact height, so the probes touch the wafer.
 
@@ -213,6 +222,7 @@ class Device(EmptyDevice):
             raise ValueError(msg)
         self.is_contacted = True
 
+    @command
     def separate(self) -> None:
         """Lower the chuck to separation height, so the probes come off the wafer.
 
@@ -220,6 +230,7 @@ class Device(EmptyDevice):
         """
         self.is_contacted = False
 
+    @command(returns=("contacted",), reads="state")
     def get_contact_state(self) -> bool:
         """Return True if the probes are currently in contact with the wafer.
 
@@ -284,11 +295,7 @@ class Device(EmptyDevice):
     communication commands as well.
     """
 
-    def get_status(self) -> dict:
-        """Return the loaded 'wafer', the 'die' and 'subsite' the probes stand on and whether they are 'contacted'."""
-        return {
-            "wafer": self.current_wafer,
-            "die": self.current_die,
-            "subsite": self.current_subsite,
-            "contacted": bool(self.is_contacted),
-        }
+    @command(returns=("wafer", "die", "subsite", "contacted"), reads="state")
+    def get_status(self) -> tuple[str, str, str, bool]:
+        """Return (loaded wafer, die and subsite the probes stand on, whether they are contacted)."""
+        return self.current_wafer, self.current_die, self.current_subsite, bool(self.is_contacted)
