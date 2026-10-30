@@ -41,9 +41,9 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 Hertz = Annotated[float, Unit("Hz")]
 Volts = Annotated[float, Unit("V")]
 Degrees = Annotated[float, Unit("deg")]
-HertzList = Annotated[list[float], Unit("Hz")]
-VoltsList = Annotated[list[float], Unit("V")]
-DegreesList = Annotated[list[float], Unit("deg")]
+HertzList = list[Hertz]
+VoltsList = list[Volts]
+DegreesList = list[Degrees]
 
 
 class Device(EmptyDevice):
@@ -129,7 +129,7 @@ class Device(EmptyDevice):
         """Return the reference frequency in Hz."""
         return float(self.frequency)
 
-    @command(hazards="Changes the excitation voltage at the connected device at once.")
+    @command(warnings="Changes the excitation voltage at the connected device at once.")
     def set_amplitude(self, amplitude: Annotated[Volts, Range(0.0, None)]) -> None:
         """Set the excitation amplitude in V."""
         self.amplitude = amplitude
