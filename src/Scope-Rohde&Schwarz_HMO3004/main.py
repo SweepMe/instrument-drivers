@@ -129,7 +129,6 @@ class Device(EmptyDevice):
         
         self.average = parameter["Average"]
         self.samplingratetype = parameter["SamplingRateType"]
-        self.samplingrate = parameter["SamplingRate"]
         
         self.channels = []
         for i in np.arange(4)+1:

@@ -112,7 +112,6 @@ class Device(EmptyDevice):
         self.source_power = parameter["SourcePower"]
         self.source_attenuation = parameter["SourceAttenuation"]
         self.if_bandwidth = parameter["IFBandwidth"]
-        self.calibration_file_name = parameter["Calibration"]
         self.number_averages = int(parameter["Average"])
         self.correction = parameter["Correction"]
         self.trigger_state = parameter["Trigger"]

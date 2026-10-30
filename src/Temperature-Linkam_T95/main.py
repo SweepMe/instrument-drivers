@@ -66,7 +66,6 @@ class Device(EmptyDevice):
         # print(parameter)
                 
         self.measureT = parameter["MeasureT"]
-        self.reachT = parameter["ReachT"]
         #self.setT = parameter["SetT"]
         
         self.sweep_mode = parameter["SweepMode"]
