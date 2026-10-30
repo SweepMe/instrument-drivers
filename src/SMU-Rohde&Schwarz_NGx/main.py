@@ -220,7 +220,7 @@ class Device(EmptyDevice):
         """Return the options installed in the instrument."""
         return self.port.query("*OPT?")
 
-    @command(hazards="Resets every setting of the instrument to its default.")
+    @command(warnings="Resets every setting of the instrument to its default.")
     def reset_instrument(self) -> None:
         """Reset the instrument to its default settings (*RST)."""
         self.port.write("*RST")

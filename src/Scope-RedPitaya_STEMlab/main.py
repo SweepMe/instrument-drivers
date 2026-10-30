@@ -631,7 +631,7 @@ class Device(EmptyDevice):
     # Reference:
     # https://redpitaya.readthedocs.io/en/latest/appsFeatures/remoteControl/command_list/commands-acq.html
 
-    @command(hazards="Resets the acquisition settings of the whole board (decimation, trigger, gain of both inputs), "
+    @command(warnings="Resets the acquisition settings of the whole board (decimation, trigger, gain of both inputs), "
                      "also those another scope or spectrum analyzer driver instance relies on.")
     def reset_acquisition(self) -> None:
         """Stop the acquisition and reset all acquisition parameters to their defaults ('ACQ:RST')."""

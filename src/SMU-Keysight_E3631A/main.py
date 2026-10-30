@@ -166,7 +166,7 @@ class Device(EmptyDevice):
         """Return the identification (*IDN?): manufacturer, model, 0 and the firmware versions."""
         return self.port.query("*IDN?")
 
-    @command(hazards="Resets every setting of the instrument to its default, the outputs switched off.")
+    @command(warnings="Resets every setting of the instrument to its default, the outputs switched off.")
     def reset_instrument(self) -> None:
         """Reset the instrument to its default settings (*RST)."""
         self.port.write("*RST")

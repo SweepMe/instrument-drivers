@@ -518,7 +518,7 @@ class LabjackBaseClass(EmptyDevice):
         """Return the voltage in V that an analog output is set to (channel 0 or 1)."""
         return float(ljm.eReadName(self.handle, f"DAC{channel}"))
 
-    @command(hazards="The pin becomes an output: a signal that drives the same line from outside is shorted "
+    @command(warnings="The pin becomes an output: a signal that drives the same line from outside is shorted "
                      "against it.")
     def set_digital_output(self, pin: Pin, digital_output: bool) -> None:
         """Set a digital pin to an output that is high (True) or low (False).
@@ -552,7 +552,7 @@ class LabjackBaseClass(EmptyDevice):
         return (int(ljm.eReadName(self.handle, "DIO_STATE")) >> pins[str(pin)]) & 1
 
     @command(composite=True,
-             hazards="OUT makes the pin an output: a signal that drives the same line from outside is shorted "
+             warnings="OUT makes the pin an output: a signal that drives the same line from outside is shorted "
                      "against it.")
     def set_digital_direction(self, pin: Pin, digital_direction: DigitalDirection) -> None:
         """Make a digital pin an input ('IN') or an output ('OUT'); an output keeps the level the pin has now.
@@ -584,7 +584,7 @@ class LabjackBaseClass(EmptyDevice):
     # One batch of LJM writes rather than one command per register: the counter is disabled, its mode set and
     # enabled again in one call, so it is never left half configured.
     @command(kind="run", composite=True,
-             hazards="Clock 0 and the clock sharing the pin are switched off if they run, so a PWM or other "
+             warnings="Clock 0 and the clock sharing the pin are switched off if they run, so a PWM or other "
                      "clocked output that uses them stops.")
     def enable_counter(self, pin: Pin) -> None:
         """Make a pin a high speed counter and reset its count to zero (e.g. 'CIO1' or 'DIO17').
