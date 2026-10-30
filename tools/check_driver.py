@@ -20,11 +20,11 @@ driver guidelines of the sweepme plugin (sweepme-driver-writing, SKILL.md and re
     DC006  a decorated reader without returns=(...)
     DC007  a command that calls other commands without composite=True
     DC008  a composite command that sends instrument commands itself, without a comment saying why
-    DC009  a composite command without the hazards of the commands it calls
+    DC009  a composite command without the warnings of the commands it calls
     DC010  two setters whose value parameters have the same name (one quantity in two meanings)
     DC011  @command is not the outermost decorator
     DC012  a check of what the annotation already says (@command checks choices and ranges)
-    DC013  a "Hazards:" section written into a docstring instead of @command(hazards=...)
+    DC013  a "Warnings:" section written into a docstring instead of @command(warnings=...)
     DC014  a semantic function sends an instrument command a communication command also sends
     DC015  the semantic functions are not in the agreed order (the pairs, then the per-point functions)
     DC016  Annotated or Literal written in a signature instead of an alias at module level
@@ -107,7 +107,7 @@ class Method:
     decorated: bool = False
     composite: bool = False
     has_returns: bool = False
-    hazards: bool = False
+    warnings: bool = False
     kind_run: bool = False
     calls: set[str] = field(default_factory=set)  # self.<name>(...) calls
     port_heads: list[tuple[int, str]] = field(default_factory=list)  # instrument commands it sends
@@ -203,7 +203,7 @@ def _method(node: ast.FunctionDef, file: str, path: Path) -> Method:
             composite = _keyword(decorator, "composite")
             method.composite = isinstance(composite, ast.Constant) and composite.value is True
             method.has_returns = _keyword(decorator, "returns") is not None
-            method.hazards = _keyword(decorator, "hazards") is not None
+            method.warnings = _keyword(decorator, "warnings") is not None
             kind = _keyword(decorator, "kind")
             method.kind_run = isinstance(kind, ast.Constant) and kind.value == "run"
     for sub in ast.walk(node):
@@ -376,9 +376,9 @@ def _check_command(method: Method, driver: Driver, command_names: set[str], repo
     docstring = ast.get_docstring(node)
     if not docstring:
         report.add("DC018", method, node.lineno, "no docstring")
-    elif re.search(r"^\s*Hazards?:", docstring, re.MULTILINE) and not method.hazards:
+    elif re.search(r"^\s*Warnings?:", docstring, re.MULTILINE) and not method.warnings:
         report.add("DC013", method, node.lineno,
-                   "a Hazards section in the docstring - say it in @command(hazards=...), which adds the section")
+                   "a Warnings section in the docstring - say it in @command(warnings=...), which adds the section")
     if method.decorated and node.returns is not None and not method.returns_none and not method.has_returns:
         report.add("DC006", method, node.lineno,
                    "a reader without returns=(...) - the driver does not load (pysweepme raises a TypeError)")
@@ -415,11 +415,11 @@ def _composite(method: Method, driver: Driver, command_names: set[str], report: 
         report.add("DC008", method, method.port_heads[0][0],
                    "a composite command that sends instrument commands itself - call the commands, or say in a "
                    "comment why not (e.g. fewer round trips)")
-    if not method.hazards:
-        hazardous = sorted(c for c in called if driver.methods.get(c) and driver.methods[c].hazards)
-        if hazardous:
+    if not method.warnings:
+        warned = sorted(c for c in called if driver.methods.get(c) and driver.methods[c].warnings)
+        if warned:
             report.add("DC009", method, method.node.lineno,
-                       f"calls commands with hazards ({', '.join(hazardous)}) but declares none itself")
+                       f"calls commands with warnings ({', '.join(warned)}) but declares none itself")
 
 
 def _commented(method: Method) -> bool:
