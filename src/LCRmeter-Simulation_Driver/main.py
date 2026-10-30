@@ -209,9 +209,9 @@ class Device(EmptyDevice):
         return float(self.bias)
 
     @command
-    def set_bias_mode(self, mode: BiasMode) -> None:
+    def set_bias_mode(self, bias_mode: BiasMode) -> None:
         """Set the bias mode."""
-        self.bias_mode = mode
+        self.bias_mode = bias_mode
 
     @command
     def set_average(self, average: Annotated[int, Range(1, None)]) -> None:
