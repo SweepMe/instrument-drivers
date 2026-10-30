@@ -49,18 +49,6 @@ SpectrumMode = Literal["Test spectrum.txt", "Raman Spectrum", "Background Spectr
 class Device(EmptyDevice):
     """Device class to implement functionalities of a simulated spectrometer."""
 
-    description = """
-        <h3>Simulated Spectrometer</h3>
-        <p>The <b>Port</b> field is reused to select which spectrum the simulation returns:</p>
-        <ul>
-        <li><b>Test spectrum.txt</b>: replays the bundled <i>test_spectrum.txt</i> file.</li>
-        <li><b>Raman Spectrum</b>: a Gaussian Raman peak on a simulated background.</li>
-        <li><b>Background Spectrum</b>: the background only, without the Raman peak.</li>
-        <li><b>Silicon Photonics</b>: a Gaussian transmission dip in dB that drifts during the run.</li>
-        <li><b>No Noise</b>: the Raman spectrum without random noise for reproducible tests.</li>
-        </ul>
-        """
-
     # Initial silicon-photonics peak wavelength in nm; reset in initialize() so it does not drift across runs.
     SIPH_PEAK_WL_START: float = 1530.0
 
@@ -125,16 +113,16 @@ class Device(EmptyDevice):
         """Reset the silicon-photonics peak so it does not drift out of range across runs."""
         self.siph_peak_wl = self.SIPH_PEAK_WL_START
 
+    def apply(self) -> None:
+        """Apply the sweep values."""
+        if self.sweep_mode == "Integration time in s":
+            self.integration_time = self.value
+
     def measure(self) -> None:
         """Trigger acquisition of new data."""
         time.sleep(self.trigger_delay)
         for _ in range(self.average):
             time.sleep(self.integration_time)
-
-    def apply(self) -> None:
-        """Apply the sweep values."""
-        if self.sweep_mode == "Integration time in s":
-            self.integration_time = self.value
 
     def call(self) -> list:
         """Return the measurement results. Must return as many values as defined in self.variables."""
@@ -155,6 +143,7 @@ class Device(EmptyDevice):
         intensities_per_second = intensities / self.integration_time
         return [wavelengths, intensities_per_second, self.integration_time]
 
+    # check_driver: ignore DC004 - a hook of the Spectrometer module, which needs an ndarray back
     def get_wavelengths(self) -> np.ndarray:
         """Return a list of all wavelengths at which the spectrum is measured."""
         if self.port_string == "Silicon Photonics":
@@ -165,10 +154,12 @@ class Device(EmptyDevice):
         spectrum = np.loadtxt(spectrum_file, skiprows=3)
         return spectrum[:, 0]
 
+    # check_driver: ignore DC004 - the hook of older Spectrometer module versions
     def read_Wavelengths(self) -> np.ndarray:
         """For compatibility with the old version of the module."""
         return self.get_wavelengths()
 
+    # check_driver: ignore DC004 - a helper of call() and acquire_spectrum, not a command
     def get_intensities(self) -> np.ndarray:
         """Return one raw reading in counts per integration time (dB for 'Silicon Photonics'), not averaged.
 
@@ -236,13 +227,13 @@ class Device(EmptyDevice):
     """
 
     @command
-    def set_spectrum_mode(self, mode: SpectrumMode) -> None:
+    def set_spectrum_mode(self, spectrum_mode: SpectrumMode) -> None:
         """Select which spectrum the simulation returns."""
-        self.port_string = mode
-        if mode == "Silicon Photonics":
+        self.port_string = spectrum_mode
+        if spectrum_mode == "Silicon Photonics":
             self.siph_peak_wl = self.SIPH_PEAK_WL_START
 
-    @command(returns=("mode",), reads="setpoint")
+    @command(returns=("spectrum_mode",), reads="setpoint")
     def get_spectrum_mode(self) -> SpectrumMode:
         """Return the selected simulated spectrum."""
         return self.port_string  # type: ignore[return-value]  # set from the Port field or set_spectrum_mode
