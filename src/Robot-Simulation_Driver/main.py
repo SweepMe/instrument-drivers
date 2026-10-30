@@ -36,7 +36,7 @@ from typing import Annotated, ClassVar, Literal
 from pysweepme.commands import Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
-MOVE_HAZARD = "Moves the arm; keep the work area clear."
+MOVE_WARNING = "Moves the arm; keep the work area clear."
 
 Millimetres = Annotated[float, Unit("mm")]
 Axis = Annotated[Literal["x", "y", "z"], Selector()]
@@ -112,7 +112,7 @@ class Device(EmptyDevice):
         """Return the simulated current position of each axis."""
         return [self.position["x"], self.position["y"], self.position["z"]]
 
-    @command(hazards=MOVE_HAZARD)
+    @command(warnings=MOVE_WARNING)
     def go_home(self) -> None:
         """Move all axes to the origin. Called by the 'Go home' button."""
         for axis in self.position:
@@ -124,12 +124,12 @@ class Device(EmptyDevice):
     commands do not need 'initialize' or 'configure'.
     """
 
-    @command(hazards=MOVE_HAZARD)
+    @command(warnings=MOVE_WARNING)
     def move_axis(self, axis: Axis, position: Millimetres) -> None:
         """Move one axis to an absolute position in mm."""
         self.position[axis] = position
 
-    @command(kind="run", hazards=MOVE_HAZARD)
+    @command(kind="run", warnings=MOVE_WARNING)
     def move_to(self, x: Millimetres, y: Millimetres, z: Millimetres) -> None:
         """Move all three axes to an absolute position in mm."""
         target = {"x": x, "y": y, "z": z}
