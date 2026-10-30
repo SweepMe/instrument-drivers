@@ -206,19 +206,24 @@ class Device(EmptyDevice):
         return float(self.frequency_start), float(self.frequency_end), int(self._points)
 
     @command(hazards="A higher source power reaches the connected device and can overdrive or damage it.")
-    def set_source_power(self, power: Annotated[DecibelMilliwatts, Range(-60.0, 30.0)]) -> None:
+    def set_source_power(self, source_power: Annotated[DecibelMilliwatts, Range(-60.0, 30.0)]) -> None:
         """Set the source power in dBm. A higher power lowers the noise of the traces."""
-        self.power = power
+        self.power = source_power
 
-    @command(returns=("power",), reads="setpoint")
+    @command(returns=("source_power",), reads="setpoint")
     def get_source_power(self) -> DecibelMilliwatts:
         """Return the source power in dBm."""
         return float(self.power)
 
     @command
-    def set_noise_enabled(self, enabled: bool) -> None:
-        """Switch the simulated noise on or off. Without noise the traces are reproducible."""
-        self.no_noise = not enabled
+    def set_noise(self, noise: bool) -> None:
+        """Switch the simulated noise on (True) or off (False). Without noise the traces are reproducible."""
+        self.no_noise = not noise
+
+    @command(returns=("noise",), reads="setpoint")
+    def get_noise(self) -> bool:
+        """Return True if the simulated noise is on."""
+        return not self.no_noise
 
     @command(returns=("frequency", "magnitude", "phase"))
     def measure_s_parameter(self, s_parameter: SParameter = "S21") -> tuple[HertzList, DecibelsList, DegreesList]:
