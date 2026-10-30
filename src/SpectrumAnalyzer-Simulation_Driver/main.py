@@ -45,15 +45,6 @@ TraceMode = Literal["Current", "Max hold", "Min hold", "Average"]
 
 
 class Device(EmptyDevice):
-    description = """
-        <h3>Simulated Spectrum Analyzer</h3>
-        <p>The <b>Port</b> field is reused to select the simulation mode:</p>
-        <ul>
-        <li><b>Port 1: Simulated Spectrum</b>: three Gaussian peaks with additive random noise.</li>
-        <li><b>Port 2: No Noise</b>: the same spectrum without noise for reproducible tests.</li>
-        </ul>
-    """
-
     def __init__(self) -> None:
         """Set up parameters for the simulated spectrum analyzer."""
         super().__init__()
@@ -236,9 +227,14 @@ class Device(EmptyDevice):
         self.trace_integration = repetitions
 
     @command
-    def set_noise_enabled(self, enabled: bool) -> None:
-        """Switch the simulated noise on or off. Without noise the traces are reproducible."""
-        self.port_string = "Simulated Spectrum" if enabled else "No Noise"
+    def set_noise(self, noise: bool) -> None:
+        """Switch the simulated noise on (True) or off (False). Without noise the traces are reproducible."""
+        self.port_string = "Simulated Spectrum" if noise else "No Noise"
+
+    @command(returns=("noise",), reads="setpoint")
+    def get_noise(self) -> bool:
+        """Return True if the simulated noise is on."""
+        return "No Noise" not in self.port_string
 
     @command(returns=("frequency", "power"))
     def acquire_trace(self) -> tuple[HertzList, DecibelMilliwattsList]:
