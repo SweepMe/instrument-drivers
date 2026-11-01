@@ -79,7 +79,7 @@ class Device(EmptyDevice):
     The commands do not need 'initialize' or 'configure'.
     """
 
-    @command(warnings="Changes the voltage at the connected device at once.")
+    @command
     def set_voltage(self, voltage: Volts) -> None:
         """Set the voltage in V that the simulated switch passes on."""
         self.voltage = voltage
