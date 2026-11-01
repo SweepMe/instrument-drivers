@@ -226,7 +226,7 @@ class Device(EmptyDevice):
         """Return (time range in s, sampling rate in Hz)."""
         return float(self.time_range), float(self.sampling_rate)
 
-    @command(kind="run")
+    @command
     def set_channel(
         self,
         channel: Channel,
