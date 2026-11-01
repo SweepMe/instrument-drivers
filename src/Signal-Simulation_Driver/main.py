@@ -235,12 +235,12 @@ class Device(EmptyDevice):
             raise ValueError(msg)
         self.frequency = frequency
 
-    @command(warnings="Changes the signal level at the connected device at once.")
+    @command
     def set_amplitude(self, amplitude: Annotated[Volts, Range(0.0, None)]) -> None:
         """Set the amplitude in V (0 V or more)."""
         self.amplitude = amplitude
 
-    @command(warnings="Changes the signal level at the connected device at once.")
+    @command
     def set_offset(self, offset: Volts) -> None:
         """Set the offset in V."""
         self.offset = offset
