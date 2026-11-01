@@ -110,13 +110,12 @@ class Device(EmptyDevice):
         self.use_list_sweep = parameter.get("SweepValue", "None") == "List sweep"
         if self.use_list_sweep:
             self.use_list_sweep = True
-            list_sweep_values = np.linspace(
+            # linspace includes the end value
+            self.list_sweep_values = np.linspace(
                 float(parameter["ListSweepStart"]),
                 float(parameter["ListSweepEnd"]),
                 int(float(parameter["ListSweepStepPointsValue"])),
             )
-            # include end value
-            self.list_sweep_values = np.append(list_sweep_values, float(parameter["ListSweepEnd"]))
 
     def apply(self) -> None:
         """Set the device to the sweep and/or step value."""
@@ -158,7 +157,7 @@ class Device(EmptyDevice):
         """Simulate the resistance of the device under test: 50 Ohm plus 1 Ohm per kHz, scaled by the bias."""
         # Calculate the base resistance, rising linearly with the frequency
         base_resistance = self.resistance + frequency / 1000.0
-        # Adjust resistance based on the bias (using an arbitrary coefficient of 0.01)
+        # Adjust resistance based on the bias (using the arbitrary bias_coefficient)
         adjusted_resistance = base_resistance * (1 + self.bias_coefficient * self.bias)
         return self.simulate_noise(adjusted_resistance)
 
@@ -171,7 +170,7 @@ class Device(EmptyDevice):
         x_c = -1 / (angular_frequency * self.capacitance)
         base_reactance = x_l + x_c
 
-        # Adjust reactance based on the bias (using an arbitrary coefficient of 0.01)
+        # Adjust reactance based on the bias (using the arbitrary bias_coefficient)
         adjusted_reactance = base_reactance * (1 + self.bias_coefficient * self.bias)
 
         return self.simulate_noise(adjusted_reactance)
@@ -198,7 +197,7 @@ class Device(EmptyDevice):
         """Return the measurement frequency in Hz."""
         return float(self.frequency)
 
-    @command(warnings="Applies a DC bias voltage or current to the connected device.")
+    @command
     def set_bias(self, bias: float) -> None:
         """Set the bias value. Its unit is V for the mode 'Voltage bias' and A for 'Current bias'."""
         self.bias = bias
