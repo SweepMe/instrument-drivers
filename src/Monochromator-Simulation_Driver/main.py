@@ -185,6 +185,7 @@ class Device(EmptyDevice):
         """Return the filter slot that is in the beam."""
         return self.current_filter  # type: ignore[return-value]  # one of the FILTER keys
 
+    # check_driver: ignore DC016 - set_filter takes filter_slot as its value, so only this reader marks it a selector
     @command(returns=("lowest_wavelength", "highest_wavelength"), reads="state")
     def get_filter_range(self, filter_slot: Annotated[FilterSlot, Selector()]) -> tuple[Nanometers, Nanometers]:
         """Return (lowest wavelength in nm, highest wavelength in nm) of a filter slot."""
