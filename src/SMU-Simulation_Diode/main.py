@@ -171,7 +171,7 @@ class Device(EmptyDevice):
     _voltage_setpoint: float = 0.0
     _output: bool = False
 
-    @command(warnings="A higher compliance lets more current flow through the connected device.")
+    @command
     def set_compliance(self, compliance: Annotated[Amperes, Range(0.0, 1.0)]) -> None:
         """Set the current compliance in A. It must be greater than 0 A and at most 1 A."""
         if compliance <= 0:
@@ -199,7 +199,7 @@ class Device(EmptyDevice):
         """Set the number of current readings that are averaged for one measurement."""
         self.average = average
 
-    @command(warnings="Changes the voltage at the connected device at once while the output is on.")
+    @command
     def set_voltage(self, voltage: Annotated[Volts, Range(-MAX_VOLTAGE, MAX_VOLTAGE)]) -> None:
         """Force a voltage in V. The voltage reaches the diode only while the output is enabled."""
         self.source = "Voltage in V"
@@ -210,7 +210,7 @@ class Device(EmptyDevice):
         """Return the voltage in V that was set with 'set_voltage'."""
         return float(self._voltage_setpoint)
 
-    @command(warnings="Switching the output on applies the set voltage to the connected device.")
+    @command
     def set_output(self, output: bool) -> None:
         """Switch the output on (True) or off (False). While it is off, the simulated diode sees 0 V."""
         self._output = output
@@ -222,7 +222,11 @@ class Device(EmptyDevice):
 
     @command(returns=("voltage", "current"))
     def get_voltage_and_current(self) -> tuple[Volts, Amperes]:
-        """Measure (voltage in V, current in A) of the diode behind a space-charge-limited layer, up to the compliance."""
+        """Measure (voltage in V, current in A) of the diode; about 0 V and 0 A while the output is off.
+
+        The diode sits behind a space-charge-limited layer, and the current is limited by the compliance. Switch the
+        output on with 'set_output'.
+        """
         self.source = "Voltage in V"
         self.value = self._voltage_setpoint if self._output else 0.0
         voltage, current = self.call()
