@@ -108,7 +108,7 @@ class Device(EmptyDevice):
         self.trigger_mode = parameter["Trigger"]
         self.trigger_delay = float(parameter["TriggerDelay"])
         self.port_string = parameter.get("Port", self.port_string)
-        self.units = ["nm", "dB" if self.port_string == "Silicon Photonics" else "counts/s", "s"]
+        self._update_units()
 
     def initialize(self) -> None:
         """Reset the silicon-photonics peak so it does not drift out of range across runs."""
@@ -221,6 +221,10 @@ class Device(EmptyDevice):
             noise.append(50 * random.random() - 25)
         return np.array(noise)
 
+    def _update_units(self) -> None:
+        """Let the unit of the intensities follow the spectrum mode: dB for 'Silicon Photonics', else counts/s."""
+        self.units = ["nm", "dB" if self.port_string == "Silicon Photonics" else "counts/s", "s"]
+
     """Communication commands, used e.g. by the SweepMe! Instrument Control.
 
     The commands do not need 'initialize' or 'configure'. Which spectrum the simulation returns is selected with
@@ -231,6 +235,7 @@ class Device(EmptyDevice):
     def set_spectrum_mode(self, spectrum_mode: SpectrumMode) -> None:
         """Select which spectrum the simulation returns."""
         self.port_string = spectrum_mode
+        self._update_units()
         if spectrum_mode == "Silicon Photonics":
             self.siph_peak_wl = self.SIPH_PEAK_WL_START
 
