@@ -207,7 +207,7 @@ class Device(EmptyDevice):
         """Return (start frequency in Hz, stop frequency in Hz, number of points) of the sweep."""
         return float(self.frequency_start), float(self.frequency_end), int(self._points)
 
-    @command(warnings="A higher source power reaches the connected device and can overdrive or damage it.")
+    @command
     def set_source_power(self, source_power: Annotated[DecibelMilliwatts, Range(-60.0, 30.0)]) -> None:
         """Set the source power in dBm. A higher power lowers the noise of the traces."""
         self.power = source_power
