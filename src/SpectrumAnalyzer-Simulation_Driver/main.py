@@ -45,6 +45,8 @@ TraceMode = Literal["Current", "Max hold", "Min hold", "Average"]
 
 
 class Device(EmptyDevice):
+    """Simulated spectrum analyzer driver."""
+
     def __init__(self) -> None:
         """Set up parameters for the simulated spectrum analyzer."""
         super().__init__()
