@@ -15,8 +15,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - python-version: "3.9"
-            requirements-file: ".\\.github\\requirements_39.txt"
           - python-version: "3.14"
             requirements-file: ".\\requirements.txt"
 
