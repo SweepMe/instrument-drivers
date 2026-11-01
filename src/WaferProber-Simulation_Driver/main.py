@@ -262,6 +262,7 @@ class Device(EmptyDevice):
         subsite = self.sweepvalues["Subsite"]
 
         self.skip = False
+        contacted = self.is_contacted
 
         # None: the sequence does not sweep it ("Current wafer", ...), so the prober stays where it is
         if wafer is not None and wafer != self.current_wafer:
@@ -272,6 +273,10 @@ class Device(EmptyDevice):
 
         if subsite is not None and subsite != self.current_subsite:
             self.step_to_subsite(subsite)
+
+        # a wafer exchange separates the probes: the sweep goes on in contact if it was in contact
+        if contacted and not self.is_contacted:
+            self.contact()
 
     def reach(self) -> None:
         """'reach' can be added to make sure the latest setvalue applied during 'apply' is reached."""
