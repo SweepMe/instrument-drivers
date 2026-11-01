@@ -19,7 +19,7 @@ several simulated spectra. No instrument connection is required.
   - `Test spectrum.txt` — replays the bundled `test_spectrum.txt` file.
   - `Raman Spectrum` — a Gaussian Raman peak on a simulated background.
   - `Background Spectrum` — the background only, without the Raman peak.
-  - `Silicon Photonics` — a Gaussian transmission dip in dB that drifts during the run.
+  - `Silicon Photonics` — a Gaussian transmission peak in dB that drifts during the run.
   - `No Noise` — the Raman spectrum without random noise, for reproducible tests.
 
 ## Returns

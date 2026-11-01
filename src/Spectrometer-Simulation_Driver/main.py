@@ -43,8 +43,6 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 Seconds = Annotated[float, Unit("s")]
 Nanometers = Annotated[float, Unit("nm")]
 NanometersList = list[Nanometers]
-CountsPerSecond = Annotated[float, Unit("counts/s")]
-CountsPerSecondList = list[CountsPerSecond]
 SpectrumMode = Literal["Test spectrum.txt", "Raman Spectrum", "Background Spectrum", "Silicon Photonics", "No Noise"]
 
 
@@ -110,6 +108,7 @@ class Device(EmptyDevice):
         self.trigger_mode = parameter["Trigger"]
         self.trigger_delay = float(parameter["TriggerDelay"])
         self.port_string = parameter.get("Port", self.port_string)
+        self.units = ["nm", "dB" if self.port_string == "Silicon Photonics" else "counts/s", "s"]
 
     def initialize(self) -> None:
         """Reset the silicon-photonics peak so it does not drift out of range across runs."""
@@ -258,8 +257,9 @@ class Device(EmptyDevice):
         """Set the number of spectra that are averaged for one acquisition."""
         self.average = average
 
+    # no unit on the intensities: counts/s, but dB in the mode 'Silicon Photonics'
     @command(returns=("wavelength", "intensity"))
-    def acquire_spectrum(self) -> tuple[NanometersList, CountsPerSecondList]:
+    def acquire_spectrum(self) -> tuple[NanometersList, list[float]]:
         """Acquire a spectrum. It takes as long as integration time times average.
 
         Returns the lists of the wavelengths in nm and the intensities in counts/s (in dB for the mode
