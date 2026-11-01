@@ -27,7 +27,7 @@ driver guidelines of the sweepme plugin (sweepme-driver-writing, SKILL.md and re
     DC013  a "Warnings:" section written into a docstring instead of @command(warnings=...)
     DC014  a semantic function sends an instrument command a communication command also sends
     DC015  the semantic functions are not in the agreed order (the pairs, then the per-point functions)
-    DC016  Annotated or Literal written in a signature instead of an alias at module level
+    DC016  Unit, Label or Selector in a signature, or a Literal two commands write out, instead of a module alias
     DC017  a `description` class attribute (legacy; the documentation goes into doc/description.md)
     DC018  a command without a docstring
     DC019  a pair of semantic functions (connect/disconnect, ...) split by another method
@@ -77,6 +77,9 @@ COMMAND_PREFIXES = ("get_", "set_", "read_", "write_", "measure_", "fetch_", "en
 CHANNEL_PARAMETERS = ("channel",)
 #: Value parameter names that say nothing about the quantity a setter sets (DC020): renamed when a driver is touched.
 GENERIC_VALUE_NAMES = ("value", "val", "state", "mode", "setting", "x", "v")
+#: Markers that belong into a module-level alias (the quantity's unit and label, a selector), not into a signature
+#: (DC016); a Range stays on the setter's parameter.
+ALIAS_MARKERS = ("Unit", "Label", "Selector")
 #: A comment accepting a finding where it is deliberate: "# check_driver: ignore DC004, DC010 - why".
 IGNORE = re.compile(r"#\s*check_driver:\s*ignore\s+((?:DC\d{3}[,\s]*)+)", re.IGNORECASE)
 PORT_METHODS = ("write", "query", "read", "write_raw", "read_raw")
@@ -107,6 +110,7 @@ class Method:
     decorated: bool = False
     composite: bool = False
     has_returns: bool = False
+    returned: tuple[str, ...] = ()  # the quantity names in returns=(...)
     warnings: bool = False
     kind_run: bool = False
     calls: set[str] = field(default_factory=set)  # self.<name>(...) calls
@@ -202,7 +206,11 @@ def _method(node: ast.FunctionDef, file: str, path: Path) -> Method:
             method.decorated = True
             composite = _keyword(decorator, "composite")
             method.composite = isinstance(composite, ast.Constant) and composite.value is True
-            method.has_returns = _keyword(decorator, "returns") is not None
+            returns = _keyword(decorator, "returns")
+            method.has_returns = returns is not None
+            if isinstance(returns, (ast.Tuple, ast.List)):
+                method.returned = tuple(e.value for e in returns.elts
+                                        if isinstance(e, ast.Constant) and isinstance(e.value, str))
             method.warnings = _keyword(decorator, "warnings") is not None
             kind = _keyword(decorator, "kind")
             method.kind_run = isinstance(kind, ast.Constant) and kind.value == "run"
@@ -305,6 +313,7 @@ def check_driver(folder: Path) -> list[Finding]:
     command_names = {m.name for m in commands}
     for method in commands:
         _check_command(method, driver, command_names, report)
+    _shared_inline_literals(commands, report)
 
     if driver.declared:
         for method in driver.methods.values():
@@ -368,9 +377,10 @@ def _check_command(method: Method, driver: Driver, command_names: set[str], repo
     for parameter in method.parameters:
         if parameter.annotation is None:
             report.add("DC001", method, node.lineno, f"parameter '{parameter.arg}' has no type annotation")
-        elif ast.unparse(parameter.annotation).startswith(("Annotated[", "Literal[")):
+        elif markers := _inline_markers(parameter.annotation):
             report.add("DC016", method, node.lineno,
-                       f"'{parameter.arg}' is annotated inline - define an alias for it at module level")
+                       f"'{parameter.arg}' has {', '.join(markers)} inline - put it into an alias at module level; "
+                       f"only a Range belongs on the parameter")
     if node.returns is None:
         report.add("DC002", method, node.lineno, "no return annotation (-> None for a setter or an action)")
     docstring = ast.get_docstring(node)
@@ -507,19 +517,46 @@ def _duplicate_quantities(commands: list[Method], driver: Driver, report: Report
                        f"or they are one quantity in the recorded values")
 
 
+def _inline_markers(annotation: ast.expr) -> list[str]:
+    """DC016: the markers of an inline Annotated[...] that belong into an alias; a Range stays on the parameter."""
+    if not (isinstance(annotation, ast.Subscript) and ast.unparse(annotation.value).endswith("Annotated")
+            and isinstance(annotation.slice, ast.Tuple)):
+        return []
+    return [name for marker in annotation.slice.elts[1:]
+            if isinstance(marker, ast.Call) and (name := ast.unparse(marker.func).split(".")[-1]) in ALIAS_MARKERS]
+
+
+def _shared_inline_literals(commands: list[Method], report: Report) -> None:
+    """DC016: the same Literal written out in the signatures of two or more commands, which then drift apart."""
+    users: dict[str, list[Method]] = {}
+    for method in commands:
+        for parameter in method.parameters:
+            if parameter.annotation is not None and ast.unparse(parameter.annotation).startswith("Literal["):
+                users.setdefault(ast.unparse(parameter.annotation), []).append(method)
+    for choices, methods in users.items():
+        if len({m.name for m in methods}) > 1:
+            for method in methods:
+                report.add("DC016", method, method.node.lineno,
+                           f"{choices} is written out in {len(methods)} commands - name the choices once as an alias "
+                           f"at module level")
+
+
 def _generic_value_names(commands: list[Method], driver: Driver, report: Report) -> None:
     """DC020: a setter's value parameter named `value`, `state`, `mode`, ... - the recorded series takes its name.
 
     A setter is a method annotated -> None, or in an undeclared driver one named set_...; the renaming break is
-    accepted whenever a driver is touched (Driver API concept, review point 4).
+    accepted whenever a driver is touched (Driver API concept, review point 4). A name that a reader of the driver
+    returns is the quantity's own name (move_to(x, y, z) beside get_position returning x, y, z).
     """
+    returned = {name for method in commands for name in method.returned}
     for method in commands:
         if method.kind_run or method.composite:
             continue
         if not (method.returns_none or (not method.decorated and method.name.startswith("set_"))):
             continue
         for parameter in method.parameters:
-            if parameter.arg.lower() in GENERIC_VALUE_NAMES and not _is_selector(parameter, driver):
+            if (parameter.arg.lower() in GENERIC_VALUE_NAMES and parameter.arg not in returned
+                    and not _is_selector(parameter, driver)):
                 report.add("DC020", method, method.node.lineno,
                            f"the value parameter '{parameter.arg}' does not say what it sets - name it after its "
                            f"quantity (voltage, operation_mode, current_range), which names the recorded series")
