@@ -65,7 +65,7 @@ class Device(EmptyDevice):
         self.savetype = [True]  # True to save data
 
         self.sampling_rate_type: str = "Sampling rate in Hz"
-        self.sampling_rate = 1e3
+        self.sampling_rate = 1e6  # as the GUI default: 1000 points
         self.time_range: float = 1e-3
 
         self.channel1: bool = False
@@ -210,7 +210,7 @@ class Device(EmptyDevice):
         time_range: Annotated[Seconds, Range(0.0, None)],
         sampling_rate: Annotated[Hertz, Range(0.0, None)],
     ) -> None:
-        """Set the acquisition time in s and the sampling rate in Hz. The waveform may have 2 to 1,000,000 points."""
+        """Set the acquisition time in s and the sampling rate in Hz, both greater than 0, for 2 to 1,000,000 points."""
         if time_range <= 0 or sampling_rate <= 0:
             msg = "Time range and sampling rate must be greater than 0."
             raise ValueError(msg)
@@ -230,15 +230,15 @@ class Device(EmptyDevice):
     def set_channel(
         self,
         channel: Channel,
-        enabled: bool = True,
+        channel_enabled: bool = True,
         voltage_range: Annotated[Volts, Range(0.0, None)] = 5.0,
         offset: Volts = 0.0,
     ) -> None:
-        """Enable or disable a channel and set its voltage range in V and offset in V."""
+        """Enable or disable a channel and set its voltage range in V (greater than 0 V) and offset in V."""
         if voltage_range <= 0:
             msg = f"Voltage range {voltage_range} V must be greater than 0 V."
             raise ValueError(msg)
-        setattr(self, f"channel{channel}", enabled)
+        setattr(self, f"channel{channel}", channel_enabled)
         setattr(self, f"channel{channel}_range", voltage_range)
         setattr(self, f"channel{channel}_offset", offset)
 
