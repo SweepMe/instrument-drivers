@@ -318,9 +318,10 @@ class Device(EmptyDevice):
 
     @command(returns=("voltage", "current"))
     def get_voltage_and_current(self) -> tuple[Volts, Amperes]:
-        """Measure (voltage in V, current in A) of the diode; about 0 V and 0 A while the output is off.
+        """Measure (voltage in V, current in A) of the diode; about 0 V while the output is off.
 
-        The current is limited by the compliance. Switch the output on with 'set_output'.
+        With the output off the current is 0 A, or minus the photocurrent if one is set. The current is limited by the
+        compliance. Switch the output on with 'set_output'.
         """
         self.source = "Voltage in V"
         self.value = self._voltage_setpoint if self._output else 0.0
