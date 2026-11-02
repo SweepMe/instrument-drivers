@@ -206,7 +206,7 @@ class Device(EmptyDevice):
             self.current_die = die
 
     @command
-    def step_to_subsite(self, subsite: int | str) -> None:
+    def step_to_subsite(self, subsite: str) -> None:
         """Move to given subsite. It is called when the 'Step to subsite' action of the Subsite table is performed."""
         subsites = self.get_probeplan()[2]
         if str(subsite) not in subsites:
