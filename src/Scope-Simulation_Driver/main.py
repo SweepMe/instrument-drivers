@@ -242,6 +242,15 @@ class Device(EmptyDevice):
         setattr(self, f"channel{channel}_range", voltage_range)
         setattr(self, f"channel{channel}_offset", offset)
 
+    @command(returns=("channel_enabled", "voltage_range", "offset"), reads="setpoint")
+    def get_channel(self, channel: Channel) -> tuple[bool, Volts, Volts]:
+        """Return (whether the channel is enabled, its voltage range in V, its offset in V)."""
+        return (
+            bool(getattr(self, f"channel{channel}")),
+            float(getattr(self, f"channel{channel}_range")),
+            float(getattr(self, f"channel{channel}_offset")),
+        )
+
     # check_driver: ignore DC012 - checks whether the channel is enabled, not its range
     @command(returns=("time", "voltage"))
     def acquire_waveform(
