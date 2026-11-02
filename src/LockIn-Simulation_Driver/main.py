@@ -144,6 +144,11 @@ class Device(EmptyDevice):
         """Set the noise: magnitude +/- noise_level/2 in V, phase +/- 50 * noise_level in deg. 0 is deterministic."""
         self.noise_level = noise_level
 
+    @command(returns=("noise_level",), reads="setpoint")
+    def get_noise_level(self) -> float:
+        """Return the noise level."""
+        return float(self.noise_level)
+
     @command(returns=("magnitude", "phase"))
     def get_magnitude_and_phase(self) -> tuple[Volts, Degrees]:
         """Measure and return (magnitude in V, phase in degrees) at the set frequency and amplitude."""
