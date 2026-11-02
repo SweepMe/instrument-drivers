@@ -176,6 +176,7 @@ class Device(EmptyDevice):
         return s_param + noise
 
 
+    # check_driver: ignore DC004 - a hook of the NetworkAnalyzer module
     def find_calibrations(self, *args, **kwargs) -> list:
         """Return the names of the simulated calibrations; called by the NetworkAnalyzer module, arguments are ignored."""
         return ["Calibration1", "Calibration2", "Calibration3"]
