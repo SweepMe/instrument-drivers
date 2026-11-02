@@ -222,11 +222,21 @@ class Device(EmptyDevice):
         """Set the reference level in dBm, the top of the display. It does not change the simulated trace."""
         self.reference_level = reference_level
 
+    @command(returns=("reference_level",), reads="setpoint")
+    def get_reference_level(self) -> DecibelMilliwatts:
+        """Return the reference level in dBm."""
+        return float(self.reference_level)
+
     @command
     def set_trace_mode(self, trace_mode: TraceMode, repetitions: Annotated[int, Range(1, 100)] = 1) -> None:
         """Set the trace mode and the number of repetitions that it combines."""
         self.trace_mode = trace_mode
         self.trace_integration = repetitions
+
+    @command(returns=("trace_mode", "repetitions"), reads="setpoint")
+    def get_trace_mode(self) -> tuple[TraceMode, int]:
+        """Return (the trace mode, the number of repetitions that it combines)."""
+        return self.trace_mode, int(self.trace_integration)  # type: ignore[return-value]  # one of TraceMode
 
     @command
     def set_noise(self, noise: bool) -> None:
