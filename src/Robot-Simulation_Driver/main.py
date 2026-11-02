@@ -127,6 +127,12 @@ class Device(EmptyDevice):
         """Move one axis to an absolute position in mm."""
         self.position[axis] = position
 
+    @command(returns=("position",), reads="setpoint")
+    def get_position(self, axis: Axis) -> Millimetres:
+        """Return the position of one axis in mm."""
+        return self.position[axis]
+
+    # check_driver: ignore DC020 - x, y and z are the coordinates get_positions returns
     @command
     def move_to(self, x: Millimetres, y: Millimetres, z: Millimetres) -> None:
         """Move all three axes to an absolute position in mm."""
@@ -134,6 +140,6 @@ class Device(EmptyDevice):
         self.position.update(target)
 
     @command(returns=("x", "y", "z"), reads="setpoint")
-    def get_position(self) -> tuple[Millimetres, Millimetres, Millimetres]:
-        """Return the position (x in mm, y in mm, z in mm)."""
+    def get_positions(self) -> tuple[Millimetres, Millimetres, Millimetres]:
+        """Return the position of all three axes (x in mm, y in mm, z in mm)."""
         return self.position["x"], self.position["y"], self.position["z"]
