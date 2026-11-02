@@ -29,6 +29,8 @@
 # * Module: Switch
 # * Instrument: Simulation Driver
 
+from __future__ import annotations
+
 from typing import Annotated
 
 from pysweepme.commands import Unit, command
