@@ -31,9 +31,13 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Annotated, ClassVar, Literal
 
+from pysweepme.commands import Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+Millimetres = Annotated[float, Unit("mm")]
+Axis = Annotated[Literal["x", "y", "z"], Selector()]
 
 
 class Device(EmptyDevice):
@@ -106,6 +110,7 @@ class Device(EmptyDevice):
         """Return the simulated current position of each axis."""
         return [self.position["x"], self.position["y"], self.position["z"]]
 
+    @command
     def go_home(self) -> None:
         """Move all axes to the origin. Called by the 'Go home' button."""
         for axis in self.position:
@@ -117,19 +122,24 @@ class Device(EmptyDevice):
     commands do not need 'initialize' or 'configure'.
     """
 
-    def move_axis(self, axis: str, position: float) -> None:
-        """Move one axis ('x', 'y' or 'z') to an absolute position in mm."""
-        axis = str(axis).strip().lower()
-        if axis not in self.position:
-            msg = f"Axis '{axis}' does not exist. Choose one of {list(self.position)}."
-            raise ValueError(msg)
-        self.position[axis] = float(position)
+    @command
+    def move_axis(self, axis: Axis, position: Millimetres) -> None:
+        """Move one axis to an absolute position in mm."""
+        self.position[axis] = position
 
-    def move_to(self, x: float, y: float, z: float) -> None:
+    @command(returns=("position",), reads="setpoint")
+    def get_position(self, axis: Axis) -> Millimetres:
+        """Return the position of one axis in mm."""
+        return self.position[axis]
+
+    # check_driver: ignore DC020 - x, y and z are the coordinates get_positions returns
+    @command
+    def move_to(self, x: Millimetres, y: Millimetres, z: Millimetres) -> None:
         """Move all three axes to an absolute position in mm."""
-        target = {"x": float(x), "y": float(y), "z": float(z)}
+        target = {"x": x, "y": y, "z": z}
         self.position.update(target)
 
-    def get_position(self) -> tuple[float, float, float]:
-        """Return the position (x in mm, y in mm, z in mm)."""
+    @command(returns=("x", "y", "z"), reads="setpoint")
+    def get_positions(self) -> tuple[Millimetres, Millimetres, Millimetres]:
+        """Return the position of all three axes (x in mm, y in mm, z in mm)."""
         return self.position["x"], self.position["y"], self.position["z"]

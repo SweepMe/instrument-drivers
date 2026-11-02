@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2024 SweepMe! GmbH
+# Copyright (c) 2024-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -32,8 +32,16 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import numpy as np
+from pysweepme.commands import Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+Seconds = Annotated[float, Unit("s")]
+Hertz = Annotated[float, Unit("Hz")]
+Volts = Annotated[float, Unit("V")]
+Channel = Annotated[int, Selector(), Range(1, 2)]
 
 
 class Device(EmptyDevice):
@@ -57,7 +65,7 @@ class Device(EmptyDevice):
         self.savetype = [True]  # True to save data
 
         self.sampling_rate_type: str = "Sampling rate in Hz"
-        self.sampling_rate = 1e3
+        self.sampling_rate = 1e6  # as the GUI default: 1000 points
         self.time_range: float = 1e-3
 
         self.channel1: bool = False
@@ -196,10 +204,13 @@ class Device(EmptyDevice):
     shows its signal instead. The commands do not need 'initialize' or 'configure'.
     """
 
-    def set_timebase(self, time_range: float, sampling_rate: float) -> None:
-        """Set the acquisition time in s and the sampling rate in Hz. The waveform may have 2 to 1,000,000 points."""
-        time_range = float(time_range)
-        sampling_rate = float(sampling_rate)
+    @command
+    def set_timebase(
+        self,
+        time_range: Annotated[Seconds, Range(0.0, None)],
+        sampling_rate: Annotated[Hertz, Range(0.0, None)],
+    ) -> None:
+        """Set the acquisition time in s and the sampling rate in Hz, both greater than 0, for 2 to 1,000,000 points."""
         if time_range <= 0 or sampling_rate <= 0:
             msg = "Time range and sampling rate must be greater than 0."
             raise ValueError(msg)
@@ -210,33 +221,43 @@ class Device(EmptyDevice):
         self.time_range = time_range
         self.sampling_rate = sampling_rate
 
-    def get_timebase(self) -> tuple[float, float]:
+    @command(returns=("time_range", "sampling_rate"), reads="setpoint")
+    def get_timebase(self) -> tuple[Seconds, Hertz]:
         """Return (time range in s, sampling rate in Hz)."""
         return float(self.time_range), float(self.sampling_rate)
 
-    def set_channel(self, channel: int, enabled: bool = True, voltage_range: float = 5.0, offset: float = 0.0) -> None:
-        """Enable or disable channel 1 or 2 and set its voltage range in V and offset in V."""
-        channel = int(channel)
-        voltage_range = float(voltage_range)
-        if channel not in (1, 2):
-            msg = f"Channel {channel} does not exist. Choose 1 or 2."
-            raise ValueError(msg)
+    @command
+    def set_channel(
+        self,
+        channel: Channel,
+        channel_enabled: bool = True,
+        voltage_range: Annotated[Volts, Range(0.0, None)] = 5.0,
+        offset: Volts = 0.0,
+    ) -> None:
+        """Enable or disable a channel and set its voltage range in V (greater than 0 V) and offset in V."""
         if voltage_range <= 0:
             msg = f"Voltage range {voltage_range} V must be greater than 0 V."
             raise ValueError(msg)
-        setattr(self, f"channel{channel}", bool(enabled))
+        setattr(self, f"channel{channel}", channel_enabled)
         setattr(self, f"channel{channel}_range", voltage_range)
-        setattr(self, f"channel{channel}_offset", float(offset))
+        setattr(self, f"channel{channel}_offset", offset)
 
-    def acquire_waveform(self, channel: int) -> dict:
-        """Acquire the waveform of an enabled channel (1 or 2).
+    @command(returns=("channel_enabled", "voltage_range", "offset"), reads="setpoint")
+    def get_channel(self, channel: Channel) -> tuple[bool, Volts, Volts]:
+        """Return (whether the channel is enabled, its voltage range in V, its offset in V)."""
+        return (
+            bool(getattr(self, f"channel{channel}")),
+            float(getattr(self, f"channel{channel}_range")),
+            float(getattr(self, f"channel{channel}_offset")),
+        )
 
-        Returns a dictionary with the lists 'time' in s and 'voltage' in V.
-        """
-        channel = int(channel)
-        if channel not in (1, 2):
-            msg = f"Channel {channel} does not exist. Choose 1 or 2."
-            raise ValueError(msg)
+    # check_driver: ignore DC012 - checks whether the channel is enabled, not its range
+    @command(returns=("time", "voltage"))
+    def acquire_waveform(
+        self,
+        channel: Channel,
+    ) -> tuple[list[Seconds], list[Volts]]:
+        """Acquire the waveform of an enabled channel and return (time in s, voltage in V) as lists."""
         if not getattr(self, f"channel{channel}"):
             msg = f"Channel {channel} is not enabled. Use 'set_channel' first."
             raise ValueError(msg)
@@ -244,4 +265,4 @@ class Device(EmptyDevice):
         voltage_range = float(getattr(self, f"channel{channel}_range"))
         offset = float(getattr(self, f"channel{channel}_offset"))
         voltage = self._digitize(self._input_signal(channel, time), voltage_range, offset)
-        return {"time": time.tolist(), "voltage": voltage.tolist()}
+        return time.tolist(), voltage.tolist()
