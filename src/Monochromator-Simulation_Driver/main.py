@@ -43,6 +43,8 @@ MAX_WAVELENGTH = 1500.0
 
 Nanometers = Annotated[float, Unit("nm")]
 FilterSlot = Literal[1, 2, 3, 4]
+FilterChoice = Literal["Auto", 1, 2, 3, 4]
+Slot = Annotated[FilterSlot, Selector()]
 
 
 class Device(EmptyDevice):
@@ -170,24 +172,29 @@ class Device(EmptyDevice):
         return float(self._to_wavelength_nm(float(self.value)))
 
     @command
-    def set_filter(self, filter_slot: FilterSlot) -> None:
-        """Select a fixed filter. The next 'set_wavelength' must lie within the range of this filter."""
-        self.filter_mode = str(filter_slot)
-        self.current_filter = filter_slot
+    def set_filter(self, filter_slot: FilterChoice) -> None:
+        """Select a fixed filter, or "Auto" to select it from the wavelength.
 
-    @command
-    def set_filter_auto(self) -> None:
-        """Let the monochromator select the filter automatically from the wavelength."""
-        self.filter_mode = "Auto"
+        With a fixed filter, the next 'set_wavelength' must lie within the range of this filter.
+        """
+        self.filter_mode = str(filter_slot)
+        if filter_slot != "Auto":
+            self.current_filter = filter_slot
 
     @command(returns=("filter_slot",), reads="setpoint")
-    def get_filter(self) -> FilterSlot:
+    def get_filter(self) -> FilterChoice:
+        """Return the filter setting: "Auto" or the fixed filter slot."""
+        if self.filter_mode == "Auto":
+            return "Auto"
+        return int(self.filter_mode)  # type: ignore[return-value]  # one of the FILTER keys
+
+    @command(returns=("active_filter",), reads="state")
+    def get_active_filter(self) -> FilterSlot:
         """Return the filter slot that is in the beam."""
         return self.current_filter  # type: ignore[return-value]  # one of the FILTER keys
 
-    # check_driver: ignore DC016 - set_filter takes filter_slot as its value, so only this reader marks it a selector
     @command(returns=("lowest_wavelength", "highest_wavelength"), reads="state")
-    def get_filter_range(self, filter_slot: Annotated[FilterSlot, Selector()]) -> tuple[Nanometers, Nanometers]:
+    def get_filter_range(self, slot: Slot) -> tuple[Nanometers, Nanometers]:
         """Return (lowest wavelength in nm, highest wavelength in nm) of a filter slot."""
-        low, high = self.FILTER[filter_slot]
+        low, high = self.FILTER[slot]
         return float(low), float(high)
