@@ -39,6 +39,8 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 
 Channel = Annotated[int, Selector(), Range(1, None)]
 Percent = Annotated[float, Unit("%")]
+Volts = Annotated[float, Unit("V")]
+Amperes = Annotated[float, Unit("A")]
 
 
 class Device(EmptyDevice):
@@ -128,12 +130,12 @@ class Device(EmptyDevice):
     """
 
     @command(returns=("voltage",))
-    def read_voltage(self, channel: Channel) -> Annotated[float, Unit("V")]:
+    def get_voltage(self, channel: Channel) -> Volts:
         """Measure the voltage in V of a channel (1 or higher)."""
         return float(self.simulate_voltage(channel))
 
     @command(returns=("current",))
-    def read_current(self, channel: Channel) -> Annotated[float, Unit("A")]:
+    def get_current(self, channel: Channel) -> Amperes:
         """Measure the current in A of a channel (1 or higher)."""
         return float(self.simulate_current(channel))
 
