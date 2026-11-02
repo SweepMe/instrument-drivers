@@ -87,21 +87,24 @@ class Device(EmptyDevice):
 
     def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
         """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.source = parameter["SweepMode"]
-        self.protection = float(parameter["Compliance"])
-        self.speed = parameter["Speed"]
-        self.average = int(parameter["Average"])
-
-        if self.average < 1:
-            self.average = 1
-        if self.average > 100:
-            self.average = 100
+        self.source = parameter.get("SweepMode", self.source)
+        self.protection = parameter.get("Compliance", self.protection)
+        self.speed = parameter.get("Speed", self.speed)
+        self.average = parameter.get("Average", self.average)
 
     def initialize(self) -> None:
         """Initialize the device. This function is called only once at the start of the measurement."""
         max_compliance = 1.0
         if float(self.protection) > max_compliance:
             self.stop_Measurement(f"Compliance {self.protection} is higher than the maximum compliance of {max_compliance}.")
+
+    def configure(self) -> None:
+        """Convert and check the GUI values; it runs at every start of the branch and after a reconfigure."""
+        self.protection = float(self.protection)
+        self.average = int(self.average)
+        if not 1 <= self.average <= 100:
+            msg = f"Average {self.average} must be between 1 and 100."
+            raise ValueError(msg)
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
@@ -198,6 +201,11 @@ class Device(EmptyDevice):
     def set_average(self, average: Annotated[int, Range(1, 100)]) -> None:
         """Set the number of current readings that are averaged for one measurement."""
         self.average = average
+
+    @command(returns=("average",), reads="setpoint")
+    def get_average(self) -> int:
+        """Return the number of current readings that are averaged for one measurement."""
+        return int(self.average)
 
     @command
     def set_voltage(self, voltage: Annotated[Volts, Range(-MAX_VOLTAGE, MAX_VOLTAGE)]) -> None:
