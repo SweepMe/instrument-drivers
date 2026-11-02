@@ -295,6 +295,11 @@ class Device(EmptyDevice):
         """Set the number of current readings that are averaged for one measurement."""
         self.average = average
 
+    @command(returns=("average",), reads="setpoint")
+    def get_average(self) -> int:
+        """Return the number of current readings that are averaged for one measurement."""
+        return int(self.average)
+
     @command
     def set_voltage(self, voltage: Annotated[Volts, Range(-MAX_VOLTAGE, MAX_VOLTAGE)]) -> None:
         """Force a voltage in V. The voltage reaches the diode only while the output is enabled."""
