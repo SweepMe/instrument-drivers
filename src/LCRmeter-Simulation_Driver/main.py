@@ -68,7 +68,7 @@ class Device(EmptyDevice):
         self.inductance = 4e-9  # H
         self.capacitance = 4e-9  # F
         self.resistance = 50  # Ohm
-        self.noise_level = 0.05  # percent
+        self.noise_level = 0.05  # relative, 0.05 = 5 %
         self.bias_coefficient = 0.05
 
     def set_GUIparameter(self) -> dict:  # noqa: N802
@@ -212,15 +212,30 @@ class Device(EmptyDevice):
         """Set the bias mode."""
         self.bias_mode = bias_mode
 
+    @command(returns=("bias_mode",), reads="setpoint")
+    def get_bias_mode(self) -> BiasMode:
+        """Return the bias mode."""
+        return self.bias_mode  # type: ignore[return-value]  # set from the GUI or set_bias_mode, both one of BiasMode
+
     @command
     def set_average(self, average: Annotated[int, Range(1, None)]) -> None:
         """Set the number of readings that are averaged for one measurement."""
         self.average = average
 
+    @command(returns=("average",), reads="setpoint")
+    def get_average(self) -> int:
+        """Return the number of readings that are averaged for one measurement."""
+        return int(self.average)
+
     @command
     def set_noise_level(self, noise_level: Annotated[float, Range(0.0, None)]) -> None:
         """Set the relative noise of the simulated readings as a fraction, e.g. 0.05 for 5 %. Use 0 for no noise."""
         self.noise_level = noise_level
+
+    @command(returns=("noise_level",), reads="setpoint")
+    def get_noise_level(self) -> float:
+        """Return the relative noise of the simulated readings as a fraction."""
+        return float(self.noise_level)
 
     @command(returns=("resistance", "reactance"))
     def get_resistance_and_reactance(self) -> tuple[Ohms, Ohms]:
