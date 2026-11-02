@@ -29,6 +29,8 @@
 # * Type: Temperature
 # * Instrument: Simulation Temperature Controller
 
+from __future__ import annotations
+
 import math
 import time
 from random import random
@@ -209,6 +211,11 @@ class Device(EmptyDevice):
         return float(self.measure_temperature())
 
     @command
-    def set_sensor_mode(self, sensor: SensorMode) -> None:
+    def set_sensor_mode(self, sensor_mode: SensorMode) -> None:
         """Set the sensor to 'Realistic' (exponential settling, noise) or 'No Noise' (linear ramp, reproducible)."""
-        self.sensor = sensor
+        self.sensor = sensor_mode
+
+    @command(returns=("sensor_mode",), reads="setpoint")
+    def get_sensor_mode(self) -> SensorMode:
+        """Return the sensor mode: 'Realistic' or 'No Noise'."""
+        return self.sensor  # type: ignore[return-value]  # set from the GUI or set_sensor_mode, both one of SensorMode
