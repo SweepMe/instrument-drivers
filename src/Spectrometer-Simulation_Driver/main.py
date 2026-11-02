@@ -30,6 +30,8 @@
 # * Instrument: Simulation Spectrometer
 
 
+from __future__ import annotations
+
 import math
 import os
 import random
@@ -261,6 +263,11 @@ class Device(EmptyDevice):
     def set_average(self, average: Annotated[int, Range(1, 100)]) -> None:
         """Set the number of spectra that are averaged for one acquisition."""
         self.average = average
+
+    @command(returns=("average",), reads="setpoint")
+    def get_average(self) -> int:
+        """Return the number of spectra that are averaged for one acquisition."""
+        return int(self.average)
 
     # no unit on the intensities: counts/s, but dB in the mode 'Silicon Photonics'
     @command(returns=("wavelength", "intensity"))
