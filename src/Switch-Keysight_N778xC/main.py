@@ -412,7 +412,10 @@ class Device(EmptyDevice):
             length: Number of points of the sequence.
             repetition_rate_khz: Rate at which the sequence steps from one point to the next.
             holdoff_us: Delay of the output trigger after each SOP change, at most 1023 µs.
-            mode: 0/1 free running (restart/once), 2/3 start on trigger (restart/once), 4-6 stepped by trigger.
+            mode: Sequence mode :PCONtroller:SEQuence:SMODe. The repetition is set to 1. Measured on an N7786C:
+                2 runs the sequence on the first trigger only, until it is started again;
+                3 runs the whole sequence once on every trigger, e.g. one run per laser step;
+                4 to 6 advance one point per trigger, but stop after one pass with repetition 1.
         """
         holdoff = round(holdoff_us * HOLDOFF_UNITS_PER_US)
         if not 0 <= holdoff <= MAXIMUM_HOLDOFF:
