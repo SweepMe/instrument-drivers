@@ -9,6 +9,7 @@ To get started with SweepMe!, please visit the 'First steps' article of our [Wik
 
 ## Development guide
 Our Wiki contains an article about [Driver Programming](https://wiki.sweep-me.net/wiki/Driver_Programming) where you can find a description of the driver API.
+[DRIVER_GUIDE.md](DRIVER_GUIDE.md) in this repository collects the complete rules for writing drivers, including the Driver API with `@command`, for people and AI agents.
 
 Simple modifications can be done without using this repository.
 Just right-click a version in SweepMe!'s version manager and use "Create custom version".
