@@ -231,14 +231,6 @@ class Device(EmptyDevice):
         device is not used in the next branch."""
         debug("->  unconfigure")
 
-    def signin(self) -> None:
-        """This function is called when this devices' module starts a sweep."""
-        debug("->  signin")
-
-    def signout(self) -> None:
-        """This function is called after this devices' module finishes a sweep."""
-        debug("->  signout")
-        
     def reconfigure(self, parameters: dict, keys: list) -> None:
         """'reconfigure' is called whenever parameters of the GUI change by using the {...}-parameter system."""
         debug("->  reconfigure")
@@ -257,6 +249,14 @@ class Device(EmptyDevice):
     def poweroff(self) -> None:
         """Turn off the device when leaving a sequencer branch."""
         debug("->  poweroff")
+
+    def signin(self) -> None:
+        """This function is called when this devices' module starts a sweep."""
+        debug("->  signin")
+
+    def signout(self) -> None:
+        """This function is called after this devices' module finishes a sweep."""
+        debug("->  signout")
 
     ###------------------------------------------------------------------
     """ the following functions are called for each measurement point """

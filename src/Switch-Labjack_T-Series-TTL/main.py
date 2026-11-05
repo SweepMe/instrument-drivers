@@ -43,14 +43,10 @@ driver_name = os.path.basename(main_path)
 Labjack_T_Series_BaseClass = load_source(driver_name + ".BaseClass",
                                          main_path + os.sep + "Labjack_T_Series_BaseClass.py")
 
-html_docu = load_source(driver_name + ".html_docu", main_path + os.sep + "html_docu.py")
-
 
 class Device(Labjack_T_Series_BaseClass.LabjackBaseClass):
     """ the Class that will be used by the switch module to control the instrument.
         Only semantic functions are called by SweepMe!"""
-
-    description = html_docu.html_driver_descript
 
     def __init__(self):
         super().__init__()
@@ -107,12 +103,15 @@ class Device(Labjack_T_Series_BaseClass.LabjackBaseClass):
             pins_high = []
         self.set_digital_IO(pin_names_high=pins_high, pin_names_low=pins_low, pins_names_inputs=[])
 
-    def call(self):
-        """
-        """
-        pin_states = self.read_DIO_states()
-        pin_names = self.output_pins
-        return [pin_states[pin_name] for pin_name in pin_names]
+    def unconfigure(self):
+
+        if self.final_state:
+            pins_high = self.output_pins
+            pins_low = []
+        else:
+            pins_low = self.output_pins
+            pins_high = []
+        self.set_digital_IO(pin_names_high=pins_high, pin_names_low=pins_low, pins_names_inputs=[])
 
     def apply(self):
 
@@ -131,12 +130,9 @@ class Device(Labjack_T_Series_BaseClass.LabjackBaseClass):
             else:
                 raise ValueError(f"Invalid output state {output_state} not in allowed {allowed}")
 
-    def unconfigure(self):
-
-        if self.final_state:
-            pins_high = self.output_pins
-            pins_low = []
-        else:
-            pins_low = self.output_pins
-            pins_high = []
-        self.set_digital_IO(pin_names_high=pins_high, pin_names_low=pins_low, pins_names_inputs=[])
+    def call(self):
+        """
+        """
+        pin_states = self.read_DIO_states()
+        pin_names = self.output_pins
+        return [pin_states[pin_name] for pin_name in pin_names]
