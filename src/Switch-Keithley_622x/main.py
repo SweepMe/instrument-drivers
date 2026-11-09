@@ -53,12 +53,14 @@ class Device(EmptyDevice):
         self.savetype = [True, True]
 
         self.port_manager = True
-        self.port_types = ["GPIB", "COM"]
+        self.port_types = ["GPIB", "COM", "TCPIP"]
 
         self.port_properties = {
             "timeout": 5,
             "baudrate": 19200,  # factory default
             "EOL": "\n",  # factory default terminator is LF
+            "TCPIP_EOLwrite": "\n",
+            "TCPIP_EOL_read": "\n",
         }
 
         # source ranges as shown in the GUI and their maximum output in A, including 5 % overrange
