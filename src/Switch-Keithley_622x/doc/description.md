@@ -13,7 +13,9 @@ in voltage compliance.
 - For RS-232, the instrument must use 19.2k baud (factory default), no flow control, and the terminator `<LF>`
   (factory default).
 - An interlock switch must be connected to the INTERLOCK connector on the rear panel and must be closed. Otherwise the
-  output cannot be switched on.
+  output cannot be switched on and the instrument reports error `+402 Output blocked by interlock`. If no interlock
+  switch is used, short-circuit the two screw terminals of the INTERLOCK connector on the rear panel, e.g. with a wire
+  jumper. See "INTERLOCK" on page 2-4 of the Model 6220/6221 Reference Manual.
 - No further libraries are needed. Communication is handled by the SweepMe! port manager.
 
 ---
