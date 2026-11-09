@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2022-2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2022-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,158 +31,272 @@
 # * Module: SMU
 # * Instrument: Rohde&Schwarz HMP4000
 
-import time
+# ruff: noqa: ARG002  # a command does not send the channel: @command selects it through apply_selectors
 
+from __future__ import annotations
+
+import time
+from typing import Annotated, Any
+
+from pysweepme.commands import Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+# What the communication commands take and answer (checked by @command on every call).
+# The instrument keeps the selected channel (INST OUT<n>, user manual 8.2), so the channel is a stateful selector:
+# @command selects it through apply_selectors only when it differs from the channel selected last. Channels 3 and 4
+# exist only on some models (HMP2030/HMP40x0 and HMP4040); apply_selectors refuses the others once the model is known.
+Channel = Annotated[int, Selector(stateful=True), Range(1, 4)]
+Volts = Annotated[float, Unit("V")]
+Amperes = Annotated[float, Unit("A")]
+
+# Channels per model (user manual 8.2 and title page): the HMP2020 has two, the HMP2030 and HMP4030 three, the
+# HMP4040 four channels. A model not listed here (another firmware spelling of *IDN?) is not checked.
+CHANNEL_COUNTS: dict[str, int] = {"HMP2020": 2, "HMP2030": 3, "HMP4030": 3, "HMP4040": 4}
+# The maximum current per channel the user manual states (2.1 and 5.1): 5 A for the HMP2030, 10 A for the
+# HMP4030/HMP4040. The HMP2020 is not stated there (its channels differ), so it is not checked.
+CURRENT_MAXIMA: dict[str, float] = {"HMP2030": 5.0, "HMP4030": 10.0, "HMP4040": 10.0}
 
 
 class Device(EmptyDevice):
-    """Driver for Rohde&Schwarz HMP4000 Source Unit."""
+    """Driver for the Rohde & Schwarz HMP2020, HMP2030, HMP4030 and HMP4040 power supplies."""
 
     def __init__(self) -> None:
-        """Initialize the device class and the instrument parameters."""
-        EmptyDevice.__init__(self)
+        """Define the returned variables and the port."""
+        super().__init__()
 
-        # Communication Parameters
         self.shortname = "HMP4000"
-        self.port_manager = True
-        self.port_types = ["COM", "USBTMC", "TCPIP"]
-        self.port_string: str = ""
 
+        self.variables = ["Voltage", "Current"]
+        self.units = ["V", "A"]
+        self.plottype = [True, True]  # True to plot data
+        self.savetype = [True, True]  # True to save data
+
+        self.port_manager = True
+        # LAN is raw socket only (user manual 7.1.1), USB as USBTMC or virtual COM port (7.1.2), RS-232 (7.1.3) and
+        # GPIB (7.1.4) through the optional interface modules
+        self.port_types = ["COM", "USBTMC", "GPIB", "TCPIP"]
         self.port_properties = {
             "timeout": 1,
             "EOL": "\n",
             "baudrate": 9600,
         }
 
-        # SweepMe! Parameters
-        self.variables = ["Voltage", "Current"]
-        self.units = ["V", "A"]
-        self.plottype = [True, True]  # True to plot data
-        self.savetype = [True, True]  # True to save data
-
-        self.commands = {
-            "Voltage in V": "VOLT",
-            "Current in A": "CURR",
-        }
-
-        # Measurement Parameters
-        self.source: str = "Voltage in V"
-        self.protection: float = 5.0
+        # The raw GUI parameters; converted values are written to the attributes below in initialize and configure
+        self.gui_parameters: dict[str, Any] = {}
+        self.port_string: str = ""
+        self.sweep_mode: str = "Voltage in V"
+        self.compliance: float = 5.0
         self.channel: int = 1
 
-        self.v: float = 0.0
-        self.i: float = 0.0
+        # The model from *IDN? (e.g. "HMP4040"), read in initialize; None while unknown
+        self.model: str | None = None
 
-    def set_GUIparameter(self) -> dict:  # noqa: N802
-        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+        self.v: float = float("nan")
+        self.i: float = float("nan")
+
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        """Return the GUI fields of the SMU module."""
         return {
-            "SweepMode": [
-                "Voltage in V",
-                "Voltage in V (with wait)",
-                "Current in A",
-                "Current in A (with wait)",
-            ],
+            "SweepMode": ["Voltage in V", "Voltage in V (with wait)", "Current in A", "Current in A (with wait)"],
             "Channel": [1, 2, 3, 4],
             "RouteOut": ["Front"],
             "Compliance": 5.0,
         }
 
-    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
-        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.port_string = parameter["Port"]
-        self.source = parameter["SweepMode"]
-        self.protection = parameter["Compliance"]
-        self.channel = int(parameter["Channel"])
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Store the user selections; the numbers are converted in initialize and configure."""
+        self.gui_parameters = parameters
+        self.port_string = str(parameters.get("Port", ""))
+        self.sweep_mode = str(parameters.get("SweepMode", "Voltage in V"))
+
+    def apply_selectors(self, channel: int) -> None:
+        """Select the channel the following commands act on (INST OUT<n>, user manual 8.2).
+
+        @command calls it when a command takes another channel than the one selected last, Instrument Control after
+        connect() with the channel a bench entry binds. pysweepme remembers the selection per Port.
+        """
+        channel = int(channel)
+        channel_count = CHANNEL_COUNTS.get(self.model or "")
+        if channel_count is not None and channel > channel_count:
+            msg = f"The {self.model} has {channel_count} channels, channel {channel} does not exist."
+            raise ValueError(msg)
+        self.port.write(f"INST OUT{channel}")
+        self.channel = channel
 
     def connect(self) -> None:
-        """Connect to the device. This function is called only once at the start of the measurement."""
+        """Check the LAN resource and set the socket terminators; the HMP speaks raw socket only (user manual 7.1.1)."""
         if self.port_string.startswith("TCPIP"):
-            if self.port_string.endswith("INSTR"):
-                msg = (
-                    "Instrument does not support VXI-11 standard visa runtime address ending with 'INSTR'."
-                    "Only socket based connections sending with 'SOCKET' are supported."
-                )
-                raise Exception(msg)
-            elif self.port_string.endswith("SOCKET"):
+            if self.port_string.endswith("SOCKET"):
                 self.port.port.write_termination = "\n"
                 self.port.port.read_termination = "\n"
             else:
-                msg = "Unhandled TCPIP resource name."
-                raise Exception(msg)
+                msg = (
+                    "The HMP does not support VXI-11 (a TCPIP resource ending with 'INSTR'). Use the raw socket "
+                    "resource 'TCPIP::<ip address>::5025::SOCKET' instead."
+                )
+                raise ValueError(msg)
 
     def initialize(self) -> None:
-        """Initialize the device. This function is called only once at the start of the measurement."""
-        # Use the next two lines to check whether a message remains in the buffer
-        # residual_message = self.port.read()
-        # print("Residual message in buffer")
+        """Identify the model, then check the channel and the compliance the user chose."""
+        identification = self.get_identification()
+        # "Rohde&Schwarz,<device type>,<part number>/<serial number>,<firmware version>" (user manual 8.1)
+        fields = identification.split(",")
+        self.model = fields[1].strip() if len(fields) > 1 else None
 
-        # self.port.write("*CLS")  # clear status and output buffers of the HMP
+        self._convert_gui_parameters()
+        channel_count = CHANNEL_COUNTS.get(self.model or "")
+        if channel_count is not None and self.channel > channel_count:
+            msg = f"The {self.model} has {channel_count} channels, channel {self.channel} does not exist."
+            raise ValueError(msg)
+        if self.compliance < 0:
+            msg = f"The compliance must not be negative, not {self.compliance:g}."
+            raise ValueError(msg)
 
     def configure(self) -> None:
-        """Configure the device. This function is called every time the device is used in the sequencer."""
-        self.port.write("INST OUT%i" % self.channel)
-        self.port.write("OUTP:SEL ON")
-
-        if self.source.startswith("Voltage"):
-            self.port.write("CURR %1.3f" % float(self.protection))
-            self.port.write("VOLT 0")
-
-        elif self.source.startswith("Current"):
-            self.port.write("VOLT %1.3f" % float(self.protection))
-            self.port.write("CURR 0")
-
-    def unconfigure(self) -> None:
-        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
-        self.port.write("INST OUT%i" % self.channel)
-        self.port.write("OUTP:SEL OFF")
+        """Set the limit of the quantity not swept and start the swept quantity at zero; the output stays off."""
+        self._convert_gui_parameters()
+        if self.sweep_mode.startswith("Voltage"):
+            self.set_current(self.channel, self.compliance)
+            self.set_voltage(self.channel, 0.0)
+        elif self.sweep_mode.startswith("Current"):
+            self.set_voltage(self.channel, self.compliance)
+            self.set_current(self.channel, 0.0)
 
     def poweron(self) -> None:
-        """Turn on the device.
-
-        This function is called if the measurement procedure enters a branch of the sequencer and the module has not
-        been used in the previous branch.
-        """
-        self.port.write("INST OUT%i" % self.channel)
-        self.port.write("OUTP:GEN ON")
+        """Switch the output of the channel on."""
+        self.set_output(self.channel, True)
 
     def poweroff(self) -> None:
-        """Turn off the device."""
-        self.port.write("INST OUT%i" % self.channel)
-        self.port.write("OUTP:GEN OFF")
+        """Switch the output of the channel off; the outputs of the other channels stay as they are."""
+        self.set_output(self.channel, False)
 
     def apply(self) -> None:
-        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-        self.port.write("INST OUT%i" % self.channel)
+        """Set the new sweep value."""
+        if self.sweep_mode.startswith("Voltage"):
+            self.set_voltage(self.channel, float(self.value))
+        elif self.sweep_mode.startswith("Current"):
+            self.set_current(self.channel, float(self.value))
 
-        if self.source.startswith("Voltage"):
-            self.port.write("VOLT %1.3f" % float(self.value))
-
-        elif self.source.startswith("Current"):
-            self.port.write("CURR %1.3f" % float(self.value))
-
-        # wait for achieving the set voltage or set current before
-        # other channels are changed
-        if "(with wait)" in self.source:
+        # wait for the set voltage or current to settle before other channels are changed
+        if "(with wait)" in self.sweep_mode:
             time.sleep(0.5)
 
     def measure(self) -> None:
-        """Trigger the acquisition of data."""
-        self.port.write("INST OUT%i" % self.channel)
+        """Measure voltage and current of the channel."""
+        self.v = self.get_voltage(self.channel)
+        self.i = self.get_current(self.channel)
 
-        self.port.write("MEAS:VOLT?")
-        self.v = float(self.port.read())
-
-        self.port.write("MEAS:CURR?")
-        self.i = float(self.port.read())
-
-    def call(self) -> [float, float]:
-        """Return the measurement results. Must return as many values as defined in self.variables."""
+    def call(self) -> list[float]:
+        """Return the measured voltage and current."""
         return [self.v, self.i]
 
-    """ Currently unused functions """
+    # Communication commands
 
+    @command(returns=("identification",), reads="state")
     def get_identification(self) -> str:
-        """Get the identification string of the device."""
-        self.port.write("*IDN?")
-        return self.port.read()
+        """Return the identification: Rohde&Schwarz,<device type>,<part number>/<serial number>,<firmware version>."""
+        return self.port.query("*IDN?").strip()
+
+    @command(returns=("error",), reads="state")
+    def get_error(self) -> str:
+        """Return and remove the oldest entry of the error queue (SYST:ERR?); '0, "No error"' when it is empty."""
+        return self.port.query("SYST:ERR?").strip()
+
+    @command(warnings="Resets every setting of the instrument to its default, the outputs switched off.")
+    def reset_instrument(self) -> None:
+        """Reset the instrument to its default settings (*RST)."""
+        self.port.write("*RST")
+        # the reset may change the selected channel: the next command selects again
+        self.forget_selections()
+
+    @command
+    def clear_status(self) -> None:
+        """Clear the status registers, the error queue and the output buffer (*CLS)."""
+        self.port.write("*CLS")
+
+    @command
+    def set_voltage(self, channel: Channel, voltage: Annotated[Volts, Range(0.0, 32.05)]) -> None:
+        """Set the voltage of the channel, 0 to 32.05 V in 1 mV steps (user manual 8.3)."""
+        self.port.write(f"VOLT {voltage:.3f}")
+
+    @command(returns=("voltage",), reads="setpoint")
+    def get_voltage_setpoint(self, channel: Channel) -> Volts:
+        """Return the voltage the channel is set to."""
+        return float(self.port.query("VOLT?"))
+
+    @command(returns=("voltage",))
+    def get_voltage(self, channel: Channel) -> Volts:
+        """Measure the voltage at the terminals of the channel."""
+        return float(self.port.query("MEAS:VOLT?"))
+
+    @command
+    def set_current(self, channel: Channel, current: Amperes) -> None:
+        """Set the current limit of the channel in 0.1 mA steps: up to 5 A on the HMP2030, 10 A on the HMP40x0.
+
+        The maximum of the HMP2020 is not checked (the user manual does not state it); the lower limit is the
+        instrument's own (CURR? MIN, 0.5 mA in the manual's example), below it the instrument decides.
+        """
+        if current < 0:
+            msg = f"The current limit must not be negative, not {current:g} A."
+            raise ValueError(msg)
+        current_maximum = CURRENT_MAXIMA.get(self.model or "")
+        if current_maximum is not None and current > current_maximum:
+            msg = f"The current limit of the {self.model} is at most {current_maximum:g} A, not {current:g} A."
+            raise ValueError(msg)
+        self.port.write(f"CURR {current:.4f}")
+
+    @command(returns=("current",), reads="setpoint")
+    def get_current_setpoint(self, channel: Channel) -> Amperes:
+        """Return the current limit the channel is set to."""
+        return float(self.port.query("CURR?"))
+
+    @command(returns=("current",))
+    def get_current(self, channel: Channel) -> Amperes:
+        """Measure the current through the terminals of the channel."""
+        return float(self.port.query("MEAS:CURR?"))
+
+    @command
+    def set_output_armed(self, channel: Channel, output_armed: bool) -> None:
+        """Arm (True) or disarm (False) the output of the channel (OUTP:SEL).
+
+        An armed output delivers while the general output is on. Arming alone switches nothing on;
+        set_general_output(True) switches every armed output on at once.
+        """
+        self.port.write(f"OUTP:SEL {1 if output_armed else 0}")
+
+    @command(warnings="Acts on every armed channel of the instrument, also on channels armed from the front panel.")
+    def set_general_output(self, general_output: bool) -> None:
+        """Switch the general output on (True) or off (False): every armed channel delivers, or none (OUTP:GEN)."""
+        self.port.write(f"OUTP:GEN {1 if general_output else 0}")
+
+    @command(
+        composite=True,
+        warnings="Switching on also switches the general output on: a channel armed from the front panel delivers too.",
+    )
+    def set_output(self, channel: Channel, output: bool) -> None:
+        """Switch the output of the channel on (arm it and switch the general output on) or off (disarm it).
+
+        Switching off disarms the channel only, so the other channels keep delivering; the general output stays on.
+        """
+        if output:
+            self.set_output_armed(channel, True)
+            self.set_general_output(True)
+        else:
+            self.set_output_armed(channel, False)
+
+    @command(returns=("output",), reads="setpoint")
+    def get_output(self, channel: Channel) -> bool:
+        """Return whether the output of the channel is on (OUTP?): armed and the general output on."""
+        return self.port.query("OUTP?").strip() in ("1", "ON")
+
+    @command
+    def unlock_local_interface(self) -> None:
+        """Unlock the front panel for manual control (SYST:LOC)."""
+        self.port.write("SYST:LOC")
+
+    # Helpers
+
+    def _convert_gui_parameters(self) -> None:
+        """Convert the raw GUI parameters to typed attributes."""
+        self.channel = int(self.gui_parameters.get("Channel", 1))
+        self.compliance = float(self.gui_parameters.get("Compliance", 5.0))

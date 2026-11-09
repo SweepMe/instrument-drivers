@@ -83,7 +83,6 @@ class Device(EmptyDevice):
         self.device = parameter['Device']
         self.switch_settling_time_s = float(parameter["Switch settling time in ms"])/1000
         self.sweepmode = parameter["SweepMode"]
-        self.sweepvalue = parameter["SweepValue"]
 
     def initialize(self):
 
