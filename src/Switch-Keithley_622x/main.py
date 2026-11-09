@@ -60,7 +60,7 @@ class Device(EmptyDevice):
             "baudrate": 19200,  # factory default
             "EOL": "\n",  # factory default terminator is LF
             "TCPIP_EOLwrite": "\n",
-            "TCPIP_EOL_read": "\n",
+            "TCPIP_EOLread": "\n",
         }
 
         # source ranges as shown in the GUI and their maximum output in A, including 5 % overrange

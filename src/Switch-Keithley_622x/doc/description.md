@@ -8,8 +8,8 @@ in voltage compliance.
 
 ### Requirements:
 
-- The instrument must be connected via **GPIB** or **RS-232** (**COM**). The Ethernet interface of the 6221 is not
-  supported.
+- The instrument must be connected via **GPIB**, **RS-232** (**COM**), or **Ethernet** (**TCPIP**, Model 6221 only).
+  The terminator is `<LF>` for all interfaces.
 - For RS-232, the instrument must use 19.2k baud (factory default), no flow control, and the terminator `<LF>`
   (factory default).
 - An interlock switch must be connected to the INTERLOCK connector on the rear panel and must be closed. Otherwise the
