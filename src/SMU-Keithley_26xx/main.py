@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, ClassVar
 
 import numpy as np
@@ -69,6 +70,12 @@ class Device(EmptyDevice):
     # Number of channels that must share the port so that the dual pulse mode can be used
     DUAL_PULSE_NR_DEVICES = 2
 
+    # Option of the 'TSP-Link node' field that addresses the instrument connected to the port
+    LOCAL_NODE = "Local"
+
+    # Highest node number that can be used in a TSP-Link network
+    MAX_TSP_LINK_NODE = 64
+
     def __init__(self) -> None:
         """Initialize the driver, the returned variables and the port configuration."""
         EmptyDevice.__init__(self)
@@ -95,6 +102,13 @@ class Device(EmptyDevice):
         self.source: str = "Voltage in V"
         self.channel: str = "Ch A"
         self.smu_ab: str = "smua"
+        self.tsp_link_node: str = self.LOCAL_NODE
+        self.node_number: int | None = None
+        """TSP-Link node number of the channel, None if the instrument connected to the port is used."""
+        self.node_prefix: str = ""
+        """Prefix such as 'node[3].' for commands to a remote TSP-Link node, empty for the local node."""
+        self.smu: str = "smua"
+        """Full TSP name of the channel, e.g. 'smua' or 'node[3].smua'."""
         self.four_wire: bool = False
         self.route_out: str = "Rear"
         self.protection: float = 100e-6
@@ -126,6 +140,7 @@ class Device(EmptyDevice):
         return {
             "SweepMode": ["Voltage in V", "Current in A"],
             "Channel": ["Ch A", "Ch B"],
+            "TSP-Link node": self.get_node_options(),
             "4wire": False,
             "RouteOut": ["Rear"],
             "Speed": list(self.SPEED_TO_NPLC.keys()),
@@ -169,25 +184,52 @@ class Device(EmptyDevice):
             self.toff = float(parameter.get("PulseOffTime", 200e-3))
             self.pulseofflevel = float(parameter.get("PulseOffLevel", 0.0))
 
-        self.shortname = f"Keithley26xx Ch {self.channel[-1]}"
         self.smu_ab = "smua" if self.channel[-1] == "A" else "smub"
+
+        # Older settings do not have this field and use the local node
+        self.tsp_link_node = str(parameter.get("TSP-Link node", self.LOCAL_NODE))
+        try:
+            self.node_number = self.get_node_number(self.tsp_link_node)
+        except ValueError:
+            # This function is also called with incomplete parameters, the option is checked again in 'initialize'
+            self.node_number = None
+        self.node_prefix = "" if self.node_number is None else f"node[{self.node_number}]."
+        self.smu = f"{self.node_prefix}{self.smu_ab}"
+
+        if self.node_number is None:
+            self.shortname = f"Keithley26xx Ch {self.channel[-1]}"
+        else:
+            self.shortname = f"Keithley26xx Node {self.node_number} Ch {self.channel[-1]}"
 
     def connect(self) -> None:
         """Identify the instrument and find out whether this instance is the master of the shared port."""
-        self.update_master_state()
+        if self.node_number is None:
+            self.update_master_state()
         self.port.port.write_termination = "\n"
 
     def initialize(self) -> None:
-        """Reset the channel, clear the error queue and set the autozero mode."""
+        """Check the TSP-Link node, reset the channel, clear the error queue and set the autozero mode."""
+        # Stops the run if the option of the 'TSP-Link node' field is not valid
+        self.get_node_number(self.tsp_link_node)
+
+        if self.node_number is not None:
+            self.check_remote_node()
+
         if self.pulse_mode:
             self.limit_pulse_times()
             self.tag = "1" if self.smu_ab == "smua" else "2"
 
-        self.reset()
-        self.clear_error_queue()
+        if self.node_number is None:
+            self.reset()
+            self.clear_error_queue()
+        else:
+            # The error queue is cleared first, so that an error caused by the reset shows that the channel
+            # cannot be reached
+            self.clear_error_queue()
+            self.reset()
+            self.check_remote_channel()
 
-        # Some devices have problems with this command, maybe because they are not the localnode
-        # Should this driver get support for nodes in the future, one could include it again.
+        # Some devices have problems with this command, so the line frequency setting is left as it is.
         # self.port.write("localnode.autolinefreq = true")  # noqa: ERA001
 
         self.set_autozero_once()
@@ -219,6 +261,10 @@ class Device(EmptyDevice):
 
     def unconfigure(self) -> None:
         """Remove this instance from the users of the shared port."""
+        if self.node_number is not None:
+            # Channels on remote nodes are not counted, see 'register_port_usage'
+            return
+
         if self.port_manager_registered:
             self.port.port_properties["NrDevices"] -= 1
             self.port_manager_registered = False
@@ -289,7 +335,14 @@ class Device(EmptyDevice):
     """ here, further functions start that are used by the semantic standard functions """
 
     def register_port_usage(self) -> None:
-        """Count this instance as user of the shared port and update the master state."""
+        """Count this instance as user of the shared port and update the master state.
+
+        Channels on remote TSP-Link nodes are not counted. The count is only used to detect the dual pulse mode of
+        the two channels of the instrument connected to the port, and remote nodes cannot be pulsed.
+        """
+        if self.node_number is not None:
+            return
+
         if not self.port_manager_registered:
             self.port.port_properties["NrDevices"] += 1
             self.port_manager_registered = True
@@ -326,6 +379,70 @@ class Device(EmptyDevice):
             value = value.replace(prefix, exponent)
 
         return float(value.replace("A", ""))
+
+    def get_node_options(self) -> list[str]:
+        """Return the TSP-Link node options that are shown in the graphical user interface."""
+        return [self.LOCAL_NODE, *[f"Node {number}" for number in range(1, self.MAX_TSP_LINK_NODE + 1)]]
+
+    def get_node_number(self, node_option: str) -> int | None:
+        """Convert a node option such as 'Node 3' into the node number, or None for the local node.
+
+        An empty option is treated as the local node. Any other option that is neither 'Local' nor a node number
+        from 1 to MAX_TSP_LINK_NODE raises a ValueError, so that no other instrument than the intended one is used.
+        """
+        option = node_option.strip()
+        if option == "" or option.lower() == self.LOCAL_NODE.lower():
+            return None
+
+        match = re.fullmatch(r"node\s*(\d+)", option, re.IGNORECASE)
+        if match and 1 <= int(match.group(1)) <= self.MAX_TSP_LINK_NODE:
+            return int(match.group(1))
+
+        msg = (
+            f"'{node_option}' is not a valid option for 'TSP-Link node'. "
+            f"Use '{self.LOCAL_NODE}' or 'Node 1' to 'Node {self.MAX_TSP_LINK_NODE}'."
+        )
+        raise ValueError(msg)
+
+    def check_remote_node(self) -> None:
+        """Make sure that the TSP-Link network can be used for a channel on a remote node.
+
+        The TSP-Link network is not initialized by the driver, so that the configuration used by other software
+        is not changed.
+        """
+        if self.pulse_mode:
+            msg = (
+                f"Pulse mode is only supported on the local node, but TSP-Link node {self.node_number} is selected. "
+                "Connect the instrument directly or set 'TSP-Link node' to 'Local'."
+            )
+            raise ValueError(msg)
+
+        state = self.get_tsp_link_state()
+        if state != "online":
+            msg = (
+                f"TSP-Link node {self.node_number} cannot be reached because the TSP-Link network is '{state}'. "
+                "Please initialize the TSP-Link network on the instrument connected to the port, e.g. via the "
+                "front panel or with tsplink.reset(), and start the run again."
+            )
+            raise ValueError(msg)
+
+    def check_remote_channel(self) -> None:
+        """Make sure that the channel on the remote TSP-Link node exists.
+
+        Must be called after the error queue was cleared and a command was sent to the channel. A command to a node
+        or channel that does not exist is not answered, it only creates an entry in the error queue.
+        """
+        if self.get_error_count() == 0:
+            return
+
+        code, message = self.get_next_error()
+        msg = (
+            f"Channel {self.channel[-1]} of TSP-Link node {self.node_number} cannot be used, the instrument reports "
+            f"error {code}: {message}. Please check that an instrument with this node number is part of the TSP-Link "
+            "network, that it has this channel, and that the TSP-Link network was reset after the last power cycle "
+            "of any of the linked instruments."
+        )
+        raise ValueError(msg)
 
     def configure_source(self) -> None:
         """Set source function, displayed measurement function, compliance and auto ranges."""
@@ -396,26 +513,26 @@ class Device(EmptyDevice):
             else:
                 self.average = self.port.average
 
-        self.port.write(f"{self.smu_ab}.nvbuffer1.clear()")
-        self.port.write(f"{self.smu_ab}.nvbuffer1.appendmode = 1")
+        self.port.write(f"{self.smu}.nvbuffer1.clear()")
+        self.port.write(f"{self.smu}.nvbuffer1.appendmode = 1")
         self.set_nplc(self.nplc)
-        self.port.write(f"{self.smu_ab}.nvbuffer1.collectsourcevalues = 1")
+        self.port.write(f"{self.smu}.nvbuffer1.collectsourcevalues = 1")
 
         level = float(self.value)
 
         if self.source.startswith("Voltage"):
-            self.port.write(f"{self.smu_ab}.source.rangev = {self.protection}")
-            self.port.write(f"{self.smu_ab}.measure.rangei = {self.protection}")
+            self.port.write(f"{self.smu}.source.rangev = {self.protection}")
+            self.port.write(f"{self.smu}.measure.rangei = {self.protection}")
             self.port.write(
-                f"print(ConfigPulseVMeasureI({self.smu_ab}, {self.pulseofflevel}, {level}, {self.protection}, "
-                f"{ton}, {self.toff}, {self.average}, {self.smu_ab}.nvbuffer1, {self.tag}))",
+                f"print(ConfigPulseVMeasureI({self.smu}, {self.pulseofflevel}, {level}, {self.protection}, "
+                f"{ton}, {self.toff}, {self.average}, {self.smu}.nvbuffer1, {self.tag}))",
             )
         else:
-            self.port.write(f"{self.smu_ab}.source.rangei = {self.protection}")
-            self.port.write(f"{self.smu_ab}.measure.rangev = {self.protection}")
+            self.port.write(f"{self.smu}.source.rangei = {self.protection}")
+            self.port.write(f"{self.smu}.measure.rangev = {self.protection}")
             self.port.write(
-                f"print(ConfigPulseIMeasureV({self.smu_ab}, {self.pulseofflevel}, {level}, {self.protection}, "
-                f"{ton}, {self.toff}, {self.average}, {self.smu_ab}.nvbuffer1, {self.tag}))",
+                f"print(ConfigPulseIMeasureV({self.smu}, {self.pulseofflevel}, {level}, {self.protection}, "
+                f"{ton}, {self.toff}, {self.average}, {self.smu}.nvbuffer1, {self.tag}))",
             )
 
         self.port.read()  # remove answer from buffer
@@ -435,8 +552,8 @@ class Device(EmptyDevice):
         else:
             self.port.read()  # remove answer caused by InitiatePulseTest in trigger_ready
 
-            self.port.write(f"printbuffer(1, {self.average}, {self.smu_ab}.nvbuffer1.readings)")
-            self.port.write(f"printbuffer(1, {self.average}, {self.smu_ab}.nvbuffer1.sourcevalues)")
+            self.port.write(f"printbuffer(1, {self.average}, {self.smu}.nvbuffer1.readings)")
+            self.port.write(f"printbuffer(1, {self.average}, {self.smu}.nvbuffer1.sourcevalues)")
 
     def read_pulse_results(self) -> tuple[float, float]:
         """Read the pulse buffers and return the averaged voltage in V and current in A."""
@@ -480,51 +597,68 @@ class Device(EmptyDevice):
         self.port.write("*IDN?")
         return self.port.read()
 
+    def get_tsp_link_state(self) -> str:
+        """Return the state of the TSP-Link network, 'online' or 'offline'."""
+        self.port.write("print(tsplink.state)")
+        return self.port.read().strip()
+
     def reset(self) -> None:
         """Reset the channel to its default configuration."""
-        self.port.write(f"{self.smu_ab}.reset()")
+        self.port.write(f"{self.smu}.reset()")
 
     def clear_error_queue(self) -> None:
         """Remove all entries from the error queue of the instrument."""
         self.port.write("errorqueue.clear()")
 
+    def get_error_count(self) -> int:
+        """Return the number of entries in the error queue of the instrument."""
+        self.port.write("print(errorqueue.count)")
+        return int(float(self.port.read()))
+
+    def get_next_error(self) -> tuple[int, str]:
+        """Read the oldest entry of the error queue and return its error code and message."""
+        self.port.write("print(errorqueue.next())")
+        # The answer contains error code, message, severity and node number, separated by tabs
+        code, _, rest = self.port.read().strip().partition("\t")
+        return int(float(code)), rest.split("\t")[0]
+
     def set_autozero_once(self) -> None:
         """Perform a single autozero and reuse its reference values for the following measurements."""
-        self.port.write(f"{self.smu_ab}.measure.autozero = {self.smu_ab}.AUTOZERO_ONCE")
+        self.port.write(f"{self.smu}.measure.autozero = {self.smu}.AUTOZERO_ONCE")
 
     def set_source_function(self, function: str) -> None:
         """Set the source function to DC voltage or DC current."""
         output = "OUTPUT_DCVOLTS" if function.startswith("Voltage") else "OUTPUT_DCAMPS"
-        self.port.write(f"{self.smu_ab}.source.func = {self.smu_ab}.{output}")
+        self.port.write(f"{self.smu}.source.func = {self.smu}.{output}")
 
     def set_display_measure_function(self, function: str) -> None:
         """Set the quantity that is shown on the display of the instrument."""
         measure = "MEASURE_DCVOLTS" if function.startswith("Voltage") else "MEASURE_DCAMPS"
-        self.port.write(f"display.{self.smu_ab}.measure.func = display.{measure}")
+        self.port.write(f"{self.node_prefix}display.{self.smu_ab}.measure.func = {self.node_prefix}display.{measure}")
 
     def set_current_limit(self, limit: float) -> None:
         """Set the current compliance in A that is used in voltage source mode."""
-        self.port.write(f"{self.smu_ab}.source.limiti = {limit}")
+        self.port.write(f"{self.smu}.source.limiti = {limit}")
 
     def set_voltage_limit(self, limit: float) -> None:
         """Set the voltage compliance in V that is used in current source mode."""
-        self.port.write(f"{self.smu_ab}.source.limitv = {limit}")
+        self.port.write(f"{self.smu}.source.limitv = {limit}")
 
     def set_source_autorange_voltage(self, state: bool) -> None:
         """Switch the auto range of the voltage source on or off."""
-        self.port.write(f"{self.smu_ab}.source.autorangev = {self.smu_ab}.{self.get_autorange_state(state)}")
+        self.port.write(f"{self.smu}.source.autorangev = {self.smu}.{self.get_autorange_state(state)}")
 
     def set_source_autorange_current(self, state: bool) -> None:
         """Switch the auto range of the current source on or off."""
-        self.port.write(f"{self.smu_ab}.source.autorangei = {self.smu_ab}.{self.get_autorange_state(state)}")
+        self.port.write(f"{self.smu}.source.autorangei = {self.smu}.{self.get_autorange_state(state)}")
 
     def set_measure_autorange_voltage(self, state: bool) -> None:
         """Switch the auto range of the voltage measurement on or off."""
-        self.port.write(f"{self.smu_ab}.measure.autorangev = {self.smu_ab}.{self.get_autorange_state(state)}")
+        self.port.write(f"{self.smu}.measure.autorangev = {self.smu}.{self.get_autorange_state(state)}")
 
     def set_measure_autorange_current(self, state: bool) -> None:
         """Switch the auto range of the current measurement on or off."""
-        self.port.write(f"{self.smu_ab}.measure.autorangei = {self.smu_ab}.{self.get_autorange_state(state)}")
+        self.port.write(f"{self.smu}.measure.autorangei = {self.smu}.{self.get_autorange_state(state)}")
 
     @staticmethod
     def get_autorange_state(state: bool) -> str:
@@ -533,49 +667,49 @@ class Device(EmptyDevice):
 
     def set_measure_lowrange_current(self, lowrange: float) -> None:
         """Set the lowest current range in A that the auto range of the measurement may use."""
-        self.port.write(f"{self.smu_ab}.measure.lowrangei = {lowrange:1.3e}")
+        self.port.write(f"{self.smu}.measure.lowrangei = {lowrange:1.3e}")
 
     def set_measure_range_current(self, current_range: float) -> None:
         """Set the fixed current measurement range in A."""
-        self.port.write(f"{self.smu_ab}.measure.rangei = {current_range:1.3e}")
+        self.port.write(f"{self.smu}.measure.rangei = {current_range:1.3e}")
 
     def set_remote_sense(self, state: bool) -> None:
         """Switch between 4-wire (remote) and 2-wire (local) sensing."""
         sense = "SENSE_REMOTE" if state else "SENSE_LOCAL"
-        self.port.write(f"{self.smu_ab}.sense = {self.smu_ab}.{sense}")
+        self.port.write(f"{self.smu}.sense = {self.smu}.{sense}")
 
     def set_filter_count(self, count: int) -> None:
         """Set the number of readings that are averaged by the filter."""
-        self.port.write(f"{self.smu_ab}.measure.filter.count = {count:d}")
+        self.port.write(f"{self.smu}.measure.filter.count = {count:d}")
 
     def set_filter_enabled(self, state: bool) -> None:
         """Switch the averaging filter on or off."""
         filter_state = "FILTER_ON" if state else "FILTER_OFF"
-        self.port.write(f"{self.smu_ab}.measure.filter.enable = {self.smu_ab}.{filter_state}")
+        self.port.write(f"{self.smu}.measure.filter.enable = {self.smu}.{filter_state}")
 
     def set_filter_repeat_average(self) -> None:
         """Use the repeating average as filter type."""
-        self.port.write(f"{self.smu_ab}.measure.filter.type = {self.smu_ab}.FILTER_REPEAT_AVG")
+        self.port.write(f"{self.smu}.measure.filter.type = {self.smu}.FILTER_REPEAT_AVG")
 
     def set_nplc(self, nplc: float) -> None:
         """Set the integration time of the measurement in power line cycles."""
-        self.port.write(f"{self.smu_ab}.measure.nplc = {nplc}")
+        self.port.write(f"{self.smu}.measure.nplc = {nplc}")
 
     def set_output(self, state: bool) -> None:
         """Switch the output of the channel on or off."""
-        self.port.write(f"{self.smu_ab}.source.output = {int(state)}")
+        self.port.write(f"{self.smu}.source.output = {int(state)}")
 
     def set_source_level_voltage(self, value: float) -> None:
         """Set the output voltage in V."""
-        self.port.write(f"{self.smu_ab}.source.levelv = {value}")
+        self.port.write(f"{self.smu}.source.levelv = {value}")
 
     def set_source_level_current(self, value: float) -> None:
         """Set the output current in A."""
-        self.port.write(f"{self.smu_ab}.source.leveli = {value}")
+        self.port.write(f"{self.smu}.source.leveli = {value}")
 
     def request_measurement(self) -> None:
         """Request a combined current and voltage measurement."""
-        self.port.write(f"print({self.smu_ab}.measure.iv())")
+        self.port.write(f"print({self.smu}.measure.iv())")
 
     def read_measurement(self) -> tuple[float, float]:
         """Read the current in A and the voltage in V of the requested measurement."""
