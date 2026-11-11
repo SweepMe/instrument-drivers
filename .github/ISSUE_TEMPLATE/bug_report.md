@@ -29,7 +29,7 @@ If applicable, add screenshots to help explain your problem.
 
 **If used with pysweepme:**
  - OS: [e.g. Windows 11]
- - Python Version [e.g. 3.9]
+ - Python Version [e.g. 3.14]
 
 **Additional context**
 Add any other context about the problem here.
