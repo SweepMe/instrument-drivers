@@ -1,9 +1,9 @@
 # Writing SweepMe! instrument drivers
 
 This guide collects everything needed to write, review and contribute a SweepMe! instrument driver. It is written
-for people and for AI agents alike: every rule is stated once, with the reason where it is not obvious, and the
-examples are complete enough to copy. It covers SweepMe! 1.6.1.9 and pysweepme 1.6.1.5 (November 2026); where a
-rule depends on a version, the version is named.
+for people and for AI agents alike: every rule has one home section, with the reason where it is not obvious, and
+other sections refer to it; the examples are complete enough to copy. It covers SweepMe! 1.6.1.9 and pysweepme
+1.6.1.5 (November 2026); where a rule depends on a version, the version is named.
 
 How to read it:
 
@@ -38,7 +38,7 @@ A SweepMe! driver is a Python file, `main.py`, that defines a class `Device` inh
 `pysweepme` package. SweepMe!'s sequencer calls a fixed set of methods on it, the *semantic functions* (`connect`,
 `configure`, `apply`, `measure`, `call`, ...), in a defined order; the driver fills them with the commands of its
 instrument. Everything is optional: `EmptyDevice` provides a default for every one of them, so even
-`class Device(EmptyDevice): pass` loads. The smallest driver that runs in the sequencer is four lines long:
+`class Device(EmptyDevice): pass` loads. The smallest driver that runs in the sequencer has four lines of code:
 
 ```python
 from pysweepme.EmptyDeviceClass import EmptyDevice
@@ -128,6 +128,9 @@ from typing import Any
 
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
+# option -> instrument command; the GUI shows the keys, the code looks up the command
+CURRENT_RANGES: dict[str, str] = {"Auto": "AUTO", "200 mA": "0.2", "20 mA": "0.02"}
+
 
 class Device(EmptyDevice):
     """Driver for the <Manufacturer> <Model>."""
@@ -147,9 +150,6 @@ class Device(EmptyDevice):
         self.port_types = ["COM", "GPIB", "USB", "TCPIP"]
         self.port_properties = {"timeout": 5, "baudrate": 9600, "EOL": "\n"}
 
-        # option -> instrument command; the GUI shows the keys, the code looks up the command
-        self.current_ranges: dict[str, str] = {"Auto": "AUTO", "200 mA": "0.2", "20 mA": "0.02"}
-
         # every attribute the driver uses later, with a type and a default
         self.gui_parameters: dict[str, Any] = {}
         self.sweep_mode: str = "None"
@@ -165,10 +165,10 @@ Rules:
 - `super().__init__()` comes first.
 - `variables`, `units`, `plottype` and `savetype` are lists of the same length, and `call()` returns exactly that
   many values. Variable names are Title Case, without underscores or commas (`"Voltage"`, `"Set Temperature"`);
-  units are symbols (`"V"`, `"A"`, `"degC"`, `""`). They may be set again in `apply_gui_parameters()` when they
+  units are symbols (`"V"`, `"A"`, `"°C"`, `""`). They may be set again in `apply_gui_parameters()` when they
   depend on the user's selection (section 4).
-- Option dictionaries map user-friendly keys to instrument spellings. The GUI shows `list(dict.keys())`; the code
-  never builds a command from a GUI label.
+- Option dictionaries map user-friendly keys to instrument spellings. They are constants at module level (section
+  10.1). The GUI shows `list(CURRENT_RANGES)`; the code never builds a command from a GUI label.
 - Initialise every attribute the driver uses with a type annotation and a default, so that teardown methods can run
   even when setup failed (section 5.2).
 - `self.actions = ["go_home"]` (a class or instance attribute) releases methods to SweepMe!'s ActionManager, so that
@@ -177,7 +177,8 @@ Rules:
 
 The deprecated camelCase helpers (`write_Log`, `message_Box`, `message_Info`, `stop_Measurement`,
 `set_GUIparameter`, `get_GUIparameter`) still exist as thin wrappers in pysweepme, but new code uses the lowercase
-API; `find_Ports` and `get_Folder` were removed with SweepMe! 1.5.8 (`find_ports`, `get_folder`). When the wiki and the pysweepme source disagree, the source (`EmptyDeviceClass.py`) wins.
+API; `find_Ports` and `get_Folder` were removed with SweepMe! 1.5.8 (`find_ports`, `get_folder`). When the wiki
+and the pysweepme source disagree, the source (`EmptyDeviceClass.py`) wins.
 
 ---
 
@@ -241,7 +242,8 @@ under `Sensor`).
 - A parameter carrying a physical quantity is labelled `<Quantity> in <unit>` ("Compliance in V", "Settling time
   in ms"), without parentheses. Keep labels short. `#` is the unit of a dimensionless index (a channel number).
 - Signal generators pair a type dropdown with its value field (`PeriodFrequency` + `PeriodFrequencyValue`).
-- Camera drivers return a file path (`variables = ["path"]`), not pixels.
+- Camera drivers return a file path (`variables = ["Image Path"]`, unit `""`), not pixels; the module recognises the
+  image by the value being an existing file, not by the name.
 
 ### 4.3 Rules that prevent the classic bugs
 
@@ -251,15 +253,17 @@ under `Sensor`).
 - **Never convert a GUI parameter in place** (`self.average = int(self.average)`). Several pysweepme entry points
   re-apply the parameter dict without calling `configure()` afterwards, which reverts a converted number to its
   original string; the `TypeError` then appears in `measure()` or `apply()`, long after setup succeeded. Keep the raw
-  dict in `self.gui_parameters`, and write converted values to separate attributes from `configure()`.
+  dict in `self.gui_parameters`, and write converted values to separate attributes from `configure()`, which also
+  runs again when a `{...}` value changes mid-run (section 5.4); `initialize()` does not.
 - **Stay compatible with saved sequences.** A saved `.seq`/`.set` file stores the GUI keys that existed when it was
   saved, so every new key needs a default. Match option strings through a lookup dict or `startswith()`, not by exact
   equality with the full label, so a label can be reworded later.
 - **If the returned variables depend on the GUI**, set `self.variables`, `units`, `plottype` and `savetype` in
   `apply_gui_parameters()`: SweepMe! reads them right after a GUI change and before `connect()`; `configure()` is
   too late.
-- **Validate in `initialize()`**, with a message for the user (`raise ValueError("Average must be at least 1, not 0.")`),
-  not in the GUI methods.
+- **Validate in `configure()`, right after converting**, with a message for the user
+  (`raise ValueError("Average must be at least 1, not 0.")`), not in the GUI methods and not in `initialize()`, so a
+  value changed mid-run through `{...}` is checked too.
 - **Buttons** (a bound method as default) are pressed on the existing device instance *without* a fresh
   `apply_gui_parameters()`, or on a temporary instance when none exists. The handler cannot rely on current GUI values
   such as the selected port; make it self-sufficient.
@@ -309,8 +313,8 @@ signout -> poweroff -> unconfigure -> deinitialize -> disconnect
 | Method | Runs | Put here |
 |---|---|---|
 | `connect()` / `disconnect()` | once per run, for all enabled modules, before anything else | open and close a connection the port manager does not handle (DLL, SDK, socket library). With the port manager the port is already open and cleared when `connect()` runs, and SweepMe! closes it after `disconnect()`, so `self.port` is still usable there and the driver never closes it. `connect()` closes what it opened itself before re-raising on failure. |
-| `initialize()` / `deinitialize()` | once per run | identify the instrument (`*IDN?`), check the model, validate user input with user-readable errors, `self.port.clear()`, one-time instrument setup |
-| `configure()` / `unconfigure()` | per use of the module in the sequencer (entering a branch) | convert GUI parameters into typed attributes, write the configuration to the instrument (mode, range, NPLC, compliance), restore display or local mode at the end |
+| `initialize()` / `deinitialize()` | once per run | identify the instrument (`*IDN?`), check the model, `self.port.clear()`, one-time instrument setup |
+| `configure()` / `unconfigure()` | per use of the module in the sequencer (entering a branch), and again from `reconfigure()` | convert GUI parameters into typed attributes, validate them with user-readable errors, write the configuration to the instrument (mode, range, NPLC, compliance), restore display or local mode at the end |
 | `reconfigure(parameters, keys)` | when a `{...}` GUI value changed mid-run | re-apply the changed values (section 5.4) |
 | `poweron()` / `poweroff()` | after `configure`, before `unconfigure` | switch the output on and off (SMU, sources) |
 | `signin()` / `signout()` | per parameter variation of modules above | rarely needed; wafer-prober contact, lock-in auto-phase |
@@ -346,8 +350,9 @@ Rules:
   into the main data file, 1D lists and arrays into a separate 1D data file per sequencer iteration; strings are
   stored unchanged. For sampled data return lists (`[time_list, data_list]`). Each measured value becomes a
   parameter `{<Label>_<Variable>_<Unit>}` for the fields of other modules.
-- Shared base of a measurement: validate user input in `initialize()` (per run), set up the instrument in
-  `configure()` (per use).
+- `initialize()` checks the instrument once per run. `configure()` converts, validates and writes the GUI values each
+  time the module is used and after every `reconfigure()`, because a `{...}` value changed mid-run reaches the driver
+  only there.
 
 ### 5.3 The module decides the lifecycle
 
@@ -443,8 +448,8 @@ the module's Port field, opens the port before `connect()`, hands it over as `se
   terminator. On COM, `self.port.read(digits)` reads a fixed number of characters. PXI resources and GPIB through a
   Prologix controller have no raw I/O and raise `NotImplementedError`.
 - The raw pyserial, pyvisa or socket object sits at `self.port.port`. Calls through it bypass pysweepme: no EOL
-  handling, no debug log, invisible to the Port Terminal trace. Use it only where no wrapper exists (`read_stb()`,
-  `query_binary_values()`).
+  handling, no debug log, invisible to the Port Terminal trace. Use it only where no wrapper exists (`read_stb()`);
+  binary blocks are read with `read_bytes()` (section 6.3).
 - An empty Port field stops the run before `connect()` with a message naming the module; most simulation drivers
   run with an empty port.
 - Port types: `"COM"`, `"GPIB"`, `"USBTMC"` (alias `"USB"`), `"TCPIP"` (VISA), `"SOCKET"` (raw socket), `"ASRL"`
@@ -493,8 +498,18 @@ the `PortProperties` TypedDict in pysweepme `Ports.py`.
 - **Never re-send a query after a timeout.** Instruments queue commands while they measure and answer every copy
   once idle, so spare answers glue onto the next read. Send once, retry only the read (checking
   `is_run_stopped()`), accumulate partial reads, and `self.port.clear()` in `initialize()`.
-- Binary blocks (`#<ndigits><length><payload>`) over serial or USB-CDC: read the header, then exactly `length` bytes
-  from the raw object, then the terminator; never `readline`, because the payload may contain 0x0A or 0x0D.
+- Binary blocks (`#<ndigits><length><payload>`): read them with `self.port.read_bytes()`, which ignores the
+  terminator by default, on every port type: `read_bytes(2)` for `#<ndigits>`, `read_bytes(ndigits)` for the length,
+  `read_bytes(length)` for the payload, then the trailing terminator. Never `read()` or `read_raw()`, which stop at
+  the first 0x0A or 0x0D inside the payload.
+
+  ```python
+  self.port.write("CURV?")
+  header = self.port.read_bytes(2)                    # b"#4"
+  length = int(self.port.read_bytes(int(header[1:2])))
+  payload = self.port.read_bytes(length)
+  self.port.read_bytes(1)                             # the terminator "\n"
+  ```
 
 ### 6.4 Several instances on one port
 
@@ -596,9 +611,12 @@ def get_voltage(self, channel: int) -> float:
 ### 7.3 Fixed choices: `Literal`
 
 ```python
-from typing import Literal
+from typing import Annotated, Literal
+
+from pysweepme.commands import Range, Selector, command
 
 SourceMode = Literal["FVMI", "FIMV"]
+Channel = Annotated[int, Selector(), Range(1, 2)]  # a selector (7.8); the markers are explained in 7.4
 
 @command
 def set_source_mode(self, channel: Channel, source_mode: SourceMode) -> None:
@@ -620,6 +638,7 @@ def set_source_mode(self, channel: Channel, source_mode: SourceMode) -> None:
 ```python
 from typing import Annotated
 
+import numpy as np
 from pysweepme.commands import Elements, Label, Range, Selector, Unit, command
 
 Volts = Annotated[float, Unit("V")]                          # label derived: "Voltage"
@@ -684,8 +703,9 @@ measured of the same quantity. The pairing comes from the names the driver decla
   never a quantity; a fixed choice beside the values (`set_compliance(compliance, source_mode)`) qualifies the series
   (`compliance (source_mode=Current in A)`).
 - A reader reads the quantities named in `@command(returns=...)`, in answer order: `returns=("voltage", "current")`.
-  Every reader has `returns`, also a single-value one (`returns=("rf_power",)`); a tuple by convention (any sequence of names is accepted, a bare string is refused). Units and labels
-  come from the return annotation, names from `returns`.
+  Every reader has `returns`, also a single-value one (`returns=("rf_power",)`); a tuple by convention (any sequence
+  of names is accepted, a bare string is refused). Units and labels come from the return annotation, names from
+  `returns`.
 - A tuple of fixed length is several quantities, one per element; a `list`, `tuple[X, ...]` or `np.ndarray` is one
   quantity whose value is a series; a series of tuples is one series per member.
 - Name a value parameter after what it sets, uniquely within the driver: `set_voltage_limit(channel, voltage_limit)`,
@@ -842,11 +862,17 @@ Pin = Annotated[str, Selector(overlaps="pin_overlaps")]                 # a meth
   `connect()`). Instrument Control then refuses two bench entries on overlapping values. Leave it out where the manual
   does not say it.
 
+The driver of the power supply above takes the stateful selector as `output: Output` in its commands
+(`set_voltage(output, voltage)`), and `apply_selectors` takes it under the same name:
+
 ```python
-def apply_selectors(self, channel: str) -> None:
+# GUI and command names -> the instrument's spelling of INST:SEL
+OUTPUT_NAMES = {"+6V": "P6V", "+25V": "P25V", "-25V": "N25V", "TRACK25V": "TRAC"}
+
+
+def apply_selectors(self, output: Output) -> None:
     """Select the output the following commands act on."""
-    self.port.write(f"INST:SEL {OUTPUTS[channel]}")
-    self.channel = channel
+    self.port.write(f"INST:SEL {OUTPUT_NAMES[output]}")
 ```
 
 ### 7.9 On/off, run commands that produce something, status codes
@@ -858,7 +884,8 @@ def apply_selectors(self, channel: str) -> None:
   use it.
 - **A run command answers nothing.** When it produces something the caller needs next (the scan rate a stream
   actually runs at, a file name), the driver keeps it and a reader hands it out with `reads="setpoint"`, raising a
-  clear error when there is nothing to read yet:
+  clear error when there is nothing to read yet. The kept value is initialised in `__init__`
+  (`self._scan_rate: float | None = None`):
 
   ```python
   @command(kind="run")
@@ -948,11 +975,11 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
   and the user updates.
 - `Unit`, `Label`, `Range`, `Selector` and `@command` need pysweepme 1.6.1.4; `Elements` and `warnings=` need 1.6.1.5,
   which SweepMe! 1.6.1.9 ships; Python 3.10 or newer. Type hints, `Literal` and docstrings alone work on every version.
-- A `config.ini` is not needed just because a driver imports `pysweepme.commands` (the importability CI runs on
-  Python 3.14 only). Declare `architecture` only for vendored libraries, DLLs or a Python version the driver cannot
-  run on (section 12).
+- A `config.ini` is not needed just because a driver imports `pysweepme.commands`: drivers are developed and tested
+  for Python 3.14 only (section 12). Declare `architecture` only for vendored libraries, DLLs or a Python version the
+  driver cannot run on.
 - A wrong declaration stops the driver from loading, with a message in the debug log, e.g.
-  `@command set_voltage: needs a return annotation, -> None for a setter or an action.`,
+  `@command set_voltage: needs a return annotation, -> None for a setter or a run command.`,
   `@command get_voltage: a reader needs returns=(...) naming its answered values - a quantity such as
   returns=('voltage',), or for a state what it is, e.g. returns=('identification',) ...`,
   `@command reads must be one of measurement, last, setpoint, state, not 'setpoints'.`, or
@@ -1110,7 +1137,8 @@ instrument.
 - modern GUI API (`update_gui_parameters` / `apply_gui_parameters`); every parameter read uses `.get()` with a
   default; new keys default so existing sequences still load
 - no GUI parameter converted in place; converted values live in separate attributes written from `configure()`
-- input validated in `initialize()` with `raise ValueError(msg)` and a user-readable message
+- GUI values validated in `configure()`, right after converting, with `raise ValueError(msg)` and a user-readable
+  message
 - no deprecated calls: `stopMeasurement`, `stop_measurement`, `get_GUIparameter`, `find_Ports`, `get_Folder`,
   `write_Log`, `message_Box`, `message_Info`, `is_run_aborted`
 - long loops abortable through `is_run_stopped()`
@@ -1153,25 +1181,27 @@ instrument.
 
 ## 12. Third-party libraries, `config.ini` and Python versions
 
-SweepMe! 1.5.6 to 1.5.8 run Python 3.9 (1.5.5 ran 3.6), SweepMe! 1.6.1 and newer run Python 3.14.
+SweepMe! 1.5.6 to 1.5.8 run Python 3.9 (1.5.5 ran 3.6), SweepMe! 1.6.1 and newer run Python 3.14. Drivers are
+developed and tested for Python 3.14 (64 bit) only; the CI and `tox` run nothing else. Existing `libs_39_*` folders
+and `3.9` flags stay for users of SweepMe! 1.5.x, but are no longer built or extended.
 
 ### 12.1 Policy
 
 - **New drivers vendor nothing**: port the needed commands into `main.py` and accept some duplication between sibling
   drivers. If a package is unavoidable, it must be MIT-licensed (or compatibly licensed, section 14).
-- Vendored folders `libraries/libs_<pyver>_<bits>` (`libs_39_32`, `libs_39_64` for 1.5.x; `libs_314_64` for 1.6.1+)
-  are built with the LibraryBuilder from `libraries/requirements.txt`. Users who run a driver in their own Python
-  install the requirements themselves.
+- Vendored packages go into `libraries/libs_314_64` (the pattern is `libs_<pyver>_<bits>`; older drivers also carry
+  `libs_39_32` and `libs_39_64` for SweepMe! 1.5.x), built from `libraries/requirements.txt` with the LibraryBuilder
+  (from the sweep-me.net dashboard): it needs Python 3.14 installed, excludes the packages SweepMe! already ships,
+  writes a `LICENSE_<package>.txt` per package next to `requirements.txt`, and does not overwrite an existing `libs_`
+  folder. Review packages whose license it could not determine. Users who run a driver in their own Python install
+  the requirements themselves.
 - `libraries/libs_common` holds only version-independent pure-Python source, never `.dll`, `.pyd` or `dist-info`. It
   is prepended to `sys.path` *first*, so a stale copy shadows the versioned folder. Some drivers keep an almost empty
   `libs_common` on purpose, to suppress the fallback to a legacy `libs/` folder; do not delete it.
-- Vendored packages must accept the versions of the packages SweepMe! ships (pymodbus, numpy, ...). Do not hunt for
-  one version that works on every Python: vendor the newest compatible with 3.14 and drop 3.9 for that driver.
+- Vendored packages must accept the versions of the packages SweepMe! ships (pymodbus, numpy, ...). Vendor the
+  newest version compatible with Python 3.14; when updating a driver whose package no longer supports 3.9, drop
+  `libs_39_*` and declare `architecture = "3.14-64"` (12.2).
 - A vendored package shadows SweepMe!'s bundled copy process-wide once the driver loads.
-- The folders are built with the LibraryBuilder (from the sweep-me.net dashboard): it needs the matching Python
-  installed, excludes the packages SweepMe! already ships, writes a `LICENSE_<package>.txt` per package next to
-  `requirements.txt`, and does not overwrite an existing `libs_` folder. Review packages whose license it could not
-  determine.
 - DLLs must be 64-bit (`WinError 193` otherwise). Put them into the driver folder (added to `PATH` automatically)
   or the public `ExternalLibraries` folder. A C DLL loads with `ctypes` (set `restype` and `argtypes`), a .NET
   assembly with `import clr; clr.AddReference("Name")`, whose assembly name may differ from the import name.
@@ -1229,16 +1259,16 @@ architecture = "3.14-64"
   tab, call every command. The instrument description shows each command as `declared` with its units, ranges,
   choices and warnings; bench limits, `Range` and in-command checks each refuse their case. This is the recommended
   way to test a declared driver.
-- **`tools/check_driver.py`** in this repository reads a driver's source (it imports no driver, so vendor libraries are not needed) and reports where it
-  departs from sections 7 and 10, as a work list with codes `DC000` to `DC020`: a command parameter without a type
-  annotation or a command without a return annotation or docstring, a parameter compared with fixed strings instead
-  of a `Literal`, an undecorated public method in a converted driver, a setter that returns a value, a reader
-  without `returns`, a command calling commands without `composite=True`, a composite that sends raw commands
-  without a comment, two setters sharing a value-parameter name, a check of what the annotation already says, a
-  `Warnings:` section written by hand, a semantic function sending a command a wrapper covers, the semantic
-  functions out of order or a pair split, markers written inline instead of in an alias, a legacy `description`
-  attribute, and generic value-parameter names. `warning` marks what is most likely wrong, `hint` what is worth a
-  look; a driver stays valid with any of them. A deliberate finding is accepted with
+- **`tools/check_driver.py`** in this repository reads a driver's source (it imports no driver, so vendor libraries
+  are not needed) and reports where it departs from sections 7 and 10, as a work list with codes `DC000` to `DC020`:
+  a command parameter without a type annotation or a command without a return annotation or docstring, a parameter
+  compared with fixed strings instead of a `Literal`, an undecorated public method in a converted driver, a setter
+  that returns a value, a reader without `returns`, a command calling commands without `composite=True`, a composite
+  that sends raw commands without a comment, two setters sharing a value-parameter name, a check of what the
+  annotation already says, a `Warnings:` section written by hand, a semantic function sending a command a wrapper
+  covers, the semantic functions out of order or a pair split, markers written inline instead of in an alias, a
+  legacy `description` attribute, and generic value-parameter names. `warning` marks what is most likely wrong,
+  `hint` what is worth a look; a driver stays valid with any of them. A deliberate finding is accepted with
   `# check_driver: ignore DC0xx - <why>` on or above the line. Run it on every driver you touch:
 
   ```
@@ -1252,6 +1282,7 @@ architecture = "3.14-64"
   clean environment: a vendor SDK installed on the development PC masks vendored-library failures.
 - **Refactoring without hardware:** load the old driver from `git HEAD` and the new one, run both through the full
   lifecycle against a fake port that feeds the replies, and diff the sent command sequences and the returned values.
+  This is a one-off comparison in a scratch script, not a `tests/` suite to commit (section 10.2).
 - **Streaming hardware:** judge sustainability only over windows longer than the buffer-fill time; the device's
   overflow error is the arbiter.
 
