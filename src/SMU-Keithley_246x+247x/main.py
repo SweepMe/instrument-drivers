@@ -114,8 +114,10 @@ class Device(EmptyDevice):
     # source readback adds a measurement of the source value
     INTEGRATIONS_PER_READING = 6
 
-    # Number of events that are read from the event log at once
+    # Number of events that are read from the event log at once, and number of such batches after which the run is
+    # stopped if the event log is still not empty
     MAX_EVENTS_READ = 10
+    MAX_EVENT_BATCHES = 10
 
     def __init__(self) -> None:
         """Initialize the driver, the returned variables and the port configuration."""
@@ -443,25 +445,40 @@ class Device(EmptyDevice):
         """Read the errors and warnings from the event log and stop the run if there is an error.
 
         Warnings are reported to the user, as they tell that a setting was changed or not taken over.
+
+        The events are read in batches until the event log is empty, so that an error behind many warnings stops the
+        run as well. If the event log is still not empty after MAX_EVENT_BATCHES batches, the run is stopped, because
+        an unread error would otherwise let the run continue, e.g. switch on the output.
         """
         errors = []
         warnings = []
-        last_code = 0
-        for _ in range(min(self.get_event_count(), self.MAX_EVENTS_READ)):
-            code, message, severity, node = self.get_next_event()
-            if code == 0:
+        last_code = None
+        unread = self.get_event_count()
+        for _ in range(self.MAX_EVENT_BATCHES):
+            if unread == 0:
                 break
-            text = f"{code}, {message} ({self.get_event_origin(node)})"
-            if severity == self.EVENT_ERROR:
-                errors.append(text)
-                last_code = code
-            else:
-                warnings.append(text)
+            for _ in range(min(unread, self.MAX_EVENTS_READ)):
+                code, message, severity, node = self.get_next_event()
+                if code == 0:
+                    break
+                text = f"{code}, {message} ({self.get_event_origin(node)})"
+                if severity == self.EVENT_ERROR:
+                    errors.append(text)
+                    last_code = code
+                else:
+                    warnings.append(text)
+            unread = self.get_event_count()
 
         if warnings:
             text = f"{self.shortname}: warning while {action}: {'; '.join(warnings)}"
             self.message_log(text)
             self.message_info(text)
+
+        if unread:
+            errors.append(
+                f"{unread} further errors or warnings in the event log were not read after "
+                f"{self.MAX_EVENTS_READ * self.MAX_EVENT_BATCHES} events",
+            )
 
         if errors:
             msg = f"Error while {action}: {'; '.join(errors)}."
