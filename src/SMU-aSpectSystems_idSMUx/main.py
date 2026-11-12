@@ -707,8 +707,10 @@ class Device(EmptyDevice):
             measurement_results = self.sweep.get_measurement_result(channel)
             self.device_communication[self.identifier]["List results"][channel] = measurement_results
 
-        self.device_communication[self.identifier]["Time stamp"] = self.sweep.timecode
+        # The engine returns the time stamps in µs, the driver returns them in s. The list creators read the
+        # converted values.
         self.t = self.sweep.timecode * 1e-6
+        self.device_communication[self.identifier]["Time stamp"] = self.t
 
     def call(self) -> list:
         """Return the voltage and current."""
