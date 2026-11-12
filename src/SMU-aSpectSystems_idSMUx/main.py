@@ -72,10 +72,11 @@ class Device(EmptyDevice):
         self.service_identifier: str = "idSMUx_service"
         """Key in device_communication under which all channels share the one service runner of all boards."""
         self.board_identifier: str = ""
-        """Key in device_communication under which all modules of one board share the board and its service.
+        """Key in device_communication under which all modules of one board share the board model.
 
         A board (e.g. 'M1') can carry several idSMU2 modules ('M1.S1', 'M1.S2'). They are reached through one USB
-        handle, so they must share one service. The key therefore names the board, not the module.
+        handle, so the board is opened only once. The key therefore names the board, not the module. The service of
+        all boards is shared under 'service_identifier'.
         """
         self.board_id: str = ""
         self.channel_name: str = ""
@@ -157,7 +158,7 @@ class Device(EmptyDevice):
         """Whether the user selected 'List sweep' as sweep value for this channel.
 
         This is only the user's selection taken from the GUI parameters. The resulting role in the list sweep is
-        derived from it in 'initialize', where all channels of the board are known.
+        derived from it in 'initialize', where all channels of the module are known.
         """
 
         self.list_role: str = "None"
@@ -181,7 +182,7 @@ class Device(EmptyDevice):
         self.use_async_readout: bool = True
 
         self.identifier_channel_names: str = "Active channel names"
-        """Key under which the names of all active channels of a board are shared via device_communication."""
+        """Key under which the names of all active channels of a module are shared via device_communication."""
 
         self._compliance_by_mode: dict[str, float | None] = {"Voltage": None, "Current": None}
         """Compliance per source mode, set with 'set_compliance'.
@@ -194,7 +195,7 @@ class Device(EmptyDevice):
         self.identifier_autorange_channels: str = "Autorange channels"
         """Key under which the channels with explicit autoranging are shared via device_communication.
 
-        In async readout, one channel measures all channels of the board. It must autorange all of them before the
+        In async readout, one channel measures all channels of the module. It must autorange all of them before the
         measurement starts, see 'autorange_active_channels'.
         """
 
@@ -360,8 +361,8 @@ class Device(EmptyDevice):
     def initialize(self) -> None:
         """Initialize the boards or receive initialized boards from other driver.
 
-        The device_communication dictionary contains the following elements:
-            - "Board": aspectdeviceengine.enginecore.IdSmuBoardModel, The board object, resolved in 'connect'.
+        The board model, resolved in 'connect', is shared under 'board_identifier'. The entry of the idSMU2 module
+        under 'identifier' contains the following elements:
             - "List master": str, The name of channel that runs the list sweep.
             - "List receivers": list[str], List of names of all other channels should be measured in parallel.
             - "List creators": dict[str, ListSweepChannelConfiguration], Dictionary with channel name as key and
@@ -372,10 +373,9 @@ class Device(EmptyDevice):
         """
         self.source_mode = ("Voltage" if self.source_identifier.startswith("Voltage") else "Current")
 
-        # Board and channel were resolved in 'connect'. The board is registered here as well, because
-        # 'device_communication' may have been cleared since then, and the other channels of the board read it there.
-        self.device_communication.setdefault(self.identifier, {}).setdefault("Board", self.board_model)
-        self.device_communication.setdefault(self.board_identifier, {}).setdefault("Board", self.board_model)
+        # Board and channel were resolved in 'connect', which also registered the board under 'board_identifier'.
+        # The entry of the module collects the list sweep and readout roles of its channels.
+        self.device_communication.setdefault(self.identifier, {})
 
         firmware_version = self.smu.get_firmware_version()
         hardware_id = self.smu.get_hardware_id()
@@ -420,7 +420,7 @@ class Device(EmptyDevice):
         self.set_compliance(self.protection)
 
         # Current Range
-        # A registered list master makes every channel of the board take part in the list sweep, see below.
+        # A registered list master makes every channel of the module take part in the list sweep, see below.
         is_in_list_sweep = "List master" in self.device_communication[self.identifier]
 
         # The explicit autoranging in 'measure' is skipped for list sweeps, as the sweep runs on the device. The
@@ -509,7 +509,7 @@ class Device(EmptyDevice):
         )
 
     def is_retrieving_data(self) -> bool:
-        """Check whether this channel measures and retrieves the data on behalf of all channels of the board.
+        """Check whether this channel measures and retrieves the data on behalf of all channels of the module.
 
         The first registered channel takes this role. The role is derived on demand instead of being stored during
         'configure' so that it passes on automatically when that channel is unconfigured while others keep measuring.
@@ -615,7 +615,7 @@ class Device(EmptyDevice):
             self.i = self.channel.current
 
     def autorange_active_channels(self, active_channel_names: list[str]) -> None:
-        """Perform the explicit autoranging for every active channel of the board that uses 'Auto'.
+        """Perform the explicit autoranging for every active channel of the module that uses 'Auto'.
 
         The explicit autoranging before each measurement is needed, because the internal autoranging of the device
         switches the range only when the set value changes. Outside effects that change the current (light, gate
@@ -819,7 +819,7 @@ class Device(EmptyDevice):
 
         try:
             self.smu = self.board_model.idSmu2Modules[self.board_id]
-        except IndexError as e:
+        except (IndexError, KeyError) as e:
             hardware_ids = list(self.board_model.get_all_hardware_ids())
             try:
                 idsmu2_modules = [module.get_hardware_id() for module in self.board_model.idSmu2Modules.as_list()]
