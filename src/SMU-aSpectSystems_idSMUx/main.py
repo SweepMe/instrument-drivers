@@ -69,6 +69,14 @@ class Device(EmptyDevice):
 
         # Communication Parameters
         self.identifier: str = ""
+        self.service_identifier: str = "idSMUx_service"
+        """Key in device_communication under which all channels share the one service runner of all boards."""
+        self.board_identifier: str = ""
+        """Key in device_communication under which all modules of one board share the board and its service.
+
+        A board (e.g. 'M1') can carry several idSMU2 modules ('M1.S1', 'M1.S2'). They are reached through one USB
+        handle, so they must share one service. The key therefore names the board, not the module.
+        """
         self.board_id: str = ""
         self.channel_name: str = ""
         """The channel can be given a custom name, which is used to set the mode and readout data in list mode."""
@@ -238,6 +246,7 @@ class Device(EmptyDevice):
         self.channel_name = parameter["Port"]
         self.board_id = self.channel_name[:-3]
         self.identifier: str = "idSMUx_" + self.board_id
+        self.board_identifier = "idSMUx_board_" + self.channel_name.split(".")[0]
 
         self.current_range = self.current_ranges[parameter["Range"]]
         self.speed = parameter["Speed"]
@@ -314,12 +323,26 @@ class Device(EmptyDevice):
         Resolving the channel here makes the communication commands, used e.g. by the SweepMe! Instrument Control,
         work without 'initialize', which that tool never runs.
         """
-        self.srunner = IdSmuServiceRunner()
+        # Only the first channel of a board opens the service, see '_resolve_channel'.
         self._resolve_channel()
 
     def disconnect(self) -> None:
         """Terminate the connection to the SMU."""
-        self.srunner.shutdown()
+        # The service is shared by all channels of the board. The last channel that disconnects shuts it down, so that
+        # no channel is left with a handle that was closed by another one.
+        service_shared = self.device_communication.get(self.service_identifier)
+        if service_shared is not None:
+            service_shared["Users"] = service_shared.get("Users", 1) - 1
+            if service_shared["Users"] <= 0:
+                runner = service_shared.get("Runner", self.srunner)
+                if runner is not None:
+                    runner.shutdown()
+                del self.device_communication[self.service_identifier]
+                for key in [k for k in self.device_communication if str(k).startswith("idSMUx_board_")]:
+                    del self.device_communication[key]
+        elif self.srunner is not None:
+            self.srunner.shutdown()
+        self.srunner = None
         if self.identifier in self.device_communication:
             del self.device_communication[self.identifier]
         self.channel = None
@@ -344,6 +367,7 @@ class Device(EmptyDevice):
         # Board and channel were resolved in 'connect'. The board is registered here as well, because
         # 'device_communication' may have been cleared since then, and the other channels of the board read it there.
         self.device_communication.setdefault(self.identifier, {}).setdefault("Board", self.board_model)
+        self.device_communication.setdefault(self.board_identifier, {}).setdefault("Board", self.board_model)
 
         firmware_version = self.smu.get_firmware_version()
         hardware_id = self.smu.get_hardware_id()
@@ -752,7 +776,7 @@ class Device(EmptyDevice):
         board_prefix = self.channel_name.split(".")[0]
         """The 'Mx' component of the port, which names the board the channel belongs to."""
 
-        shared = self.device_communication.get(self.identifier, {})
+        shared = self.device_communication.get(self.board_identifier, {})
         if "Board" in shared:
             # Another channel of the board already opened it. Opening the service a second time would take the USB
             # handle away from it ('INVALID_HANDLE'), so this instance must not touch its own service.
@@ -761,24 +785,42 @@ class Device(EmptyDevice):
                 msg = f"idSMUx: The shared board does not belong to port {self.channel_name} (board {board_prefix})."
                 raise ValueError(msg)
         else:
-            if self.srunner is None:
-                self.srunner = IdSmuServiceRunner()
+            # One service serves all boards, because they are reached through the same USB driver. A second service,
+            # e.g. one per board, would take the USB handles away from the first one.
+            service_shared = self.device_communication.setdefault(self.service_identifier, {})
+            if service_shared.get("Runner") is None:
+                service_shared["Runner"] = IdSmuServiceRunner()
+            self.srunner = service_shared["Runner"]
 
             service = self.srunner.get_idsmu_service()
             if not service.devices_are_detected():
                 service.detect_devices()
 
             board_model = self._find_board(service, board_prefix)
-            self.device_communication.setdefault(self.identifier, {})["Board"] = board_model
+            self.device_communication.setdefault(self.board_identifier, {})["Board"] = board_model
 
         self.board_model = board_model
+        service_shared = self.device_communication.setdefault(self.service_identifier, {})
+        service_shared["Users"] = service_shared.get("Users", 0) + 1
 
         # Detecting alone does not initialize the devices. Without it, firmware commands fail with 'device is not
         # initialized'. The outputs stay switched off.
         if not self.board_model.is_board_initialized():
             self.board_model.initialize_devices(True)
 
-        self.smu = self.board_model.idSmu2Modules[self.board_id]
+        try:
+            self.smu = self.board_model.idSmu2Modules[self.board_id]
+        except IndexError as e:
+            hardware_ids = list(self.board_model.get_all_hardware_ids())
+            try:
+                idsmu2_modules = [module.get_hardware_id() for module in self.board_model.idSmu2Modules.as_list()]
+            except Exception:  # noqa: BLE001
+                idsmu2_modules = ["unknown"]
+            msg = (
+                f"idSMUx: Module '{self.board_id}' of port {self.channel_name} is not an idSMU2 module of its board. "
+                f"Hardware ids on the board: {hardware_ids}. idSMU2 modules: {idsmu2_modules}."
+            )
+            raise ValueError(msg) from e
         self.channel_number = int(self.channel_name[-1])
         self.channel = self.smu.smu.channels[self.channel_number]
         self.channel.name = self.channel_name
