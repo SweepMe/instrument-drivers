@@ -152,7 +152,8 @@ class Device(EmptyDevice):
 
         # List Mode Parameters
         self.list_sweep_values: list[float] = []
-        self.list_delay_time: int = 100  # in ms
+        self.list_delay_time: int = 100_000
+        """Delay between setting a list sweep value and measuring it, in µs as expected by the engine."""
 
         self.is_list_sweep: bool = False
         """Whether the user selected 'List sweep' as sweep value for this channel.
@@ -316,7 +317,7 @@ class Device(EmptyDevice):
             msg = f"Number of points {len(self.list_sweep_values)} is too high. Maximum is 52."
             raise ValueError(msg)
 
-        self.list_delay_time = int(float(parameter["ListSweepDelaytime"]) * 1000)
+        self.list_delay_time = round(float(parameter["ListSweepDelaytime"]) * 1e6)  # s in the GUI, µs in the engine
 
         # Add time staps to return values
         self.variables.append("Time stamp")
