@@ -1,4 +1,4 @@
-# SMU Keithley 246x
+# SMU Keithley 246x+247x
 
 This driver sources voltage or current and measures both quantities with the Keithley source measure
 units 2460, 2461 and 2470 using the TSP command set. One driver instance controls one instrument.

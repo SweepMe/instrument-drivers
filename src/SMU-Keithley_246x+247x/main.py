@@ -27,7 +27,7 @@
 
 # SweepMe! driver
 # * Module: SMU
-# * Instrument: Keithley 246x
+# * Instrument: Keithley 246x+247x
 
 from __future__ import annotations
 
@@ -121,7 +121,7 @@ class Device(EmptyDevice):
         """Initialize the driver, the returned variables and the port configuration."""
         super().__init__()
 
-        self.shortname = "Keithley 246x"
+        self.shortname = "Keithley 246x/247x"
 
         self.variables = ["Voltage", "Current"]
         self.units = ["V", "A"]
@@ -198,9 +198,9 @@ class Device(EmptyDevice):
         self.node_prefix = "" if self.node_number is None else f"node[{self.node_number}]."
 
         if self.node_number is None:
-            self.shortname = "Keithley 246x"
+            self.shortname = "Keithley 246x/247x"
         else:
-            self.shortname = f"Keithley 246x Node {self.node_number}"
+            self.shortname = f"Keithley 246x/247x Node {self.node_number}"
 
     def initialize(self) -> None:
         """Check the parameters, the command set, the TSP-Link node and the model, and reset the instrument."""
@@ -489,7 +489,7 @@ class Device(EmptyDevice):
         measurement_time = self.nplc * self.POWER_LINE_CYCLE * self.average * self.INTEGRATIONS_PER_READING
         timeout = self.BASE_TIMEOUT + measurement_time
 
-        key = f"Keithley 246x timeout {self.gui_parameters.get('Port', '')}"
+        key = f"Keithley 246x/247x timeout {self.gui_parameters.get('Port', '')}"
         timeout = max(timeout, self.device_communication.get(key, 0.0))
         self.device_communication[key] = timeout
 
