@@ -9,9 +9,9 @@ Several instruments that are linked via TSP-Link can be controlled through a sin
 ### Requirements:
 
 - The instrument must be connected via **USB** (USBTMC), **GPIB** or **TCPIP** (LAN).
-- No further libraries are needed. Communication is handled by the SweepMe! port manager, the timeout
-  is 10 s.
-- The driver uses the communication commands of pysweepme and needs SweepMe! 1.6.1.4 or newer.
+- No further libraries are needed. Communication is handled by the SweepMe! port manager. The timeout
+  is 10 s plus the time that one measurement can take with the selected **Speed** and **Average**.
+- The driver uses the communication commands of pysweepme and needs SweepMe! 1.6.1.5 or newer.
 - The instrument must use the **TSP command set**. It is selected on the front panel with MENU >
   System > Settings > Command Set, or with the command `*LANG TSP`, followed by a restart of the
   instrument. With the SCPI command set the run stops with an error message.
@@ -40,7 +40,9 @@ Several instruments that are linked via TSP-Link can be controlled through a sin
 - The sweep value is the source level: a voltage in V if **SweepMode** is `Voltage in V`, a current in
   A if **SweepMode** is `Current in A`.
 - At the start of the run, the driver checks the command set and the model, clears the event log and
-  resets the source and measure settings of the instrument (`smu.reset()`).
+  resets the source and measure settings of the instrument (`smu.reset()`). It also switches off the
+  automatic output of events and prompts (`localnode.showevents`, `localnode.prompts`) for the
+  interface in use, in case another program has switched them on.
 - Source function, ranges, compliance, integration time, sensing, terminals and filter are configured,
   then the output is switched on.
 - For each measurement point the new source level is sent and one reading is made. The measured
@@ -62,7 +64,8 @@ Several instruments that are linked via TSP-Link can be controlled through a sin
   - `Limited <range>`: auto ranging, but the instrument does not range below `<range>`. This avoids
     the settling time of the lowest ranges.
   - `Fixed <range>`: auto ranging is switched off and `<range>` is used. **Compliance** must then be
-    above 0.1 % and at most 105 % of the range, otherwise the run stops with an error message.
+    between 10 % and 105 % of the range, otherwise the run stops with an error message. With the
+    default compliance of 100 uA, only the fixed ranges 100 uA and 1 mA can be used.
 
   If current is sourced, it is the range of the current source: `Fixed <range>` selects a fixed source
   range, `Auto` and `Limited <range>` both use the auto range of the source. The voltage is always
@@ -124,6 +127,10 @@ actually reached. A reading above `1e37`, which is the overflow value of the ins
   shows the message of the instrument, e.g. for a source level outside the range or an output that is
   blocked by the interlock. Warnings during the configuration are shown in the info box and written
   to the logbook.
+- All instruments of a TSP-Link network write into the event log of the instrument connected to the
+  port. An error can therefore be reported by another driver instance than the one that caused it.
+  The message names the instrument it comes from: the instrument connected to the port or the
+  TSP-Link node number.
 - The event log is cleared at the start of the run.
 
 ---
@@ -133,6 +140,12 @@ actually reached. A reading above `1e37`, which is the overflow value of the ins
 - The driver has been written from the reference manuals of the three models (2460-901-01 Rev. C,
   2461-901-01 Rev. B, 2470-901-01 Rev. D) and has not been tested with an instrument yet.
 - Only the TSP command set is supported, as TSP-Link is not available with SCPI commands.
+- The reference manuals give different values for the lowest compliance with a fixed range (0.1 %,
+  10.6 % and, in the specifications of the 2460 and 2461, 10 % of the range). The driver uses 10 %.
+  If the instrument does not accept a compliance that the driver has let through, the run stops after
+  the configuration, before the output is switched on.
+- The timeout assumes a line frequency of 50 Hz and up to six integration times per reading (autozero
+  and source readback). Range changes of the auto ranging are not included.
 - Autozero, source readback and the output-off mode keep the reset defaults of the instrument:
   autozero and source readback are on, the output-off mode is normal.
 - With auto ranging, the instrument limits the output to 105 % of the present current measurement

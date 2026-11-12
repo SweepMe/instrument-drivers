@@ -96,9 +96,23 @@ class Device(EmptyDevice):
     EVENT_ERROR = 1
     EVENT_WARNING = 2
 
-    # With a fixed measurement range, the source limit must be above 0.1 % and at most 105 % of the range
-    MIN_LIMIT_TO_RANGE = 0.001
+    # With a fixed measurement range, the source limit must be at least 10 % and at most 105 % of the range.
+    # The reference manuals are not consistent about the lower bound: section 4 says "more than 0.1 percent", the
+    # description of smu.source.xlimit.level "10.6% or higher", and the specifications of the 2460 and 2461
+    # "minimum value is 10 % of range". 10 % is used here. If the instrument changes a limit that has passed this
+    # check, the run is stopped by the checks at the end of 'configure'.
+    MIN_LIMIT_TO_RANGE = 0.1
     MAX_LIMIT_TO_RANGE = 1.05
+
+    # Timeout of the port in s without the time that a measurement takes
+    BASE_TIMEOUT = 10.0
+
+    # Duration of a power line cycle in s at 50 Hz, the longer one of the two line frequencies
+    POWER_LINE_CYCLE = 0.02
+
+    # Number of integration times that one reading can take: autozero adds a reference and a zero measurement,
+    # source readback adds a measurement of the source value
+    INTEGRATIONS_PER_READING = 6
 
     # Number of events that are read from the event log at once
     MAX_EVENTS_READ = 10
@@ -116,7 +130,7 @@ class Device(EmptyDevice):
 
         self.port_manager = True
         self.port_types = ["USB", "GPIB", "TCPIP"]
-        self.port_properties = {"timeout": 10}
+        self.port_properties = {"timeout": self.BASE_TIMEOUT}
         self.port_identifications = [
             "KEITHLEY INSTRUMENTS,MODEL 2460",
             "KEITHLEY INSTRUMENTS,MODEL 2461",
@@ -202,6 +216,11 @@ class Device(EmptyDevice):
             )
             raise ValueError(msg)
 
+        # Both settings are off after power-on. If another program has switched them on for this interface, the
+        # instrument writes events and prompts into its answers, which the driver cannot read then.
+        self.set_shown_events(0)
+        self.set_prompts(False)
+
         if self.node_number is not None:
             self.check_tsp_link()
 
@@ -233,6 +252,7 @@ class Device(EmptyDevice):
     def configure(self) -> None:
         """Configure source and measure function, ranges, limit, integration time, sensing, terminals and filter."""
         self.convert_parameters()
+        self.update_port_timeout()
 
         if self.sweep_mode.startswith("Voltage"):
             self.configure_voltage_source()
@@ -244,8 +264,9 @@ class Device(EmptyDevice):
         self.set_terminals("TERMINALS_REAR" if self.route_out == "Rear" else "TERMINALS_FRONT")
         self.configure_averaging()
 
-        self.check_limit()
+        # The events are read first, so that the message of the instrument is shown if it has rejected a setting
         self.check_events("configuring the instrument")
+        self.check_limit()
 
     def poweron(self) -> None:
         """Switch on the output."""
@@ -351,15 +372,16 @@ class Device(EmptyDevice):
         self.range_mode, self.range_value = self.convert_range_option(self.range_option)
 
         if self.range_mode == "Fixed" and self.sweep_mode.startswith("Voltage"):
-            # The instrument changes a limit below 0.1 % of a fixed measurement range by itself and cannot reach a
+            # The instrument changes a limit below 10 % of a fixed measurement range by itself and cannot reach a
             # limit above 105 % of it
             lowest = self.MIN_LIMIT_TO_RANGE * self.range_value
             highest = self.MAX_LIMIT_TO_RANGE * self.range_value
-            if self.compliance <= lowest or self.compliance > highest * (1 + 1e-9):
+            tolerance = 1e-9  # the bounds themselves are allowed, whatever the rounding of the product
+            if self.compliance < lowest * (1 - tolerance) or self.compliance > highest * (1 + tolerance):
                 msg = (
                     f"Compliance {self.compliance:g} A cannot be used with the range '{self.range_option}'. With a "
-                    f"fixed range it must be above {lowest:g} A and at most {highest:g} A. Please change the "
-                    "compliance or the range, or use an 'Auto' or 'Limited' range."
+                    f"fixed range it must be between {lowest:g} A (10 % of the range) and {highest:g} A (105 % of "
+                    "the range). Please change the compliance or the range, or use an 'Auto' or 'Limited' range."
                 )
                 raise ValueError(msg)
 
@@ -426,23 +448,53 @@ class Device(EmptyDevice):
         warnings = []
         last_code = 0
         for _ in range(min(self.get_event_count(), self.MAX_EVENTS_READ)):
-            code, message, severity = self.get_next_event()
+            code, message, severity, node = self.get_next_event()
             if code == 0:
                 break
+            text = f"{code}, {message} ({self.get_event_origin(node)})"
             if severity == self.EVENT_ERROR:
-                errors.append(f"{code}, {message}")
+                errors.append(text)
                 last_code = code
             else:
-                warnings.append(f"{code}, {message}")
+                warnings.append(text)
 
         if warnings:
-            text = f"{self.shortname}: warning of the instrument while {action}: {'; '.join(warnings)}"
+            text = f"{self.shortname}: warning while {action}: {'; '.join(warnings)}"
             self.message_log(text)
             self.message_info(text)
 
         if errors:
-            msg = f"The instrument reported an error while {action}: {'; '.join(errors)}."
+            msg = f"Error while {action}: {'; '.join(errors)}."
             raise CommandError(msg, code=last_code)
+
+    @staticmethod
+    def get_event_origin(node: int) -> str:
+        """Name the instrument that an event of the event log comes from.
+
+        All linked instruments write into the event log of the instrument connected to the port, so an event can
+        belong to another instrument than the one this driver instance controls.
+        """
+        if node == 0:
+            return "reported by the instrument connected to the port"
+
+        return f"reported by TSP-Link node {node}"
+
+    def update_port_timeout(self) -> None:
+        """Extend the timeout of the port by the time that one measurement can take.
+
+        A reading with 10 power line cycles and 100 averaged readings takes 20 s at 50 Hz, without autozero and
+        source readback. Driver instances that share the port use the longest timeout that one of them needs. The
+        value is kept in 'device_communication', which is emptied at the start of each run.
+        """
+        measurement_time = self.nplc * self.POWER_LINE_CYCLE * self.average * self.INTEGRATIONS_PER_READING
+        timeout = self.BASE_TIMEOUT + measurement_time
+
+        key = f"Keithley 246x timeout {self.gui_parameters.get('Port', '')}"
+        timeout = max(timeout, self.device_communication.get(key, 0.0))
+        self.device_communication[key] = timeout
+
+        # The ports of this driver are VISA resources, whose timeout is given in ms
+        self.port.port.timeout = timeout * 1000
 
     def check_limit(self) -> None:
         """Make sure that the instrument has taken over the compliance.
@@ -543,16 +595,33 @@ class Device(EmptyDevice):
         answer = self.port.query(f"print(eventlog.getcount({self.EVENT_ERROR + self.EVENT_WARNING}))")
         return int(float(answer))
 
-    @command(returns=("event_code", "event_message", "event_severity"), reads="state")
-    def get_next_event(self) -> tuple[int, str, int]:
-        """Read the oldest unread error or warning: its code, message and severity (1 error, 2 warning)."""
+    @command(returns=("event_code", "event_message", "event_severity", "event_node"), reads="state")
+    def get_next_event(self) -> tuple[int, str, int, int]:
+        """Read the oldest unread error or warning: code, message, severity (1 error, 2 warning) and TSP-Link node.
+
+        The node is 0 for an event of the instrument connected to the port.
+        """
         answer = self.port.query(f"print(eventlog.next({self.EVENT_ERROR + self.EVENT_WARNING}))")
         # The answer contains event number, message, severity, node and two time values, separated by tabs
         fields = answer.strip().split("\t")
         code = int(float(fields[0]))
         message = fields[1] if len(fields) > 1 else ""
         severity = int(float(fields[2])) if len(fields) > 2 else self.EVENT_ERROR  # noqa: PLR2004
-        return code, message, severity
+        node = int(float(fields[3])) if len(fields) > 3 else 0  # noqa: PLR2004
+        return code, message, severity, node
+
+    @command
+    def set_shown_events(self, shown_events: Annotated[int, Range(0, 7)]) -> None:
+        """Select the events that the instrument connected to the port writes into its answers: 0 for none.
+
+        The value is the sum of 1 for errors, 2 for warnings and 4 for information.
+        """
+        self.port.write(f"localnode.showevents = {shown_events:d}")
+
+    @command
+    def set_prompts(self, prompts: bool) -> None:
+        """Switch the prompts on or off that the instrument connected to the port sends after each command."""
+        self.port.write(f"localnode.prompts = localnode.{'ENABLE' if prompts else 'DISABLE'}")
 
     @command
     def set_source_function(self, source_function: Function) -> None:
@@ -654,27 +723,31 @@ class Device(EmptyDevice):
     def get_voltage_and_current(self) -> tuple[Volts, Amperes]:
         """Measure voltage in V and current in A; the sourced quantity is read back by the instrument."""
         # One line of TSP code clears the default buffer, makes the reading, takes the source value that was
-        # recorded with it and looks for an error in the event log. Sending it as one command needs a single answer
-        # per measurement point, which matters for instruments that are reached through TSP-Link.
+        # recorded with it and looks for an error in the event log, with the TSP-Link node it comes from. Sending it
+        # as one command needs a single answer per measurement point, which matters for instruments that are
+        # reached through TSP-Link.
         node = self.node_prefix
         answer = self.port.query(
             f"{node}defbuffer1.clear() "
             f"local reading = {node}smu.measure.read() "
-            'local code, message = 0, "" '
-            f"if eventlog.getcount({self.EVENT_ERROR}) > 0 then code, message = eventlog.next({self.EVENT_ERROR}) end "
-            f"print(reading, {node}defbuffer1.sourcevalues[1], code, message)",
+            'local code, message, severity, origin = 0, "", 0, 0 '
+            f"if eventlog.getcount({self.EVENT_ERROR}) > 0 then "
+            f"code, message, severity, origin = eventlog.next({self.EVENT_ERROR}) end "
+            f"print(reading, {node}defbuffer1.sourcevalues[1], code, origin, message)",
         )
 
         fields = answer.rstrip("\r\n").split("\t")
         try:
-            reading, source_value, code = float(fields[0]), float(fields[1]), int(float(fields[2]))
+            reading, source_value = float(fields[0]), float(fields[1])
+            code, origin = int(float(fields[2])), int(float(fields[3]))
         except (IndexError, ValueError) as error:
             msg = f"Unexpected answer of the instrument to the measurement: {answer!r}."
             raise ValueError(msg) from error
 
         if code != 0:
-            message = fields[3] if len(fields) > 3 else ""  # noqa: PLR2004
-            msg = f"The instrument reported an error during the measurement: {code}, {message}."
+            # All linked instruments share the event log, so the error can belong to another instrument
+            message = fields[4] if len(fields) > 4 else ""  # noqa: PLR2004
+            msg = f"Error during the measurement: {code}, {message} ({self.get_event_origin(origin)})."
             raise CommandError(msg, code=code)
 
         # Overflow readings are no measurement values
