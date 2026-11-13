@@ -83,11 +83,13 @@ class Device(EmptyDevice):
         """The channel can be given a custom name, which is used to set the mode and readout data in list mode."""
 
         self.srunner: IdSmuServiceRunner = None
-        self.is_service_user: bool = False
-        """Whether this channel was counted as user of the shared service in 'connect'.
+        self.counted_service_entry: dict | None = None
+        """The shared service entry in which this channel was counted as user in 'connect', None if not counted.
 
-        Only a counted channel may decrease the count in 'disconnect'. SweepMe! also calls 'disconnect' for a channel
-        whose 'connect' failed before it was counted.
+        A channel is counted only once until 'disconnect', also if 'connect' is called repeatedly. Only a counted
+        channel may decrease the count in 'disconnect'; SweepMe! also calls 'disconnect' for a channel whose 'connect'
+        failed before it was counted. The entry itself is stored instead of a flag, so that a channel is counted again
+        in a new entry after 'device_communication' was cleared.
         """
         self.board_model: aspectdeviceengine.enginecore.IdSmuBoardModel = None
         self.smu: aspectdeviceengine.enginecore.IdSmu2DeviceModel = None
@@ -342,7 +344,7 @@ class Device(EmptyDevice):
         # Once the service is shut down, its entry is removed, so it is never shut down twice.
         service_shared = self.device_communication.get(self.service_identifier)
         if service_shared is not None:
-            if self.is_service_user:
+            if self.counted_service_entry is service_shared:
                 service_shared["Users"] = service_shared.get("Users", 1) - 1
             if service_shared.get("Users", 0) <= 0:
                 runner = service_shared.get("Runner")
@@ -351,7 +353,7 @@ class Device(EmptyDevice):
                     del self.device_communication[key]
                 if runner is not None:
                     runner.shutdown()
-        self.is_service_user = False
+        self.counted_service_entry = None
         self.srunner = None
         if self.identifier in self.device_communication:
             del self.device_communication[self.identifier]
@@ -812,8 +814,9 @@ class Device(EmptyDevice):
 
         self.board_model = board_model
         service_shared = self.device_communication.setdefault(self.service_identifier, {})
-        service_shared["Users"] = service_shared.get("Users", 0) + 1
-        self.is_service_user = True
+        if self.counted_service_entry is not service_shared:
+            service_shared["Users"] = service_shared.get("Users", 0) + 1
+            self.counted_service_entry = service_shared
 
         # Detecting alone does not initialize the devices. Without it, firmware commands fail with 'device is not
         # initialized'. The outputs stay switched off.
