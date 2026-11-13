@@ -69,11 +69,28 @@ class Device(EmptyDevice):
 
         # Communication Parameters
         self.identifier: str = ""
+        self.service_identifier: str = "idSMUx_service"
+        """Key in device_communication under which all channels share the one service runner of all boards."""
+        self.board_identifier: str = ""
+        """Key in device_communication under which all modules of one board share the board model.
+
+        A board (e.g. 'M1') can carry several idSMU2 modules ('M1.S1', 'M1.S2'). They are reached through one USB
+        handle, so the board is opened only once. The key therefore names the board, not the module. The service of
+        all boards is shared under 'service_identifier'.
+        """
         self.board_id: str = ""
         self.channel_name: str = ""
         """The channel can be given a custom name, which is used to set the mode and readout data in list mode."""
 
         self.srunner: IdSmuServiceRunner = None
+        self.counted_service_entry: dict | None = None
+        """The shared service entry in which this channel was counted as user in 'connect', None if not counted.
+
+        A channel is counted only once until 'disconnect', also if 'connect' is called repeatedly. Only a counted
+        channel may decrease the count in 'disconnect'; SweepMe! also calls 'disconnect' for a channel whose 'connect'
+        failed before it was counted. The entry itself is stored instead of a flag, so that a channel is counted again
+        in a new entry after 'device_communication' was cleared.
+        """
         self.board_model: aspectdeviceengine.enginecore.IdSmuBoardModel = None
         self.smu: aspectdeviceengine.enginecore.IdSmu2DeviceModel = None
         self.channel: aspectdeviceengine.enginecore.AD5522ChannelModel = None
@@ -137,13 +154,14 @@ class Device(EmptyDevice):
 
         # List Mode Parameters
         self.list_sweep_values: list[float] = []
-        self.list_delay_time: int = 100  # in ms
+        self.list_delay_time: int = 100_000
+        """Delay between setting a list sweep value and measuring it, in µs as expected by the engine."""
 
         self.is_list_sweep: bool = False
         """Whether the user selected 'List sweep' as sweep value for this channel.
 
         This is only the user's selection taken from the GUI parameters. The resulting role in the list sweep is
-        derived from it in 'initialize', where all channels of the board are known.
+        derived from it in 'initialize', where all channels of the module are known.
         """
 
         self.list_role: str = "None"
@@ -167,7 +185,7 @@ class Device(EmptyDevice):
         self.use_async_readout: bool = True
 
         self.identifier_channel_names: str = "Active channel names"
-        """Key under which the names of all active channels of a board are shared via device_communication."""
+        """Key under which the names of all active channels of a module are shared via device_communication."""
 
         self._compliance_by_mode: dict[str, float | None] = {"Voltage": None, "Current": None}
         """Compliance per source mode, set with 'set_compliance'.
@@ -180,7 +198,7 @@ class Device(EmptyDevice):
         self.identifier_autorange_channels: str = "Autorange channels"
         """Key under which the channels with explicit autoranging are shared via device_communication.
 
-        In async readout, one channel measures all channels of the board. It must autorange all of them before the
+        In async readout, one channel measures all channels of the module. It must autorange all of them before the
         measurement starts, see 'autorange_active_channels'.
         """
 
@@ -238,6 +256,7 @@ class Device(EmptyDevice):
         self.channel_name = parameter["Port"]
         self.board_id = self.channel_name[:-3]
         self.identifier: str = "idSMUx_" + self.board_id
+        self.board_identifier = "idSMUx_board_" + self.channel_name.split(".")[0]
 
         self.current_range = self.current_ranges[parameter["Range"]]
         self.speed = parameter["Speed"]
@@ -300,7 +319,7 @@ class Device(EmptyDevice):
             msg = f"Number of points {len(self.list_sweep_values)} is too high. Maximum is 52."
             raise ValueError(msg)
 
-        self.list_delay_time = int(float(parameter["ListSweepDelaytime"]) * 1000)
+        self.list_delay_time = round(float(parameter["ListSweepDelaytime"]) * 1e6)  # s in the GUI, µs in the engine
 
         # Add time staps to return values
         self.variables.append("Time stamp")
@@ -314,12 +333,28 @@ class Device(EmptyDevice):
         Resolving the channel here makes the communication commands, used e.g. by the SweepMe! Instrument Control,
         work without 'initialize', which that tool never runs.
         """
-        self.srunner = IdSmuServiceRunner()
+        # Only the first channel of a board opens the service, see '_resolve_channel'.
         self._resolve_channel()
 
     def disconnect(self) -> None:
         """Terminate the connection to the SMU."""
-        self.srunner.shutdown()
+        # The service is shared by all channels of all boards. The last channel that disconnects shuts it down, so that
+        # no channel is left with a handle that was closed by another one. A channel whose 'connect' failed before it
+        # was counted shuts the service down only if no counted channel uses it, e.g. if it created the service itself.
+        # Once the service is shut down, its entry is removed, so it is never shut down twice.
+        service_shared = self.device_communication.get(self.service_identifier)
+        if service_shared is not None:
+            if self.counted_service_entry is service_shared:
+                service_shared["Users"] = service_shared.get("Users", 1) - 1
+            if service_shared.get("Users", 0) <= 0:
+                runner = service_shared.get("Runner")
+                del self.device_communication[self.service_identifier]
+                for key in [k for k in self.device_communication if str(k).startswith("idSMUx_board_")]:
+                    del self.device_communication[key]
+                if runner is not None:
+                    runner.shutdown()
+        self.counted_service_entry = None
+        self.srunner = None
         if self.identifier in self.device_communication:
             del self.device_communication[self.identifier]
         self.channel = None
@@ -329,8 +364,8 @@ class Device(EmptyDevice):
     def initialize(self) -> None:
         """Initialize the boards or receive initialized boards from other driver.
 
-        The device_communication dictionary contains the following elements:
-            - "Board": aspectdeviceengine.enginecore.IdSmuBoardModel, The board object, resolved in 'connect'.
+        The board model, resolved in 'connect', is shared under 'board_identifier'. The entry of the idSMU2 module
+        under 'identifier' contains the following elements:
             - "List master": str, The name of channel that runs the list sweep.
             - "List receivers": list[str], List of names of all other channels should be measured in parallel.
             - "List creators": dict[str, ListSweepChannelConfiguration], Dictionary with channel name as key and
@@ -341,9 +376,9 @@ class Device(EmptyDevice):
         """
         self.source_mode = ("Voltage" if self.source_identifier.startswith("Voltage") else "Current")
 
-        # Board and channel were resolved in 'connect'. The board is registered here as well, because
-        # 'device_communication' may have been cleared since then, and the other channels of the board read it there.
-        self.device_communication.setdefault(self.identifier, {}).setdefault("Board", self.board_model)
+        # Board and channel were resolved in 'connect', which also registered the board under 'board_identifier'.
+        # The entry of the module collects the list sweep and readout roles of its channels.
+        self.device_communication.setdefault(self.identifier, {})
 
         firmware_version = self.smu.get_firmware_version()
         hardware_id = self.smu.get_hardware_id()
@@ -388,7 +423,7 @@ class Device(EmptyDevice):
         self.set_compliance(self.protection)
 
         # Current Range
-        # A registered list master makes every channel of the board take part in the list sweep, see below.
+        # A registered list master makes every channel of the module take part in the list sweep, see below.
         is_in_list_sweep = "List master" in self.device_communication[self.identifier]
 
         # The explicit autoranging in 'measure' is skipped for list sweeps, as the sweep runs on the device. The
@@ -477,7 +512,7 @@ class Device(EmptyDevice):
         )
 
     def is_retrieving_data(self) -> bool:
-        """Check whether this channel measures and retrieves the data on behalf of all channels of the board.
+        """Check whether this channel measures and retrieves the data on behalf of all channels of the module.
 
         The first registered channel takes this role. The role is derived on demand instead of being stored during
         'configure' so that it passes on automatically when that channel is unconfigured while others keep measuring.
@@ -583,7 +618,7 @@ class Device(EmptyDevice):
             self.i = self.channel.current
 
     def autorange_active_channels(self, active_channel_names: list[str]) -> None:
-        """Perform the explicit autoranging for every active channel of the board that uses 'Auto'.
+        """Perform the explicit autoranging for every active channel of the module that uses 'Auto'.
 
         The explicit autoranging before each measurement is needed, because the internal autoranging of the device
         switches the range only when the set value changes. Outside effects that change the current (light, gate
@@ -674,8 +709,10 @@ class Device(EmptyDevice):
             measurement_results = self.sweep.get_measurement_result(channel)
             self.device_communication[self.identifier]["List results"][channel] = measurement_results
 
-        self.device_communication[self.identifier]["Time stamp"] = self.sweep.timecode
+        # The engine returns the time stamps in µs, the driver returns them in s. The list creators read the
+        # converted values.
         self.t = self.sweep.timecode * 1e-6
+        self.device_communication[self.identifier]["Time stamp"] = self.t
 
     def call(self) -> list:
         """Return the voltage and current."""
@@ -752,7 +789,7 @@ class Device(EmptyDevice):
         board_prefix = self.channel_name.split(".")[0]
         """The 'Mx' component of the port, which names the board the channel belongs to."""
 
-        shared = self.device_communication.get(self.identifier, {})
+        shared = self.device_communication.get(self.board_identifier, {})
         if "Board" in shared:
             # Another channel of the board already opened it. Opening the service a second time would take the USB
             # handle away from it ('INVALID_HANDLE'), so this instance must not touch its own service.
@@ -761,24 +798,44 @@ class Device(EmptyDevice):
                 msg = f"idSMUx: The shared board does not belong to port {self.channel_name} (board {board_prefix})."
                 raise ValueError(msg)
         else:
-            if self.srunner is None:
-                self.srunner = IdSmuServiceRunner()
+            # One service serves all boards, because they are reached through the same USB driver. A second service,
+            # e.g. one per board, would take the USB handles away from the first one.
+            service_shared = self.device_communication.setdefault(self.service_identifier, {})
+            if service_shared.get("Runner") is None:
+                service_shared["Runner"] = IdSmuServiceRunner()
+            self.srunner = service_shared["Runner"]
 
             service = self.srunner.get_idsmu_service()
             if not service.devices_are_detected():
                 service.detect_devices()
 
             board_model = self._find_board(service, board_prefix)
-            self.device_communication.setdefault(self.identifier, {})["Board"] = board_model
+            self.device_communication.setdefault(self.board_identifier, {})["Board"] = board_model
 
         self.board_model = board_model
+        service_shared = self.device_communication.setdefault(self.service_identifier, {})
+        if self.counted_service_entry is not service_shared:
+            service_shared["Users"] = service_shared.get("Users", 0) + 1
+            self.counted_service_entry = service_shared
 
         # Detecting alone does not initialize the devices. Without it, firmware commands fail with 'device is not
         # initialized'. The outputs stay switched off.
         if not self.board_model.is_board_initialized():
             self.board_model.initialize_devices(True)
 
-        self.smu = self.board_model.idSmu2Modules[self.board_id]
+        try:
+            self.smu = self.board_model.idSmu2Modules[self.board_id]
+        except (IndexError, KeyError) as e:
+            hardware_ids = list(self.board_model.get_all_hardware_ids())
+            try:
+                idsmu2_modules = [module.get_hardware_id() for module in self.board_model.idSmu2Modules.as_list()]
+            except Exception:  # noqa: BLE001
+                idsmu2_modules = ["unknown"]
+            msg = (
+                f"idSMUx: Module '{self.board_id}' of port {self.channel_name} is not an idSMU2 module of its board. "
+                f"Hardware ids on the board: {hardware_ids}. idSMU2 modules: {idsmu2_modules}."
+            )
+            raise ValueError(msg) from e
         self.channel_number = int(self.channel_name[-1])
         self.channel = self.smu.smu.channels[self.channel_number]
         self.channel.name = self.channel_name
