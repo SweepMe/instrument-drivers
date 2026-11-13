@@ -59,7 +59,9 @@ Channels of several modules and several boards can be used in the same run.
   current. The engine resets the limit whenever a channel changes between forcing voltage and current, so the driver
   sets the mode first and the compliance afterwards.
 - **Speed/Integration**: number of samples averaged per measurement: `Very fast` 1, `Fast` 16, `Medium` 256,
-  `Slow` 4096, `Very slow` 65536.
+  `Slow` 4096, `Very slow` 65536. In a normal measurement, the first active channel of a module reads out all
+  active channels of that module, and its setting is the sample count of this voltage and current readout. The
+  setting of the other channels of the module does not apply.
 - **Current range**:
   - `Auto`: with voltage forced, the driver autoranges every channel set to `Auto` before each measurement. Unlike
     the internal autoranging of the module, this also follows current changes from outside effects (light, gate
@@ -73,7 +75,9 @@ Channels of several modules and several boards can be used in the same run.
   - Step selection: `Step width`, `Points (lin.)` or `Points (log.)`. With `Step width`, the end value is always
     added as the last point. `Points (log.)` requires start and end values greater than 0.
   - **dual sweep**: appends the values in reverse order.
-  - **Delay time in s**: settling time between setting a value and measuring it.
+  - **Delay time in s**: settling time between setting a value and measuring it. If several channels of a module
+    run a list sweep, the first of them in the sequencer is the list master and runs the sweep for all of them. Its
+    delay time applies to the entire sweep; the delay times of the other list sweep channels are ignored.
 
 ---
 
