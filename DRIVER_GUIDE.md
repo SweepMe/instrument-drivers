@@ -188,12 +188,16 @@ Two methods connect the driver to the module's GUI (SweepMe! 1.5.6.25 and newer;
 `set_GUIparameter()` / `get_GUIparameter()`):
 
 ```python
+# GUI label -> instrument spelling, at module level; the first key is the default of the dropdown
+MODES = {"Voltage DC": "VOLT:DC", "Current DC": "CURR:DC"}
+
+
 def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
     """Return the GUI fields with their defaults; may depend on the current selections."""
     mode = parameters.get("Mode", "Voltage DC")
     new_parameters: dict[str, Any] = {
         "SweepMode": ["None", "Voltage in V"],
-        "Mode": list(self.modes.keys()),         # list -> dropdown, first entry is the default
+        "Mode": list(MODES),                     # list -> dropdown, first entry is the default
         "Average": 1,                            # int -> spin box
         "Use trigger": False,                    # bool -> check box
     }
@@ -224,10 +228,12 @@ The type of the default value selects the widget:
 | `pathlib.Path` | file or folder picker (a picked file cannot be cleared again; for an optional file pair a dropdown `None` / `From file` with the path field, shown only for `From file`) |
 | a bound method | a push button that calls the method |
 
-Reserved keys that the modules define and the driver only reads: `Port`, `Device`, `Label`, `Channel`,
-`SweepMode`, `SweepValue`, `Calibration`, `Description`, `Comment`, `Parameters`, `Data`. Never define your own key
-with one of these names, and never start a key with "Device". `Channel` given as a list enables multichannel
-instruments sharing one port.
+Reserved keys. The modules define `Port`, `Device`, `Label`, `SweepValue`, `Description`, `Comment`, `Parameters`
+and `Data`; a driver only reads them (`Port` for the selected resource, `Label` for its name in the sequencer).
+`SweepMode`, `Channel` and `Calibration` are reserved too, but these the driver *provides*, each as a list, when it
+offers sweep modes (section 4.2), channels or calibration files (section 4.4): `Channel` given as a list shows the
+module's Channel dropdown and lets several instances share one port. Never define a key of your own with one of
+these names, and never start a key with "Device".
 
 Logger, Switch and Robot build their whole parameter area from the driver's keys. The other modules show their
 predefined fields and put every key they do not know into a "Parameters" box (Spectrometer since 1.5.8.5, Camera
@@ -1241,15 +1247,30 @@ architecture = "3.14-64"
   import pysweepme
 
   driver = pysweepme.get_driver("SMU-Keithley_2400", r"C:\path\to\instrument-drivers\src", "GPIB0::24::INSTR")
-  driver.connect()
-  driver.initialize()
-  print(driver.get_identification())
-  driver.set_voltage(1.0)
-  driver.disconnect()
+  driver.set_parameters({"SweepMode": "Voltage in V", "Compliance": 0.1})  # the module's GUI keys
+  try:
+      driver.connect()
+      driver.initialize()
+      driver.configure()
+      driver.poweron()
+      driver.write(1.0)                             # start, apply with self.value = 1.0, reach
+      print(driver.get_variables(), driver.read())  # adapt ... call: one value per variable
+  finally:
+      driver.poweroff()
+      driver.unconfigure()
+      driver.deinitialize()
+      driver.disconnect()
+      pysweepme.close_port(driver.get_port())       # the port get_driver opened for this driver alone
   ```
 
-  pysweepme must run on a Python that matches SweepMe!'s (3.14 for 1.6.1). With the port manager the port is opened
-  and attached by `get_driver`, but `connect()` must still be called. `folder=None` loads the version selected in
+  The script drives the driver through its own lifecycle and sweep mode, as SweepMe! would; `write()` and
+  `read()` are convenience wrappers for that. Where it wants one instrument command, it calls a communication
+  command the driver declares (section 7), not a method it assumes the driver has. pysweepme must run on a Python
+  that matches SweepMe!'s (3.14 for 1.6.1). With the port manager the port is opened and attached by `get_driver`,
+  but `connect()` must still be called, and the script closes the port at the end with `pysweepme.close_port()`;
+  when several drivers share one port (channels of one instrument), close it once, after the last of them
+  disconnected.
+  `folder=None` loads the version selected in
   SweepMe!'s version manager (pysweepme 1.6.1.3 and newer). Convenience wrappers for scripts: `set_parameters({...})`
   (the driver's GUI keys plus `Port`, `Label`, `Channel`, `Device`), `get_parameters()`, `write(value)` (runs
   `start`, `apply`, `reach`), `read()` (runs `adapt` through `call` and returns the values), `get_variables()`,
@@ -1268,8 +1289,11 @@ architecture = "3.14-64"
   annotation already says, a `Warnings:` section written by hand, a semantic function sending a command a wrapper
   covers, the semantic functions out of order or a pair split, markers written inline instead of in an alias, a
   legacy `description` attribute, and generic value-parameter names. `warning` marks what is most likely wrong,
-  `hint` what is worth a look; a driver stays valid with any of them. A deliberate finding is accepted with
-  `# check_driver: ignore DC0xx - <why>` on or above the line. Run it on every driver you touch:
+  `hint` what is worth a look; a driver stays valid with any of them. A deliberate finding is accepted with a
+  comment `# check_driver: ignore DC0xx - <why>`: for a finding about a method it stands on the method's decorator
+  or `def` line, or in the comment block directly above them, never inside the body; for a finding about the file
+  (the method order, a `description` attribute) on the finding's line or the line above. Run it on every driver you
+  touch:
 
   ```
   python tools/check_driver.py src/<DriverFolder>
@@ -1364,8 +1388,12 @@ class Device(EmptyDevice):
         self.sweep_mode = parameters.get("SweepMode", "None")
 
     # Semantic functions: undecorated, they call the commands.
+    def configure(self) -> None:
+        """Hold the present temperature until the first sweep value arrives."""
+        self.set_temperature(self.get_temperature())
+
     def poweron(self) -> None:
-        """Switch the heater on for the run."""
+        """Switch the heater on for the run; the setpoint is already safe (configure)."""
         self.set_heater(True)
 
     def poweroff(self) -> None:
@@ -1433,7 +1461,9 @@ What the example shows:
 - `temperature` is one quantity: `set_temperature` sets it, `get_temperature` measures it,
   `get_temperature_setpoint` reads it back. All three share the alias `Celsius`, so the unit is written once, and the
   Control tab shows them in one tile.
-- `set_heater(heater: bool)` with `get_heater` is the one-switch pattern; `poweron`/`poweroff` call it.
+- `set_heater(heater: bool)` with `get_heater` is the one-switch pattern; `poweron`/`poweroff` call it. `configure`
+  writes the present temperature as the setpoint first, so switching the heater on does not drive the instrument to
+  whatever setpoint it retained from before; `apply` then sends the requested value.
 - `Sensor` is a `Literal` alias, used by the setter and its read-back; `@command` refuses any other text.
 - `measure_temperature` is a hook the Temperature module calls by name for its "Reach Temperature" check; it stays
   undecorated and calls the command.
