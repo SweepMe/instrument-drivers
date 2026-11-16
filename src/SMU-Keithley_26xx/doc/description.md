@@ -14,8 +14,13 @@ port. A pulse mode based on the `ConfigPulse` factory scripts of the instrument 
   driver uses 115200 baud and `\n` as end-of-line character, the timeout is 10 s for all interfaces.
 - The instrument must use the **TSP command set**. If it is switched to the 2400 SCPI emulation mode,
   none of the commands of this driver are understood.
-- Only the local node is addressed. Instruments that are reached through TSP-Link as a remote node are
-  not supported.
+- Instruments that are linked via TSP-Link can be reached through the instrument that is connected to
+  the port, see **TSP-Link node**. The TSP-Link network must already be initialized (node numbers set
+  and the link reset on the front panel or with `tsplink.reset()`). The reset must be repeated whenever
+  one of the linked instruments was switched off or the TSP-Link cabling was changed. The driver does
+  not change the TSP-Link configuration.
+- The models 2604B, 2614B, and 2634B have no TSP-Link interface and can only be used with
+  **TSP-Link node** = `Local`.
 
 ---
 
@@ -53,6 +58,13 @@ port. A pulse mode based on the `ConfigPulse` factory scripts of the instrument 
 - **SweepMode**: `Voltage in V` or `Current in A`. Selects which quantity is sourced. The other
   quantity is measured.
 - **Channel**: `Ch A` or `Ch B`, mapped to `smua` and `smub`.
+- **TSP-Link node**: `Local` addresses the instrument that is connected to the port. `Node <N>`
+  addresses the instrument with TSP-Link node number N through the connected instrument, so all
+  commands are sent as `node[N].smua...`. All channels of a TSP-Link network can then share one port,
+  e.g. four instances with `Node 1` to `Node 4`. At the start of the run, the driver checks that
+  `tsplink.state` is `online` and that the reset of the channel does not create an entry in the error
+  queue. Otherwise, e.g. if the node number is not part of the network or the instrument has no
+  channel B, the run stops with an error message. Settings saved before this field existed use `Local`.
 - **4wire**: If checked, the channel uses remote sensing (`SENSE_REMOTE`), otherwise local sensing
   (`SENSE_LOCAL`). Remote sensing needs the sense terminals to be wired.
 - **RouteOut**: Only `Rear` is available, as the 26xx series has no front terminals.
@@ -119,10 +131,20 @@ length is given by **Average**.
   measurement window is shorter than requested by the ratio 50/60.
 - Only the current measurement range can be selected. The voltage measurement range and both source
   ranges always use auto ranging in the non-pulsed mode.
-- The error queue is only cleared at the start of the run. The driver does not read it back, so
-  instrument-side errors do not stop the measurement and only show up as unexpected readings.
+- The error queue is only cleared at the start of the run. Apart from the check of a remote node at
+  the start of the run, the driver does not read it back, so instrument-side errors do not stop the
+  measurement and only show up as unexpected readings.
 - The driver does not report whether the instrument is in compliance. A reading in compliance looks
   like a regular reading.
 - The guard terminals and the high-capacitance mode of the instrument are not supported.
+- Pulse mode is only available for **TSP-Link node** = `Local`. A remote node with pulse mode stops
+  the run with an error message.
+- Instances with a remote node do not count for the dual pulse mode. The two channels of the
+  instrument connected to the port can still be pulsed together while further instances on the same
+  port measure on remote nodes.
+- Measurements on remote nodes are sequential, like the two channels of one instrument. Each reading
+  is requested and returned through the instrument connected to the port.
+- While the driver communicates through TSP-Link, all linked instruments are in remote operation and
+  stay there after the run, until the EXIT (LOCAL) key is pressed on one of them.
 - The channel is not reset at the end of the run, and the source level is not returned to zero before
   the output is switched off.
