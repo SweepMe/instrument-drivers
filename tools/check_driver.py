@@ -220,12 +220,14 @@ def _method(node: ast.FunctionDef, file: str, path: Path, cls: str) -> Method:
             method.warnings = _keyword(decorator, "warnings") is not None
             kind = _keyword(decorator, "kind")
             method.kind_run = isinstance(kind, ast.Constant) and kind.value == "run"
+    own_scope = _own_scope(node)  # a call inside a nested function is not a call the method makes
     for sub in ast.walk(node):
         if not (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute)):
             continue
         owner = sub.func.value
         if isinstance(owner, ast.Name) and owner.id == "self":
-            method.calls.add(sub.func.attr)
+            if sub in own_scope:
+                method.calls.add(sub.func.attr)
         elif (sub.func.attr in PORT_METHODS and isinstance(owner, ast.Attribute) and owner.attr == "port"
               and isinstance(owner.value, ast.Name) and owner.value.id == "self"):
             method.port_heads.append((sub.lineno, _command_head(sub.args[0]) if sub.args else ""))
@@ -285,7 +287,7 @@ def read_driver(folder: Path) -> Driver:
         file = str(path.relative_to(folder.parent.parent)) if folder.parent.parent in path.parents else str(path)
         try:
             tree = _parse(path)
-        except (SyntaxError, UnicodeDecodeError) as exc:
+        except (SyntaxError, UnicodeDecodeError, OSError) as exc:  # a file that cannot be read is DC000 too
             driver.unreadable.append((file, getattr(exc, "lineno", 0) or 0, str(exc)))
             continue
         trees.append(tree)
@@ -495,12 +497,39 @@ def _redundant_checks(method: Method, driver: Driver, report: Report) -> None:
                                                 or "Range(" in ast.unparse(p.annotation))}
     for sub in ast.walk(method.node):
         if (checked and isinstance(sub, ast.If) and _uses_names(sub.test) & checked
-                and any(isinstance(n, ast.Raise) for n in sub.body)
-                and isinstance(sub.test, (ast.Compare, ast.UnaryOp, ast.BoolOp))):
+                and any(isinstance(n, ast.Raise) for n in sub.body) and _static_check(sub.test, checked)):
             names = ", ".join(sorted(_uses_names(sub.test) & checked))
             report.add("DC012", method, sub.lineno,
                        f"checks {names} although its annotation states the choices or range - @command checks them")
             return
+
+
+def _static_check(test: ast.expr, checked: set[str]) -> bool:
+    """Whether a condition compares checked parameters with constants only.
+
+    A bound known only at run time (`voltage > self.max_voltage`, a value read from the instrument) is nothing a Range
+    or Literal states, so such a check stays.
+    """
+    if isinstance(test, ast.BoolOp):
+        return all(_static_check(value, checked) for value in test.values)
+    if isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not):
+        return _static_check(test.operand, checked)
+    if not isinstance(test, ast.Compare):
+        return False
+    operands = [test.left, *test.comparators]
+    return any(isinstance(o, ast.Name) and o.id in checked for o in operands) and all(
+        _is_constant(o) or (isinstance(o, ast.Name) and o.id in checked) for o in operands)
+
+
+def _is_constant(node: ast.expr) -> bool:
+    """A literal: a number or text, also negative, or a tuple, list or set of them."""
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        return _is_constant(node.operand)
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        return all(_is_constant(e) for e in node.elts)
+    return False
 
 
 def _literal_candidates(method: Method, report: Report) -> None:
@@ -610,14 +639,15 @@ def _generic_value_names(commands: list[Method], driver: Driver, report: Report)
 
 def _semantic_raw_commands(driver: Driver, commands: list[Method], report: Report) -> None:
     """DC014: a semantic function sends an instrument command that a communication command also sends."""
-    wrapped: dict[str, str] = {}
-    for method in commands:
-        for _, head in method.port_heads:
-            if head:
-                wrapped.setdefault(head, method.name)
     for method in driver.methods.values():
         if method.name not in SEMANTIC_ORDER:
             continue
+        wrapped: dict[str, str] = {}  # the commands the semantic function can call: its class and its bases
+        for command in commands:
+            if command.cls in method.inherits:
+                for _, head in command.port_heads:
+                    if head:
+                        wrapped.setdefault(head, command.name)
         for line, head in method.port_heads:
             if head in wrapped:
                 report.add("DC014", method, line, f"sends '{head}' itself, which {wrapped[head]}() also sends - "

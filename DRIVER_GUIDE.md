@@ -262,8 +262,10 @@ under `Sensor`).
   dict in `self.gui_parameters`, and write converted values to separate attributes from `configure()`, which also
   runs again when a `{...}` value changes mid-run (section 5.4); `initialize()` does not.
 - **Stay compatible with saved sequences.** A saved `.seq`/`.set` file stores the GUI keys that existed when it was
-  saved, so every new key needs a default. Match option strings through a lookup dict or `startswith()`, not by exact
-  equality with the full label, so a label can be reworded later.
+  saved, so every new key needs a default. Resolve an option through a lookup dict that maps the current label *and
+  every label an earlier version used* to the instrument's spelling (`{"Voltage DC": "VOLT:DC", "DC voltage":
+  "VOLT:DC"}`), so a sequence saved with the old label still loads after a reword. A `startswith()` match is no
+  substitute: it breaks as soon as the label's first word changes.
 - **If the returned variables depend on the GUI**, set `self.variables`, `units`, `plottype` and `savetype` in
   `apply_gui_parameters()`: SweepMe! reads them right after a GUI change and before `connect()`; `configure()` is
   too late.
@@ -854,9 +856,12 @@ Pin = Annotated[str, Selector(overlaps="pin_overlaps")]                 # a meth
   selector at all the whole instrument.
 - Selecting the subunit is part of the one instrument command, not a second effect: an `INST:OUT<n>` sent in front of
   each command does not make the command `composite`.
-- A range that differs per subunit is not expressed yet: `Range` holds the widest bound, the narrower one is a limit
-  of the bench entry. Where the selector values depend on another selector (the channels of the module in a slot),
-  `Range` or `Literal` is the union, and the instrument refuses the rest.
+- A range that differs per subunit is not expressed yet: `Range` holds the widest bound, and the command checks the
+  limit of the subunit it addresses itself (`low, high = VOLTAGE_RATINGS[channel]`) and raises on a value beyond
+  it. That check is required, not optional: a script and the sequencer call the command without any bench entry,
+  so a bench limit on the narrower subunit protects only Instrument Control. Where the selector values depend on
+  another selector (the channels of the module in a slot), `Range` or `Literal` is the union, and the command or the
+  instrument refuses the rest.
 - **`stateful=True`** where the instrument keeps a selection (`INST:SEL P6V`, then `VOLT 5`): the driver selects in
   `apply_selectors(<selectors>)`, and `@command` calls it only when the selection changes. pysweepme remembers the
   selection per connection (the port with the port manager; a driver without it names its connection in
@@ -1388,12 +1393,12 @@ class Device(EmptyDevice):
         self.sweep_mode = parameters.get("SweepMode", "None")
 
     # Semantic functions: undecorated, they call the commands.
-    def configure(self) -> None:
-        """Hold the present temperature until the first sweep value arrives."""
+    def initialize(self) -> None:
+        """Hold the present temperature until the first sweep value arrives (once per run)."""
         self.set_temperature(self.get_temperature())
 
     def poweron(self) -> None:
-        """Switch the heater on for the run; the setpoint is already safe (configure)."""
+        """Switch the heater on for the run; the setpoint is already safe (initialize)."""
         self.set_heater(True)
 
     def poweroff(self) -> None:
@@ -1461,9 +1466,11 @@ What the example shows:
 - `temperature` is one quantity: `set_temperature` sets it, `get_temperature` measures it,
   `get_temperature_setpoint` reads it back. All three share the alias `Celsius`, so the unit is written once, and the
   Control tab shows them in one tile.
-- `set_heater(heater: bool)` with `get_heater` is the one-switch pattern; `poweron`/`poweroff` call it. `configure`
+- `set_heater(heater: bool)` with `get_heater` is the one-switch pattern; `poweron`/`poweroff` call it. `initialize`
   writes the present temperature as the setpoint first, so switching the heater on does not drive the instrument to
-  whatever setpoint it retained from before; `apply` then sends the requested value.
+  whatever setpoint it retained from before; `apply` then sends the requested value. This belongs in `initialize`,
+  which runs once per run, not in `configure`, which runs again on every `reconfigure` and would then replace the
+  requested setpoint with the measured temperature.
 - `Sensor` is a `Literal` alias, used by the setter and its read-back; `@command` refuses any other text.
 - `measure_temperature` is a hook the Temperature module calls by name for its "Reach Temperature" check; it stays
   undecorated and calls the command.
