@@ -401,8 +401,11 @@ must return). Keys not listed here land in the module's "Parameters" box where t
 WaferProber `get_wafer_geometry()` fills the wafer geometry of the module's Map tab. It returns a dict with the keys
 `diameter_mm`, `pitch_x_mm`, `pitch_y_mm`, `columns`, `rows`, `map_type` (`"wafer"` or `"rectangle"`), `notch`
 (`"down"`, `"up"`, `"left"` or `"right"`), `flat_length_mm` and `origin` (`"upper_left"`, `"upper_right"`,
-`"lower_left"` or `"lower_right"`). A value the prober cannot report is `None`; the method never raises. Reference:
-`src/WaferProber-Simulation_Driver/main.py`.
+`"lower_left"` or `"lower_right"`). A single value the prober cannot report is `None` instead of an exception, and
+the module then leaves that field as the user set it. When no geometry can be reported at all (no connection, or
+every value is `None`), the method raises: the module writes the error to the debug log and leaves the geometry of
+the Map tab unchanged, while the probe plan is still updated. Reference: `src/WaferProber-Simulation_Driver/main.py`;
+partial answers and the failure case: `src/WaferProber-FormFactor_Velox/main.py`.
 
 The module's test buttons reuse the lifecycle: Switch and SMU "Apply" runs `connect` to `apply` and `disconnect`,
 "Stop" runs the shutdown functions, Logger "Retrieve" and Camera "Test" run one complete point, Temperature "Set T"
