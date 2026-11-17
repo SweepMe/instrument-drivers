@@ -115,7 +115,8 @@ published here; contact contact@sweep-me.net for the alternatives.
 
 A base class shared by several drivers (e.g. one for a family of data loggers) is copied into every driver folder,
 because a driver folder must be complete on its own. A change to it is made in every copy, checked against every
-driver that uses it, and the copies are compared afterwards (`md5sum src/*/<BaseClass>.py` shows one hash).
+driver that uses it, and the copies are compared afterwards (`md5sum src/*/<BaseClass>.py` shows one hash). A
+change that fits only one of the drivers goes into that driver's `main.py`, not into the base class.
 
 ---
 
@@ -397,6 +398,12 @@ must return). Keys not listed here land in the module's "Parameters" box where t
 | WaferProber | (probe plan from the driver) | `get_probeplan()`, `get_wafer_geometry()`, `get_contact_state()` are module hooks; `load_wafer`, `unload_wafer`, `step_to_die`, `step_to_subsite`, `contact`, `separate`, `get_current_wafer/die/subsite`; `self.sweepvalues` with `Wafer`, `Die`, `Subsite`; go to separation height in `signout()` |
 | Camera | `SweepMode`, `Trigger`, `Gain`, `GainAuto`, `ExposureTime`, `ExposureAuto`, `PixelFormat`, `FileFormat`, image size and offset keys, ... | `call()` returns the image file path first; `self.tempfolder` is the folder to save into; ports from `find_ports()` |
 
+WaferProber `get_wafer_geometry()` fills the wafer geometry of the module's Map tab. It returns a dict with the keys
+`diameter_mm`, `pitch_x_mm`, `pitch_y_mm`, `columns`, `rows`, `map_type` (`"wafer"` or `"rectangle"`), `notch`
+(`"down"`, `"up"`, `"left"` or `"right"`), `flat_length_mm` and `origin` (`"upper_left"`, `"upper_right"`,
+`"lower_left"` or `"lower_right"`). A value the prober cannot report is `None`; the method never raises. Reference:
+`src/WaferProber-Simulation_Driver/main.py`.
+
 The module's test buttons reuse the lifecycle: Switch and SMU "Apply" runs `connect` to `apply` and `disconnect`,
 "Stop" runs the shutdown functions, Logger "Retrieve" and Camera "Test" run one complete point, Temperature "Set T"
 and "Get T" run up to `apply()` or one point. A driver whose setup only works inside a full run breaks these buttons.
@@ -464,6 +471,9 @@ the module's Port field, opens the port before `connect()`, hands it over as `se
   (VISA serial), `"PXI"`. Prologix GPIB-USB adapters are built in over their COM port
   (`GPIB::<addr>::Prologix@COMx`) and need no VISA.
 - All instances on one resource get the same cached port object (section 6.4).
+- The Port field lists the resources of the driver's `port_types` plus whatever the driver's `find_ports()` returns
+  (a list of strings), with duplicates removed; use `find_ports()` for a discovery of your own, e.g. a BLE scan.
+  `self.port_identifications` filters the list only for USBTMC resources whose identification is already known.
 
 Without the port manager (DLL, SDK, a library with its own transport), implement `find_ports() -> list[str]` so the
 Port field offers something, open the connection in `connect()` and close it in `disconnect()`, and **always set a
@@ -493,6 +503,8 @@ the `PortProperties` TypedDict in pysweepme `Ports.py`.
 
 - A key that belongs to another port type is silently ignored, and an invented key (`TCPIP_timeout`) only logs a
   debug line. `None` keeps the VISA default. USBTMC, ASRL and PXI terminations are set on `self.port.port` if needed.
+- `fixed_port` has no effect on TCPIP, because a VISA resource string always contains a colon; use the SOCKET type
+  for a raw socket on a fixed TCP port.
 - VISA ports (GPIB, USBTMC, TCPIP, ASRL) raise `pyvisa.errors.VisaIOError` on timeout regardless of `Exception`.
 
 ### 6.3 Reads, timeouts and retries
@@ -554,7 +566,9 @@ Values that must survive across runs within a SweepMe! session (instances are de
 SweepMe! lists GPIB instruments through VISA, so the adapter must appear in NI-VISA (NI-488.2 for NI adapters, a
 vendor VISA passport otherwise); Prologix GPIB-USB works without VISA over its COM port (Prologix Ethernet is not
 supported). On Windows 10/11 the Keithley KUSB-488 and KUSB-488A have no driver; KUSB-488B, NI GPIB-USB-HS/HS+,
-Keysight 82357B, Prologix or RS-232 work. Do not install NI-488.2 on top of the Keithley driver.
+Keysight 82357B, Prologix or RS-232 work. Do not install NI-488.2 on top of the Keithley driver. Low-cost clones
+of the NI GPIB-USB-HS can mishandle Service Request and then fail with instruments that rely on it (a wafer
+prober, for one).
 
 ---
 
@@ -1239,6 +1253,9 @@ architecture = "3.14-64"
   3.14: `2b 0e 0d 0a`).
 - Vendored or contributed source files must be UTF-8 (ideally ASCII); a cp1252 quote fails on a fresh checkout while a
   stale `__pycache__` hides it locally.
+- This repository normalises line endings (`.gitattributes`: `* text=auto eol=lf`; `.csv`, `.bat` and `.ps1` are
+  checked out with CRLF). Vendored sources that come with CRLF are stored with LF, and git's CRLF warnings on
+  `git add` are expected.
 
 ---
 
@@ -1307,13 +1324,20 @@ architecture = "3.14-64"
 - **Lint:** `ruff check src/`, `black --check src/`, `mypy src/` from the repository root; `black src/` then
   `ruff check --fix src/` to format.
 - **Importability CI:** every pull request runs `tests/importability/import_driver.py` for the changed drivers on
-  Python 3.14 with the pinned pysweepme; drivers that need vendor software are listed in `SKIPPED_DRIVERS`. Test in a
-  clean environment: a vendor SDK installed on the development PC masks vendored-library failures.
+  Python 3.14 with the pinned pysweepme. It loads each driver with the port strings `""`, `"USB"` and `"0"` and
+  passes when one of them works. Drivers that need vendor software are listed in `SKIPPED_DRIVERS`; that includes
+  drivers whose Python wrapper is on PyPI (`ftd2xx`, `mcculw`) and can be built with the LibraryBuilder, because
+  the vendor runtime behind the wrapper is missing on the CI runner. Test in a clean environment: a vendor SDK
+  installed on the development PC masks vendored-library failures. The environment must still contain the
+  packages SweepMe! ships and drivers rely on (`pymodbus`, `minimalmodbus`, `pywin32`, ...), or pysweepme reports
+  "Cannot load Driver" for a sound driver.
 - **Refactoring without hardware:** load the old driver from `git HEAD` and the new one, run both through the full
   lifecycle against a fake port that feeds the replies, and diff the sent command sequences and the returned values.
   This is a one-off comparison in a scratch script, not a `tests/` suite to commit (section 10.2).
 - **Streaming hardware:** judge sustainability only over windows longer than the buffer-fill time; the device's
-  overflow error is the arbiter.
+  overflow error is the arbiter. Compute keep-up as `sum(counts) / (nominal_rate * n_channels * elapsed)`, not as
+  the per-channel minimum, because round-robin reads unbalance the channels; a growing returned block size reveals
+  a slow backlog. Report a setting that cannot be sustained as its time to overflow.
 
 ---
 
