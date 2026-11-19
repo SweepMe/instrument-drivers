@@ -56,10 +56,20 @@ BurstCycles = Annotated[int, Range(1, 65535), Label("Burst cycles")]  # 65536 is
 BurstRepetitions = Annotated[int, Range(1, 65536), Label("Burst repetitions")]  # 65536 means infinite
 BurstPeriod = Annotated[float, Unit("µs"), Label("Burst period")]
 OutputOn = Annotated[bool, Label("Output on")]
+SweepMode = Annotated[Literal["LINEAR", "LOG"], Label("Sweep mode")]
+SweepDirection = Annotated[Literal["NORMAL", "UP_DOWN"], Label("Sweep direction")]
+SweepTime = Annotated[float, Unit("µs"), Label("Sweep time")]
+SweepOn = Annotated[bool, Label("Sweep on")]
 
 # +/- V of the fast analog outputs (STEMlab): the one-way amplitude plus the absolute offset must stay within it. Beyond
 # it the board clips the signal without a word, so the driver refuses such a combination; it never clips.
 OUTPUT_RANGE = 1.0
+
+# The board clamps an edge time outside 0.1 .. 100 us to the nearest end of that window, silently and without
+# queuing an error (verified on OS 2.x), so the declared range refuses such a value instead of letting an edge
+# that differs from the requested one reach the output.
+EdgeTime = Annotated[float, Unit("µs"), Range(0.1, 100.0), Label("Edge time")]
+BurstLevel = Annotated[float, Unit("V"), Range(-OUTPUT_RANGE, OUTPUT_RANGE)]
 
 
 def _check_output_range(amplitude: float, offset: float) -> None:
@@ -770,7 +780,172 @@ class Device(EmptyDevice):
             "burst_repetitions": self.get_burst_repetitions(channel),
             "burst_cycles": self.get_burst_cycles(channel),
             "burst_period": self.get_burst_period(channel),
+            "rise_time": self.get_rise_time(channel),
+            "fall_time": self.get_fall_time(channel),
+            "sweep_state": self.get_sweep_state(channel),
         }
+
+    @command
+    def set_rise_time(self, channel: Channel, rise_time: EdgeTime) -> None:
+        """Set the rise time of the built-in waveforms in us ('SOUR<n>:RISE:TIME', 0.1 to 100 us).
+
+        It shapes the edges of the waveforms the board generates itself, e.g. SQUARE: measured on a
+        STEMlab 125-14, 1 us gives a 1.1 us edge and 100 us a 40 us edge (10 % to 90 %, 1 V swing).
+        It has NO effect on an ARBITRARY waveform, whose edges follow the uploaded samples alone -
+        shape those in the data, e.g. by smoothing the step over a number of samples.
+        A value outside 0.1 to 100 us is refused; the board would clamp it without a word.
+        """
+        self.port.write("SOUR{0}:RISE:TIME {1:1.5f}".format(channel, rise_time))
+
+    @command(returns=("rise_time",), reads="setpoint")
+    def get_rise_time(self, channel: Channel) -> EdgeTime:
+        """Return the rise time of the built-in waveforms in us."""
+        return float(self.port.query("SOUR{0}:RISE:TIME?".format(channel)))
+
+    @command
+    def set_fall_time(self, channel: Channel, fall_time: EdgeTime) -> None:
+        """Set the fall time of the built-in waveforms in us ('SOUR<n>:FALL:TIME', 0.1 to 100 us).
+
+        The counterpart of set_rise_time, with the same scope and the same limits: built-in
+        waveforms only, no effect on an ARBITRARY waveform.
+        """
+        self.port.write("SOUR{0}:FALL:TIME {1:1.5f}".format(channel, fall_time))
+
+    @command(returns=("fall_time",), reads="setpoint")
+    def get_fall_time(self, channel: Channel) -> EdgeTime:
+        """Return the fall time of the built-in waveforms in us."""
+        return float(self.port.query("SOUR{0}:FALL:TIME?".format(channel)))
+
+    @command
+    def set_initial_value(self, channel: Channel, value: BurstLevel) -> None:
+        """Set the level in V the output takes when it is switched on ('SOUR<n>:INITValue').
+
+        It is what sits on the output after set_output_state(channel, True) and before the first
+        trigger(channel) starts the signal.
+        """
+        self.port.write("SOUR{0}:INITValue {1:1.5f}".format(channel, value))
+
+    @command(returns=("value",), reads="setpoint")
+    def get_initial_value(self, channel: Channel) -> BurstLevel:
+        """Return the level in V the output takes when it is switched on."""
+        return float(self.port.query("SOUR{0}:INITValue?".format(channel)))
+
+    @command
+    def set_burst_init_value(self, channel: Channel, value: BurstLevel) -> None:
+        """Set the level in V held before the first burst ('SOUR<n>:BURS:INITValue')."""
+        self.port.write("SOUR{0}:BURS:INITValue {1:1.5f}".format(channel, value))
+
+    @command(returns=("value",), reads="setpoint")
+    def get_burst_init_value(self, channel: Channel) -> BurstLevel:
+        """Return the level in V held before the first burst."""
+        return float(self.port.query("SOUR{0}:BURS:INITValue?".format(channel)))
+
+    @command
+    def set_burst_last_value(self, channel: Channel, value: BurstLevel) -> None:
+        """Set the level in V held after a burst has finished ('SOUR<n>:BURS:LASTValue').
+
+        Without it the output rests between and after bursts at the offset, which for a pulse
+        pattern built from an offset is not the idle level of the pattern. Setting it to the
+        pattern's own idle level keeps the output there once the burst is over.
+        """
+        self.port.write("SOUR{0}:BURS:LASTValue {1:1.5f}".format(channel, value))
+
+    @command(returns=("value",), reads="setpoint")
+    def get_burst_last_value(self, channel: Channel) -> BurstLevel:
+        """Return the level in V held after a burst has finished."""
+        return float(self.port.query("SOUR{0}:BURS:LASTValue?".format(channel)))
+
+    @command(returns=("data",), reads="setpoint")
+    def get_arbitrary_waveform(self, channel: Channel) -> list:
+        """Return the arbitrary waveform in the channel's buffer ('SOUR<n>:TRAC:DATA:DATA?').
+
+        The counterpart of set_arbitrary_waveform, useful to check what the board really holds;
+        the answer is about 150 kB for a full 16384 sample waveform.
+        """
+        answer = self.port.query("SOUR{0}:TRAC:DATA:DATA?".format(channel)).strip()
+        return [float(value) for value in answer.strip("{}").split(",") if value.strip() != ""]
+
+    # Built-in frequency sweep. The board runs it on its own once it is switched on, so a sweep
+    # does not have to be stepped from the computer.
+
+    @command
+    def set_sweep_state(self, channel: Channel, enabled: SweepOn) -> None:
+        """Switch the built-in frequency sweep on or off ('SOUR<n>:SWeep:STATE')."""
+        self.port.write("SOUR{0}:SWeep:STATE {1}".format(channel, "ON" if enabled else "OFF"))
+
+    @command(returns=("enabled",), reads="setpoint")
+    def get_sweep_state(self, channel: Channel) -> SweepOn:
+        """Return whether the built-in frequency sweep is switched on."""
+        return self.port.query("SOUR{0}:SWeep:STATE?".format(channel)).strip().upper() in ("ON", "1")
+
+    @command
+    def set_sweep_start_frequency(self, channel: Channel, frequency: Hertz) -> None:
+        """Set the frequency in Hz the sweep starts at ('SOUR<n>:SWeep:FREQ:START')."""
+        self.port.write("SOUR{0}:SWeep:FREQ:START {1:1.7f}".format(channel, frequency))
+
+    @command(returns=("frequency",), reads="setpoint")
+    def get_sweep_start_frequency(self, channel: Channel) -> Hertz:
+        """Return the frequency in Hz the sweep starts at."""
+        return float(self.port.query("SOUR{0}:SWeep:FREQ:START?".format(channel)))
+
+    @command
+    def set_sweep_stop_frequency(self, channel: Channel, frequency: Hertz) -> None:
+        """Set the frequency in Hz the sweep ends at ('SOUR<n>:SWeep:FREQ:STOP')."""
+        self.port.write("SOUR{0}:SWeep:FREQ:STOP {1:1.7f}".format(channel, frequency))
+
+    @command(returns=("frequency",), reads="setpoint")
+    def get_sweep_stop_frequency(self, channel: Channel) -> Hertz:
+        """Return the frequency in Hz the sweep ends at."""
+        return float(self.port.query("SOUR{0}:SWeep:FREQ:STOP?".format(channel)))
+
+    @command
+    def set_sweep_time(self, channel: Channel, sweep_time: SweepTime) -> None:
+        """Set the time in us for one pass of the sweep ('SOUR<n>:SWeep:TIME')."""
+        self.port.write("SOUR{0}:SWeep:TIME {1}".format(channel, int(round(sweep_time))))
+
+    @command(returns=("sweep_time",), reads="setpoint")
+    def get_sweep_time(self, channel: Channel) -> SweepTime:
+        """Return the time in us for one pass of the sweep."""
+        return float(self.port.query("SOUR{0}:SWeep:TIME?".format(channel)))
+
+    @command
+    def set_sweep_mode(self, channel: Channel, mode: SweepMode) -> None:
+        """Set how the frequency progresses: LINEAR or LOG ('SOUR<n>:SWeep:MODE').
+
+        Only these two spellings are understood. The board accepts any other word without an
+        error and keeps LINEAR, so a typo would go unnoticed; this driver refuses it.
+        """
+        self.port.write("SOUR{0}:SWeep:MODE {1}".format(channel, mode))
+
+    @command(returns=("mode",), reads="setpoint")
+    def get_sweep_mode(self, channel: Channel) -> SweepMode:
+        """Return how the frequency progresses, 'LINEAR' or 'LOG'."""
+        return self.port.query("SOUR{0}:SWeep:MODE?".format(channel)).strip()
+
+    @command
+    def set_sweep_direction(self, channel: Channel, direction: SweepDirection) -> None:
+        """Set the sweep direction: NORMAL (start to stop) or UP_DOWN ('SOUR<n>:SWeep:DIR')."""
+        self.port.write("SOUR{0}:SWeep:DIR {1}".format(channel, direction))
+
+    @command(returns=("direction",), reads="setpoint")
+    def get_sweep_direction(self, channel: Channel) -> SweepDirection:
+        """Return the sweep direction, 'NORMAL' or 'UP_DOWN'."""
+        return self.port.query("SOUR{0}:SWeep:DIR?".format(channel)).strip()
+
+    @command(returns=("error",), reads="state")
+    def get_error(self) -> str:
+        """Return and remove the oldest entry of the board's error queue ('SYSTem:ERRor:NEXT?').
+
+        Answers '0,"No error"' when the queue is empty. The board queues an entry for a command
+        it could not carry out even where it answers the command itself without complaint, so
+        this is the way to notice a setting that did not take.
+        """
+        return self.port.query("SYSTem:ERRor:NEXT?")
+
+    @command(returns=("error_count",), reads="state")
+    def get_error_count(self) -> int:
+        """Return how many entries the board's error queue holds ('SYSTem:ERRor:COUNt?')."""
+        return int(self.port.query("SYSTem:ERRor:COUNt?"))
 
     @command(returns=("identification",), reads="state")
     def get_identification(self) -> str:

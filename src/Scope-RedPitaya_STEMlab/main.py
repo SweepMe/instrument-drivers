@@ -57,6 +57,12 @@ TriggerLevel = Annotated[float, Unit("V"), Label("Trigger level")]
 TriggerHysteresis = Annotated[float, Unit("V"), Label("Trigger hysteresis")]
 TriggerDelay = Annotated[int, Unit("samples")]
 Samples = Annotated[int, Range(1, 16384)]
+TriggerDelayNs = Annotated[int, Unit("ns"), Label("Trigger delay")]
+# ACQ:DEC:Factor (OS 2.00 and up) takes any whole number, not only the powers of two of ACQ:DEC.
+DecimationFactor = Annotated[int, Range(1, 65536), Label("Decimation factor")]
+FilterBypass = Annotated[bool, Label("Filter bypass")]
+SampleRate = Annotated[float, Unit("Hz"), Label("Sample rate")]
+BufferIndex = Annotated[int, Range(0, 16383)]
 
 
 class Device(EmptyDevice):
@@ -803,7 +809,90 @@ class Device(EmptyDevice):
             "trigger_status": self.get_trigger_status(),
             "gain_1": self.get_gain(1),
             "gain_2": self.get_gain(2),
+            "sample_rate": self.get_sample_rate(),
         }
+
+    @command(returns=("sample_rate",), reads="state")
+    def get_sample_rate(self) -> SampleRate:
+        """Return the sample rate in Hz that the current decimation gives ('ACQ:SRATe?').
+
+        The board answers with a unit, e.g. '    61035 Hz'; this returns the number alone. It
+        saves computing 125 MHz divided by the decimation by hand, and it is the rate the board
+        actually uses, which is what a time axis should be built from.
+        """
+        return float(self.port.query("ACQ:SRATe?").strip().split()[0])
+
+    @command
+    def set_trigger_delay_ns(self, trigger_delay: TriggerDelayNs) -> None:
+        """Set the trigger delay in ns ('ACQ:TRIG:DLY:NS'), the time form of set_trigger_delay.
+
+        The same positioning as set_trigger_delay, expressed in time instead of samples, so it
+        does not have to be recomputed when the decimation changes.
+        """
+        self.port.write("ACQ:TRIG:DLY:NS {0}".format(int(trigger_delay)))
+
+    @command(returns=("trigger_delay",), reads="setpoint")
+    def get_trigger_delay_ns(self) -> TriggerDelayNs:
+        """Return the trigger delay in ns."""
+        return int(self.port.query("ACQ:TRIG:DLY:NS?"))
+
+    @command
+    def set_decimation_factor(self, decimation: DecimationFactor) -> None:
+        """Set the decimation as any whole number ('ACQ:DEC:Factor', OS 2.00 and up).
+
+        set_decimation takes only powers of two and ignores anything else without an error; this
+        one also takes e.g. 100, verified on a STEMlab 125-14 where factor 100 gives 1.25 MHz.
+        Check the result with get_sample_rate rather than assuming the factor was taken.
+        """
+        self.port.write("ACQ:DEC:Factor {0}".format(int(decimation)))
+
+    @command(returns=("decimation",), reads="setpoint")
+    def get_decimation_factor(self) -> DecimationFactor:
+        """Return the decimation factor."""
+        return int(self.port.query("ACQ:DEC:Factor?"))
+
+    @command
+    def set_filter_bypass(self, channel: Channel, bypass: FilterBypass) -> None:
+        """Switch the input filter of an input out of the path ('ACQ:FILTER:BYPASS:CH<n>')."""
+        self.port.write("ACQ:FILTER:BYPASS:CH{0} {1}".format(channel, "ON" if bypass else "OFF"))
+
+    @command(returns=("bypass",), reads="setpoint")
+    def get_filter_bypass(self, channel: Channel) -> FilterBypass:
+        """Return whether the input filter of an input is bypassed."""
+        return self.port.query("ACQ:FILTER:BYPASS:CH{0}?".format(channel)).strip().upper() in ("ON", "1")
+
+    @command(returns=("trace",), reads="last")
+    def get_data_range(self, channel: Channel, start: BufferIndex, end: BufferIndex) -> list:
+        """Return buffer samples from 'start' to 'end', both included ('ACQ:SOUR<n>:DATA:STArt:End?').
+
+        Useful to fetch only the part of a record that matters, e.g. the samples around an edge,
+        instead of transferring all 16384. The end is inclusive, so start 0 and end 10 give
+        eleven samples.
+
+        The indices are ABSOLUTE POSITIONS IN THE RING BUFFER, not positions in the record that
+        get_data returns: get_data rotates the ring so that it begins at the oldest sample, this
+        command does not. Measured on a STEMlab 125-14, index i here is index
+        (i + 16384 - get_write_position() - 1) mod 16384 of the get_data record. So do not mix
+        the two index systems; for a window inside a recorded trace, take get_data and slice it,
+        and use this command when working with ring positions such as get_trigger_position.
+        """
+        answer = self.port.query("ACQ:SOUR{0}:DATA:STArt:End? {1},{2}".format(channel, start, end))
+        return self._parse_data(answer, channel)
+
+    @command(returns=("error",), reads="state")
+    def get_error(self) -> str:
+        """Return and remove the oldest entry of the board's error queue ('SYSTem:ERRor:NEXT?').
+
+        Answers '0,"No error"' when the queue is empty. The board queues an entry for a command
+        it could not carry out even where it answers without complaint, so this is the way to
+        notice a setting that did not take.
+        """
+        return self.port.query("SYSTem:ERRor:NEXT?")
+
+    @command(returns=("error_count",), reads="state")
+    def get_error_count(self) -> int:
+        """Return how many entries the board's error queue holds ('SYSTem:ERRor:COUNt?')."""
+        return int(self.port.query("SYSTem:ERRor:COUNt?"))
 
     @command(returns=("identification",), reads="state")
     def get_identification(self) -> str:
