@@ -15,9 +15,9 @@ SCPI server over Ethernet.
 ## Known behavior
 
 - **Output range**: the sum of the one-way amplitude and the absolute offset must not exceed
-  +/- 1 V (+/- 2 V / +/- 10 V at Hi-Z for SIGNALlab). Values above this limit are clipped by the
-  driver and a message box informs the user once per run. For example, amplitude 1 V combined with
-  offset 1 V results in amplitude 1 V and offset 0 V.
+  +/- 1 V (+/- 2 V / +/- 10 V at Hi-Z for SIGNALlab). The driver never clips: amplitude and offset
+  beyond this limit stop the run with an error that names both values. The driver assumes the
+  STEMlab range of +/- 1 V.
 - **Frequency range**: 1 Hz to 50 MHz, board dependent.
 - **Trigger sources**: the SCPI server accepts `INT`, `EXT_PE`, `EXT_NE` and `GATED`. The GUI
   option "Immediately" uses the internal trigger source and sends the software trigger directly.
@@ -74,15 +74,17 @@ outputs can be driven from one instance:
 - `set_trigger_source(channel, source)` / `get_trigger_source(channel)` - INT, EXT_PE, EXT_NE, GATED
 - `trigger(channel)` - `SOUR<n>:TRIG:INT`, starts the generation; needed after
   `set_output_state(channel, True)` on OS 2.x and after `set_frequency`/`set_phase`
-- `set_burst_state(channel, state)` (CONTINUOUS/BURST), `set_burst_cycles`, `set_burst_repetitions`,
+- `set_burst_state(channel, burst_state)` (CONTINUOUS/BURST), `set_burst_cycles`, `set_burst_repetitions`,
   `set_burst_period` (in us) and their `get_` counterparts
 - `set_output_state(channel, enabled)` / `get_output_state(channel)`
 - `get_settings(channel)` - all of the above as a dictionary
 - `reset_generator()`, `get_identification()`, `get_board_name()`, `get_board_id()`,
   `get_system_version()`, `get_system_help()`
 
-The set commands do not clip: amplitude plus |offset| beyond the output range is passed to the
-instrument as is. Clipping with a message only happens on the sequencer path (`configure`/`apply`).
+Nothing is clipped: `set_amplitude` and `set_offset` refuse a value that would take amplitude plus
+|offset| beyond the output range, together with the value set now, and nothing is sent.
+`set_amplitude_and_offset(channel, amplitude, offset)` sets both in the order that stays within
+the range at every step. A duty cycle outside 0 to 100 % stops the run with an error as well.
 
 ## Reference
 

@@ -33,11 +33,36 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Any
+from typing import Annotated, Any, Literal
 
 import numpy as np
+from pysweepme.commands import Elements, Label, Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.ErrorMessage import debug
+
+# What the communication commands take and answer (checked by @command on every call)
+Channel = Annotated[int, Selector(), Range(1, 2)]
+# The values ACQ:DEC accepts - another value is ignored without an error. (ACQ:DEC:Factor, from OS 2.00, would also
+# take any whole number from 16 to 65536.)
+Decimation = Literal[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
+AveragingOn = Annotated[bool, Label("Averaging")]
+DataUnits = Annotated[Literal["VOLTS", "RAW"], Label("Data units")]
+Gain = Literal["LV", "HV"]
+TriggerSource = Annotated[
+    Literal["DISABLED", "NOW", "CH1_PE", "CH1_NE", "CH2_PE", "CH2_NE", "EXT_PE", "EXT_NE", "AWG_PE", "AWG_NE"],
+    Label("Trigger source"),
+]
+TriggerLevel = Annotated[float, Unit("V"), Label("Trigger level")]
+TriggerDelay = Annotated[int, Unit("samples")]
+Samples = Annotated[int, Range(1, 16384)]
+Seconds = Annotated[float, Unit("s")]
+Window = Literal["Hann", "Hamming", "Blackman", "Flat top", "Rectangular"]
+Segments = Annotated[int, Range(1, 64)]
+Impedance = Annotated[float, Unit("Ohm")]
+Hertz = Annotated[float, Unit("Hz"), Label("Frequency")]
+Dbm = Annotated[float, Unit("dBm"), Label("Power")]
+Frequencies = Annotated[np.ndarray, Elements(Hertz)]
+Powers = Annotated[np.ndarray, Elements(Dbm)]
 
 
 class Device(EmptyDevice):
@@ -288,7 +313,9 @@ class Device(EmptyDevice):
         return [self.frequencies, self.powers]
 
     # -- spectrum helpers -----------------------------------------------------------------------
-    # Built on the communication commands below; usable from scripts as well.
+    # acquire_trace and get_spectrum are commands built on the communication commands below. The arithmetic
+    # (decimation_for_frequency, resolution_bandwidth, compute_spectrum, get_peak) talks to no instrument, so it is
+    # not a command; a script that loads the driver with pysweepme can still use it.
 
     def decimation_for_frequency(self, frequency_max: float) -> int:
         """The smallest power-of-two decimation whose Nyquist frequency still covers
@@ -307,7 +334,8 @@ class Device(EmptyDevice):
         segments = self.segments if segments is None else int(segments)
         return self.base_samplerate / decimation / (samples // segments)
 
-    def acquire_trace(self, channel: int, samples: int = 16384, timeout: float = 5.0) -> list:
+    @command(returns=("trace",), composite=True)
+    def acquire_trace(self, channel: Channel, samples: Samples = 16384, timeout: Seconds = 5.0) -> list:
         """One immediate acquisition of an input: start, trigger now, wait for the buffer, read.
 
         The decimation, gain and trigger delay are whatever is set (see the set_ commands). The
@@ -335,6 +363,8 @@ class Device(EmptyDevice):
         """Wait until the buffer is full after the trigger: by 'ACQ:TRig:FILL?' on OS 2.x, by
         the calculated fill time on ecosystems that do not answer it."""
         fill_time = self.buffersize * self.decimation / self.base_samplerate
+        # Asks 'ACQ:TRig:FILL?' itself rather than through get_buffer_filled: an ecosystem without the query answers
+        # something else or nothing, which has to be told apart from "not filled yet".
         while self.has_fill_query:
             try:
                 answer = self.port.query("ACQ:TRig:FILL?").strip()
@@ -389,9 +419,10 @@ class Device(EmptyDevice):
         frequencies = np.fft.rfftfreq(length, 1 / samplerate)
         return frequencies.tolist(), power_dbm.tolist()
 
-    def get_spectrum(self, channel: int, decimation: int = 64, samples: int = 16384,
-                     window: str = "Hann", segments: int = 1, impedance: float = 50.0,
-                     timeout: float = 5.0) -> tuple[np.ndarray, np.ndarray]:
+    @command(returns=("frequencies", "powers"), composite=True)
+    def get_spectrum(self, channel: Channel, decimation: Decimation = 64, samples: Samples = 16384,
+                     window: Window = "Hann", segments: Segments = 1, impedance: Impedance = 50.0,
+                     timeout: Seconds = 5.0) -> tuple[Frequencies, Powers]:
         """Acquire an input and return its spectrum: (frequencies in Hz, powers in dBm).
 
         Sets the decimation (sample rate 125 MHz / decimation, the trace spans
@@ -406,6 +437,7 @@ class Device(EmptyDevice):
                                                    window, segments, impedance)
         return np.asarray(frequencies), np.asarray(power)
 
+    # check_driver: ignore DC004 - arithmetic on a spectrum, it talks to no instrument
     def get_peak(self, frequencies: list, powers: list) -> dict:
         """The strongest bin of a spectrum: {'frequency': Hz, 'power': dBm}."""
         index = int(np.argmax(powers))
@@ -428,106 +460,130 @@ class Device(EmptyDevice):
             return data
 
     # -- Communication commands -----------------------------------------------------------------
-    # One SCPI command each, the acquisition commands of the board ('ACQ:...'); the same set the
-    # Scope driver offers, since a spectrum is an acquisition plus arithmetic. 'channel' is the
-    # input, 1 or 2. Reference:
+    # One SCPI command each, declared with pysweepme's @command: the acquisition commands of the board ('ACQ:...'),
+    # the same set the Scope driver offers, since a spectrum is an acquisition plus arithmetic. 'channel' is the
+    # input, 1 or 2. The acquisition belongs to the board, not to an input: every scope or spectrum analyzer driver
+    # instance on the board shares it. Reference:
     # https://redpitaya.readthedocs.io/en/latest/appsFeatures/remoteControl/command_list/commands-acq.html
 
+    @command(warnings="Resets the acquisition settings of the whole board (decimation, trigger, gain of both inputs), "
+                     "also those another scope or spectrum analyzer driver instance relies on.")
     def reset_acquisition(self) -> None:
         """Stop the acquisition and reset all acquisition parameters ('ACQ:RST')."""
         self.port.write("ACQ:RST")
 
+    @command
     def start_acquisition(self) -> None:
         """Start the acquisition ('ACQ:START'); the trigger is armed separately."""
         self.port.write("ACQ:START")
 
+    @command
     def stop_acquisition(self) -> None:
         """Stop the acquisition ('ACQ:STOP')."""
         self.port.write("ACQ:STOP")
 
-    def set_decimation(self, decimation: int) -> None:
+    @command
+    def set_decimation(self, decimation: Decimation) -> None:
         """Set the decimation, a power of two from 1 to 65536 ('ACQ:DEC'); sample rate = 125 MHz / decimation."""
-        self.port.write("ACQ:DEC {0}".format(int(decimation)))
+        self.port.write("ACQ:DEC {0}".format(decimation))
 
-    def get_decimation(self) -> int:
+    @command(returns=("decimation",), reads="setpoint")
+    def get_decimation(self) -> Decimation:
         """Return the decimation."""
         return int(self.port.query("ACQ:DEC?"))
 
-    def set_averaging(self, enabled: bool) -> None:
+    @command
+    def set_averaging(self, enabled: AveragingOn) -> None:
         """Switch averaging of the decimated samples on or off ('ACQ:AVG')."""
         self.port.write("ACQ:AVG {0}".format("ON" if enabled else "OFF"))
 
-    def get_averaging(self) -> bool:
+    @command(returns=("enabled",), reads="setpoint")
+    def get_averaging(self) -> AveragingOn:
         """Return whether the decimated samples are averaged."""
         return self.port.query("ACQ:AVG?").strip().upper() in ("ON", "1")
 
-    def set_data_units(self, units: str) -> None:
+    @command
+    def set_data_units(self, units: DataUnits) -> None:
         """Set the units of the returned data: VOLTS or RAW ('ACQ:DATA:UNITS')."""
-        self.port.write("ACQ:DATA:UNITS {0}".format(str(units).upper()))
+        self.port.write("ACQ:DATA:UNITS {0}".format(units))
 
-    def get_data_units(self) -> str:
+    @command(returns=("units",), reads="setpoint")
+    def get_data_units(self) -> DataUnits:
         """Return the units of the returned data, 'VOLTS' or 'RAW'."""
         return self.port.query("ACQ:DATA:UNITS?")
 
+    @command(returns=("buffer_size",), reads="state")
     def get_buffer_size(self) -> int:
         """Return the size of the data buffer in samples ('ACQ:BUF:SIZE?')."""
         return int(self.port.query("ACQ:BUF:SIZE?"))
 
-    def set_gain(self, channel: int, gain: str) -> None:
+    @command
+    def set_gain(self, channel: Channel, gain: Gain) -> None:
         """Select the input range an input is calibrated for: LV (+/- 1 V) or HV (+/- 20 V) ('ACQ:SOUR<n>:GAIN').
 
         Switches nothing in hardware - the range is set by the jumper behind the SMA connector -
-        it only selects the calibration. The GUI names 'Low voltage'/'High voltage' are accepted.
+        it only selects the calibration.
         """
-        self.port.write("ACQ:SOUR{0}:GAIN {1}".format(channel, self.gains.get(gain, str(gain).upper())))
+        self.port.write("ACQ:SOUR{0}:GAIN {1}".format(channel, gain))
 
-    def get_gain(self, channel: int) -> str:
+    @command(returns=("gain",), reads="setpoint")
+    def get_gain(self, channel: Channel) -> Gain:
         """Return the input range setting of an input, 'LV' or 'HV'."""
         return self.port.query("ACQ:SOUR{0}:GAIN?".format(channel))
 
-    def set_trigger_source(self, source: str) -> None:
+    @command
+    def set_trigger_source(self, source: TriggerSource) -> None:
         """Set the trigger source, which arms the trigger ('ACQ:TRIG'); after start_acquisition().
 
         Sources: DISABLED, NOW, CH1_PE, CH1_NE, CH2_PE, CH2_NE, EXT_PE, EXT_NE, AWG_PE, AWG_NE.
         """
-        self.port.write("ACQ:TRIG {0}".format(str(source).upper()))
+        self.port.write("ACQ:TRIG {0}".format(source))
 
+    @command(returns=("trigger_status",), reads="state")
     def get_trigger_status(self) -> str:
         """Return the trigger status: 'WAIT' until the trigger fires, 'TD' afterwards."""
         return self.port.query("ACQ:TRIG:STAT?")
 
-    def set_trigger_level(self, level: float) -> None:
+    @command
+    def set_trigger_level(self, level: TriggerLevel) -> None:
         """Set the trigger level in V ('ACQ:TRIG:LEV')."""
-        self.port.write("ACQ:TRIG:LEV {0}".format(float(level)))
+        self.port.write("ACQ:TRIG:LEV {0}".format(level))
 
-    def get_trigger_level(self) -> float:
+    @command(returns=("level",), reads="setpoint")
+    def get_trigger_level(self) -> TriggerLevel:
         """Return the trigger level in V."""
         return float(self.port.query("ACQ:TRIG:LEV?"))
 
-    def set_trigger_delay(self, samples: int) -> None:
+    @command
+    def set_trigger_delay(self, trigger_delay: TriggerDelay) -> None:
         """Set the trigger delay in samples ('ACQ:TRIG:DLY'): 0 puts the trigger in the middle of
         the buffer, half the buffer size puts it at the start."""
-        self.port.write("ACQ:TRIG:DLY {0}".format(int(samples)))
+        self.port.write("ACQ:TRIG:DLY {0}".format(trigger_delay))
 
-    def get_trigger_delay(self) -> int:
+    @command(returns=("trigger_delay",), reads="setpoint")
+    def get_trigger_delay(self) -> TriggerDelay:
         """Return the trigger delay in samples."""
         return int(self.port.query("ACQ:TRIG:DLY?"))
 
+    @command(returns=("buffer_filled",), reads="state")
     def get_buffer_filled(self) -> bool:
         """Return whether the buffer has been filled after the trigger ('ACQ:TRig:FILL?', OS 2.00 and up)."""
         return self.port.query("ACQ:TRig:FILL?").strip() == "1"
 
-    def get_data(self, channel: int, samples: int) -> list:
+    @command(returns=("trace",), reads="last")
+    def get_data(self, channel: Channel, samples: Samples) -> list:
         """Return the oldest 'samples' samples of an input's buffer ('ACQ:SOUR<n>:DATA:OLD:N?') -
         the acquired trace, in the units selected with set_data_units."""
-        answer = self.port.query("ACQ:SOUR{0}:DATA:OLD:N? {1}".format(channel, int(samples)))
+        answer = self.port.query("ACQ:SOUR{0}:DATA:OLD:N? {1}".format(channel, samples))
         return self._parse_data(answer, channel)
 
-    def get_buffer(self, channel: int) -> list:
+    @command(returns=("trace",), reads="last")
+    def get_buffer(self, channel: Channel) -> list:
         """Return the whole buffer of an input ('ACQ:SOUR<n>:DATA?'), 16384 samples."""
         answer = self.port.query("ACQ:SOUR{0}:DATA?".format(channel))
         return self._parse_data(answer, channel)
 
+    @command(returns=("settings",), reads="state", composite=True)
     def get_settings(self) -> dict:
         """Return the acquisition settings and the spectrum settings derived from them."""
         decimation = self.get_decimation()
@@ -545,10 +601,12 @@ class Device(EmptyDevice):
             "gain_2": self.get_gain(2),
         }
 
+    @command(returns=("identification",), reads="state")
     def get_identification(self) -> str:
         """Return the '*IDN?' string of the board."""
         return self.port.query("*IDN?")
 
+    @command(returns=("system_version",), reads="state")
     def get_system_version(self) -> str:
         """Return the ecosystem version of the board ('SYST:VERS?')."""
         return self.port.query("SYST:VERS?")

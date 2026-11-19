@@ -5,7 +5,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2025 SweepMe! GmbH (sweep-me.net)
+# Copyright (c) 2025-2026 SweepMe! GmbH (sweep-me.net)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -29,331 +29,463 @@
 # * Module: Signal
 # * Instrument: Rohde&Schwarz SMB100A
 
-import numpy as np
+from __future__ import annotations
+
+import math
+import re
+from typing import Annotated, Any, Literal
+
+from pysweepme.commands import Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+# What the communication commands take and answer (checked by @command on every call). The instrument commands are
+# taken from the R&S SMB100A Operating Manual, version 23 (firmware 5.00.116), chapter 6 "Remote Control Commands".
+Hertz = Annotated[float, Unit("Hz")]
+Degrees = Annotated[float, Unit("deg")]
+Seconds = Annotated[float, Unit("s")]
+Decibel = Annotated[float, Unit("dB")]
+Percent = Annotated[float, Unit("%")]
+Ohm = Annotated[float, Unit("Ohm")]
+# The RF level is set and read in the unit selected with set_power_unit (dBm, dBuV or V; :UNIT:POWer, section 6.18),
+# so no unit is declared for it. Its range depends on the frequency option and the attenuator (section 2.2 and
+# [:SOURce<hw>]:POWer[:LEVel][:IMMediate][:AMPLitude], "Minimum level ... Maximum level"), so no Range is declared.
+Level = float
+
+FrequencyMode = Literal["CW", "FIX", "SWE", "LIST"]  # [:SOURce<hw>]:FREQuency:MODE
+PowerMode = Literal["CW", "FIX", "SWE"]  # [:SOURce<hw>]:POWer:MODE
+PowerUnit = Literal["DBM", "DBUV", "V"]  # :UNIT:POWer
+RfMode = Literal["NORM", "LOWN", "LOWD"]  # [:SOURce<hw>]:POWer:LMODe: normal, low noise, low distortion
+AmplitudeModulationType = Literal["LIN", "EXP"]  # [:SOURce<hw>]:AM:TYPE
+DataFormat = Literal["ASC", "PACK"]  # :FORMat[:DATA]
+
+# The amplitude choices of the Signal module and the power unit each one needs (:UNIT:POWer)
+AMPLITUDE_UNITS: dict[str, PowerUnit] = {
+    "Amplitude in V": "V",
+    "Amplitude in dBm": "DBM",
+    "Amplitude in dBuV": "DBUV",
+}
+
+# The impedance answers of :OUTPut<hw>:IMPedance? in Ohm; the instrument may also answer the plain number
+IMPEDANCES: dict[str, float] = {"G50": 50.0, "G1K": 1000.0, "G10K": 10000.0}
 
 
 class Device(EmptyDevice):
-    """Device class for the Rohde&Schwarz SMB100A Signal Generator."""
+    """Driver for the Rohde & Schwarz SMB100A RF and microwave signal generator."""
 
     def __init__(self) -> None:
-        """Initialize device parameters."""
-        EmptyDevice.__init__(self)
+        """Define the returned variables and the port."""
+        super().__init__()
+
+        self.shortname = "SMB100A"
 
         self.port_manager = True
-        self.port_types = [
-            "USB",
-            # "GPIB",
-            "TCPIP",
-        ]
+        self.port_types = ["USB", "TCPIP"]
 
-        self.variables = ["Frequency", "Amplitude"]
+        self.variables = ["Frequency", "RF Power level"]
         self.units = ["Hz", "V"]
         self.plottype = [True, True]
         self.savetype = [True, True]
 
-        # Measurement Parameters
+        # GUI parameters, exactly as they arrive from the GUI; converted in configure()
+        self.gui_parameters: dict[str, Any] = {}
         self.sweep_mode: str = "None"
-        self.period_frequency_mode: str = "Frequency in Hz"  # or "Period in s"
-        self.period_frequency_value: float = 2.2e9
+        self.period_frequency_mode: str = "Frequency in Hz"
+        self.amplitude_mode: str = "Amplitude in V"
+        self.delay_phase_mode: str = "Delay in s"
 
-        self.amplitude_modes = ["Amplitude in V", "Amplitude in dBm", "Amplitude in dBuV"]
-        self.amplitude_unit: str = "V"  # or "High level in V"
-        self.amplitude: float = 0.1
-
-        self.delay_phase_mode: str = "Phase in deg"  # or "Delay in s"
+        # Values derived from the GUI parameters
+        self.frequency: float = 2e6
+        self.amplitude: float = 1.0
+        self.power_unit: PowerUnit = "V"
         self.delay_phase_value: float = 0.0
 
-    def set_GUIparameter(self) -> dict:  # noqa: N802
-        """Set the standard GUI parameters."""
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+        """Return the GUI fields of the Signal module."""
         return {
             "SweepMode": [
                 "None",
                 "Frequency in Hz",
                 "Period in s",
-                *self.amplitude_modes,
+                *AMPLITUDE_UNITS,
                 "Phase in deg",
                 "Delay in s",
             ],
             "Waveform": ["Sinus"],
             "PeriodFrequency": ["Frequency in Hz", "Period in s"],
             "PeriodFrequencyValue": 2e6,
-            "AmplitudeHiLevel": self.amplitude_modes,
+            "AmplitudeHiLevel": list(AMPLITUDE_UNITS),
             "AmplitudeHiLevelValue": 1.0,
             "DelayPhase": ["Delay in s", "Phase in deg"],
             "DelayPhaseValue": 0.0,
             "Impedance": ["50"],
         }
 
-    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
-        """Get the GUI parameters."""
-        self.sweep_mode = parameter["SweepMode"]
-        self.period_frequency_mode = parameter["PeriodFrequency"]
-        self.period_frequency_value = float(parameter["PeriodFrequencyValue"])
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Store the user's selections and derive the returned variables from them.
 
-        self.amplitude_unit = parameter["AmplitudeHiLevel"].split(" ")[-1]
-        self.amplitude = float(parameter["AmplitudeHiLevelValue"])
+        The values are kept as they arrive and converted to numbers in configure(), because this method is called
+        repeatedly, also with incomplete dictionaries.
+        """
+        self.gui_parameters = dict(parameters)
+        self.sweep_mode = parameters.get("SweepMode", "None")
+        self.period_frequency_mode = parameters.get("PeriodFrequency", "Frequency in Hz")
+        self.amplitude_mode = parameters.get("AmplitudeHiLevel", "Amplitude in V")
+        self.delay_phase_mode = parameters.get("DelayPhase", "Delay in s")
 
-        self.delay_phase_mode = parameter["DelayPhase"]
-        self.delay_phase_value = float(parameter["DelayPhaseValue"])
-
-        self.variables = [self.period_frequency_mode.split(" ")[0], "RF Power level"]
-        self.units = [self.period_frequency_mode.split(" ")[-1], self.amplitude_unit]
+        # "Period in s" -> variable "Period" in "s"; the level is returned in the unit of the amplitude choice
+        quantity, _, unit = self.period_frequency_mode.partition(" in ")
+        self.variables = [quantity, "RF Power level"]
+        self.units = [unit, self.amplitude_mode.partition(" in ")[2]]
 
     def initialize(self) -> None:
-        """Initialize the device."""
-        self.port.write("*RST")
-        self.lock_user_interface(True)
+        """Check the user input, reset the instrument and lock its front panel."""
+        self.convert_gui_parameters()
+        self.reset_instrument()
+        self.set_user_interface_lock(True)
 
     def configure(self) -> None:
-        """Configure the device."""
-        # Set power mode to CW
-        self.port.write(":SOUR:POW:MODE CW")
+        """Set level, frequency and phase in CW mode and switch the RF output on."""
+        self.convert_gui_parameters()
 
-        self.set_power_unit(self.amplitude_unit)
+        self.set_power_mode("CW")
+        self.set_power_unit(self.power_unit)
         self.set_amplitude(self.amplitude)
 
-        # Set frequency
         self.set_frequency_mode("CW")
+        self.set_frequency(self.frequency)
 
-        if self.period_frequency_mode == "Period in s":  # else it is "Frequency in Hz"
-            self.period_frequency_value = 1 / self.period_frequency_value
-        self.set_frequency(self.period_frequency_value)
+        self.apply_delay_phase(self.delay_phase_mode, self.delay_phase_value)
 
-        # Set phase
-        if self.delay_phase_mode == "Phase in deg":
-            self.set_phase(self.delay_phase_value)
-        elif self.delay_phase_mode == "Delay in s":
-            self.set_delay(self.delay_phase_value)
-
-        self.set_output_state(True)
-
-    def reconfigure(self, parameters: dict, keys: list) -> None:
-        """If the GUI parameters are changed during a measurement this function is called.
-
-        This can happen when using the ParameterSystem in the SweepMe! GUI. Use reconfigure to only update the changed
-        parameters instead of calling configure which sets all parameters to their default values.
-        """
-        if "PeriodFrequencyValue" in keys:
-            new_frequency = float(parameters["PeriodFrequencyValue"])
-            if parameters["PeriodFrequency"] == "Period in s":
-                new_frequency = 1 / new_frequency
-
-            self.set_frequency(new_frequency)
-
-        if "AmplitudeHiLevelValue" in keys:
-            self.set_amplitude(float(parameters["AmplitudeHiLevelValue"]))
-
-        if "DelayPhaseValue" in keys:
-            if parameters["DelayPhase"] == "Phase in deg":
-                self.set_phase(float(parameters["DelayPhaseValue"]))
-            elif parameters["DelayPhase"] == "Delay in s":
-                self.set_delay(float(parameters["DelayPhaseValue"]))
+        self.set_output(True)
 
     def unconfigure(self) -> None:
-        """Unconfigure the device."""
-        self.check_errors()
+        """Log the errors of the run, switch the RF output off and unlock the front panel."""
+        for error in self.get_errors():
+            self.message_log(f"SMB100A reported: {error}")
 
-        self.set_output_state(False)
-        self.lock_user_interface(False)
+        self.set_output(False)
+        self.set_user_interface_lock(False)
+
+    def reconfigure(self, parameters: dict[str, Any], keys: list[str]) -> None:
+        """Re-apply only the GUI values that changed through the parameter syntax during a run."""
+        self.gui_parameters.update(parameters)
+
+        if "PeriodFrequencyValue" in keys or "PeriodFrequency" in keys:
+            self.period_frequency_mode = parameters.get("PeriodFrequency", self.period_frequency_mode)
+            value = float(parameters.get("PeriodFrequencyValue", self.frequency))
+            self.frequency = self.to_frequency(self.period_frequency_mode, value)
+            self.set_frequency(self.frequency)
+
+        if "AmplitudeHiLevelValue" in keys:
+            self.amplitude = float(parameters.get("AmplitudeHiLevelValue", self.amplitude))
+            self.set_amplitude(self.amplitude)
+
+        if "DelayPhaseValue" in keys or "DelayPhase" in keys:
+            self.delay_phase_mode = parameters.get("DelayPhase", self.delay_phase_mode)
+            self.delay_phase_value = float(parameters.get("DelayPhaseValue", self.delay_phase_value))
+            self.apply_delay_phase(self.delay_phase_mode, self.delay_phase_value)
 
     def apply(self) -> None:
-        """Apply new sweep value."""
-        self.value = float(self.value)
+        """Set the new sweep value."""
+        value = float(self.value)
 
-        if self.sweep_mode in self.amplitude_modes:
-            # Update the power unit if necessary
-            unit = self.sweep_mode.split(" ")[-1]
-            if unit != self.amplitude_unit:
-                self.set_power_unit(self.amplitude_unit)
-
-            self.set_amplitude(self.value)
+        if self.sweep_mode in AMPLITUDE_UNITS:
+            # The sweep value comes in the unit of the sweep mode, which may differ from the amplitude choice;
+            # call() switches back before reading the level in the unit of self.units
+            sweep_unit = AMPLITUDE_UNITS[self.sweep_mode]
+            if sweep_unit != self.power_unit:
+                self.set_power_unit(sweep_unit)
+            self.set_amplitude(value)
 
         elif self.sweep_mode.startswith("Frequency"):
-            self.set_frequency(self.value)
+            self.frequency = value
+            self.set_frequency(self.frequency)
 
         elif self.sweep_mode.startswith("Period"):
-            self.set_frequency(1 / self.value)
+            self.frequency = self.to_frequency(self.sweep_mode, value)
+            self.set_frequency(self.frequency)
 
-        elif self.sweep_mode.startswith("Phase in deg"):
-            self.set_phase(self.value)
+        elif self.sweep_mode.startswith("Phase"):
+            self.set_phase(value)
 
-        elif self.sweep_mode.startswith("Delay in s"):
-            self.set_delay(self.value)
+        elif self.sweep_mode.startswith("Delay"):
+            self.set_delay(value)
 
-    def call(self) -> tuple:
-        """Return the measured values."""
-        measured_frequency = self.get_frequency()
+    def call(self) -> list[float]:
+        """Return the frequency or period and the level at the RF output."""
+        frequency = self.get_frequency()
 
-        # If the power unit was changed in apply, change it back to the original unit because self.units is not updated
-        self.set_power_unit(self.amplitude_unit)
-        measured_power = self.get_power_level()
-        return measured_frequency, measured_power
+        if self.sweep_mode in AMPLITUDE_UNITS and AMPLITUDE_UNITS[self.sweep_mode] != self.power_unit:
+            self.set_power_unit(self.power_unit)
+        power_level = self.get_power_level()
 
-    """Wrapper Functions"""
+        if self.period_frequency_mode.startswith("Period"):
+            return [1.0 / frequency if frequency else float("nan"), power_level]
+        return [frequency, power_level]
 
-    def set_frequency(self, frequency: float) -> None:
-        """Set the frequency of the RF output."""
-        min_frequency = 100e3
-        max_frequency = 12.75e9
-        if frequency < min_frequency or frequency > max_frequency:
-            msg = f"Frequency {frequency} out of range. Choose between {min_frequency} and {max_frequency}."
-            raise ValueError(msg)
+    # Communication commands, one per instrument command. Section numbers refer to the operating manual.
 
-        self.port.write(f"SOUR:FREQ {frequency}")
-
-    def get_frequency(self) -> float:
-        """Get the frequency of the RF output."""
-        self.port.write("SOUR:FREQ?")
-        return float(self.port.read())
-
-    def set_frequency_mode(self, mode: str) -> None:
-        """Set the frequency mode of the RF output to either 'CW' or 'Sweep'."""
-        state = "SWE" if mode == "SWE" else "CW"
-        self.port.write(f":SOUR:FREQ:MODE {state}")
-
-    def set_phase(self, phase_degree: float) -> None:
-        """Sets the phase variation relative to the current phase."""
-        # Set the phase variation relative to the current phase
-        phase_radians = phase_degree * np.pi / 180
-        self.port.write(f"SOUR:PHAS {phase_radians}")
-
-        # Adopt the set phase as the current phase
-        self.port.write("PHAS:REF")
-
-    def set_delay(self, delay: float) -> None:
-        """Set the delay of the RF output."""
-        phase_degree = delay * 360 / self.period_frequency_value
-        self.set_phase(phase_degree % 360)
-
-    def set_amplitude(self, high_level: float) -> None:
-        """Set the amplitude of the RF output. The power level will be [min level + offset ... max level + offset]."""
-        if self.amplitude_unit == "V":
-            max_power = 7.071
-            if high_level < 0 or high_level > max_power:
-                msg = f"Power {high_level} out of range. Choose between 0 and {max_power} V."
-                raise ValueError(msg)
-
-        self.port.write(f"SOUR:POW:LEV:IMM:AMPL {high_level}")
-
-    def get_power_level(self) -> float:
-        """Get the power level of the RF output. It corresponds to amplitude+offset."""
-        self.port.write("SOUR:POW:POW?")
-        return float(self.port.read())
-
-    def set_power_unit(self, unit: str) -> None:
-        """Set the power unit of the RF output."""
-        unit = unit.upper()
-        if unit not in ["V", "DBUV", "DBM"]:
-            msg = "Invalid power unit. Choose from 'V', 'DBUV', 'DBM'."
-            raise ValueError(msg)
-        self.port.write(f"UNIT:POW {unit}")
-
-    def set_output_state(self, set_on: bool) -> None:
-        """Set the RF output state."""
-        state = "ON" if set_on else "OFF"
-        self.port.write(f":OUTP {state}")
-
-    def check_errors(self) -> None:
-        """Check for errors. Currently, no additional error handling is implemented."""
-        self.port.write("SYST:ERR:ALL?")
-        ret = self.port.read()
-        if ret != '0,"No error"':
-            print(f"Error: {ret}")
-
-    def lock_user_interface(self, is_locked: bool) -> None:
-        """Lock or unlock manual control through the keyboard of the device."""
-        state = "DONL" if is_locked else "ENAB"
-        self.port.write(f"SYST:ULOC {state}")
-
-    """ Currently not implemented functions """
-
-    def set_amplitude_modulation_state(self, turn_on: bool = False) -> None:
-        """Set the amplitude modulation on or off."""
-        state = "ON" if turn_on else "OFF"
-        self.port.write(f":SOUR:AM:STAT {state}")
-
-    def set_amplitude_modulation(self, depth_percent: float = 0.0, use_exponential_modulation: bool = False) -> None:
-        """Set the amplitude modulation to linear or exponential."""
-        if depth_percent < 0 or depth_percent > 100:
-            msg = f"Depth {depth_percent} out of range. Choose between 0 and 100%."
-            raise ValueError(msg)
-
-        if not use_exponential_modulation:
-            self.port.write(":SOUR:AM:TYPE LIN")
-            self.port.write(f":SOUR:AM:DEPT {depth_percent}")
-        else:
-            self.port.write(":SOUR:AM:TYPE EXP")
-            # Test if EXP or LIN in command, manual is ambiguous
-            self.port.write(f":SOUR:AM:DEPT:EXP {depth_percent}")
-
-    def get_impedance(self) -> float:
-        """Get the impedance of the RF output."""
-        self.port.write(":OUTP:IMP?")
-        answer = self.port.read()
-        if answer == "G50":
-            impedance = 50
-        elif answer == "G1K":
-            impedance = 1000
-        else:
-            impedance = -1
-        return impedance
-
-    def set_rf_mode(self, mode: str = "normal") -> None:
-        """Low distortion, low noise, or normal."""
-        level_modes = {
-            "Normal": "NORM",
-            "Low noise": "LOWN",
-            "Low distortion": "LOWD",
-        }
-        self.port.write(f"SOURC:POW:LMODE {level_modes[mode]}")
-
-    def set_offset(self, offset_db: float) -> None:
-        """Set the level offset of the RF output."""
-        # This is only for compensating additional elements in the signal path
-        if offset_db < -100 or offset_db > 100:
-            msg = f"Offset {offset_db} out of range. Choose between -100 and 100 dB."
-            raise ValueError(msg)
-        self.port.write(f"SOUR:POW:LEV:IMM:OFFS {offset_db}")
-
-    def run_self_test(self) -> bool:
-        """Run the self test."""
-        self.port.write("*TST?")
-        ret = self.port.read()
-        return ret == "0"
-
-    def get_power_unit(self) -> str:
-        """Get the power unit of the RF output."""
-        self.port.write("UNIT:POW?")
-        return self.port.read()
-
-    def set_data_format(self) -> None:
-        """Set the format of the return data from the device."""
-        command = "FORM ASC"  # for ASCII
-        command = "FORM PACK"  # for packed binary
-        self.port.write(command)
-
+    @command(returns=("identification",), reads="state")
     def get_identification(self) -> str:
-        """Check the identification of the device."""
-        self.port.write("*IDN?")
-        return self.port.read()
+        """Return the identification: Rohde&Schwarz,<device type>,<part number>/<serial number>,<firmware>."""
+        return str(self.port.query("*IDN?"))
 
-    def get_output_state(self) -> bool:
-        """Get the RF output state."""
-        self.port.write("OUTP?")
-        state = self.port.read()
-        return state == 1
+    @command(warnings="Switches the RF output off and resets level, frequency, phase and power unit to their defaults.")
+    def reset_instrument(self) -> None:
+        """Reset the instrument to its default settings (*RST)."""
+        self.port.write("*RST")
 
-    def get_manual_control(self) -> bool:
-        """Get the manual control state. Return True if locked, False if unlocked."""
-        self.port.write("SYST:ULOC?")
-        state = self.port.read()
-        return state == 1
+    @command(returns=("self_test_passed",))
+    def run_self_test(self) -> bool:
+        """Run the self test of the instrument (*TST?), which takes longer than a normal query; True when it passed."""
+        return int(self.port.query("*TST?")) == 0
 
+    @command(returns=("errors",), reads="state")
+    def get_errors(self) -> list[str]:
+        """Return and clear all entries of the error queue as "<code>,<description>"; empty when there is none."""
+        answer = str(self.port.query("SYST:ERR:ALL?")).strip()
+        # Entries come as <number>,"<description>"[,<number>,"<description>"...]; 0,"No error" for an empty queue
+        # (section 6.17). The example of the manual quotes with ' instead of ", so both are accepted.
+        entries = re.findall(r"""(-?\d+)\s*,\s*["']([^"']*)["']""", answer)
+        if not entries:
+            return [] if answer.startswith("0") else [answer]
+        return [f"{code},{description}" for code, description in entries if int(code) != 0]
+
+    @command
+    def set_user_interface_lock(self, user_interface_lock: bool) -> None:
+        """Lock (True) or unlock (False) the front panel controls; the display keeps showing the settings."""
+        # :SYSTem:ULOCk DONLy locks the controls only; DISabled (lock with VNC) is not offered (section 6.17)
+        self.port.write(f"SYST:ULOC {'DONL' if user_interface_lock else 'ENAB'}")
+
+    @command(returns=("user_interface_lock",), reads="setpoint")
+    def get_user_interface_lock(self) -> bool:
+        """Return whether the front panel controls are locked."""
+        return not str(self.port.query("SYST:ULOC?")).strip().upper().startswith("ENAB")
+
+    @command(warnings="Restarts the firmware: the connection is lost and every setting returns to its default.")
     def restart_firmware(self) -> None:
-        """Restart the firmware of the device."""
-        self.port.write(":SYST:REST")
+        """Restart the firmware of the instrument; the operating system keeps running."""
+        self.port.write("SYST:REST")
 
+    @command(warnings="Switches the instrument off: the connection is lost; switch it on again at the front panel.")
     def shutdown_device(self) -> None:
-        """Shutdown the device."""
-        self.port.write(":SYST:SHUT")
+        """Shut the instrument down."""
+        self.port.write("SYST:SHUT")
+
+    @command
+    def set_data_format(self, data_format: DataFormat) -> None:
+        """Set the format of the data the instrument returns; the readers of this driver expect ASC."""
+        self.port.write(f"FORM {data_format}")
+
+    @command(returns=("data_format",), reads="setpoint")
+    def get_data_format(self) -> DataFormat:
+        """Return the format of the data the instrument returns."""
+        return str(self.port.query("FORM?")).strip()  # type: ignore[return-value]  # one of DataFormat
+
+    @command
+    def set_frequency_mode(self, frequency_mode: FrequencyMode) -> None:
+        """Set the frequency mode: fixed (CW, FIX), sweep (SWE) or list (LIST)."""
+        self.port.write(f"SOUR:FREQ:MODE {frequency_mode}")
+
+    @command(returns=("frequency_mode",), reads="setpoint")
+    def get_frequency_mode(self) -> FrequencyMode:
+        """Return the frequency mode."""
+        return str(self.port.query("SOUR:FREQ:MODE?")).strip()  # type: ignore[return-value]  # one of FrequencyMode
+
+    @command
+    def set_frequency(self, frequency: Hertz) -> None:
+        """Set the frequency of the RF output; the range depends on the installed frequency option (B101 to B140)."""
+        self.port.write(f"SOUR:FREQ {frequency}")
+        self.frequency = float(frequency)  # set_delay converts a delay at the frequency set last
+
+    @command(returns=("frequency",), reads="setpoint")
+    def get_frequency(self) -> Hertz:
+        """Return the frequency of the RF output, including a frequency offset and multiplier if set."""
+        return float(self.port.query("SOUR:FREQ?"))
+
+    @command
+    def set_phase(self, phase: Degrees) -> None:
+        """Set the phase of the RF signal relative to its reference phase (the "Delta Phase" of the instrument)."""
+        # [:SOURce<hw>]:PHASe takes radians (section 6.13.10); the bound of -720 to 720 given there is not declared
+        # because the manual does not say whether it applies to radians or degrees
+        self.port.write(f"SOUR:PHAS {math.radians(phase)}")
+
+    @command(returns=("phase",), reads="setpoint")
+    def get_phase(self) -> Degrees:
+        """Return the phase of the RF signal relative to its reference phase."""
+        return math.degrees(float(self.port.query("SOUR:PHAS?")))
+
+    @command
+    def reset_phase_reference(self) -> None:
+        """Adopt the current phase as the new reference phase, so that the phase reads 0 afterwards."""
+        self.port.write("SOUR:PHAS:REF")
+
+    @command(composite=True)
+    def set_delay(self, delay: Seconds) -> None:
+        """Set the phase as a delay of the RF signal at the frequency set last; a positive delay is a positive phase."""
+        # fmod keeps the sign of the delay, so a negative delay stays a negative phase
+        self.set_phase(math.fmod(delay * self.frequency * 360.0, 360.0))
+
+    @command
+    def set_power_mode(self, power_mode: PowerMode) -> None:
+        """Set the level mode: constant level (CW, FIX) or level sweep (SWE)."""
+        self.port.write(f"SOUR:POW:MODE {power_mode}")
+
+    @command(returns=("power_mode",), reads="setpoint")
+    def get_power_mode(self) -> PowerMode:
+        """Return the level mode."""
+        return str(self.port.query("SOUR:POW:MODE?")).strip()  # type: ignore[return-value]  # one of PowerMode
+
+    @command
+    def set_power_unit(self, power_unit: PowerUnit) -> None:
+        """Set the unit of every level value that is sent to or read from the instrument: DBM, DBUV or V."""
+        self.port.write(f"UNIT:POW {power_unit}")
+
+    @command(returns=("power_unit",), reads="setpoint")
+    def get_power_unit(self) -> PowerUnit:
+        """Return the unit of the level values."""
+        return str(self.port.query("UNIT:POW?")).strip()  # type: ignore[return-value]  # one of PowerUnit
+
+    @command
+    def set_amplitude(self, amplitude: Level) -> None:
+        """Set the RF level, in the power unit, as shown on the display: the level at the output plus the offset."""
+        self.port.write(f"SOUR:POW:LEV:IMM:AMPL {amplitude}")
+
+    @command(returns=("amplitude",), reads="setpoint")
+    def get_amplitude(self) -> Level:
+        """Return the RF level, in the power unit, as shown on the display: the level at the output plus the offset."""
+        return float(self.port.query("SOUR:POW:LEV:IMM:AMPL?"))
+
+    @command(returns=("power_level",), reads="setpoint")
+    def get_power_level(self) -> Level:
+        """Return the level at the RF output connector, in the power unit, without the level offset."""
+        return float(self.port.query("SOUR:POW:POW?"))
+
+    @command
+    def set_level_offset(self, level_offset: Annotated[Decibel, Range(-100.0, 100.0)]) -> None:
+        """Set the level offset of a downstream attenuator or amplifier; it does not change the output level."""
+        self.port.write(f"SOUR:POW:LEV:IMM:OFFS {level_offset}")
+
+    @command(returns=("level_offset",), reads="setpoint")
+    def get_level_offset(self) -> Decibel:
+        """Return the level offset."""
+        return float(self.port.query("SOUR:POW:LEV:IMM:OFFS?"))
+
+    @command
+    def set_rf_mode(self, rf_mode: RfMode) -> None:
+        """Set the RF level mode: normal (NORM), low noise (LOWN) or low distortion (LOWD)."""
+        self.port.write(f"SOUR:POW:LMOD {rf_mode}")
+
+    @command(returns=("rf_mode",), reads="setpoint")
+    def get_rf_mode(self) -> RfMode:
+        """Return the RF level mode."""
+        return str(self.port.query("SOUR:POW:LMOD?")).strip()  # type: ignore[return-value]  # one of RfMode
+
+    @command
+    def set_output(self, output: bool) -> None:
+        """Switch the RF output on (True) or off (False)."""
+        self.port.write(f"OUTP {'ON' if output else 'OFF'}")
+
+    @command(returns=("output",), reads="setpoint")
+    def get_output(self) -> bool:
+        """Return whether the RF output is on."""
+        return self.to_bool(str(self.port.query("OUTP?")))
+
+    @command(returns=("impedance",), reads="state")
+    def get_impedance(self) -> Ohm:
+        """Return the impedance of the RF output, which cannot be changed."""
+        answer = str(self.port.query("OUTP:IMP?")).strip().upper()
+        if answer in IMPEDANCES:
+            return IMPEDANCES[answer]
+        try:
+            return float(answer)
+        except ValueError:
+            msg = f"The SMB100A answered '{answer}' to the impedance query, expected G50, G1K, G10K or a number."
+            raise ValueError(msg) from None
+
+    @command
+    def set_amplitude_modulation(self, amplitude_modulation: bool) -> None:
+        """Switch the amplitude modulation on (True) or off (False)."""
+        self.port.write(f"SOUR:AM:STAT {'ON' if amplitude_modulation else 'OFF'}")
+
+    @command(returns=("amplitude_modulation",), reads="setpoint")
+    def get_amplitude_modulation(self) -> bool:
+        """Return whether the amplitude modulation is on."""
+        return self.to_bool(str(self.port.query("SOUR:AM:STAT?")))
+
+    @command
+    def set_amplitude_modulation_type(self, amplitude_modulation_type: AmplitudeModulationType) -> None:
+        """Set linear (LIN) or exponential (EXP) amplitude modulation; EXP needs a 12 GHz or higher frequency option."""
+        self.port.write(f"SOUR:AM:TYPE {amplitude_modulation_type}")
+
+    @command(returns=("amplitude_modulation_type",), reads="setpoint")
+    def get_amplitude_modulation_type(self) -> AmplitudeModulationType:
+        """Return the amplitude modulation type."""
+        return str(self.port.query("SOUR:AM:TYPE?")).strip()  # type: ignore[return-value]  # one of the type
+
+    @command
+    def set_linear_modulation_depth(self, linear_modulation_depth: Annotated[Percent, Range(0.0, 100.0)]) -> None:
+        """Set the depth of the linear amplitude modulation."""
+        self.port.write(f"SOUR:AM:DEPT:LIN {linear_modulation_depth}")
+
+    @command(returns=("linear_modulation_depth",), reads="setpoint")
+    def get_linear_modulation_depth(self) -> Percent:
+        """Return the depth of the linear amplitude modulation."""
+        return float(self.port.query("SOUR:AM:DEPT:LIN?"))
+
+    @command
+    def set_exponential_modulation_depth(
+        self,
+        exponential_modulation_depth: Annotated[Decibel, Range(-40.0, 40.0)],
+    ) -> None:
+        """Set the depth of the exponential amplitude modulation."""
+        self.port.write(f"SOUR:AM:DEPT:EXP {exponential_modulation_depth}")
+
+    @command(returns=("exponential_modulation_depth",), reads="setpoint")
+    def get_exponential_modulation_depth(self) -> Decibel:
+        """Return the depth of the exponential amplitude modulation."""
+        return float(self.port.query("SOUR:AM:DEPT:EXP?"))
+
+    # Helpers
+
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a command
+    def convert_gui_parameters(self) -> None:
+        """Convert the GUI parameters to numbers and check them, with a message for the user where they are wrong."""
+        try:
+            period_frequency_value = float(self.gui_parameters.get("PeriodFrequencyValue", 2e6))
+            self.amplitude = float(self.gui_parameters.get("AmplitudeHiLevelValue", 1.0))
+            self.delay_phase_value = float(self.gui_parameters.get("DelayPhaseValue", 0.0))
+        except (TypeError, ValueError) as e:
+            msg = f"SMB100A: the frequency, amplitude and delay/phase fields need numbers: {e}"
+            raise ValueError(msg) from e
+
+        self.frequency = self.to_frequency(self.period_frequency_mode, period_frequency_value)
+
+        if self.amplitude_mode not in AMPLITUDE_UNITS:
+            choices = ", ".join(AMPLITUDE_UNITS)
+            msg = f"SMB100A: the amplitude choice '{self.amplitude_mode}' is unknown; choose one of {choices}."
+            raise ValueError(msg)
+        self.power_unit = AMPLITUDE_UNITS[self.amplitude_mode]
+
+    # check_driver: ignore DC004 - a helper of the semantic functions, not a command
+    def apply_delay_phase(self, delay_phase_mode: str, delay_phase_value: float) -> None:
+        """Send a phase in degrees or a delay in seconds, as selected in the DelayPhase field."""
+        if delay_phase_mode.startswith("Phase"):
+            self.set_phase(delay_phase_value)
+        elif delay_phase_mode.startswith("Delay"):
+            self.set_delay(delay_phase_value)
+
+    @staticmethod
+    def to_frequency(period_frequency_mode: str, period_frequency_value: float) -> float:
+        """Return the frequency in Hz of a frequency or period value; a period of 0 s stops with a message."""
+        if period_frequency_mode.startswith("Period"):
+            if period_frequency_value == 0:
+                msg = "SMB100A: the period must not be 0 s."
+                raise ValueError(msg)
+            return 1.0 / period_frequency_value
+        return period_frequency_value
+
+    @staticmethod
+    def to_bool(answer: str) -> bool:
+        """Return True for a 1 or ON answer of the instrument."""
+        return answer.strip().upper() in ("1", "ON")

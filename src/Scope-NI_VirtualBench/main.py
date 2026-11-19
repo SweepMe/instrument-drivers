@@ -241,10 +241,11 @@ class Device(EmptyDevice):
 
         # it is unclear whether the number is here the range or the voltage per division
         # We must multiply or divide by 8 for one or the other selected voltage range mode
-        if parameter["VoltageRange"] == "Voltage range in V:":
+        voltage_range_mode = parameter.get("VoltageRange", "Voltage range in V:")
+        if voltage_range_mode == "Voltage range in V:":
             self.channel1_range = self.channel1_range/2.0
             self.channel2_range = self.channel2_range/2.0
-        if parameter["VoltageRange"] == "Voltage scale in V/div:":
+        if voltage_range_mode == "Voltage scale in V/div:":
             self.channel1_range = self.channel1_range*4.0
             self.channel2_range = self.channel2_range*4.0
 

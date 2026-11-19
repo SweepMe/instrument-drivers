@@ -86,7 +86,6 @@ class Device(EmptyDevice):
     def get_GUIparameter(self, parameter={}):
 
         self.sweepmode = parameter["SweepMode"]
-        self.sweepvalue = parameter["SweepValue"]
         self.port_string = parameter["Port"]
 
     def connect(self):
