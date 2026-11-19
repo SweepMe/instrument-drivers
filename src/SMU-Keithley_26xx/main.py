@@ -32,6 +32,7 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any, ClassVar
 
 import numpy as np
@@ -75,6 +76,50 @@ class Device(EmptyDevice):
 
     # Highest node number that can be used in a TSP-Link network
     MAX_TSP_LINK_NODE = 64
+
+    # Option of the 'SweepValue' field that the SMU module adds when the driver returns the 'ListSweepCheck' key
+    LIST_SWEEP = "List sweep"
+
+    # Options of the 'ListSweepStepPointsType' field
+    STEP_WIDTH = "Step width"
+    POINTS_LINEAR = "Points (lin.)"
+    POINTS_LOG = "Points (log.)"
+
+    # Number of sweep values that are sent to the instrument with one command, so that a command stays short
+    LIST_CHUNK_SIZE = 50
+
+    # Name of the Lua table on the instrument that holds the sweep values
+    LIST_TABLE = "sweepme_list"
+
+    # Highest line number of the digital I/O port that can be used as output trigger
+    MAX_DIGIO_LINE = 14
+
+    # Option of the 'Trigger out line' field that disables the output trigger
+    NO_TRIGGER_OUT = "None"
+
+    # Trigger events of the SMU that can assert the output trigger, as TSP constant of the trigger model
+    TRIGGER_OUT_EVENTS: ClassVar[dict[str, str]] = {
+        "Source complete": "SOURCE_COMPLETE_EVENT_ID",
+        "Measure complete": "MEASURE_COMPLETE_EVENT_ID",
+    }
+
+    # Pulse shape of the output trigger, as digio trigger mode
+    TRIGGER_OUT_POLARITIES: ClassVar[dict[str, str]] = {
+        "Low pulse": "TRIG_FALLING",
+        "High pulse": "TRIG_RISINGM",
+    }
+
+    # Models without digital I/O trigger lines
+    NO_DIGIO_TRIGGER_MODELS = ("2604B", "2614B", "2634B")
+
+    # Polling interval in s while a list sweep runs
+    LIST_POLL_INTERVAL = 0.05
+
+    # Time in s without a new reading after which a running list sweep is considered stuck, added to three steps
+    LIST_STALL_TIMEOUT = 5.0
+
+    # Line frequency in Hz that is used to estimate the integration time, 50 Hz gives the longer time
+    LINE_FREQUENCY = 50.0
 
     def __init__(self) -> None:
         """Initialize the driver, the returned variables and the port configuration."""
@@ -126,6 +171,23 @@ class Device(EmptyDevice):
         self.toff: float = 200e-3
         self.pulseofflevel: float = 0.0
 
+        # List sweep parameters, set in get_GUIparameter and converted in configure. The list sweep is used if
+        # 'List sweep' is selected as sweep value; the instrument then runs the whole sweep by itself.
+        self.list_sweep: bool = False
+        self.list_parameters: dict[str, Any] = {}
+
+        # List sweep values after conversion in configure: the time in s between two sweep points (0 to step as fast
+        # as possible), the settling time in s before each measurement (None for the automatic delay), and the digital
+        # I/O line (None without output trigger) and pulse width in s of the output trigger
+        self.sweep_values: list[float] = []
+        self.step_time: float = 0.0
+        self.measure_delay: float | None = None
+        self.digio_line: int | None = None
+        self.digio_pulse_width: float = 10e-6
+
+        # Voltages in V, currents in A and times in s of the last list sweep
+        self.list_results: tuple[np.ndarray, np.ndarray, np.ndarray] = (np.array([]), np.array([]), np.array([]))
+
         # Set during the run
         self.nplc: float = 1.0
         self.tag: str = "1"
@@ -152,6 +214,20 @@ class Device(EmptyDevice):
             "PulseOnTime": 200e-6,
             "PulseOffTime": 200e-3,
             "PulseOffLevel": 0.0,
+            "ListSweepCheck": True,
+            "ListSweepType": ["Sweep", "Custom"],
+            "ListSweepStart": 0.0,
+            "ListSweepEnd": 1.0,
+            "ListSweepStepPointsType": [self.STEP_WIDTH, self.POINTS_LINEAR, self.POINTS_LOG],
+            "ListSweepStepPointsValue": 0.1,
+            "ListSweepDual": False,
+            "ListSweepCustomValues": "",
+            "ListSweepHoldtime": 0.1,
+            "ListSweepDelaytime": "",
+            "Trigger out line": [self.NO_TRIGGER_OUT, *[str(line) for line in range(1, self.MAX_DIGIO_LINE + 1)]],
+            "Trigger out event": list(self.TRIGGER_OUT_EVENTS),
+            "Trigger out polarity": list(self.TRIGGER_OUT_POLARITIES),
+            "Trigger out pulse width in s": 10e-6,
         }
 
     def get_GUIparameter(self, parameter: dict[str, Any]) -> None:  # noqa: N802
@@ -184,6 +260,25 @@ class Device(EmptyDevice):
             self.toff = float(parameter.get("PulseOffTime", 200e-3))
             self.pulseofflevel = float(parameter.get("PulseOffLevel", 0.0))
 
+        # List sweep parameters, kept as text and converted in 'configure' where wrong entries can be reported
+        self.list_sweep = parameter.get("SweepValue", "") == self.LIST_SWEEP
+
+        if self.list_sweep:
+            self.list_parameters = {
+                key: value for key, value in parameter.items() if key.startswith(("ListSweep", "Trigger out"))
+            }
+
+            # Each point of the sweep comes with the time at which it was measured
+            self.variables = ["Voltage", "Current", "Time"]
+            self.units = ["V", "A", "s"]
+            self.plottype = [True, True, True]
+            self.savetype = [True, True, True]
+        else:
+            self.variables = ["Voltage", "Current"]
+            self.units = ["V", "A"]
+            self.plottype = [True, True]
+            self.savetype = [True, True]
+
         self.smu_ab = "smua" if self.channel[-1] == "A" else "smub"
 
         # Older settings do not have this field and use the local node
@@ -214,6 +309,9 @@ class Device(EmptyDevice):
 
         if self.node_number is not None:
             self.check_remote_node()
+
+        if self.list_sweep:
+            self.check_list_sweep_support()
 
         if self.pulse_mode:
             self.limit_pulse_times()
@@ -259,8 +357,15 @@ class Device(EmptyDevice):
         self.nplc = self.SPEED_TO_NPLC[self.speed]
         self.set_nplc(self.nplc)
 
+        if self.list_sweep:
+            self.convert_list_sweep_parameters()
+            self.configure_list_sweep()
+
     def unconfigure(self) -> None:
-        """Remove this instance from the users of the shared port."""
+        """Release the output trigger and the timer of a list sweep and remove this instance from the port users."""
+        if self.list_sweep:
+            self.unconfigure_list_sweep()
+
         if self.node_number is not None:
             # Channels on remote nodes are not counted, see 'register_port_usage'
             return
@@ -293,6 +398,10 @@ class Device(EmptyDevice):
 
     def apply(self) -> None:
         """Set the new source level, or configure the pulse if the pulse mode is used."""
+        if self.list_sweep:
+            # The instrument sets the source levels of a list sweep by itself
+            return
+
         if self.pulse_mode:
             self.apply_pulse()
         elif self.source.startswith("Voltage"):
@@ -314,14 +423,19 @@ class Device(EmptyDevice):
             self.port.write(f"print(InitiatePulseTest({self.tag}))")
 
     def measure(self) -> None:
-        """Request a current and voltage measurement, or request the pulse buffers in pulse mode."""
-        if self.pulse_mode:
+        """Request a current and voltage measurement, request the pulse buffers, or run the list sweep."""
+        if self.list_sweep:
+            self.run_list_sweep()
+        elif self.pulse_mode:
             self.measure_pulse()
         else:
             self.request_measurement()
 
-    def call(self) -> list[float]:
-        """Return the measured voltage in V and current in A."""
+    def call(self) -> list[float] | list[np.ndarray]:
+        """Return the measured voltage in V and current in A, and in a list sweep the time in s of each point."""
+        if self.list_sweep:
+            return self.get_list_sweep_results()
+
         if self.pulse_mode:
             voltage, current = self.read_pulse_results()
         else:
@@ -590,6 +704,259 @@ class Device(EmptyDevice):
         """Read one comma separated list of buffer values from the port."""
         return [float(value) for value in self.port.read().replace("\n", "").split(",")]
 
+    def check_list_sweep_support(self) -> None:
+        """Make sure that the list sweep can be used with the chosen settings and the connected model."""
+        if self.pulse_mode:
+            msg = "List sweep and pulse mode cannot be used together. Please switch off the pulse mode."
+            raise ValueError(msg)
+
+        if self.node_number is not None:
+            msg = (
+                f"List sweep is only supported on the local node, but TSP-Link node {self.node_number} is selected. "
+                "Connect the instrument directly or set 'TSP-Link node' to 'Local'."
+            )
+            raise ValueError(msg)
+
+        if str(self.list_parameters.get("Trigger out line", self.NO_TRIGGER_OUT)) != self.NO_TRIGGER_OUT:
+            identification = self.get_identification()
+            for model in self.NO_DIGIO_TRIGGER_MODELS:
+                if model in identification:
+                    msg = (
+                        f"The Model {model} has no digital I/O trigger lines. Please set 'Trigger out line' to "
+                        f"'{self.NO_TRIGGER_OUT}'."
+                    )
+                    raise ValueError(msg)
+
+    def convert_list_sweep_parameters(self) -> None:
+        """Convert the list sweep fields into sweep values, step time, measurement delay and output trigger."""
+        parameters = self.list_parameters
+
+        if parameters.get("ListSweepType", "Sweep") == "Custom":
+            self.sweep_values = self.parse_custom_values(str(parameters.get("ListSweepCustomValues", "")))
+        else:
+            self.sweep_values = self.calculate_sweep_values(
+                str(parameters.get("ListSweepStart", "0.0")),
+                str(parameters.get("ListSweepEnd", "1.0")),
+                str(parameters.get("ListSweepStepPointsType", self.STEP_WIDTH)),
+                str(parameters.get("ListSweepStepPointsValue", "0.1")),
+            )
+            if parameters.get("ListSweepDual", False):
+                # The end value is only used once
+                self.sweep_values = [*self.sweep_values, *self.sweep_values[-2::-1]]
+
+        self.step_time = self.convert_time(parameters.get("ListSweepHoldtime", "0.1"), "Hold time") or 0.0
+        self.measure_delay = self.convert_time(parameters.get("ListSweepDelaytime", ""), "Delay time")
+
+        integration_time = self.nplc / self.LINE_FREQUENCY * self.average
+        settling_time = (self.measure_delay or 0.0) + integration_time
+        if 0 < self.step_time < settling_time:
+            msg = (
+                f"The hold time of {self.step_time} s is shorter than the delay time plus the integration time of "
+                f"{settling_time:.3g} s. Please increase the hold time, or reduce the delay time, the speed or the "
+                "number of averages."
+            )
+            raise ValueError(msg)
+
+        line = str(parameters.get("Trigger out line", self.NO_TRIGGER_OUT))
+        if line == self.NO_TRIGGER_OUT:
+            self.digio_line = None
+            return
+
+        self.digio_line = int(line)
+        pulse_width = self.convert_time(
+            parameters.get("Trigger out pulse width in s", 10e-6),
+            "Trigger out pulse width",
+        )
+        self.digio_pulse_width = pulse_width or 10e-6
+
+    def get_timer_number(self) -> int:
+        """Return the trigger timer that paces the list sweep; each channel uses its own timer."""
+        return 1 if self.smu_ab == "smua" else 2
+
+    def calculate_sweep_values(
+        self,
+        start_text: str,
+        end_text: str,
+        steppoints_type: str,
+        steppoints_text: str,
+    ) -> list[float]:
+        """Calculate the sweep values from start value, end value and step width or number of points."""
+        try:
+            start = float(start_text)
+            end = float(end_text)
+            steppoints = float(steppoints_text)
+        except ValueError:
+            msg = "Start value, end value and step width or points of the list sweep must be numbers."
+            raise ValueError(msg) from None
+
+        if steppoints_type.startswith(self.STEP_WIDTH):
+            if steppoints == 0.0:
+                if start != end:
+                    msg = "The step width of the list sweep must not be 0 if start and end value differ."
+                    raise ValueError(msg)
+                return [start]
+
+            # The sweep stops at the last step that does not go beyond the end value
+            step = abs(steppoints) if end >= start else -abs(steppoints)
+            points = int(np.floor(abs(end - start) / abs(step) + 1e-9)) + 1
+            return [start + step * index for index in range(points)]
+
+        points = int(steppoints)
+        if points < 1 or points != steppoints:
+            msg = f"The number of points of the list sweep must be a positive integer, but is {steppoints}."
+            raise ValueError(msg)
+
+        if steppoints_type.startswith(self.POINTS_LOG):
+            if start * end <= 0:
+                msg = "Start and end value of a logarithmic list sweep must have the same sign and must not be 0."
+                raise ValueError(msg)
+            return [float(value) for value in np.geomspace(start, end, points)]
+
+        return [float(value) for value in np.linspace(start, end, points)]
+
+    @staticmethod
+    def parse_custom_values(text: str) -> list[float]:
+        """Convert custom values, separated by commas, semicolons or line breaks, into a list of floats."""
+        entries = [entry for entry in re.split(r"[,;\s]+", text) if entry]
+        if not entries:
+            msg = "Please enter the custom values of the list sweep, separated by commas."
+            raise ValueError(msg)
+
+        try:
+            return [float(entry) for entry in entries]
+        except ValueError:
+            msg = "The custom values of the list sweep must be numbers separated by commas."
+            raise ValueError(msg) from None
+
+    @staticmethod
+    def convert_time(text: str | float, name: str) -> float | None:
+        """Convert a time field of the list sweep into seconds, None if the field is empty."""
+        if str(text).strip() == "":
+            return None
+
+        try:
+            value = float(text)
+        except ValueError:
+            msg = f"The {name} of the list sweep must be a number in s, but is '{text}'."
+            raise ValueError(msg) from None
+
+        if value < 0:
+            msg = f"The {name} of the list sweep must not be negative, but is {value} s."
+            raise ValueError(msg)
+
+        return value
+
+    def configure_list_sweep(self) -> None:
+        """Set up the trigger model so that the instrument steps through the sweep values by itself.
+
+        Each step is started by a trigger timer with the hold time as period, or immediately after the previous
+        measurement if no hold time is given. At each step, the source value is set, the delay time is waited and
+        current and voltage are measured into the two reading buffers. The output trigger is asserted at each step.
+        """
+        self.send_list_values(self.sweep_values)
+        if self.source.startswith("Voltage"):
+            self.set_trigger_source_list_voltage(self.LIST_TABLE)
+        else:
+            self.set_trigger_source_list_current(self.LIST_TABLE)
+        self.set_trigger_source_action(True)
+
+        self.set_measure_delay(self.measure_delay)
+        self.prepare_list_buffers()
+        self.set_trigger_measure_iv()
+        self.set_trigger_measure_action(True)
+
+        self.set_trigger_endpulse_hold()
+        self.set_trigger_endsweep_idle()
+        self.set_trigger_count(len(self.sweep_values))
+        self.set_trigger_arm_count(1)
+
+        timer = self.get_timer_number()
+        self.reset_timer(timer)
+        if self.step_time > 0 and len(self.sweep_values) > 1:
+            # The first event passes through when the sweep is armed, the timer creates one event per further point
+            self.set_timer_delay(timer, self.step_time)
+            self.set_timer_count(timer, len(self.sweep_values) - 1)
+            self.set_timer_passthrough(timer, True)
+            self.set_timer_stimulus(timer, f"{self.smu}.trigger.ARMED_EVENT_ID")
+            self.set_trigger_source_stimulus(f"trigger.timer[{timer}].EVENT_ID")
+        else:
+            self.set_trigger_source_stimulus("0")
+
+        if self.digio_line is not None:
+            polarity = str(self.list_parameters.get("Trigger out polarity", "Low pulse"))
+            event = str(self.list_parameters.get("Trigger out event", "Source complete"))
+
+            self.reset_digio_trigger(self.digio_line)
+            self.set_digio_trigger_mode(self.digio_line, self.TRIGGER_OUT_POLARITIES.get(polarity, "TRIG_FALLING"))
+            self.set_digio_trigger_pulsewidth(self.digio_line, self.digio_pulse_width)
+            event_id = self.TRIGGER_OUT_EVENTS.get(event, "SOURCE_COMPLETE_EVENT_ID")
+            self.set_digio_trigger_stimulus(self.digio_line, f"{self.smu}.trigger.{event_id}")
+
+    def unconfigure_list_sweep(self) -> None:
+        """Release the output trigger line and the timer that were used by the list sweep."""
+        if self.digio_line is not None:
+            self.reset_digio_trigger(self.digio_line)
+        self.reset_timer(self.get_timer_number())
+
+    def send_list_values(self, values: list[float]) -> None:
+        """Store the sweep values in a table on the instrument, in chunks so that each command stays short."""
+        self.create_list_table(self.LIST_TABLE)
+        for index in range(0, len(values), self.LIST_CHUNK_SIZE):
+            self.append_list_values(self.LIST_TABLE, values[index : index + self.LIST_CHUNK_SIZE])
+
+    def prepare_list_buffers(self) -> None:
+        """Clear both reading buffers and collect timestamps with the current readings."""
+        for buffer in ("nvbuffer1", "nvbuffer2"):
+            self.clear_buffer(buffer)
+            self.set_buffer_append_mode(buffer, False)
+        self.set_buffer_collect_timestamps("nvbuffer1", True)
+
+    def run_list_sweep(self) -> None:
+        """Start the list sweep, wait until all points are measured, and read the results."""
+        points = len(self.sweep_values)
+        step_time = max(self.step_time, (self.measure_delay or 0.0) + self.nplc / self.LINE_FREQUENCY * self.average)
+        stall_timeout = self.LIST_STALL_TIMEOUT + 3 * step_time
+
+        self.clear_buffer("nvbuffer1")
+        self.clear_buffer("nvbuffer2")
+        self.initiate_trigger()
+
+        self.list_results = (np.array([]), np.array([]), np.array([]))
+
+        count = 0
+        last_progress = time.perf_counter()
+        while count < points:
+            if self.is_run_stopped():
+                self.abort_sweep()
+                return
+
+            time.sleep(self.LIST_POLL_INTERVAL)
+            new_count = self.get_buffer_count("nvbuffer1")
+            if new_count > count:
+                count = new_count
+                last_progress = time.perf_counter()
+            elif time.perf_counter() - last_progress > stall_timeout:
+                self.abort_sweep()
+                msg = (
+                    f"The list sweep stopped after {count} of {points} points. If a hold time is used, the "
+                    "measurement probably took longer than the hold time, e.g. due to auto ranging or the automatic "
+                    "delay. Please increase the hold time or use a fixed range and delay time."
+                )
+                raise ValueError(msg)
+
+        currents, voltages, times = self.read_list_buffers(points)
+        self.list_results = (voltages, currents, times)
+
+    def get_list_sweep_results(self) -> list[np.ndarray]:
+        """Return voltages, currents and times of the last list sweep, with invalid readings replaced by NaN."""
+        voltages, currents, times = self.list_results
+
+        invalid = (np.abs(voltages) > self.OVERFLOW_LIMIT) | (np.abs(currents) > self.OVERFLOW_LIMIT)
+        voltages = np.where(invalid, np.nan, voltages)
+        currents = np.where(invalid, np.nan, currents)
+
+        return [voltages, currents, times]
+
     """ here, communication commands are wrapped into python convenience functions """
 
     def get_identification(self) -> str:
@@ -715,3 +1082,134 @@ class Device(EmptyDevice):
         """Read the current in A and the voltage in V of the requested measurement."""
         current, voltage = (float(value) for value in self.port.read().split())
         return current, voltage
+
+    def set_measure_delay(self, delay: float | None) -> None:
+        """Set the settling time in s before each measurement, None for the automatic delay."""
+        value = f"{self.smu}.DELAY_AUTO" if delay is None else f"{delay}"
+        self.port.write(f"{self.smu}.measure.delay = {value}")
+
+    def create_list_table(self, table: str) -> None:
+        """Create an empty table on the instrument that takes the sweep values."""
+        self.port.write(f"{table} = {{}}")
+
+    def append_list_values(self, table: str, values: list[float]) -> None:
+        """Append sweep values to a table on the instrument."""
+        numbers = ", ".join(f"{value:.9g}" for value in values)
+        self.port.write(f"for _, v in ipairs({{{numbers}}}) do table.insert({table}, v) end")
+
+    def set_trigger_source_list_voltage(self, table: str) -> None:
+        """Use the voltages in V of a table on the instrument as source values of the sweep."""
+        self.port.write(f"{self.smu}.trigger.source.listv({table})")
+
+    def set_trigger_source_list_current(self, table: str) -> None:
+        """Use the currents in A of a table on the instrument as source values of the sweep."""
+        self.port.write(f"{self.smu}.trigger.source.listi({table})")
+
+    def set_trigger_source_action(self, source_action: bool) -> None:
+        """Switch the source action of the trigger model on or off."""
+        self.port.write(f"{self.smu}.trigger.source.action = {self.smu}.{self.get_enable_state(source_action)}")
+
+    def set_trigger_measure_iv(self) -> None:
+        """Measure current into reading buffer 1 and voltage into reading buffer 2 at each step of the sweep."""
+        self.port.write(f"{self.smu}.trigger.measure.iv({self.smu}.nvbuffer1, {self.smu}.nvbuffer2)")
+
+    def set_trigger_measure_action(self, measure_action: bool) -> None:
+        """Switch the measure action of the trigger model on or off."""
+        self.port.write(f"{self.smu}.trigger.measure.action = {self.smu}.{self.get_enable_state(measure_action)}")
+
+    @staticmethod
+    def get_enable_state(state: bool) -> str:
+        """Return the name of the TSP constant that enables or disables an action of the trigger model."""
+        return "ENABLE" if state else "DISABLE"
+
+    def set_trigger_endpulse_hold(self) -> None:
+        """Keep the source level until the next step of the sweep, i.e. no pulsed sweep."""
+        self.port.write(f"{self.smu}.trigger.endpulse.action = {self.smu}.SOURCE_HOLD")
+
+    def set_trigger_endsweep_idle(self) -> None:
+        """Return the source to its idle level at the end of the sweep."""
+        self.port.write(f"{self.smu}.trigger.endsweep.action = {self.smu}.SOURCE_IDLE")
+
+    def set_trigger_count(self, count: int) -> None:
+        """Set the number of steps of the sweep."""
+        self.port.write(f"{self.smu}.trigger.count = {count:d}")
+
+    def set_trigger_arm_count(self, count: int) -> None:
+        """Set how often the sweep is repeated after it was started."""
+        self.port.write(f"{self.smu}.trigger.arm.count = {count:d}")
+
+    def set_trigger_source_stimulus(self, event: str) -> None:
+        """Set the event that starts each source step, '0' to step without waiting."""
+        self.port.write(f"{self.smu}.trigger.source.stimulus = {event}")
+
+    def reset_timer(self, timer: int) -> None:
+        """Reset count, delay, pass-through and stimulus of a trigger timer."""
+        self.port.write(f"trigger.timer[{timer:d}].reset()")
+
+    def set_timer_delay(self, timer: int, delay: float) -> None:
+        """Set the period in s of a trigger timer."""
+        self.port.write(f"trigger.timer[{timer:d}].delay = {delay}")
+
+    def set_timer_count(self, timer: int, count: int) -> None:
+        """Set the number of events a trigger timer creates after it was started."""
+        self.port.write(f"trigger.timer[{timer:d}].count = {count:d}")
+
+    def set_timer_passthrough(self, timer: int, passthrough: bool) -> None:
+        """Let a trigger timer create an event already when it is started."""
+        self.port.write(f"trigger.timer[{timer:d}].passthrough = {str(passthrough).lower()}")
+
+    def set_timer_stimulus(self, timer: int, event: str) -> None:
+        """Set the event that starts a trigger timer."""
+        self.port.write(f"trigger.timer[{timer:d}].stimulus = {event}")
+
+    def reset_digio_trigger(self, line: int) -> None:
+        """Reset the trigger settings of a digital I/O line, which also switches off its output trigger."""
+        self.port.write(f"digio.trigger[{line:d}].reset()")
+
+    def set_digio_trigger_mode(self, line: int, trigger_mode: str) -> None:
+        """Set the trigger mode of a digital I/O line, e.g. 'TRIG_FALLING' for a low pulse as output trigger."""
+        self.port.write(f"digio.trigger[{line:d}].mode = digio.{trigger_mode}")
+
+    def set_digio_trigger_pulsewidth(self, line: int, width: float) -> None:
+        """Set the length in s of the output trigger pulse of a digital I/O line."""
+        self.port.write(f"digio.trigger[{line:d}].pulsewidth = {width}")
+
+    def set_digio_trigger_stimulus(self, line: int, event: str) -> None:
+        """Set the event that asserts the output trigger of a digital I/O line."""
+        self.port.write(f"digio.trigger[{line:d}].stimulus = {event}")
+
+    def clear_buffer(self, buffer: str) -> None:
+        """Remove all readings from a reading buffer of the channel, e.g. 'nvbuffer1'."""
+        self.port.write(f"{self.smu}.{buffer}.clear()")
+
+    def set_buffer_append_mode(self, buffer: str, append_mode: bool) -> None:
+        """Define whether new readings are appended to a reading buffer or replace its readings."""
+        self.port.write(f"{self.smu}.{buffer}.appendmode = {int(append_mode)}")
+
+    def set_buffer_collect_timestamps(self, buffer: str, collect_timestamps: bool) -> None:
+        """Define whether a reading buffer stores a timestamp with each reading; the buffer must be empty."""
+        self.port.write(f"{self.smu}.{buffer}.collecttimestamps = {int(collect_timestamps)}")
+
+    def get_buffer_count(self, buffer: str) -> int:
+        """Return the number of readings in a reading buffer of the channel."""
+        self.port.write(f"print({self.smu}.{buffer}.n)")
+        return int(float(self.port.read()))
+
+    def initiate_trigger(self) -> None:
+        """Start the sweep that was set up in the trigger model."""
+        self.port.write(f"{self.smu}.trigger.initiate()")
+
+    def abort_sweep(self) -> None:
+        """Stop a running sweep of the channel."""
+        self.port.write(f"{self.smu}.abort()")
+
+    def read_list_buffers(self, points: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Read currents in A, voltages in V and times in s of the first points of the two reading buffers."""
+        self.port.write(
+            f"printbuffer(1, {points:d}, {self.smu}.nvbuffer1.readings, {self.smu}.nvbuffer2.readings, "
+            f"{self.smu}.nvbuffer1.timestamps)",
+        )
+        # The values of the three buffers are interleaved point by point
+        values = np.array([float(value) for value in self.port.read().replace("\n", "").split(",")])
+        values = values.reshape(-1, 3)
+        return values[:, 0], values[:, 1], values[:, 2]
