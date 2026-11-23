@@ -157,6 +157,16 @@ class Device(EmptyDevice):
         C: This channel in compliance, T: Other channel in compliance
         """
 
+        self.setvalue_is_fresh: bool = False
+        """KXCI only: True if DV/DI was sent since the last TI/TV reading, so the next reading returns a fresh value.
+
+        Re-sending DV/DI right before reading is avoided when possible, because it resets devices whose state depends
+        on their history, e.g. after a hold time.
+        """
+
+        self.last_applied_value: float | None = None
+        """KXCI only: the set value of the last DV/DI, to re-send it in 'start' when SweepMe! skips 'apply'."""
+
         # Pulse Mode Parameters
         self.pulse_master = False
         self.pulse_mode: bool = False
@@ -525,13 +535,18 @@ class Device(EmptyDevice):
 
             self.configure_pulse()
 
+        elif float(self.averages) > 1:
+            # KXCI needs a DV/DI right before every reading, which resets devices whose state depends on their history
+            msg = "Averaging is not supported by the 4200-SCS driver. Use a Loop module to repeat a point instead."
+            raise NotImplementedError(msg)
+
         elif self.command_set == "LPTlib":
-            if float(self.averages) > 1:
-                msg = "Averaging is not supported yet with LPTlib command set."
-                raise NotImplementedError(msg)
             self.configure_lptlib()
 
         elif self.command_set == "US":
+            self.setvalue_is_fresh = False
+            self.last_applied_value = None
+
             # Integration/Speed
             if self.speed == "Very fast":
                 msg = (
@@ -635,6 +650,16 @@ class Device(EmptyDevice):
 
             self.device_communication[self.identifier]["List length"] = list_length
 
+        elif (
+            self.command_set == "US"
+            and not self.pulse_mode
+            and not self.setvalue_is_fresh
+            and float(self.value) == self.last_applied_value
+        ):
+            # SweepMe! calls 'apply' only if the set value changed. For a repeated value, re-send DV/DI here, before
+            # the hold time, so the reading in 'call' needs no DV/DI right before it and the hold time stays effective.
+            self.apply()
+
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
         if self.pulse_mode and self.pulse_master:
@@ -675,6 +700,8 @@ class Device(EmptyDevice):
                 self.set_voltage(self.card_name[-1], voltage_source_range, self.value, float(self.protection))
             elif self.source == "Current in A":
                 self.set_current(self.card_name[-1], current_source_range, self.value, float(self.protection))
+            self.setvalue_is_fresh = True
+            self.last_applied_value = self.value
 
     def trigger_ready(self) -> None:
         """Start the pulse output if in pulse mode."""
@@ -799,31 +826,26 @@ class Device(EmptyDevice):
                 time.sleep(0.001)
 
             elif self.command_set == "US":
-                averages = int(self.averages)
-                voltages = []
-                currents = []
-
                 # The KXCI command to read out measurement values only retrieves a new value if the set voltage or set
                 # current command has been called before. Otherwise, NaN is returned.
                 # Only the first TV/TI after DV/DI returns a fresh value of the measured quantity, later ones return
                 # the 99.09999E+36 sentinel. The sourced quantity reads back in any order, so query the measured first.
-                in_compliance = False
-                for _ in range(averages):
+                # 'apply' or 'start' sent DV/DI before the hold time. It is only re-sent here as a fallback, because
+                # re-sending it after the hold time resets devices whose state depends on their history.
+                if not self.setvalue_is_fresh:
                     self.apply()
-                    if self.source == "Voltage in V":
-                        currents.append(self.get_current(self.card_name[-1]))
-                        voltages.append(self.get_voltage(self.card_name[-1]))
-                    else:
-                        voltages.append(self.get_voltage(self.card_name[-1]))
-                        currents.append(self.get_current(self.card_name[-1]))
-                    in_compliance = in_compliance or self.reading_status == "C"
+                self.setvalue_is_fresh = False
 
-                if WARN_ON_COMPLIANCE and in_compliance:
+                if self.source == "Voltage in V":
+                    self.measured_current = self.get_current(self.card_name[-1])
+                    self.measured_voltage = self.get_voltage(self.card_name[-1])
+                else:
+                    self.measured_voltage = self.get_voltage(self.card_name[-1])
+                    self.measured_current = self.get_current(self.card_name[-1])
+
+                if WARN_ON_COMPLIANCE and self.reading_status == "C":
                     unit = "A" if self.source == "Voltage in V" else "V"
                     debug(f"Warning: 4200-SCS {self.channel} is in compliance at {self.protection} {unit}.")
-
-                self.measured_voltage = np.mean(voltages)
-                self.measured_current = np.mean(currents)
 
             """
             X Y Z +-N.NNNN E+-NN
