@@ -1338,6 +1338,9 @@ architecture = "3.14-64"
   installed on the development PC masks vendored-library failures. The environment must still contain the
   packages SweepMe! ships and drivers rely on (`pymodbus`, `minimalmodbus`, `pywin32`, ...), or pysweepme reports
   "Cannot load Driver" for a sound driver.
+- **Lint CI:** every pull request also runs `tools/check_driver.py` and `ruff check` on the changed drivers and shows
+  their findings as annotations in the pull request. They do not fail it yet; fix what they report on the drivers
+  you touch.
 - **Refactoring without hardware:** load the old driver from `git HEAD` and the new one, run both through the full
   lifecycle against a fake port that feeds the replies, and diff the sent command sequences and the returned values.
   This is a one-off comparison in a scratch script, not a `tests/` suite to commit (section 10.2).

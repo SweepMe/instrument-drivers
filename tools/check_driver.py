@@ -893,11 +893,32 @@ def _report_names(folders: list[Path]) -> list[str]:
     return [name if names.count(name) == 1 else str(folder) for name, folder in zip(names, folders, strict=True)]
 
 
+def _escape_data(text: str) -> str:
+    """The message of a workflow command, escaped as the Actions runner decodes it: % first, then CR and LF."""
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _escape_property(text: str) -> str:
+    """A property value of a workflow command (file=, title=): as the message, and also : and , escaped."""
+    return _escape_data(text).replace(":", "%3A").replace(",", "%2C")
+
+
+def _annotation(finding: Finding) -> str:
+    """A finding as a GitHub Actions workflow command: a warning stays a warning, a hint becomes a notice."""
+    kind = "warning" if finding.level == "warning" else "notice"
+    method = f"{finding.method}: " if finding.method else ""
+    file = _escape_property(finding.file.replace("\\", "/"))
+    return (f"::{kind} file={file},line={max(finding.line, 1)},title={_escape_property(finding.code)}::"
+            f"{_escape_data(method + finding.message)}\n")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Check the drivers named on the command line and write the findings to stdout."""
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("paths", nargs="+", help="driver folders, or a folder holding driver folders (e.g. src)")
     parser.add_argument("--json", action="store_true", help="write the findings as JSON, for an agent")
+    parser.add_argument("--github", action="store_true",
+                        help="write the findings as GitHub Actions annotations, shown in a pull request's diff")
     parser.add_argument("--only", default="", help="comma-separated codes to report, e.g. DC005,DC010")
     parser.add_argument("--warnings", action="store_true", help="report warnings only, no hints")
     args = parser.parse_args(argv)
@@ -915,6 +936,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         json.dump({name: [asdict(f) for f in findings] for name, findings in report.items()}, sys.stdout, indent=1)
         sys.stdout.write("\n")
+        return 0
+    if args.github:
+        for findings in report.values():
+            for f in findings:
+                sys.stdout.write(_annotation(f))
         return 0
     for name, findings in report.items():
         if findings:

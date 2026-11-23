@@ -277,3 +277,16 @@ def test_byte_order_mark(tmp_path: Path) -> None:
     folder = write_driver(tmp_path, MODERN, encoding="utf-8-sig")
     assert codes(folder) == ["DC028"]
     assert all(f.code != "DC000" for f in check_driver.check_driver(folder))
+
+
+def test_annotation_escapes_properties() -> None:
+    """--github: % first, so a name holding %2C stays itself; then CR, LF, and in properties also : and ,."""
+    finding = check_driver.Finding("DC023", "hint", r"src\A%2C,B:C\main.py", 0, "configure", "50% done\r\nnext: a, b")
+    expected = "::notice file=src/A%252C%2CB%3AC/main.py,line=1,title=DC023::configure: 50%25 done%0D%0Anext: a, b\n"
+    assert check_driver._annotation(finding) == expected
+
+
+def test_annotation_level() -> None:
+    """A warning stays a warning annotation."""
+    finding = check_driver.Finding("DC022", "warning", "src/X/main.py", 4, "", "indexed")
+    assert check_driver._annotation(finding) == "::warning file=src/X/main.py,line=4,title=DC022::indexed\n"
