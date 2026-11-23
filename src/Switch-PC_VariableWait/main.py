@@ -4,19 +4,19 @@
 # find those in the corresponding folders or contact the maintainer.
 #
 # MIT License
-# 
-# Copyright (c) 2019 Axel Fischer (sweep-me.net)
-# 
+#
+# Copyright (c) 2021-2026 SweepMe! GmbH (sweep-me.net)
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -25,77 +25,99 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# SweepMe! driver
+# * Module: Switch
+# * Instrument: PC Variable Wait
 
-# SweepMe! device class
-# Type: Switch
-# Device: VariableWait
+"""SweepMe! driver that adds a swept hold or delay time."""
 
-"""
-Use this DeviceClass to introduce a variable hold or delay time.<br>
-<br>
-Hold: Wait the given time after all Sweep values are applied and reached by all modules of the current branch of the sequencer.<br>
-Delay: Wait the given time since measuring the last point started. If the wait time is already passed, e.g. due to the time the meausurement anyway takes, it will immediately continue.<br>
-<br>
-Caution: Once this Device Class starts to wait, it cannot be stopped using the program buttons<br>
-Caution: Delay only works if the corresponding delay time is longer than it takes to measure one point. Otherwise, Delay will apply not additional wait time.
-"""
+from __future__ import annotations
 
-
-from EmptyDeviceClass import EmptyDevice
 import time
+from typing import Any
+
+from pysweepme import EmptyDevice
+
+# GUI label, current and earlier ones -> kind of wait
+WAIT_MODES: dict[str, str] = {
+    "Hold in s": "Hold",
+    "Delay in s": "Delay",
+    "Hold [s]": "Hold",
+    "Delay [s]": "Delay",
+}
+
+POLL_INTERVAL_S = 0.01  # how often a wait checks whether the run was stopped
+
 
 class Device(EmptyDevice):
+    """Driver that adds a hold or delay time given by the sweep value."""
 
-    def __init__(self):
-    
-        EmptyDevice.__init__(self)
+    def __init__(self) -> None:
+        """Define the returned variables."""
+        super().__init__()
 
         self.shortname = "VariableWait"
-        
-        self.variables = ["Wait time"]
-        self.units = ["s"]
-        self.plottype = [True] # define if it can be plotted
-        self.savetype = [True] # define if it will be saved
-                
-        
-    def set_GUIparameter(self):
-        
-        GUIparameter = {
-                        "SweepMode" : ["Hold [s]", "Delay [s]"],
-                        }               
-        return GUIparameter
-        
-    def get_GUIparameter(self, parameter):
 
-        self.sweepmode = parameter["SweepMode"]
-        
-        self.shortname = self.sweepmode.split(" ")[0]
-        self.variables = [self.shortname + " time"]
-        
-    def initialize(self):
+        self.variables = ["Hold time"]
+        self.units = ["s"]
+        self.plottype = [True]
+        self.savetype = [True]
+
+        self.gui_parameters: dict[str, Any] = {}
+        self.sweep_mode: str = "Hold in s"
+        self.wait_mode: str = "Hold"
+        self.wait_time: float = float("nan")
+        self.ref_time: float = float("-inf")
+
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+        """Return the GUI fields with their defaults."""
+        return {
+            "SweepMode": ["Hold in s", "Delay in s"],
+        }
+
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Store the sweep mode and name the variable after it: 'Hold time' or 'Delay time'."""
+        self.gui_parameters = parameters
+        self.sweep_mode = parameters.get("SweepMode", "Hold in s")
+        self.wait_mode = WAIT_MODES.get(self.sweep_mode, "Hold")
+        self.shortname = self.wait_mode
+        self.variables = [f"{self.wait_mode} time"]
+
+    def initialize(self) -> None:
+        """Start without a previous point, so the first delay does not wait."""
         self.ref_time = float("-inf")
-        
-    def start(self):
-        self.value = float(self.value)
-        
-        if self.sweepmode == "Delay [s]": 
-            
-            if(time.perf_counter() - self.ref_time) < self.value:
-                #print("Delay: start waiting %1.3g seconds" % (self.value - (time.perf_counter() - self.ref_time)))
-                while (time.perf_counter() - self.ref_time) < self.value:
-                    time.sleep(0.01)
-            # else:
-                # print("Delay: no wait time was used")
-        
+
+    def configure(self) -> None:
+        """Check the sweep mode."""
+        if self.sweep_mode not in WAIT_MODES:
+            allowed = ", ".join(self.update_gui_parameters({})["SweepMode"])
+            msg = f"SweepMode must be one of {allowed}, not '{self.sweep_mode}'."
+            raise ValueError(msg)
+        self.wait_mode = WAIT_MODES[self.sweep_mode]
+
+    def start(self) -> None:
+        """Read the wait time; a delay waits here until the time since the start of the previous point passed."""
+        self.wait_time = float(self.value)
+        if self.wait_time < 0:
+            msg = f"The {self.wait_mode.lower()} time must not be negative, got {self.wait_time} s."
+            raise ValueError(msg)
+
+        if self.wait_mode == "Delay":
+            self._wait_until(self.ref_time + self.wait_time)
             self.ref_time = time.perf_counter()
-        
-    def adapt(self):
-        if self.sweepmode == "Hold [s]":
-            time.sleep(float(self.value))
-            
-            
-    def call(self):
-        return(self.value)
-        
-        
-    
+
+    def adapt(self) -> None:
+        """A hold waits here, after all modules of the branch applied and reached their values."""
+        if self.wait_mode == "Hold":
+            self._wait_until(time.perf_counter() + self.wait_time)
+
+    def call(self) -> float:
+        """Return the wait time."""
+        return self.wait_time
+
+    # --- helpers --------------------------------------------------------------
+
+    def _wait_until(self, end_time: float) -> None:
+        """Wait until perf_counter reaches end_time or the run is stopped."""
+        while time.perf_counter() < end_time and not self.is_run_stopped():
+            time.sleep(min(POLL_INTERVAL_S, max(0.0, end_time - time.perf_counter())))
