@@ -25,13 +25,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+
 # SweepMe! driver
 # * Module: Signal
 # * Instrument: Simulated Signal Generator
 
+"""SweepMe! driver of a simulated signal generator."""
+
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import numpy as np
 from pysweepme.commands import Range, Unit, command
@@ -41,6 +44,15 @@ Seconds = Annotated[float, Unit("s")]
 Hertz = Annotated[float, Unit("Hz")]
 Volts = Annotated[float, Unit("V")]
 Waveform = Literal["Sine", "Square", "Triangle", "Sawtooth"]
+
+SWEEP_MODES: list[str] = ["None", "Frequency in Hz", "Period in s", "Amplitude in V", "Phase in deg", "Delay in s"]
+WAVEFORMS: list[str] = ["Sine", "Square", "Triangle", "Sawtooth"]
+
+# GUI label of each type dropdown -> the quantity its value field holds
+PERIOD_FREQUENCY_TYPES: dict[str, str] = {"Frequency in Hz": "frequency", "Period in s": "period"}
+AMPLITUDE_HI_LEVEL_TYPES: dict[str, str] = {"Amplitude in V": "amplitude"}
+OFFSET_LO_LEVEL_TYPES: dict[str, str] = {"Offset in V": "offset"}
+DELAY_PHASE_TYPES: dict[str, str] = {"Delay in s": "delay", "Phase in deg": "phase"}
 
 
 class Device(EmptyDevice):
@@ -55,7 +67,7 @@ class Device(EmptyDevice):
 
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters."""
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         self.shortname = "Simulation"  # short name will be shown in the sequencer
         self.variables = ["Frequency", "Amplitude", "Simulated Timestamps", "Simulated Signal"]
@@ -63,73 +75,50 @@ class Device(EmptyDevice):
         self.plottype = [True, True, True, True]
         self.savetype = [True, True, True, True]
 
-        # use/uncomment the next line to use the port manager
-        # self.port_manager = True
-
-        # use/uncomment the next line to select the interfaces that should be presented to the user if you have enabled
-        # the port manager in the previous step
-        # self.port_types = ["COM", "GPIB", "USB"]
-
         # Measurement Parameters
+        self.gui_parameters: dict[str, Any] = {}
+        self.port_string: str = ""
         self.sweep_mode: str = "None"
         self.waveform: str = "Sine"
 
         self.period_frequency_mode: str = "Frequency in Hz"
-        self.period_frequency_value: float = 1e6
         self.frequency: float = 1e6
 
         self.amplitude_high_level_mode: str = "Amplitude in V"
-        self.amplitude_high_level_value: float = 1.0
         self.amplitude: float = 1.0
 
         self.offset_low_level_mode: str = "Offset in V"
-        self.offset_low_level_value: float = 0.0
         self.offset: float = 0.0
 
         self.delay_phase_mode: str = "Delay in s"
-        self.delay_phase_value: float = 0.0
         self.phase: float = 0.0
         self.delay: float = 0.0
 
-    def set_GUIparameter(self) -> dict:  # noqa: N802
-        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+        """Return the GUI parameters with their default values."""
         return {
-            "SweepMode": [
-                "None",
-                "Frequency in Hz",
-                "Period in s",
-                "Amplitude in V",
-                "Phase in deg",
-                "Delay in s",
-            ],
-            "Waveform": ["Sine", "Square", "Triangle", "Sawtooth"],
-            "PeriodFrequency": ["Frequency in Hz", "Period in s"],
+            "SweepMode": SWEEP_MODES,
+            "Waveform": WAVEFORMS,
+            "PeriodFrequency": list(PERIOD_FREQUENCY_TYPES),
             "PeriodFrequencyValue": "2e3",
-            "AmplitudeHiLevel": ["Amplitude in V"],
+            "AmplitudeHiLevel": list(AMPLITUDE_HI_LEVEL_TYPES),
             "AmplitudeHiLevelValue": "1.0",
-            "OffsetLoLevel": ["Offset in V"],
+            "OffsetLoLevel": list(OFFSET_LO_LEVEL_TYPES),
             "OffsetLoLevelValue": "0.0",
-            "DelayPhase": ["Delay in s", "Phase in deg"],
+            "DelayPhase": list(DELAY_PHASE_TYPES),
             "DelayPhaseValue": "0.0",
-            # "Impedance": ["50"],
         }
 
-    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
-        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.port_string = parameter.get("Port", "")  # can be used to enable device communication
-        self.sweep_mode = parameter["SweepMode"]
-        self.waveform = parameter["Waveform"]
-        self.period_frequency_mode = parameter["PeriodFrequency"]
-        self.period_frequency_value = float(parameter["PeriodFrequencyValue"])
-
-        self.amplitude_high_level_mode = parameter["AmplitudeHiLevel"]
-        self.amplitude_high_level_value = float(parameter["AmplitudeHiLevelValue"])
-
-        self.offset_low_level_mode = parameter["OffsetLoLevel"]
-        self.offset_low_level_value = float(parameter["OffsetLoLevelValue"])
-
-        self.delay_phase_mode = parameter["DelayPhase"]
-        self.delay_phase_value = float(parameter["DelayPhaseValue"])
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Store the values of the GUI parameters; configure() converts and checks them."""
+        self.gui_parameters = parameters
+        self.port_string = parameters.get("Port", "")
+        self.sweep_mode = parameters.get("SweepMode", "None")
+        self.waveform = parameters.get("Waveform", "Sine")
+        self.period_frequency_mode = parameters.get("PeriodFrequency", "Frequency in Hz")
+        self.amplitude_high_level_mode = parameters.get("AmplitudeHiLevel", "Amplitude in V")
+        self.offset_low_level_mode = parameters.get("OffsetLoLevel", "Offset in V")
+        self.delay_phase_mode = parameters.get("DelayPhase", "Delay in s")
 
     # here functions start that are called by SweepMe! during a measurement
 
@@ -147,42 +136,56 @@ class Device(EmptyDevice):
         self._share_signal()
 
     def configure(self) -> None:
-        """Configure the device. This function is called every time the device is used in the sequencer."""
-        if self.period_frequency_mode.startswith("Frequency"):
-            self.frequency = self.period_frequency_value
-        else:
-            self.frequency = 1 / self.period_frequency_value
+        """Convert and check the GUI values; it runs at every start of the branch and after a reconfigure."""
+        if self.sweep_mode not in SWEEP_MODES:
+            msg = f"Sweep mode '{self.sweep_mode}' is not supported. Choose one of {SWEEP_MODES}."
+            raise ValueError(msg)
+        if self.waveform not in WAVEFORMS:
+            msg = f"Waveform '{self.waveform}' is not supported. Choose one of {WAVEFORMS}."
+            raise ValueError(msg)
 
-        if self.amplitude_high_level_mode.startswith("Amplitude"):
-            self.amplitude = self.amplitude_high_level_value
-        else:
-            self.amplitude = 1
+        period_frequency_type = self._lookup("PeriodFrequency", self.period_frequency_mode, PERIOD_FREQUENCY_TYPES)
+        amplitude_type = self._lookup("AmplitudeHiLevel", self.amplitude_high_level_mode, AMPLITUDE_HI_LEVEL_TYPES)
+        offset_type = self._lookup("OffsetLoLevel", self.offset_low_level_mode, OFFSET_LO_LEVEL_TYPES)
+        delay_phase_type = self._lookup("DelayPhase", self.delay_phase_mode, DELAY_PHASE_TYPES)
 
-        if self.offset_low_level_mode.startswith("Offset"):
-            self.offset = self.offset_low_level_value
+        period_frequency_value = float(self.gui_parameters.get("PeriodFrequencyValue", 2e3))
+        if period_frequency_value <= 0:
+            msg = f"The value of '{self.period_frequency_mode}' must be greater than 0, not {period_frequency_value}."
+            raise ValueError(msg)
+        if period_frequency_type == "frequency":
+            self.frequency = period_frequency_value
         else:
-            self.offset = 0
+            self.frequency = 1 / period_frequency_value
 
-        if self.delay_phase_mode.startswith("Delay"):
-            self.delay = self.delay_phase_value
+        if amplitude_type == "amplitude":
+            self.amplitude = float(self.gui_parameters.get("AmplitudeHiLevelValue", 1.0))
+
+        if offset_type == "offset":
+            self.offset = float(self.gui_parameters.get("OffsetLoLevelValue", 0.0))
+
+        delay_phase_value = float(self.gui_parameters.get("DelayPhaseValue", 0.0))
+        if delay_phase_type == "delay":
+            self.delay = delay_phase_value
         else:
             # A positive phase advances the waveform, which is a negative delay.
-            self.phase = self.delay_phase_value
+            self.phase = delay_phase_value
             self.delay = -self.phase / 360 / self.frequency
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        value = float(self.value)
         if self.sweep_mode == "Frequency in Hz":
-            self.frequency = self.value
+            self.frequency = value
         elif self.sweep_mode == "Period in s":
-            self.frequency = 1 / self.value
+            self.frequency = 1 / value
         elif self.sweep_mode == "Amplitude in V":
-            self.amplitude = self.value
+            self.amplitude = value
         elif self.sweep_mode == "Phase in deg":
-            self.phase = self.value
+            self.phase = value
             self.delay = -self.phase / 360 / self.frequency
         elif self.sweep_mode == "Delay in s":
-            self.delay = self.value
+            self.delay = value
 
         # update the signal generator function
         self._share_signal()
@@ -190,7 +193,7 @@ class Device(EmptyDevice):
     def call(self) -> tuple[float, float, np.ndarray, np.ndarray]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         timestamps = np.linspace(0, 3 / self.frequency, 100)
-        signal = self.generate_waveform(timestamps)
+        signal = np.asarray(self.generate_waveform(timestamps), dtype=float)
 
         return self.frequency, self.amplitude, timestamps, signal
 
@@ -213,20 +216,20 @@ class Device(EmptyDevice):
             cycles = self.frequency * time_stamp
             signal = 2 * (cycles - np.floor(cycles + 0.5))
         else:
-            signal = 0
+            signal = np.zeros_like(phase)
 
         return self.offset + signal * self.amplitude
 
-    """Communication commands, used e.g. by the SweepMe! Instrument Control.
-
-    The commands do not need 'initialize' or 'configure'.
-    """
+    # --- Communication commands, used e.g. by the SweepMe! Instrument Control ---
+    #
+    # The commands do not need 'initialize' or 'configure'.
 
     @command
     def set_waveform(self, waveform: Waveform) -> None:
         """Set the waveform."""
         self.waveform = waveform
 
+    # check_driver: ignore DC012 - the bound 0 Hz is excluded, which Range cannot express
     @command
     def set_frequency(self, frequency: Annotated[Hertz, Range(0.0, None)]) -> None:
         """Set the frequency in Hz (greater than 0 Hz)."""
@@ -261,6 +264,7 @@ class Device(EmptyDevice):
             float(self.delay),
         )
 
+    # check_driver: ignore DC012 - the bound 0 s of the duration is excluded, which Range cannot express
     @command(returns=("time", "voltage"))
     def sample_signal(
         self,
@@ -274,6 +278,16 @@ class Device(EmptyDevice):
         time_stamps = np.linspace(0, duration, points)
         signal = self.generate_waveform(time_stamps.copy())
         return time_stamps.tolist(), np.asarray(signal, dtype=float).tolist()
+
+    # --- Helpers ---
+
+    @staticmethod
+    def _lookup(key: str, label: str, options: dict[str, str]) -> str:
+        """Return the internal value of a dropdown label, or raise a ValueError naming the allowed labels."""
+        if label not in options:
+            msg = f"{key} '{label}' is not supported. Choose one of {list(options)}."
+            raise ValueError(msg)
+        return options[label]
 
     def _share_signal(self) -> None:
         """Put generate_waveform into device_communication, where a simulated oscilloscope can find it.
