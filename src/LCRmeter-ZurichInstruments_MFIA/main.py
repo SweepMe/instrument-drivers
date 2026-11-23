@@ -61,6 +61,8 @@ class Device(EmptyDevice):
         self.timeout_autorange = 20 # in s
         self.sampling_rate = 10.0 # in 1/s
 
+        self.daq = None  # LabOne API session, created in connect()
+
         # Sources that can supply the DC bias across the device under test, see doc/description.md
         # "Internal":         internal bias source of the instrument, nodes /imps/0/bias/*
         # "Aux Output (cable to Aux In 1)": DC level of an Auxiliary Output, added to the Signal Output
@@ -70,6 +72,13 @@ class Device(EmptyDevice):
 
         self.bias_source = "Internal"
         self.aux_output_index = 0  # zero-based index of the Auxiliary Output used as bias source
+
+        # Output voltage ranges of the Signal Output in V. The range must cover drive amplitude plus DC bias,
+        # otherwise the instrument clamps the bias silently, e.g. to +/-1 V in the 1 V range.
+        self.output_ranges = [0.01, 0.1, 1.0, 10.0]
+        self.output_range = None  # output range in V set during the current run, None if not yet set
+
+        self.bias_tolerance = 1e-3  # in V, maximum deviation of the bias read back from the requested bias
 
     def find_Ports(self):
         '''use ZI api to find IDs of all devices it can access - USB comm requires driver install'''
@@ -144,16 +153,25 @@ class Device(EmptyDevice):
         dev_explorer.find(self.devID)
         cpars = dev_explorer.get(self.devID)
         if cpars ['apilevel'] != __api_level__:
-            print("MFIA lockin warning: api level {i} does not match driver level (6)".format(cpars['apilevel']))
+            print("MFIA warning: api level %s does not match driver level %s" % (cpars['apilevel'], __api_level__))
 
-        self.daq = ziP.ziDAQServer(cpars['serveraddress'], cpars['serverport'], cpars['apilevel']) #make API session
+        # The zhinst-core library shipped with the driver rarely has exactly the version of the LabOne installation
+        # on the user's computer, and the Data Server refuses the connection in that case unless mismatches are
+        # allowed explicitly.
+        try:
+            self.daq = ziP.ziDAQServer(cpars['serveraddress'], cpars['serverport'], cpars['apilevel'],
+                                       allow_version_mismatch=True)
+        except TypeError:
+            # old ziPython versions (Python 3.6, 32 bit) do not know the argument 'allow_version_mismatch'
+            self.daq = ziP.ziDAQServer(cpars['serveraddress'], cpars['serverport'], cpars['apilevel'])
         self.daq.connectDevice(self.devID, cpars['interfaces'][0]) #blocking
 
         self.polling_topic = '/%s/imps/0/sample' % (self.devID)
 
 
     def disconnect(self):
-        if self.daq:
+        # connect() may have failed before the API session was created, e.g. if the device was not found
+        if self.daq is not None:
             self.daq.disconnectDevice(self.devID)
 
     def initialize(self):
@@ -166,6 +184,8 @@ class Device(EmptyDevice):
     def configure(self):
 
         self.check_bias_configuration()
+
+        self.output_range = None  # the output range is chosen anew for each configure
 
         retries = 5
         for i in range(retries):
@@ -211,7 +231,7 @@ class Device(EmptyDevice):
 
 
         settings += [
-            ['/%s/imps/0/enable/on' % (self.devID), 1],                     # enable impedance measurement, necessary if MFLI is used or if it was disabled beforehand.
+            ['/%s/imps/0/enable' % (self.devID), 1],                        # enable impedance measurement, necessary if MFLI is used or if it was disabled beforehand.
             ['/%s/imps/0/mode' % (self.devID), self.OperatingMode],         # 4-Terminal (0) or 2-Terminal (1)
             ['/%s/imps/0/auto/inputrange' % (self.devID), 1],               # inputrange is dynamically adjusted for best measurements
 
@@ -219,6 +239,16 @@ class Device(EmptyDevice):
 
             ['/%s/imps/0/auto/bw' % (self.devID), 1],                       # automatic bw
             ['/%s/imps/0/freq' % (self.devID), self.frequency],             # oscillator frequency
+        ]
+
+        self.daq.set(settings)
+        self.daq.sync()
+
+        # The output range must be active before amplitude and bias are written, as both are clamped to it
+        self.set_output_range(self.ValueBias)
+
+        settings = [
+            ['/%s/imps/0/auto/output' % (self.devID), 0],                   # drive amplitude set manually, otherwise the instrument overwrites it
             ['/%s/imps/0/output/amplitude' % (self.devID), self.ValueRMS],  # oscillator signal
         ]
 
@@ -247,6 +277,8 @@ class Device(EmptyDevice):
 
         self.daq.set(settings)
         self.daq.sync()
+
+        self.verify_bias_value(self.ValueBias)
 
         self.time_constant = self.daq.getDouble('/%s/demods/0/timeconstant' % self.devID)
 
@@ -288,6 +320,7 @@ class Device(EmptyDevice):
     def apply(self):
 
         settings = []
+        bias_value = None  # new DC bias in V, None if the bias does not change
 
         if self.sweepmode != "None":
 
@@ -305,11 +338,11 @@ class Device(EmptyDevice):
 
                     self.stepvalue = float(self.stepvalue)
 
-                    settings += self.get_bias_value_settings(self.stepvalue)
+                    bias_value = self.stepvalue
 
             else:
 
-                settings += self.get_bias_value_settings(self.sweepvalue)
+                bias_value = self.sweepvalue
 
                 if self.stepmode.startswith("Frequency"):
                     self.stepvalue = float(self.stepvalue)
@@ -320,10 +353,17 @@ class Device(EmptyDevice):
 
                     self.frequency = self.stepvalue
 
+        if bias_value is not None:
+            # the output range must be widened before the bias is written, otherwise the bias is clamped
+            self.set_output_range(bias_value)
+            settings += self.get_bias_value_settings(bias_value)
 
         if len(settings) > 0:
             self.daq.set(settings)
             self.daq.sync()
+
+            if bias_value is not None:
+                self.verify_bias_value(bias_value)
 
             self.time_constant = self.daq.getDouble('/%s/demods/0/timeconstant' % self.devID)
 
@@ -483,6 +523,71 @@ class Device(EmptyDevice):
             return self.daq.getDouble('/%s/auxouts/%d/offset' % (self.devID, self.aux_output_index))
 
         return float('nan')  # "External", the applied bias is unknown to this driver
+
+    def set_output_range(self, bias):
+        """Select an output range wide enough for drive amplitude plus DC bias 'bias' in V.
+
+        The bias of the sources "Internal" and "Aux Output" is added as an offset to the Signal Output, and the
+        output range must cover the sum of drive amplitude and offset. If the range is too small, the instrument
+        clamps the bias without any error, e.g. to +/-1 V in the 1 V range.
+
+        The range is written on its own and synchronized before any bias is written, and it is read back, because
+        a range change sent in the same list as the bias did not take effect in time during a bias sweep.
+
+        With a bias source, the 10 mV and 100 mV ranges are not used. This avoids range switching for small bias
+        values and matches the behaviour of earlier driver versions, which left the instrument in the 1 V range.
+
+        The range is only increased within a run, so that a bias sweep does not switch the output back and forth.
+        """
+
+        # The drive amplitude is treated as RMS value, so its peak value is used as worst case.
+        required_voltage = 2 ** 0.5 * abs(self.ValueRMS)
+        minimum_range = self.output_ranges[0]
+        if self.bias_source != "External":
+            required_voltage += abs(float(bias))
+            minimum_range = 1.0
+
+        if required_voltage > self.output_ranges[-1]:
+            msg = ("The MFIA cannot apply a DC bias of %s V together with a drive amplitude of %s V, as the sum "
+                   "exceeds the largest output range of %s V. Please reduce bias or drive amplitude, or use an "
+                   "external bias tee." % (bias, self.ValueRMS, self.output_ranges[-1]))
+            raise ValueError(msg)
+
+        new_range = min(output_range for output_range in self.output_ranges
+                        if output_range >= max(required_voltage, minimum_range))
+
+        if self.output_range is not None and new_range <= self.output_range:
+            return
+
+        self.daq.set([['/%s/imps/0/output/range' % (self.devID), new_range]])
+        self.daq.sync()
+
+        active_range = self.daq.getDouble('/%s/imps/0/output/range' % (self.devID))
+        if abs(active_range - new_range) > 1e-3 * new_range:
+            msg = ("The MFIA did not switch to the output range of %s V needed for a DC bias of %s V, it reports "
+                   "an output range of %s V." % (new_range, bias, active_range))
+            raise ValueError(msg)
+
+        self.output_range = new_range
+
+    def verify_bias_value(self, bias):
+        """Check that the instrument really applies the requested DC bias 'bias' in V.
+
+        The instrument does not report an error for a bias outside its limits, it clamps the value instead.
+        Without this check, the measurement would continue at a wrong bias.
+        """
+
+        if self.bias_source == "External":
+            return
+
+        applied_bias = self.get_bias_value()
+
+        if abs(applied_bias - float(bias)) > self.bias_tolerance:
+            msg = ("The MFIA did not apply the requested DC bias of %s V, it reports %s V instead (output range "
+                   "%s V). The bias is limited by the output range and, in 4-Terminal mode, by the common mode "
+                   "input range of about +/-3 V. Please use 2-Terminal mode or an external bias tee for larger bias "
+                   "voltages." % (bias, applied_bias, self.output_range))
+            raise ValueError(msg)
 
     def subscribe_polling_topic(self):
         """ subscribe to the polling topic """
