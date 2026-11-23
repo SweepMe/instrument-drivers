@@ -185,6 +185,10 @@ class Device(EmptyDevice):
 
     def connect(self) -> None:
         """Open a LabOne API session and connect the device."""
+        if not self.device_id:
+            msg = "No device selected. Start the LabOne Data Server, press 'Find ports' and select the device ID."
+            raise ValueError(msg)
+
         discovery = ziPython.ziDiscovery()
         discovery.find(self.device_id)
         properties = discovery.get(self.device_id)
