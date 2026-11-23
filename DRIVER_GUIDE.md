@@ -1306,19 +1306,23 @@ architecture = "3.14-64"
   choices and warnings; bench limits, `Range` and in-command checks each refuse their case. This is the recommended
   way to test a declared driver.
 - **`tools/check_driver.py`** in this repository reads a driver's source (it imports no driver, so vendor libraries
-  are not needed) and reports where it departs from sections 7 and 10, as a work list with codes `DC000` to `DC020`:
+  are not needed) and reports where it departs from sections 7 and 10, as a work list with codes `DC000` to `DC028`:
   a command parameter without a type annotation or a command without a return annotation or docstring, a parameter
   compared with fixed strings instead of a `Literal`, an undecorated public method in a converted driver, a setter
   that returns a value, a reader without `returns`, a command calling commands without `composite=True`, a composite
   that sends raw commands without a comment, two setters sharing a value-parameter name, a check of what the
   annotation already says, a `Warnings:` section written by hand, a semantic function sending a command a wrapper
   covers, the semantic functions out of order or a pair split, markers written inline instead of in an alias, a
-  legacy `description` attribute, and generic value-parameter names. `warning` marks what is most likely wrong,
-  `hint` what is worth a look; a driver stays valid with any of them. A deliberate finding is accepted with a
-  comment `# check_driver: ignore DC0xx - <why>`: for a finding about a method it stands on the method's decorator
-  or `def` line, or in the comment block directly above them, never inside the body; for a finding about the file
-  (the method order, a `description` attribute) on the finding's line or the line above. Run it on every driver you
-  touch:
+  legacy `description` attribute, and generic value-parameter names. `DC021` to `DC028` list what a modernization
+  removes: the legacy GUI API, `parameters["Key"]` in a GUI method, deprecated calls (section 11.1), bare
+  `EmptyDeviceClass`, `ErrorMessage` and `FolderManager` imports, the folder keys `"SETTINGS"` and
+  `"ROAMINGSETTINGS"`, a missing `license.txt` or one whose copyright lines differ from the header, a copyright year
+  below the current one, and a UTF-8 byte order mark. `warning` marks what is most likely wrong, `hint` what is
+  worth a look; a driver stays valid with any of them. A deliberate finding is accepted with a comment
+  `# check_driver: ignore DC0xx - <why>`: for a finding about a method (also a deprecated call or an import inside
+  it) it stands on the method's decorator or `def` line, or in the comment block directly above them, never inside
+  the body; for a finding about the file (the method order, a `description` attribute, the license, an import at
+  module level) on the finding's line or the line above. Run it on every driver you touch:
 
   ```
   python tools/check_driver.py src/<DriverFolder>
