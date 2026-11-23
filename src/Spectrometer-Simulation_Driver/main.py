@@ -29,14 +29,15 @@
 # * Module: Spectrometer
 # * Instrument: Simulation Spectrometer
 
+"""SweepMe! driver of a simulated spectrometer."""
 
 from __future__ import annotations
 
 import math
-import os
 import random
 import time
-from typing import Annotated, Literal
+from pathlib import Path
+from typing import Annotated, Any, Literal
 
 import numpy as np
 from pysweepme.commands import Range, Unit, command
@@ -46,6 +47,10 @@ Seconds = Annotated[float, Unit("s")]
 Nanometers = Annotated[float, Unit("nm")]
 NanometersList = list[Nanometers]
 SpectrumMode = Literal["Test spectrum.txt", "Raman Spectrum", "Background Spectrum", "Silicon Photonics", "No Noise"]
+
+SWEEP_MODES: list[str] = ["None", "Integration time in s"]
+TRIGGER_MODES: list[str] = ["Software", "External"]
+TEST_SPECTRUM_FILE: Path = Path(__file__).resolve().parent / "test_spectrum.txt"
 
 
 class Device(EmptyDevice):
@@ -68,6 +73,7 @@ class Device(EmptyDevice):
         self.calibrationfolder = self.get_folder("CALIBRATIONS")
 
         # Measurement Parameters
+        self.gui_parameters: dict[str, Any] = {}
         self.sweep_mode: str = "None"
         self.port_string: str = "Test spectrum.txt"
 
@@ -92,42 +98,70 @@ class Device(EmptyDevice):
         """Return a list of strings with possible port items."""
         return ["Test spectrum.txt", "Raman Spectrum", "Background Spectrum", "Silicon Photonics", "No Noise"]
 
-    def set_GUIparameter(self) -> dict:  # noqa: N802
-        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+        """Return the GUI parameters with their default values."""
         return {
-            "SweepMode": ["None", "Integration time in s"],
+            "SweepMode": SWEEP_MODES,
             "IntegrationTime": 0.1,
             "Average": 1,
-            "Trigger": ["Software", "External"],
+            "Trigger": TRIGGER_MODES,
             "TriggerDelay": 0.0,
         }
 
-    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
-        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.integration_time = float(parameter["IntegrationTime"])
-        self.sweep_mode = parameter["SweepMode"]
-        self.average = int(parameter["Average"])
-        self.trigger_mode = parameter["Trigger"]
-        self.trigger_delay = float(parameter["TriggerDelay"])
-        self.port_string = parameter.get("Port", self.port_string)
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Store the values of the GUI parameters; configure() converts and checks them."""
+        self.gui_parameters = parameters
+        self.sweep_mode = parameters.get("SweepMode", "None")
+        self.trigger_mode = parameters.get("Trigger", "Software")
+        self.port_string = parameters.get("Port", self.port_string)
         self._update_units()
 
     def initialize(self) -> None:
         """Reset the silicon-photonics peak so it does not drift out of range across runs."""
         self.siph_peak_wl = self.SIPH_PEAK_WL_START
 
+    def configure(self) -> None:
+        """Convert and check the GUI values; it runs at every start of the branch and after a reconfigure."""
+        if self.sweep_mode not in SWEEP_MODES:
+            msg = f"Sweep mode '{self.sweep_mode}' is not supported. Choose one of {SWEEP_MODES}."
+            raise ValueError(msg)
+        if self.trigger_mode not in TRIGGER_MODES:
+            msg = f"Trigger '{self.trigger_mode}' is not supported. Choose one of {TRIGGER_MODES}."
+            raise ValueError(msg)
+
+        self.integration_time = float(self.gui_parameters.get("IntegrationTime", 0.1))
+        if self.integration_time <= 0:
+            msg = f"Integration time must be greater than 0 s, not {self.integration_time} s."
+            raise ValueError(msg)
+
+        self.average = int(self.gui_parameters.get("Average", 1))
+        if self.average < 1:
+            msg = f"Average must be at least 1, not {self.average}."
+            raise ValueError(msg)
+
+        self.trigger_delay = float(self.gui_parameters.get("TriggerDelay", 0.0))
+        if self.trigger_delay < 0:
+            msg = f"Trigger delay must be 0 s or more, not {self.trigger_delay} s."
+            raise ValueError(msg)
+
     def apply(self) -> None:
         """Apply the sweep values."""
         if self.sweep_mode == "Integration time in s":
-            self.integration_time = self.value
+            integration_time = float(self.value)
+            if integration_time <= 0:
+                msg = f"Integration time must be greater than 0 s, not {integration_time} s."
+                raise ValueError(msg)
+            self.integration_time = integration_time
 
     def measure(self) -> None:
         """Trigger acquisition of new data."""
         time.sleep(self.trigger_delay)
         for _ in range(self.average):
+            if self.is_run_stopped():
+                return
             time.sleep(self.integration_time)
 
-    def call(self) -> list:
+    def call(self) -> list[Any]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
         wavelengths = self.get_wavelengths()
 
@@ -153,12 +187,11 @@ class Device(EmptyDevice):
             return np.linspace(self.siph_wl_start, self.siph_wl_stop, int(self.siph_n_points))
 
         # must return a list of all wavelengths at which the spectrum is measured
-        spectrum_file = os.path.dirname(os.path.abspath(__file__)) + os.sep + "test_spectrum.txt"
-        spectrum = np.loadtxt(spectrum_file, skiprows=3)
+        spectrum = np.loadtxt(TEST_SPECTRUM_FILE, skiprows=3)
         return spectrum[:, 0]
 
     # check_driver: ignore DC004 - the hook of older Spectrometer module versions
-    def read_Wavelengths(self) -> np.ndarray:
+    def read_Wavelengths(self) -> np.ndarray:  # noqa: N802
         """For compatibility with the old version of the module."""
         return self.get_wavelengths()
 
@@ -171,7 +204,7 @@ class Device(EmptyDevice):
         if self.port_string == "Silicon Photonics":
             wavelengths = self.get_wavelengths()
             sigma = self.siph_peak_fwhm_nm / (2.0 * math.sqrt(2.0 * math.log(2.0)))
-            gauss = np.exp(-((wavelengths - self.siph_peak_wl) ** 2) / (2.0 * sigma ** 2))
+            gauss = np.exp(-((wavelengths - self.siph_peak_wl) ** 2) / (2.0 * sigma**2))
             transmission_db = self.siph_peak_floor_db + (self.siph_peak_height_db - self.siph_peak_floor_db) * gauss
             rng = np.random.default_rng()
             transmission_db = transmission_db + rng.normal(0.0, self.siph_noise_std_db, len(wavelengths))
@@ -193,15 +226,14 @@ class Device(EmptyDevice):
             intensities = self.calculate_background_spectrum()
         else:
             # load spectral data from test_spectrum.txt
-            spectrum_file = os.path.dirname(os.path.abspath(__file__)) + os.sep + "test_spectrum.txt"
-            spectrum = np.loadtxt(spectrum_file, skiprows=3)
+            spectrum = np.loadtxt(TEST_SPECTRUM_FILE, skiprows=3)
             intensities = spectrum[:, 1] - 500  # with offset subtraction
 
         # Scale intensity with integration time
         intensities = intensities * self.integration_time
 
         # Add noise
-        if not self.port_string == "No Noise":
+        if self.port_string != "No Noise":
             intensities += self.calculate_noise()
 
         return np.array(intensities)
@@ -214,24 +246,23 @@ class Device(EmptyDevice):
 
     def calculate_gaussian_peak(self, peak_position: float, peak_width: float) -> np.ndarray:
         """Calculate a gaussian peak with the given parameters."""
-        return np.exp(-(self.get_wavelengths() - peak_position) ** 2 / peak_width)
+        return np.exp(-((self.get_wavelengths() - peak_position) ** 2) / peak_width)
 
     def calculate_noise(self) -> np.ndarray:
         """Calculate a noise spectrum."""
         noise = []
         for _ in self.get_wavelengths():
-            noise.append(50 * random.random() - 25)
+            noise.append(50 * random.random() - 25)  # noqa: S311
         return np.array(noise)
 
     def _update_units(self) -> None:
         """Let the unit of the intensities follow the spectrum mode: dB for 'Silicon Photonics', else counts/s."""
         self.units = ["nm", "dB" if self.port_string == "Silicon Photonics" else "counts/s", "s"]
 
-    """Communication commands, used e.g. by the SweepMe! Instrument Control.
-
-    The commands do not need 'initialize' or 'configure'. Which spectrum the simulation returns is selected with
-    'set_spectrum_mode'.
-    """
+    # --- Communication commands, used e.g. by the SweepMe! Instrument Control ---
+    #
+    # The commands do not need 'initialize' or 'configure'. Which spectrum the simulation returns is selected with
+    # 'set_spectrum_mode'.
 
     @command
     def set_spectrum_mode(self, spectrum_mode: SpectrumMode) -> None:
@@ -246,6 +277,7 @@ class Device(EmptyDevice):
         """Return the selected simulated spectrum."""
         return self.port_string  # type: ignore[return-value]  # set from the Port field or set_spectrum_mode
 
+    # check_driver: ignore DC012 - the bound 0 s is excluded, which Range cannot express
     @command
     def set_integration_time(self, integration_time: Annotated[Seconds, Range(0.0, 10.0)]) -> None:
         """Set the integration time in s. It must be greater than 0 s."""
