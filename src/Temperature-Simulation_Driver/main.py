@@ -24,10 +24,13 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-#
-# SweepMe! device class
-# * Type: Temperature
+
+
+# SweepMe! driver
+# * Module: Temperature
 # * Instrument: Simulation Temperature Controller
+
+"""SweepMe! driver of a simulated temperature controller."""
 
 from __future__ import annotations
 
@@ -42,14 +45,26 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 ABSOLUTE_ZERO = -273.15
 """Absolute zero in °C: the setpoint must lie above it."""
 
+START_TEMPERATURE = 25.25
+"""Temperature in °C before any setpoint was set."""
+
 Celsius = Annotated[float, Unit("°C")]
 SensorMode = Literal["Realistic", "No Noise"]
 
+# Realistic: exponential settle with TIME_CONSTANT plus measurement noise.
+# No Noise: linear ramp with RAMP_RATE without noise, fully reproducible.
+SENSOR_MODES: list[str] = ["Realistic", "No Noise"]
+
 
 class Device(EmptyDevice):
-    """Device class to implement functionalities of a simulated temperature controller."""
+    """Device class to implement functionalities of a simulated temperature controller.
+
+    The temperature, the setpoint and the time of the last update are kept in the parameter store under keys that
+    contain the port, so that every instance with the same port sees the same simulated controller.
+    """
+
     TIME_CONSTANT = 5.0
-    RAMP_RATE = 0.5  # K/s — deterministic ramp used in 'No Noise' mode
+    RAMP_RATE = 0.5  # K/s, the deterministic ramp of the 'No Noise' mode
 
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters."""
@@ -63,70 +78,72 @@ class Device(EmptyDevice):
         self.savetype = [True]  # True to save data
 
         self.port_manager = False
-        self.sensor: str = "Realistic"  #
-        """
-        Realistic: exponential settle with TIME_CONSTANT plus measurement noise 
-        No Noise:  jump straight to the setpoint and skip the noise. fast and fully reproducible.
-        """
+        self.port_string: str = "0"
+        self.sensor: str = "Realistic"
 
     @property
     def temperature(self) -> float:
-        """Returns the current temperature from the parameter store."""
+        """The current simulated temperature in °C."""
         temperature = self.restore_parameter(self.identifier_temp)
-        return temperature or 25.25
+        return START_TEMPERATURE if temperature is None else temperature
 
     @temperature.setter
-    def temperature(self, value: float) -> None:
-        self.store_parameter(self.identifier_temp, value)
-
-    # check_driver: ignore DC004 - a property holding the setpoint across instances, not a command
-    @property
-    def set_temperature(self) -> float:
-        temperature = self.restore_parameter(self.identifier_settemp)
-        return temperature
-
-    # check_driver: ignore DC004 - the setter of the set_temperature property, not a command
-    @set_temperature.setter
-    def set_temperature(self, value: float) -> None:
-        self.store_parameter(self.identifier_settemp, value)
+    def temperature(self, temperature: float) -> None:
+        self.store_parameter(self.identifier_temp, temperature)
 
     @property
-    def last_time(self) -> float:
-        last_time = self.restore_parameter(self.identifier_time)
-        return last_time
+    def temperature_setpoint(self) -> float | None:
+        """The setpoint in °C, None before one was set."""
+        stored: float | None = self.restore_parameter(self.identifier_settemp)
+        return stored
+
+    @temperature_setpoint.setter
+    def temperature_setpoint(self, temperature_setpoint: float) -> None:
+        self.store_parameter(self.identifier_settemp, temperature_setpoint)
+
+    @property
+    def last_time(self) -> float | None:
+        """The time of the last temperature update, None while the temperature does not move."""
+        stored: float | None = self.restore_parameter(self.identifier_time)
+        return stored
 
     @last_time.setter
-    def last_time(self, value: float) -> None:
-        self.store_parameter(self.identifier_time, value)
+    def last_time(self, last_time: float | None) -> None:
+        self.store_parameter(self.identifier_time, last_time)
 
     @property
     def identifier(self) -> str:
-        return f"Temperature-Test_Instrument-{self.port}_"
+        """The prefix of the keys of this simulated controller in the parameter store."""
+        return f"Temperature-Test_Instrument-{self.port_string}_"
 
     @property
     def identifier_temp(self) -> str:
+        """The key of the temperature in the parameter store."""
         return f"{self.identifier}Temp"
 
     @property
     def identifier_settemp(self) -> str:
+        """The key of the setpoint in the parameter store."""
         return f"{self.identifier}setTemp"
 
     @property
     def identifier_time(self) -> str:
+        """The key of the time of the last update in the parameter store."""
         return f"{self.identifier}time"
 
-    def set_GUIparameter(self) -> dict[str, Any]:
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+        """Return the GUI parameters with their default values."""
         return {
             "SweepMode": ["None", "Temperature"],
             "TemperatureUnit": ["°C"],
             "Port": "0",
-            "Sensor": ["Realistic", "No Noise"],
+            "Sensor": SENSOR_MODES,
         }
 
-    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
-        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.port = parameter["Port"]
-        self.sensor = parameter.get("Sensor", "Realistic")
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Store the values of the GUI parameters."""
+        self.port_string = str(parameters.get("Port", "0"))
+        self.sensor = parameters.get("Sensor", "Realistic")
 
     def initialize(self) -> None:
         """Reset the ramp timer (and, in no-noise mode, the temperature) at the start of each run."""
@@ -135,36 +152,44 @@ class Device(EmptyDevice):
         if self.sensor == "No Noise":
             self.temperature = 25.0
 
+    def configure(self) -> None:
+        """Check the GUI values; it runs at every start of the branch and after a reconfigure."""
+        if self.sensor not in SENSOR_MODES:
+            msg = f"Sensor '{self.sensor}' is not supported. Choose one of {SENSOR_MODES}."
+            raise ValueError(msg)
+
     def poweroff(self) -> None:
         """Turn off the device."""
         self.last_time = None
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-        self.set_temperature = float(self.value)
+        self.temperature_setpoint = float(self.value)
         self.last_time = time.time()
 
     def measure(self) -> None:
         """Advance the current temperature towards the setpoint based on elapsed wall-clock time."""
-        if not self.last_time or self.set_temperature is None or self.set_temperature == self.temperature:
+        setpoint = self.temperature_setpoint
+        last_time = self.last_time
+        if not last_time or setpoint is None or setpoint == self.temperature:
             return
 
         new_time = time.time()
-        time_elapsed = new_time - self.last_time
+        time_elapsed = new_time - last_time
 
         if self.sensor == "No Noise":
-            # Deterministic linear ramp at RAMP_RATE K/s — clamped at the setpoint.
+            # Deterministic linear ramp at RAMP_RATE K/s, clamped at the setpoint.
             # Use the raw elapsed time; rounding it could give a 0 K step and stall the ramp.
-            distance = self.set_temperature - self.temperature
+            distance = setpoint - self.temperature
             max_step = Device.RAMP_RATE * time_elapsed
             if abs(distance) <= max_step:
-                self.temperature = round(self.set_temperature, 2)
+                self.temperature = round(setpoint, 2)
             else:
                 self.temperature = round(self.temperature + math.copysign(max_step, distance), 2)
         else:
             # Exponential settle with TIME_CONSTANT.
             fraction = math.exp(-time_elapsed / Device.TIME_CONSTANT)
-            self.temperature = fraction * self.temperature + (1 - fraction) * self.set_temperature
+            self.temperature = fraction * self.temperature + (1 - fraction) * setpoint
 
         self.last_time = new_time
 
@@ -173,19 +198,18 @@ class Device(EmptyDevice):
         if self.sensor == "No Noise":
             return round(self.temperature, 2)
         # add some noise to the temperature
-        return self.temperature + 0.005 * (2 * random() - 1)
+        return self.temperature + 0.005 * (2 * random() - 1)  # noqa: S311
 
-    # check_driver: ignore DC004 - the simulation model used by call(), not a command
+    # check_driver: ignore DC004 - a hook of the Temperature module, which polls it in its own reach
     def measure_temperature(self) -> float:
-        """Returns the calculated temperature."""
+        """Return the simulated temperature in °C after letting it move towards the setpoint."""
         self.measure()
         return self.call()
 
-    """Communication commands, used e.g. by the SweepMe! Instrument Control.
-
-    The simulated temperature controller moves the temperature towards the setpoint while it is read. The commands do
-    not need 'initialize' or 'configure'.
-    """
+    # --- Communication commands, used e.g. by the SweepMe! Instrument Control ---
+    #
+    # The simulated temperature controller moves the temperature towards the setpoint while it is read. The commands
+    # do not need 'initialize' or 'configure'.
 
     @command
     def set_temperature_setpoint(self, temperature: Annotated[Celsius, Range(ABSOLUTE_ZERO, 1000.0)]) -> None:
@@ -193,13 +217,13 @@ class Device(EmptyDevice):
         if temperature <= ABSOLUTE_ZERO:
             msg = f"Temperature {temperature} °C must be above {ABSOLUTE_ZERO} °C."
             raise ValueError(msg)
-        self.set_temperature = temperature
+        self.temperature_setpoint = temperature
         self.last_time = time.time()
 
     @command(returns=("temperature",), reads="setpoint")
     def get_temperature_setpoint(self) -> Celsius:
         """Return the target temperature in °C that was set last."""
-        setpoint = self.set_temperature
+        setpoint = self.temperature_setpoint
         if setpoint is None:
             msg = "No setpoint has been set yet. Use 'set_temperature_setpoint' first."
             raise ValueError(msg)
