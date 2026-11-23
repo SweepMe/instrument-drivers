@@ -25,9 +25,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+
 # SweepMe! driver
 # * Module: WaferProber
 # * Instrument: Simulated WaferProber
+
+"""SweepMe! driver of a simulated wafer prober."""
 
 from __future__ import annotations
 
@@ -45,13 +48,16 @@ DIE_PITCH_Y_MM = 10.0
 EDGE_EXCLUSION_MM = 5.0
 WAFER_NOTCH = "down"
 
+WAFERS: list[str] = ["C1W1", "C1W2", "C2W1"]
+SUBSITES: list[str] = ["Pos 100, 50", "Pos 75, 150"]
+
 
 class Device(EmptyDevice):
     """Simulated WaferProber driver."""
 
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters."""
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         self.shortname = "Simulation"  # short name will be shown in the sequencer
         # The variables that can be measured by the device:
@@ -60,33 +66,73 @@ class Device(EmptyDevice):
         self.plottype = [True, True, True, True, True, True]
         self.savetype = [True, True, True, True, True, True]
 
-        # use/uncomment the next line to use the port manager
-        # self.port_manager = True
-
-        # use/uncomment the next line to select the interfaces that should be presented to the user if you have enabled
-        # the port manager in the previous step
-        # self.port_types = ["COM", "GPIB", "USB"]
-
+        self.port_string: str = ""
         self.current_wafer: str = ""
         self.current_die: str = "0,0"
         self.current_die_x: int = 0
         self.current_die_y: int = 0
         self.current_subsite: str = ""
         self.is_contacted: bool = False
+        self.skip: bool = False
 
     def find_ports(self) -> list[str]:
         """Find available ports and return them as a list of strings."""
         return [str(x) for x in range(10)]
 
-    def set_GUIparameter(self) -> dict:  # noqa: N802
-        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+        """Return the GUI parameters; the WaferProber module provides all fields itself."""
         return {}
 
-    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
-        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.port_string = parameter.get("Port", "")  # can be used to enable device communication
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Store the values of the GUI parameters."""
+        self.port_string = parameters.get("Port", "")
 
-    # here functions start that only exists for the WaferProber module and are called by this module
+    # here functions start that are called by SweepMe! during a measurement
+
+    def apply(self) -> None:
+        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
+        wafer = self.sweepvalues.get("Wafer")
+        die = self.sweepvalues.get("Die")
+        subsite = self.sweepvalues.get("Subsite")
+
+        self.skip = False
+        contacted = self.is_contacted
+
+        # None: the sequence does not sweep it ("Current wafer", ...), so the prober stays where it is
+        if wafer is not None and wafer != self.current_wafer:
+            self.load_wafer(wafer)
+
+        if die is not None and die != self.current_die:
+            self.step_to_die(die)
+
+        if subsite is not None and subsite != self.current_subsite:
+            self.step_to_subsite(subsite)
+
+        # a wafer exchange separates the probes: the sweep goes on in contact if it was in contact
+        if contacted and not self.is_contacted:
+            self.contact()
+
+    def call(self) -> tuple[str, str, int, int, str, bool]:
+        """Return the measurement results. Must return as many values as defined in self.variables."""
+        # Split die coordinate string into x- and y-integers to allow for a simple heatmap
+        try:
+            x_str, y_str = self.current_die.split(",")
+            self.current_die_x = int(x_str)
+            self.current_die_y = int(y_str)
+        except ValueError:
+            msg = f"Die '{self.current_die}' must be given as two integers in the format 'x,y'."
+            raise ValueError(msg) from None
+
+        return (
+            self.current_wafer,
+            self.current_die,
+            self.current_die_x,
+            self.current_die_y,
+            self.current_subsite,
+            self.skip,
+        )
+
+    # --- Hooks of the WaferProber module ---
 
     # check_driver: ignore DC004 - a hook of the WaferProber module (Update button)
     def get_probeplan(self) -> tuple[list[str], list[str], list[str]]:
@@ -95,39 +141,7 @@ class Device(EmptyDevice):
         If this function is implemented with a 'probeplan: str = ""' parameter, it will open a file dialog to select a
         probeplan file. It reads the probeplan from a given file and returns the lists of wafers, dies, and subsites.
         """
-        wafers = ["C1W1", "C1W2", "C2W1"]
-        dies = self.generate_dies()
-        subsites = ["Pos 100, 50", "Pos 75, 150"]
-
-        return wafers, dies, subsites
-
-    @staticmethod
-    def generate_dies() -> list[str]:
-        """Return the dies of a round wafer in probing order, as 'column,row' strings.
-
-        The grid is clipped to the usable radius so the wafer map shows a wafer shape rather than a
-        rectangle, and rows alternate direction the way a real probe plan does, so the chuck does not
-        travel back across the wafer at the end of every row.
-        """
-        usable_radius_mm = WAFER_DIAMETER_MM / 2.0 - EDGE_EXCLUSION_MM
-        columns = int(usable_radius_mm // DIE_PITCH_X_MM)
-        rows = int(usable_radius_mm // DIE_PITCH_Y_MM)
-
-        dies = []
-        for row in range(rows, -rows - 1, -1):
-            row_dies = []
-            for column in range(-columns, columns + 1):
-                # Measure to the far corner of the die, so a die counts only if it fits completely.
-                x_mm = abs(column) * DIE_PITCH_X_MM + DIE_PITCH_X_MM / 2.0
-                y_mm = abs(row) * DIE_PITCH_Y_MM + DIE_PITCH_Y_MM / 2.0
-                if math.hypot(x_mm, y_mm) <= usable_radius_mm:
-                    row_dies.append(f"{column},{row}")
-
-            if (rows - row) % 2:
-                row_dies.reverse()
-            dies.extend(row_dies)
-
-        return dies
+        return list(WAFERS), self.generate_dies(), list(SUBSITES)
 
     # check_driver: ignore DC004 - a hook of the WaferProber module, which needs a dict back
     def get_wafer_geometry(self) -> dict[str, Any]:
@@ -150,6 +164,19 @@ class Device(EmptyDevice):
             # origins - so no convention is reported and the module leaves that setting alone.
             "origin": None,
         }
+
+    # check_driver: ignore DC004 - a hook of the WaferProber module; get_status answers it as a command
+    def get_contact_state(self) -> bool:
+        """Return True if the probes are currently in contact with the wafer.
+
+        Implementing this function enables the contact-state indicator in the wafer-map panel.
+        """
+        return self.is_contacted
+
+    # --- Communication commands, used e.g. by the SweepMe! Instrument Control ---
+    #
+    # The functions the WaferProber module calls by name, such as 'load_wafer', 'step_to_die', 'contact' or
+    # 'separate', are communication commands as well.
 
     @command(returns=("wafer",), reads="setpoint")
     def get_current_wafer(self) -> str:
@@ -181,9 +208,8 @@ class Device(EmptyDevice):
 
         Implementing this function enables the 'load_wafer' action in the right-click menu of the Wafer table.
         """
-        wafers = self.get_probeplan()[0]
-        if wafer not in wafers:
-            msg = f"Wafer '{wafer}' is not in the probe plan. Choose one of {wafers}."
+        if wafer not in WAFERS:
+            msg = f"Wafer '{wafer}' is not in the probe plan. Choose one of {WAFERS}."
             raise ValueError(msg)
         if self.current_wafer != wafer:
             self.is_contacted = False
@@ -208,9 +234,8 @@ class Device(EmptyDevice):
     @command
     def step_to_subsite(self, subsite: str) -> None:
         """Move to given subsite. It is called when the 'Step to subsite' action of the Subsite table is performed."""
-        subsites = self.get_probeplan()[2]
-        if str(subsite) not in subsites:
-            msg = f"Subsite '{subsite}' is not in the probe plan. Choose one of {subsites}."
+        if str(subsite) not in SUBSITES:
+            msg = f"Subsite '{subsite}' is not in the probe plan. Choose one of {SUBSITES}."
             raise ValueError(msg)
         self.current_subsite = str(subsite)
 
@@ -233,78 +258,37 @@ class Device(EmptyDevice):
         """
         self.is_contacted = False
 
-    @command(returns=("contacted",), reads="setpoint")
-    def get_contact_state(self) -> bool:
-        """Return True if the probes are currently in contact with the wafer.
-
-        Implementing this function enables the contact-state indicator in the wafer-map panel.
-        """
-        return self.is_contacted
-
-    # here functions start that are called by SweepMe! during a measurement
-
-    def connect(self) -> None:
-        """Connect to the device. This function is called only once at the start of the measurement."""
-
-    def initialize(self) -> None:
-        """Initialize the device. This function is called only once at the start of the measurement."""
-
-    def configure(self) -> None:
-        """Configure the device. This function is called every time the device is used in the sequencer."""
-
-    def unconfigure(self) -> None:
-        """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
-
-    def apply(self) -> None:
-        """'apply' is used to set the new setvalue that is always available as 'self.value'."""
-        wafer = self.sweepvalues["Wafer"]
-        die = self.sweepvalues["Die"]
-        subsite = self.sweepvalues["Subsite"]
-
-        self.skip = False
-        contacted = self.is_contacted
-
-        # None: the sequence does not sweep it ("Current wafer", ...), so the prober stays where it is
-        if wafer is not None and wafer != self.current_wafer:
-            self.load_wafer(wafer)
-
-        if die is not None and die != self.current_die:
-            self.step_to_die(die)
-
-        if subsite is not None and subsite != self.current_subsite:
-            self.step_to_subsite(subsite)
-
-        # a wafer exchange separates the probes: the sweep goes on in contact if it was in contact
-        if contacted and not self.is_contacted:
-            self.contact()
-
-    def reach(self) -> None:
-        """'reach' can be added to make sure the latest setvalue applied during 'apply' is reached."""
-
-    def call(self) -> tuple[str, str, int, int, str, bool]:
-        """Return the measurement results. Must return as many values as defined in self.variables."""
-        # Split die coordinate string into x- and y-integers to allow for a simple heatmap
-        try:
-            x_str, y_str = self.current_die.split(",")
-            self.current_die_x = int(x_str)
-            self.current_die_y = int(y_str)
-        except ValueError:
-            raise ValueError("Die coordinates of the die need to be integers in the format 'x,y'.")
-
-        return (self.current_wafer,
-                self.current_die,
-                self.current_die_x,
-                self.current_die_y,
-                self.current_subsite,
-                self.skip)
-
-    """Communication command, used e.g. by the SweepMe! Instrument Control.
-
-    The functions of the WaferProber module above, such as 'load_wafer', 'step_to_die', 'contact' or 'separate', are
-    communication commands as well.
-    """
-
     @command(returns=("wafer", "die", "subsite", "contacted"), reads="setpoint")
     def get_status(self) -> tuple[str, str, str, bool]:
         """Return (loaded wafer, die and subsite the probes stand on, whether they are contacted)."""
         return self.current_wafer, self.current_die, self.current_subsite, bool(self.is_contacted)
+
+    # --- Helpers ---
+
+    @staticmethod
+    def generate_dies() -> list[str]:
+        """Return the dies of a round wafer in probing order, as 'column,row' strings.
+
+        The grid is clipped to the usable radius so the wafer map shows a wafer shape rather than a
+        rectangle, and rows alternate direction the way a real probe plan does, so the chuck does not
+        travel back across the wafer at the end of every row.
+        """
+        usable_radius_mm = WAFER_DIAMETER_MM / 2.0 - EDGE_EXCLUSION_MM
+        columns = int(usable_radius_mm // DIE_PITCH_X_MM)
+        rows = int(usable_radius_mm // DIE_PITCH_Y_MM)
+
+        dies = []
+        for row in range(rows, -rows - 1, -1):
+            row_dies = []
+            for column in range(-columns, columns + 1):
+                # Measure to the far corner of the die, so a die counts only if it fits completely.
+                x_mm = abs(column) * DIE_PITCH_X_MM + DIE_PITCH_X_MM / 2.0
+                y_mm = abs(row) * DIE_PITCH_Y_MM + DIE_PITCH_Y_MM / 2.0
+                if math.hypot(x_mm, y_mm) <= usable_radius_mm:
+                    row_dies.append(f"{column},{row}")
+
+            if (rows - row) % 2:
+                row_dies.reverse()
+            dies.extend(row_dies)
+
+        return dies
