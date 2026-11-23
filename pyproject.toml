@@ -1,6 +1,11 @@
 [tool.ruff]
 line-length = 120
 src = ["./src/*/"]
+# vendored third-party packages are not ours to lint; force-exclude also skips them when CI names the files
+extend-exclude = ["src/*/libs", "src/*/libraries"]
+force-exclude = true
+
+[tool.ruff.lint]
 select = [
     "F",
     "E", "W",
@@ -46,17 +51,18 @@ select = [
     "RUF",
 ]
 ignore = [
-    "ANN101", "ANN102",
     "D203", "D213", "D406", "D407",
     "G004",  # logging does not have any built-in keyword string interpolation for the message itself, falling back to %s etc. is crap
     "UP015",  # open mode should be clearly stated, explicit is better than implicit
 ]
 
-[tool.ruff.pydocstyle]
+[tool.ruff.lint.pydocstyle]
 convention = "google"
 
-[tool.ruff.per-file-ignores]
-"src/*/tests/*" = ["S101", "SLF001", "INP001"]  # Tests should use assert, are allowed to test private internals, and aren't a package
+[tool.ruff.lint.per-file-ignores]
+# Tests use assert, may test private internals, and are no package
+"src/*/tests/*" = ["S101", "SLF001", "INP001"]
+"tests/*" = ["S101", "SLF001", "INP001"]
 
 [tool.black]
 line-length = 120
