@@ -65,6 +65,31 @@ The bias is supplied by a separate instrument, for example an SMU or a bias tee.
 not change any bias node of the MFIA, and it cannot sweep the bias. Sweep the bias with the driver
 of the instrument that supplies it. The returned "Voltage bias" value is not a number in this case.
 
+## List sweep
+
+Select **List sweep** as Sweep value to let the instrument's Sweeper module run a whole frequency or bias sweep at
+each measurement point. This is much faster than a sweep point by point through SweepMe!, because the Sweeper sets
+each point, waits for the filters and records the result without a round trip to SweepMe!.
+
+* **Sweep mode** selects the swept quantity: `Frequency in Hz` (node `oscs/<n>/freq` of the oscillator that drives the
+  impedance unit) or `Voltage bias in V` (node `imps/0/bias/value` for the bias source "Internal",
+  `auxouts/<n>/offset` for "Aux Output"). An external bias cannot be swept.
+* **Start value**, **End value** and **Step width** or **Points (lin.)** / **Points (log.)** define the sweep. The
+  Sweeper only runs equally spaced points, so a step width must divide the range into equal steps, and custom value
+  lists are not supported. A logarithmic sweep needs start and end values above 0.
+* **dual sweep** adds a second sweep from the end back to the start value.
+* **Delay time** is the minimum settling time in s before each point is recorded (`settling/time`).
+* **Average** sets the minimum number of samples averaged per point (`averaging/sample`).
+* In the Parameters box, **Sweep settling inaccuracy** (`settling/inaccuracy`, 1e-13 to 0.1, default 1e-3) sets how
+  far the filters must have settled before a point is recorded, and **Sweep averaging in TC** (`averaging/tc`) sets a
+  minimum averaging time in demodulator time constants. The demodulator bandwidth is chosen by the Sweeper (auto).
+* The **Step mode** can still change the other quantity between list sweeps, e.g. a bias step for each frequency
+  sweep.
+* For a bias sweep, the output range is chosen in advance for the largest bias of the sweep.
+
+Each returned variable then holds the values of the whole sweep. While the Sweeper runs, it also controls the input
+ranges; the driver does not autorange in list sweep mode.
+
 ## Limits
 
 Values below are taken from the MFIA specifications, see "Further reading".
@@ -87,6 +112,9 @@ Values below are taken from the MFIA specifications, see "Further reading".
 | X | Ohm | imaginary part of the impedance |
 | Frequency | Hz | measurement frequency |
 | Voltage bias | V | DC bias read back from the selected bias source |
+
+In list sweep mode, each variable is an array with one value per sweep point. In a bias sweep, "Voltage bias" holds
+the sweep points.
 
 ## Further reading
 
