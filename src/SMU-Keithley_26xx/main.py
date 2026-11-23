@@ -29,36 +29,94 @@
 # * Module: SMU
 # * Instrument: Keithley 26xx
 
+"""SweepMe! driver for the source measure units of the Keithley 2600 series."""
+
 from __future__ import annotations
 
+import contextlib
+import math
 import re
 import time
-from typing import Any, ClassVar
+from typing import Annotated, Any, Literal
 
 import numpy as np
+from pysweepme.commands import Elements, Range, Selector, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+# What the communication commands take and answer. The commands address the channel of the driver instance, which
+# is selected with the 'Channel' and 'TSP-Link node' fields.
+Volts = Annotated[float, Unit("V")]
+Amperes = Annotated[float, Unit("A")]
+Seconds = Annotated[float, Unit("s")]
+VoltageArray = Annotated[np.ndarray, Elements(Volts)]
+CurrentArray = Annotated[np.ndarray, Elements(Amperes)]
+TimeArray = Annotated[np.ndarray, Elements(Seconds)]
+Quantity = Literal["Voltage", "Current"]
+Buffer = Annotated[Literal["nvbuffer1", "nvbuffer2"], Selector()]
+Timer = Annotated[int, Selector(), Range(1, 8)]
+DigioLine = Annotated[int, Selector(), Range(1, 14)]
+
+# Speed option -> integration time in power line cycles
+SPEED_TO_NPLC: dict[str, float] = {
+    "Fast": 0.1,
+    "Medium": 1.0,
+    "Slow": 10.0,
+}
+
+# Current ranges in A that can be used for the measurement, in the spelling of the Range options
+CURRENT_RANGES: dict[str, float] = {
+    "1A": 1.0,
+    "100mA": 1e-1,
+    "10mA": 1e-2,
+    "1mA": 1e-3,
+    "100µA": 1e-4,
+    "10µA": 1e-5,
+    "1µA": 1e-6,
+    "100nA": 1e-7,
+    "10nA": 1e-8,
+    "1nA": 1e-9,
+    "100pA": 1e-10,
+}
+
+# Range option -> how the current range is selected ('Auto', 'Limited' or 'Fixed') and the range in A
+RANGE_OPTIONS: dict[str, tuple[str, float]] = {
+    "Auto": ("Auto", 0.0),
+    **{f"Limited {label}": ("Limited", value) for label, value in CURRENT_RANGES.items()},
+    **{f"Fixed {label}": ("Fixed", value) for label, value in CURRENT_RANGES.items()},
+}
+
+# ListSweepStepPointsType option -> how the sweep values are calculated; the options with a colon are the spelling
+# of the Keithley 2400 driver, so that list sweep settings can be copied from there
+STEP_WIDTH = "Step width"
+POINTS_LINEAR = "Points (lin.)"
+POINTS_LOG = "Points (log.)"
+STEP_POINTS_TYPES: dict[str, str] = {
+    STEP_WIDTH: STEP_WIDTH,
+    POINTS_LINEAR: POINTS_LINEAR,
+    POINTS_LOG: POINTS_LOG,
+    "Step width:": STEP_WIDTH,
+    "Points (lin.):": POINTS_LINEAR,
+    "Points (log.):": POINTS_LOG,
+}
+
+# Trigger events of the SMU that can assert the output trigger, as TSP constant of the trigger model
+TRIGGER_OUT_EVENTS: dict[str, str] = {
+    "Source complete": "SOURCE_COMPLETE_EVENT_ID",
+    "Measure complete": "MEASURE_COMPLETE_EVENT_ID",
+}
+
+# Pulse shape of the output trigger, as digio trigger mode
+TRIGGER_OUT_POLARITIES: dict[str, str] = {
+    "Low pulse": "TRIG_FALLING",
+    "High pulse": "TRIG_RISINGM",
+}
 
 
 class Device(EmptyDevice):
-    """Driver for the Keithley 26xx series source measure units using the TSP command set."""
+    """Driver for the Keithley 26xx series source measure units using the TSP command set.
 
-    # Conversion of the SI prefixes used in the range options into exponents
-    PREFIX_CONVERSION: ClassVar[dict[str, str]] = {
-        "m": "e-3",
-        "µ": "e-6",
-        "n": "e-9",
-        "p": "e-12",
-    }
-
-    # Integration time in power line cycles belonging to each speed option
-    SPEED_TO_NPLC: ClassVar[dict[str, float]] = {
-        "Fast": 0.1,
-        "Medium": 1.0,
-        "Slow": 10.0,
-    }
-
-    # Current ranges that can be used for the measurement
-    CURRENT_RANGES = ("1A", "100mA", "10mA", "1mA", "100µA", "10µA", "1µA", "100nA", "10nA", "1nA", "100pA")
+    The user documentation is in doc/description.md.
+    """
 
     # Readings above this value are returned by the instrument if the measurement is not valid
     OVERFLOW_LIMIT = 1e37
@@ -67,6 +125,9 @@ class Device(EmptyDevice):
     MIN_PULSE_TIME = 200e-6
     MAX_PULSE_OFF_TIME = 3.0
     DEFAULT_PULSE_OFF_TIME = 200e-3
+
+    # Highest number of readings the averaging filter takes
+    MAX_FILTER_COUNT = 100
 
     # Number of channels that must share the port so that the dual pulse mode can be used
     DUAL_PULSE_NR_DEVICES = 2
@@ -80,10 +141,15 @@ class Device(EmptyDevice):
     # Option of the 'SweepValue' field that the SMU module adds when the driver returns the 'ListSweepCheck' key
     LIST_SWEEP = "List sweep"
 
-    # Options of the 'ListSweepStepPointsType' field
-    STEP_WIDTH = "Step width"
-    POINTS_LINEAR = "Points (lin.)"
-    POINTS_LOG = "Points (log.)"
+    # Part of the time between two steps that the output trigger pulse may last. The rest is left for steps that take
+    # less time than the one before, through auto ranging or the automatic delay.
+    TRIGGER_PULSE_MARGIN = 0.5
+
+    # Longest hold time in s, the longest delay of a trigger timer
+    MAX_HOLD_TIME = 100000.0
+
+    # Highest number of points of a list sweep: a reading buffer stores over 60,000 readings with timestamps
+    MAX_LIST_POINTS = 60000
 
     # Number of sweep values that are sent to the instrument with one command, so that a command stays short
     LIST_CHUNK_SIZE = 50
@@ -97,18 +163,6 @@ class Device(EmptyDevice):
     # Option of the 'Trigger out line' field that disables the output trigger
     NO_TRIGGER_OUT = "None"
 
-    # Trigger events of the SMU that can assert the output trigger, as TSP constant of the trigger model
-    TRIGGER_OUT_EVENTS: ClassVar[dict[str, str]] = {
-        "Source complete": "SOURCE_COMPLETE_EVENT_ID",
-        "Measure complete": "MEASURE_COMPLETE_EVENT_ID",
-    }
-
-    # Pulse shape of the output trigger, as digio trigger mode
-    TRIGGER_OUT_POLARITIES: ClassVar[dict[str, str]] = {
-        "Low pulse": "TRIG_FALLING",
-        "High pulse": "TRIG_RISINGM",
-    }
-
     # Models without digital I/O trigger lines
     NO_DIGIO_TRIGGER_MODELS = ("2604B", "2614B", "2634B")
 
@@ -121,9 +175,12 @@ class Device(EmptyDevice):
     # Line frequency in Hz that is used to estimate the integration time, 50 Hz gives the longer time
     LINE_FREQUENCY = 50.0
 
+    # Line frequency in Hz for the shortest integration time, used where a lower bound of the step time is needed
+    LINE_FREQUENCY_MAX = 60.0
+
     def __init__(self) -> None:
         """Initialize the driver, the returned variables and the port configuration."""
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         self.variables = ["Voltage", "Current"]
         self.units = ["V", "A"]
@@ -136,15 +193,15 @@ class Device(EmptyDevice):
             "baudrate": 115200,
             "EOL": "\n",
             "timeout": 10,
-            # AF@04.08.20: delay maybe needed for TCPIP communication
-            # as it seems that some commands are lost
+            # A delay might be needed for TCPIP communication as it seems that some commands are lost
             # "delay": 0.01,  # noqa: ERA001
         }
 
         self.port_identifications = ["Keithley Instruments,26", "Keithley Instruments Inc., Model 26"]
 
-        # Set in get_GUIparameter
-        self.source: str = "Voltage in V"
+        self.gui_parameters: dict[str, Any] = {}
+
+        # Set in apply_gui_parameters
         self.channel: str = "Ch A"
         self.smu_ab: str = "smua"
         self.tsp_link_node: str = self.LOCAL_NODE
@@ -154,36 +211,36 @@ class Device(EmptyDevice):
         """Prefix such as 'node[3].' for commands to a remote TSP-Link node, empty for the local node."""
         self.smu: str = "smua"
         """Full TSP name of the channel, e.g. 'smua' or 'node[3].smua'."""
+        self.pulse_mode: bool = False
+        self.list_sweep: bool = False
+
+        # Converted in convert_parameters
+        self.source: str = "Voltage in V"
         self.four_wire: bool = False
         self.route_out: str = "Rear"
         self.protection: float = 100e-6
         self.speed: str = "Fast"
         self.average: int = 1
-        self.current_range: str = "Auto"
         self.current_autorange: bool = True
         self.current_autorange_lowlimit: float | None = None
         self.current_range_value: float = 1.0
 
-        # Pulse mode parameters, set in get_GUIparameter
-        self.pulse_mode: bool = False
+        # Pulse mode parameters
         self.pulse_meas_time: float = 200e-6
         self.ton: float = 200e-6
         self.toff: float = 200e-3
         self.pulseofflevel: float = 0.0
 
-        # List sweep parameters, set in get_GUIparameter and converted in configure. The list sweep is used if
-        # 'List sweep' is selected as sweep value; the instrument then runs the whole sweep by itself.
-        self.list_sweep: bool = False
-        self.list_parameters: dict[str, Any] = {}
-
         # List sweep values after conversion in configure: the time in s between two sweep points (0 to step as fast
         # as possible), the settling time in s before each measurement (None for the automatic delay), and the digital
-        # I/O line (None without output trigger) and pulse width in s of the output trigger
+        # I/O line (None without output trigger), pulse width in s, trigger mode and event of the output trigger
         self.sweep_values: list[float] = []
         self.step_time: float = 0.0
         self.measure_delay: float | None = None
         self.digio_line: int | None = None
         self.digio_pulse_width: float = 10e-6
+        self.digio_trigger_mode: str = "TRIG_FALLING"
+        self.digio_trigger_event: str = "SOURCE_COMPLETE_EVENT_ID"
 
         # Voltages in V, currents in A and times in s of the last list sweep
         self.list_results: tuple[np.ndarray, np.ndarray, np.ndarray] = (np.array([]), np.array([]), np.array([]))
@@ -197,16 +254,17 @@ class Device(EmptyDevice):
         # Tells whether this instance is already counted as user of the shared port
         self.port_manager_registered: bool = False
 
-    def set_GUIparameter(self) -> dict[str, Any]:  # noqa: N802
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Return the fields that are shown in the graphical user interface."""
+        del parameters
         return {
             "SweepMode": ["Voltage in V", "Current in A"],
             "Channel": ["Ch A", "Ch B"],
-            "TSP-Link node": self.get_node_options(),
+            "TSP-Link node": self.node_options(),
             "4wire": False,
             "RouteOut": ["Rear"],
-            "Speed": list(self.SPEED_TO_NPLC.keys()),
-            "Range": self.get_range_options(),
+            "Speed": list(SPEED_TO_NPLC),
+            "Range": list(RANGE_OPTIONS),
             "Average": 1,
             "Compliance": 100e-6,
             "CheckPulse": False,
@@ -218,57 +276,28 @@ class Device(EmptyDevice):
             "ListSweepType": ["Sweep", "Custom"],
             "ListSweepStart": 0.0,
             "ListSweepEnd": 1.0,
-            "ListSweepStepPointsType": [self.STEP_WIDTH, self.POINTS_LINEAR, self.POINTS_LOG],
+            "ListSweepStepPointsType": [STEP_WIDTH, POINTS_LINEAR, POINTS_LOG],
             "ListSweepStepPointsValue": 0.1,
             "ListSweepDual": False,
             "ListSweepCustomValues": "",
             "ListSweepHoldtime": 0.1,
             "ListSweepDelaytime": "",
             "Trigger out line": [self.NO_TRIGGER_OUT, *[str(line) for line in range(1, self.MAX_DIGIO_LINE + 1)]],
-            "Trigger out event": list(self.TRIGGER_OUT_EVENTS),
-            "Trigger out polarity": list(self.TRIGGER_OUT_POLARITIES),
+            "Trigger out event": list(TRIGGER_OUT_EVENTS),
+            "Trigger out polarity": list(TRIGGER_OUT_POLARITIES),
             "Trigger out pulse width in s": 10e-6,
         }
 
-    def get_GUIparameter(self, parameter: dict[str, Any]) -> None:  # noqa: N802
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Take over the parameters that were chosen by the user in the graphical user interface."""
-        self.source = parameter.get("SweepMode", "Voltage in V")
-        self.channel = parameter.get("Channel", "Ch A")
-        self.four_wire = bool(parameter.get("4wire", False))
-        self.route_out = parameter.get("RouteOut", "Rear")
-        self.protection = float(parameter.get("Compliance", 100e-6))
-        self.speed = parameter.get("Speed", "Fast")
-        self.average = int(parameter.get("Average", 1))
+        # A copy, so that a later failed update of the parameters does not reach the driver
+        self.gui_parameters = dict(parameters)
 
-        self.current_range = parameter.get("Range", "Auto")
-        self.current_autorange = True
-        self.current_autorange_lowlimit = None
+        self.pulse_mode = bool(parameters.get("CheckPulse", False))
+        self.list_sweep = parameters.get("SweepValue", "") == self.LIST_SWEEP
 
-        if self.current_range.startswith("Limited"):
-            # Auto ranging is used, but the instrument must not range below the given value
-            self.current_autorange_lowlimit = self.get_range_value(self.current_range)
-        elif self.current_range.startswith("Fixed"):
-            self.current_autorange = False
-            self.current_range_value = self.get_range_value(self.current_range)
-
-        # Pulse Mode Parameters
-        self.pulse_mode = bool(parameter.get("CheckPulse", False))
-
-        if self.pulse_mode:
-            self.pulse_meas_time = float(parameter.get("PulseMeasTime", 200e-6))
-            self.ton = round(float(parameter.get("PulseOnTime", 200e-6)), 6)
-            self.toff = float(parameter.get("PulseOffTime", 200e-3))
-            self.pulseofflevel = float(parameter.get("PulseOffLevel", 0.0))
-
-        # List sweep parameters, kept as text and converted in 'configure' where wrong entries can be reported
-        self.list_sweep = parameter.get("SweepValue", "") == self.LIST_SWEEP
-
+        # In a list sweep, each point comes with the time at which it was measured
         if self.list_sweep:
-            self.list_parameters = {
-                key: value for key, value in parameter.items() if key.startswith(("ListSweep", "Trigger out"))
-            }
-
-            # Each point of the sweep comes with the time at which it was measured
             self.variables = ["Voltage", "Current", "Time"]
             self.units = ["V", "A", "s"]
             self.plottype = [True, True, True]
@@ -279,12 +308,14 @@ class Device(EmptyDevice):
             self.plottype = [True, True]
             self.savetype = [True, True]
 
-        self.smu_ab = "smua" if self.channel[-1] == "A" else "smub"
+        # The module passes an empty channel while it refreshes the fields
+        self.channel = str(parameters.get("Channel") or "Ch A")
+        self.smu_ab = "smub" if self.channel.endswith("B") else "smua"
 
         # Older settings do not have this field and use the local node
-        self.tsp_link_node = str(parameter.get("TSP-Link node", self.LOCAL_NODE))
+        self.tsp_link_node = str(parameters.get("TSP-Link node", self.LOCAL_NODE))
         try:
-            self.node_number = self.get_node_number(self.tsp_link_node)
+            self.node_number = self.parse_node_number(self.tsp_link_node)
         except ValueError:
             # This function is also called with incomplete parameters, the option is checked again in 'initialize'
             self.node_number = None
@@ -297,15 +328,17 @@ class Device(EmptyDevice):
             self.shortname = f"Keithley26xx Node {self.node_number} Ch {self.channel[-1]}"
 
     def connect(self) -> None:
-        """Identify the instrument and find out whether this instance is the master of the shared port."""
+        """Find out whether this instance is the master of the shared port."""
         if self.node_number is None:
             self.update_master_state()
         self.port.port.write_termination = "\n"
 
     def initialize(self) -> None:
-        """Check the TSP-Link node, reset the channel, clear the error queue and set the autozero mode."""
+        """Check the parameters and the TSP-Link node, reset the channel, clear the error queue, autozero once."""
+        self.convert_parameters()
+
         # Stops the run if the option of the 'TSP-Link node' field is not valid
-        self.get_node_number(self.tsp_link_node)
+        self.parse_node_number(self.tsp_link_node)
 
         if self.node_number is not None:
             self.check_remote_node()
@@ -314,7 +347,6 @@ class Device(EmptyDevice):
             self.check_list_sweep_support()
 
         if self.pulse_mode:
-            self.limit_pulse_times()
             self.tag = "1" if self.smu_ab == "smua" else "2"
 
         if self.node_number is None:
@@ -340,6 +372,7 @@ class Device(EmptyDevice):
 
     def configure(self) -> None:
         """Configure source function, ranges, sense mode, averaging and integration time."""
+        self.convert_parameters()
         self.register_port_usage()
 
         if self.pulse_mode:
@@ -354,7 +387,7 @@ class Device(EmptyDevice):
         self.configure_averaging()
 
         # speed of measurement Fast=0.1, Medium=1.0, Slow=10.0, (1 == 20 ms at 50 Hz line frequency)
-        self.nplc = self.SPEED_TO_NPLC[self.speed]
+        self.nplc = SPEED_TO_NPLC[self.speed]
         self.set_nplc(self.nplc)
 
         if self.list_sweep:
@@ -363,11 +396,17 @@ class Device(EmptyDevice):
 
     def unconfigure(self) -> None:
         """Release the output trigger and the timer of a list sweep and remove this instance from the port users."""
-        if self.list_sweep:
-            self.unconfigure_list_sweep()
+        try:
+            if self.list_sweep:
+                self.unconfigure_list_sweep()
+        finally:
+            # The port bookkeeping is done also if the list sweep cleanup failed
+            self.release_port_usage()
 
+    def release_port_usage(self) -> None:
+        """Remove this instance from the users of the shared port, see 'register_port_usage'."""
         if self.node_number is not None:
-            # Channels on remote nodes are not counted, see 'register_port_usage'
+            # Channels on remote nodes are not counted
             return
 
         if self.port_manager_registered:
@@ -403,7 +442,7 @@ class Device(EmptyDevice):
             return
 
         if self.pulse_mode:
-            self.apply_pulse()
+            self.prepare_pulse()
         elif self.source.startswith("Voltage"):
             self.set_source_level_voltage(float(self.value))
         else:
@@ -414,6 +453,7 @@ class Device(EmptyDevice):
         if not self.pulse_mode:
             return
 
+        # The answers of the pulse factory scripts are read in 'request_pulse_buffers'
         if self.dualpulse:
             if self.master:
                 # Pulse with tag1 = 2 has to be 40e-6 s longer than Pulse with tag2 = 1, equal toff,
@@ -427,17 +467,17 @@ class Device(EmptyDevice):
         if self.list_sweep:
             self.run_list_sweep()
         elif self.pulse_mode:
-            self.measure_pulse()
+            self.request_pulse_buffers()
         else:
             self.request_measurement()
 
     def call(self) -> list[float] | list[np.ndarray]:
         """Return the measured voltage in V and current in A, and in a list sweep the time in s of each point."""
         if self.list_sweep:
-            return self.get_list_sweep_results()
+            return self.list_sweep_results()
 
         if self.pulse_mode:
-            voltage, current = self.read_pulse_results()
+            voltage, current = self.collect_pulse_results()
         else:
             current, voltage = self.read_measurement()
 
@@ -446,7 +486,68 @@ class Device(EmptyDevice):
 
         return [voltage, current]
 
-    """ here, further functions start that are used by the semantic standard functions """
+    # Functions that are used by the semantic functions start here
+
+    def convert_parameters(self) -> None:
+        """Convert and check the parameters of the graphical user interface."""
+        parameters = self.gui_parameters
+
+        self.source = str(parameters.get("SweepMode", "Voltage in V"))
+        if self.source not in ("Voltage in V", "Current in A"):
+            msg = f"SweepMode '{self.source}' is not supported. Use 'Voltage in V' or 'Current in A'."
+            raise ValueError(msg)
+
+        self.four_wire = bool(parameters.get("4wire", False))
+        self.route_out = str(parameters.get("RouteOut", "Rear"))
+
+        self.speed = str(parameters.get("Speed", "Fast"))
+        if self.speed not in SPEED_TO_NPLC:
+            msg = f"Speed '{self.speed}' is not supported. Use one of {', '.join(SPEED_TO_NPLC)}."
+            raise ValueError(msg)
+
+        range_option = str(parameters.get("Range", "Auto"))
+        if range_option not in RANGE_OPTIONS:
+            msg = f"Range '{range_option}' is not supported. Use 'Auto', 'Limited <range>' or 'Fixed <range>'."
+            raise ValueError(msg)
+        range_mode, range_value = RANGE_OPTIONS[range_option]
+        # 'Limited' uses auto ranging, but the instrument must not range below the given value
+        self.current_autorange = range_mode != "Fixed"
+        self.current_autorange_lowlimit = range_value if range_mode == "Limited" else None
+        self.current_range_value = range_value if range_mode == "Fixed" else 1.0
+
+        self.protection = self.convert_number(parameters.get("Compliance", 100e-6), "Compliance")
+
+        # In pulse mode, Average is the number of pulses, which the averaging filter does not limit
+        average = self.convert_number(parameters.get("Average", 1), "Average")
+        if average < 1 or average != int(average):
+            msg = f"Average must be a whole number of at least 1, not {average}."
+            raise ValueError(msg)
+        if not self.pulse_mode and average > self.MAX_FILTER_COUNT:
+            msg = f"Average must be a whole number from 1 to {self.MAX_FILTER_COUNT}, not {average}."
+            raise ValueError(msg)
+        self.average = int(average)
+
+        if self.pulse_mode:
+            self.pulse_meas_time = self.convert_number(parameters.get("PulseMeasTime", 200e-6), "PulseMeasTime")
+            self.ton = round(self.convert_number(parameters.get("PulseOnTime", 200e-6), "PulseOnTime"), 6)
+            self.toff = self.convert_number(parameters.get("PulseOffTime", 200e-3), "PulseOffTime")
+            self.pulseofflevel = self.convert_number(parameters.get("PulseOffLevel", 0.0), "PulseOffLevel")
+            self.limit_pulse_times()
+
+    @staticmethod
+    def convert_number(value: Any, name: str) -> float:  # noqa: ANN401 - a GUI value of any type
+        """Convert a GUI value into a float, with a message naming the field if that is not possible."""
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            msg = f"{name} must be a number, not '{value}'."
+            raise ValueError(msg) from None
+
+        if not math.isfinite(number):
+            msg = f"{name} must be a finite number, not '{value}'."
+            raise ValueError(msg)
+
+        return number
 
     def register_port_usage(self) -> None:
         """Count this instance as user of the shared port and update the master state.
@@ -475,30 +576,11 @@ class Device(EmptyDevice):
             self.master = False
             self.port.port_properties.update({"Slave": self.pulse_mode})
 
-    def get_range_options(self) -> list[str]:
-        """Return the current range options that are shown in the graphical user interface.
-
-        "Limited" uses auto ranging with a lowest allowed range, "Fixed" uses a fixed measurement range.
-        """
-        limited = [f"Limited {value}" for value in self.CURRENT_RANGES]
-        fixed = [f"Fixed {value}" for value in self.CURRENT_RANGES]
-
-        return ["Auto", *limited, *fixed]
-
-    def get_range_value(self, range_option: str) -> float:
-        """Convert a range option such as 'Limited 100µA' into a current in A."""
-        value = range_option.split()[1]
-
-        for prefix, exponent in self.PREFIX_CONVERSION.items():
-            value = value.replace(prefix, exponent)
-
-        return float(value.replace("A", ""))
-
-    def get_node_options(self) -> list[str]:
+    def node_options(self) -> list[str]:
         """Return the TSP-Link node options that are shown in the graphical user interface."""
         return [self.LOCAL_NODE, *[f"Node {number}" for number in range(1, self.MAX_TSP_LINK_NODE + 1)]]
 
-    def get_node_number(self, node_option: str) -> int | None:
+    def parse_node_number(self, node_option: str) -> int | None:
         """Convert a node option such as 'Node 3' into the node number, or None for the local node.
 
         An empty option is treated as the local node. Any other option that is neither 'Local' nor a node number
@@ -564,7 +646,7 @@ class Device(EmptyDevice):
             self.set_source_function("Voltage")
             self.set_display_measure_function("Current")
             self.set_current_limit(self.protection)
-        elif self.source.startswith("Current"):
+        else:
             self.set_source_function("Current")
             self.set_display_measure_function("Voltage")
             self.set_voltage_limit(self.protection)
@@ -584,8 +666,11 @@ class Device(EmptyDevice):
             self.set_measure_range_current(self.current_range_value)
 
     def configure_averaging(self) -> None:
-        """Switch on the repeating average filter if more than one reading is averaged."""
-        if self.average > 1:
+        """Switch on the repeating average filter if more than one reading is averaged.
+
+        In pulse mode, an Average above the filter limit is a number of pulses only, and the filter stays off.
+        """
+        if 1 < self.average <= self.MAX_FILTER_COUNT:
             self.set_filter_count(self.average)
             self.set_filter_enabled(True)
             self.set_filter_repeat_average()
@@ -602,14 +687,13 @@ class Device(EmptyDevice):
 
     def limit_pulse_times(self) -> None:
         """Restrict the pulse on and off times to the range that is supported by the instrument."""
-        if self.ton < self.MIN_PULSE_TIME:
-            self.ton = self.MIN_PULSE_TIME
+        self.ton = max(self.ton, self.MIN_PULSE_TIME)
         if self.toff < self.MIN_PULSE_TIME:
             self.toff = self.DEFAULT_PULSE_OFF_TIME
-        if self.toff > self.MAX_PULSE_OFF_TIME:
-            self.toff = self.MAX_PULSE_OFF_TIME
+        self.toff = min(self.toff, self.MAX_PULSE_OFF_TIME)
 
-    def apply_pulse(self) -> None:
+    # check_driver: ignore DC004 - a step of the pulse mode that needs the pulse settings of the run
+    def prepare_pulse(self) -> None:
         """Configure a single pulse using the ConfigPulse factory scripts of the instrument."""
         # converts the percentage value of self.speed into a corresponding speed value
         # multiplies by 50 because of line frequency
@@ -627,23 +711,25 @@ class Device(EmptyDevice):
             else:
                 self.average = self.port.average
 
-        self.port.write(f"{self.smu}.nvbuffer1.clear()")
-        self.port.write(f"{self.smu}.nvbuffer1.appendmode = 1")
+        self.clear_buffer("nvbuffer1")
+        self.set_buffer_append_mode("nvbuffer1", True)
         self.set_nplc(self.nplc)
-        self.port.write(f"{self.smu}.nvbuffer1.collectsourcevalues = 1")
+        self.set_buffer_collect_source_values("nvbuffer1", True)
 
         level = float(self.value)
 
+        # The factory scripts ConfigPulseVMeasureI and ConfigPulseIMeasureV answer with their result, which is read
+        # right away; they are not wrapped as commands because they need the pulse settings of the run
         if self.source.startswith("Voltage"):
-            self.port.write(f"{self.smu}.source.rangev = {self.protection}")
-            self.port.write(f"{self.smu}.measure.rangei = {self.protection}")
+            self.set_source_range_voltage(self.protection)
+            self.set_measure_range_current(self.protection)
             self.port.write(
                 f"print(ConfigPulseVMeasureI({self.smu}, {self.pulseofflevel}, {level}, {self.protection}, "
                 f"{ton}, {self.toff}, {self.average}, {self.smu}.nvbuffer1, {self.tag}))",
             )
         else:
-            self.port.write(f"{self.smu}.source.rangei = {self.protection}")
-            self.port.write(f"{self.smu}.measure.rangev = {self.protection}")
+            self.set_source_range_current(self.protection)
+            self.set_measure_range_voltage(self.protection)
             self.port.write(
                 f"print(ConfigPulseIMeasureV({self.smu}, {self.pulseofflevel}, {level}, {self.protection}, "
                 f"{ton}, {self.toff}, {self.average}, {self.smu}.nvbuffer1, {self.tag}))",
@@ -651,8 +737,10 @@ class Device(EmptyDevice):
 
         self.port.read()  # remove answer from buffer
 
-    def measure_pulse(self) -> None:
+    # check_driver: ignore DC004 - requests answers that collect_pulse_results reads in the next phase
+    def request_pulse_buffers(self) -> None:
         """Read the answer of the pulse initiation and request the readings of the pulse buffers."""
+        # The buffers are requested here and read in 'collect_pulse_results', in the next phase
         if self.dualpulse:
             if not self.master:
                 return
@@ -669,15 +757,15 @@ class Device(EmptyDevice):
             self.port.write(f"printbuffer(1, {self.average}, {self.smu}.nvbuffer1.readings)")
             self.port.write(f"printbuffer(1, {self.average}, {self.smu}.nvbuffer1.sourcevalues)")
 
-    def read_pulse_results(self) -> tuple[float, float]:
+    def collect_pulse_results(self) -> tuple[float, float]:
         """Read the pulse buffers and return the averaged voltage in V and current in A."""
         if self.dualpulse:
             if self.master:
                 # read all values of smua and smub if dualpulse
-                readings_a = self.read_buffer_values()
-                sources_a = self.read_buffer_values()
-                readings_b = self.read_buffer_values()
-                sources_b = self.read_buffer_values()
+                readings_a = self.next_buffer_values()
+                sources_a = self.next_buffer_values()
+                readings_b = self.next_buffer_values()
+                sources_b = self.next_buffer_values()
 
                 # if master, hand over the values of the slave using the port object
                 if self.smu_ab == "smua":
@@ -691,8 +779,8 @@ class Device(EmptyDevice):
             else:
                 readings, sources = self.port.buffer
         else:
-            readings = self.read_buffer_values()
-            sources = self.read_buffer_values()
+            readings = self.next_buffer_values()
+            sources = self.next_buffer_values()
 
         # Depending on VOLT or CURR mode as source, voltage or current corresponds to .readings or .sourcevalues
         if self.source.startswith("Voltage"):
@@ -700,9 +788,31 @@ class Device(EmptyDevice):
 
         return float(np.average(readings)), float(np.average(sources))
 
-    def read_buffer_values(self) -> list[float]:
+    # check_driver: ignore DC004 - reads one answer that request_pulse_buffers requested
+    def next_buffer_values(self) -> list[float]:
         """Read one comma separated list of buffer values from the port."""
         return [float(value) for value in self.port.read().replace("\n", "").split(",")]
+
+    # check_driver: ignore DC004 - the first half of a measurement that 'read_measurement' reads in the next phase
+    def request_measurement(self) -> None:
+        """Request a combined current and voltage measurement, read with 'read_measurement'."""
+        # Requested in 'measure' and read in 'call', so that all instruments of the branch measure at the same time
+        self.port.write(f"print({self.smu}.measure.iv())")
+
+    # check_driver: ignore DC004 - the second half of a measurement that 'request_measurement' started
+    def read_measurement(self) -> tuple[float, float]:
+        """Read the current in A and the voltage in V of the measurement requested with 'request_measurement'."""
+        return self.parse_measurement(self.port.read())
+
+    @staticmethod
+    def parse_measurement(answer: str) -> tuple[float, float]:
+        """Return current in A and voltage in V from the answer to smuX.measure.iv()."""
+        try:
+            current, voltage = (float(value) for value in answer.split())
+        except ValueError as exception:
+            msg = f"Unexpected answer of the instrument to the measurement: {answer!r}."
+            raise ValueError(msg) from exception
+        return current, voltage
 
     def check_list_sweep_support(self) -> None:
         """Make sure that the list sweep can be used with the chosen settings and the connected model."""
@@ -717,7 +827,7 @@ class Device(EmptyDevice):
             )
             raise ValueError(msg)
 
-        if str(self.list_parameters.get("Trigger out line", self.NO_TRIGGER_OUT)) != self.NO_TRIGGER_OUT:
+        if str(self.gui_parameters.get("Trigger out line", self.NO_TRIGGER_OUT)) != self.NO_TRIGGER_OUT:
             identification = self.get_identification()
             for model in self.NO_DIGIO_TRIGGER_MODELS:
                 if model in identification:
@@ -729,27 +839,30 @@ class Device(EmptyDevice):
 
     def convert_list_sweep_parameters(self) -> None:
         """Convert the list sweep fields into sweep values, step time, measurement delay and output trigger."""
-        parameters = self.list_parameters
+        parameters = self.gui_parameters
 
         if parameters.get("ListSweepType", "Sweep") == "Custom":
             self.sweep_values = self.parse_custom_values(str(parameters.get("ListSweepCustomValues", "")))
+            self.check_list_size(len(self.sweep_values))
         else:
             self.sweep_values = self.calculate_sweep_values(
                 str(parameters.get("ListSweepStart", "0.0")),
                 str(parameters.get("ListSweepEnd", "1.0")),
-                str(parameters.get("ListSweepStepPointsType", self.STEP_WIDTH)),
+                str(parameters.get("ListSweepStepPointsType", STEP_WIDTH)),
                 str(parameters.get("ListSweepStepPointsValue", "0.1")),
+                dual=bool(parameters.get("ListSweepDual", False)),
             )
-            if parameters.get("ListSweepDual", False):
-                # The end value is only used once
-                self.sweep_values = [*self.sweep_values, *self.sweep_values[-2::-1]]
 
         self.step_time = self.convert_time(parameters.get("ListSweepHoldtime", "0.1"), "Hold time") or 0.0
+        if self.step_time > self.MAX_HOLD_TIME:
+            msg = f"The Hold time of the list sweep must be at most {self.MAX_HOLD_TIME:g} s, not {self.step_time} s."
+            raise ValueError(msg)
         self.measure_delay = self.convert_time(parameters.get("ListSweepDelaytime", ""), "Delay time")
 
         integration_time = self.nplc / self.LINE_FREQUENCY * self.average
         settling_time = (self.measure_delay or 0.0) + integration_time
-        if 0 < self.step_time < settling_time:
+        # A single point has no next step that the hold time must leave room for
+        if 0 < self.step_time < settling_time and len(self.sweep_values) > 1:
             msg = (
                 f"The hold time of {self.step_time} s is shorter than the delay time plus the integration time of "
                 f"{settling_time:.3g} s. Please increase the hold time, or reduce the delay time, the speed or the "
@@ -762,14 +875,66 @@ class Device(EmptyDevice):
             self.digio_line = None
             return
 
-        self.digio_line = int(line)
+        try:
+            self.digio_line = int(line)
+        except ValueError:
+            self.digio_line = 0
+        if not 1 <= self.digio_line <= self.MAX_DIGIO_LINE:
+            msg = (
+                f"Trigger out line '{line}' is not supported. Use '{self.NO_TRIGGER_OUT}' or a line from 1 to "
+                f"{self.MAX_DIGIO_LINE}."
+            )
+            raise ValueError(msg)
+
+        polarity = str(parameters.get("Trigger out polarity", "Low pulse"))
+        if polarity not in TRIGGER_OUT_POLARITIES:
+            msg = f"Trigger out polarity '{polarity}' is not supported. Use one of {', '.join(TRIGGER_OUT_POLARITIES)}."
+            raise ValueError(msg)
+        self.digio_trigger_mode = TRIGGER_OUT_POLARITIES[polarity]
+
+        event = str(parameters.get("Trigger out event", "Source complete"))
+        if event not in TRIGGER_OUT_EVENTS:
+            msg = f"Trigger out event '{event}' is not supported. Use one of {', '.join(TRIGGER_OUT_EVENTS)}."
+            raise ValueError(msg)
+        self.digio_trigger_event = TRIGGER_OUT_EVENTS[event]
+
         pulse_width = self.convert_time(
             parameters.get("Trigger out pulse width in s", 10e-6),
             "Trigger out pulse width",
         )
         self.digio_pulse_width = pulse_width or 10e-6
+        # The shortest step lasts the delay time plus the integration time at 60 Hz, the shorter of both line periods
+        shortest_settling_time = (self.measure_delay or 0.0) + self.nplc / self.LINE_FREQUENCY_MAX * self.average
+        self.check_trigger_pulse_spacing(shortest_settling_time)
 
-    def get_timer_number(self) -> int:
+    def check_trigger_pulse_spacing(self, settling_time: float) -> None:
+        """Refuse an output trigger pulse that lasts until the next step, where the instrument would skip a pulse.
+
+        With a hold time the steps start at that interval; without one, a step takes at least the delay time plus
+        the integration time, estimated at 60 Hz, which gives the shorter time. The trigger events (source or
+        measure complete) can come closer together than that, because auto ranging and the automatic delay change
+        how long a step takes, so the pulse may last at most half of the interval.
+        """
+        if len(self.sweep_values) < 2:  # noqa: PLR2004 - two points are the first with a next step
+            return
+
+        interval = self.step_time if self.step_time > 0 else settling_time
+        max_width = interval * self.TRIGGER_PULSE_MARGIN
+        if self.digio_pulse_width > max_width:
+            msg = (
+                f"The trigger out pulse width of {self.digio_pulse_width} s is longer than half the time between two "
+                f"steps of at least {interval:.3g} s, so the output trigger could miss steps. Please use a pulse width "
+                f"of at most {max_width:.3g} s or a longer hold time."
+            )
+            raise ValueError(msg)
+
+    def check_list_size(self, points: int) -> None:
+        """Refuse a list sweep with more points than a reading buffer takes, before the values are calculated."""
+        if points > self.MAX_LIST_POINTS:
+            msg = f"The list sweep has {points} points, but at most {self.MAX_LIST_POINTS} are supported."
+            raise ValueError(msg)
+
+    def timer_number(self) -> int:
         """Return the trigger timer that paces the list sweep; each channel uses its own timer."""
         return 1 if self.smu_ab == "smua" else 2
 
@@ -777,19 +942,26 @@ class Device(EmptyDevice):
         self,
         start_text: str,
         end_text: str,
-        steppoints_type: str,
+        steppoints_option: str,
         steppoints_text: str,
+        *,
+        dual: bool = False,
     ) -> list[float]:
-        """Calculate the sweep values from start value, end value and step width or number of points."""
-        try:
-            start = float(start_text)
-            end = float(end_text)
-            steppoints = float(steppoints_text)
-        except ValueError:
-            msg = "Start value, end value and step width or points of the list sweep must be numbers."
-            raise ValueError(msg) from None
+        """Calculate the sweep values from start value, end value and step width or number of points.
 
-        if steppoints_type.startswith(self.STEP_WIDTH):
+        A dual sweep adds the way back to the start value; the end value is only used once.
+        """
+        start, end, steppoints = self.parse_sweep_numbers(start_text, end_text, steppoints_text)
+
+        if steppoints_option not in STEP_POINTS_TYPES:
+            msg = (
+                f"ListSweepStepPointsType '{steppoints_option}' is not supported. Use '{STEP_WIDTH}', "
+                f"'{POINTS_LINEAR}' or '{POINTS_LOG}'."
+            )
+            raise ValueError(msg)
+        steppoints_type = STEP_POINTS_TYPES[steppoints_option]
+
+        if steppoints_type == STEP_WIDTH:
             if steppoints == 0.0:
                 if start != end:
                     msg = "The step width of the list sweep must not be 0 if start and end value differ."
@@ -799,20 +971,40 @@ class Device(EmptyDevice):
             # The sweep stops at the last step that does not go beyond the end value
             step = abs(steppoints) if end >= start else -abs(steppoints)
             points = int(np.floor(abs(end - start) / abs(step) + 1e-9)) + 1
-            return [start + step * index for index in range(points)]
-
-        points = int(steppoints)
-        if points < 1 or points != steppoints:
-            msg = f"The number of points of the list sweep must be a positive integer, but is {steppoints}."
-            raise ValueError(msg)
-
-        if steppoints_type.startswith(self.POINTS_LOG):
-            if start * end <= 0:
-                msg = "Start and end value of a logarithmic list sweep must have the same sign and must not be 0."
+            self.check_list_size(2 * points - 1 if dual else points)
+            values = [start + step * index for index in range(points)]
+        else:
+            points = int(steppoints)
+            if points < 1 or points != steppoints:
+                msg = f"The number of points of the list sweep must be a positive integer, but is {steppoints}."
                 raise ValueError(msg)
-            return [float(value) for value in np.geomspace(start, end, points)]
+            self.check_list_size(2 * points - 1 if dual else points)
 
-        return [float(value) for value in np.linspace(start, end, points)]
+            if steppoints_type == POINTS_LOG:
+                if start * end <= 0:
+                    msg = "Start and end value of a logarithmic list sweep must have the same sign and must not be 0."
+                    raise ValueError(msg)
+                values = [float(value) for value in np.geomspace(start, end, points)]
+            else:
+                values = [float(value) for value in np.linspace(start, end, points)]
+
+        if dual:
+            values = [*values, *values[-2::-1]]
+        return values
+
+    @staticmethod
+    def parse_sweep_numbers(start_text: str, end_text: str, steppoints_text: str) -> tuple[float, float, float]:
+        """Convert start value, end value and step width or points of the list sweep into finite numbers."""
+        try:
+            numbers = (float(start_text), float(end_text), float(steppoints_text))
+        except ValueError:
+            msg = "Start value, end value and step width or points of the list sweep must be numbers."
+            raise ValueError(msg) from None
+
+        if not all(math.isfinite(number) for number in numbers):
+            msg = "Start value, end value and step width or points of the list sweep must be finite numbers."
+            raise ValueError(msg)
+        return numbers
 
     @staticmethod
     def parse_custom_values(text: str) -> list[float]:
@@ -823,10 +1015,15 @@ class Device(EmptyDevice):
             raise ValueError(msg)
 
         try:
-            return [float(entry) for entry in entries]
+            values = [float(entry) for entry in entries]
         except ValueError:
             msg = "The custom values of the list sweep must be numbers separated by commas."
             raise ValueError(msg) from None
+
+        if not all(math.isfinite(value) for value in values):
+            msg = "The custom values of the list sweep must be finite numbers."
+            raise ValueError(msg)
+        return values
 
     @staticmethod
     def convert_time(text: str | float, name: str) -> float | None:
@@ -840,8 +1037,8 @@ class Device(EmptyDevice):
             msg = f"The {name} of the list sweep must be a number in s, but is '{text}'."
             raise ValueError(msg) from None
 
-        if value < 0:
-            msg = f"The {name} of the list sweep must not be negative, but is {value} s."
+        if not math.isfinite(value) or value < 0:
+            msg = f"The {name} of the list sweep must be a finite number of at least 0 s, but is {value} s."
             raise ValueError(msg)
 
         return value
@@ -853,6 +1050,20 @@ class Device(EmptyDevice):
         measurement if no hold time is given. At each step, the source value is set, the delay time is waited and
         current and voltage are measured into the two reading buffers. The output trigger is asserted at each step.
         """
+        # The line is claimed before anything is sent, so that a second channel cannot take over its trigger
+        if self.digio_line is not None:
+            self.claim_digio_line(self.digio_line)
+
+        try:
+            self._program_list_sweep()
+        except Exception:
+            # Give the line and the timer back right away, whether or not SweepMe! calls unconfigure after the error
+            with contextlib.suppress(Exception):
+                self.unconfigure_list_sweep()
+            raise
+
+    def _program_list_sweep(self) -> None:
+        """Send the sweep values and the trigger model of the list sweep."""
         self.send_list_values(self.sweep_values)
         if self.source.startswith("Voltage"):
             self.set_trigger_source_list_voltage(self.LIST_TABLE)
@@ -870,7 +1081,7 @@ class Device(EmptyDevice):
         self.set_trigger_count(len(self.sweep_values))
         self.set_trigger_arm_count(1)
 
-        timer = self.get_timer_number()
+        timer = self.timer_number()
         self.reset_timer(timer)
         if self.step_time > 0 and len(self.sweep_values) > 1:
             # The first event passes through when the sweep is armed, the timer creates one event per further point
@@ -883,20 +1094,47 @@ class Device(EmptyDevice):
             self.set_trigger_source_stimulus("0")
 
         if self.digio_line is not None:
-            polarity = str(self.list_parameters.get("Trigger out polarity", "Low pulse"))
-            event = str(self.list_parameters.get("Trigger out event", "Source complete"))
-
             self.reset_digio_trigger(self.digio_line)
-            self.set_digio_trigger_mode(self.digio_line, self.TRIGGER_OUT_POLARITIES.get(polarity, "TRIG_FALLING"))
+            self.set_digio_trigger_mode(self.digio_line, self.digio_trigger_mode)
             self.set_digio_trigger_pulsewidth(self.digio_line, self.digio_pulse_width)
-            event_id = self.TRIGGER_OUT_EVENTS.get(event, "SOURCE_COMPLETE_EVENT_ID")
-            self.set_digio_trigger_stimulus(self.digio_line, f"{self.smu}.trigger.{event_id}")
+            self.set_digio_trigger_stimulus(self.digio_line, f"{self.smu}.trigger.{self.digio_trigger_event}")
 
     def unconfigure_list_sweep(self) -> None:
         """Release the output trigger line and the timer that were used by the list sweep."""
-        if self.digio_line is not None:
-            self.reset_digio_trigger(self.digio_line)
-        self.reset_timer(self.get_timer_number())
+        # The timer is reset also if the reset of the line fails; that error is raised afterwards
+        try:
+            if self.digio_line is not None and self.release_digio_line(self.digio_line):
+                self.reset_digio_trigger(self.digio_line)
+        finally:
+            self.reset_timer(self.timer_number())
+
+    def digio_line_key(self, line: int) -> str:
+        """Return the key under which the channel that uses a digital I/O line of the port is kept."""
+        return f"Keithley26xx {self.gui_parameters.get('Port', '')} digio line {line}"
+
+    def claim_digio_line(self, line: int) -> None:
+        """Reserve a digital I/O line of the port for this channel; raise if another channel uses it.
+
+        The instrument has one trigger setting per line, so a second channel would replace the first one's trigger.
+        The claims are kept in 'device_communication', which is emptied at the start of each run.
+        """
+        key = self.digio_line_key(line)
+        owner = self.device_communication.get(key)
+        if owner is not None and owner != self.smu:
+            msg = (
+                f"Trigger out line {line} is already used by the list sweep of {owner}. Please use a different "
+                "trigger out line for each channel."
+            )
+            raise ValueError(msg)
+        self.device_communication[key] = self.smu
+
+    def release_digio_line(self, line: int) -> bool:
+        """Release a digital I/O line that this channel claimed; return whether it was this channel's line."""
+        key = self.digio_line_key(line)
+        if self.device_communication.get(key) != self.smu:
+            return False
+        del self.device_communication[key]
+        return True
 
     def send_list_values(self, values: list[float]) -> None:
         """Store the sweep values in a table on the instrument, in chunks so that each command stays short."""
@@ -923,12 +1161,30 @@ class Device(EmptyDevice):
 
         self.list_results = (np.array([]), np.array([]), np.array([]))
 
+        try:
+            finished = self.wait_for_list_sweep(points, stall_timeout)
+        except Exception:
+            # The instrument would continue the sweep, e.g. after a failed read of the buffer count
+            with contextlib.suppress(Exception):
+                self.abort_sweep()
+            raise
+        if not finished:
+            return
+
+        # Successive sweeps without a new configuration can leave stale readings in the buffer cache
+        self.clear_buffer_cache("nvbuffer1")
+        self.clear_buffer_cache("nvbuffer2")
+        currents, voltages, times = self.read_list_buffers(points)
+        self.list_results = (voltages, currents, times)
+
+    def wait_for_list_sweep(self, points: int, stall_timeout: float) -> bool:
+        """Wait until the buffer holds all points; return False if the run was stopped, raise if the sweep stalls."""
         count = 0
         last_progress = time.perf_counter()
         while count < points:
             if self.is_run_stopped():
                 self.abort_sweep()
-                return
+                return False
 
             time.sleep(self.LIST_POLL_INTERVAL)
             new_count = self.get_buffer_count("nvbuffer1")
@@ -943,11 +1199,9 @@ class Device(EmptyDevice):
                     "delay. Please increase the hold time or use a fixed range and delay time."
                 )
                 raise ValueError(msg)
+        return True
 
-        currents, voltages, times = self.read_list_buffers(points)
-        self.list_results = (voltages, currents, times)
-
-    def get_list_sweep_results(self) -> list[np.ndarray]:
+    def list_sweep_results(self) -> list[np.ndarray]:
         """Return voltages, currents and times of the last list sweep, with invalid readings replaced by NaN."""
         voltages, currents, times = self.list_results
 
@@ -957,259 +1211,332 @@ class Device(EmptyDevice):
 
         return [voltages, currents, times]
 
-    """ here, communication commands are wrapped into python convenience functions """
+    def autorange_constant(self, autorange: bool) -> str:
+        """Return the TSP constant that belongs to the given auto range state."""
+        return f"{self.smu}.{'AUTORANGE_ON' if autorange else 'AUTORANGE_OFF'}"
 
+    def action_constant(self, enable: bool) -> str:
+        """Return the TSP constant that enables or disables an action of the trigger model."""
+        return f"{self.smu}.{'ENABLE' if enable else 'DISABLE'}"
+
+    # Communication commands start here. They address the channel of this driver instance ('Channel' and
+    # 'TSP-Link node'), except those that name a TSP-Link network, the error queue, a timer or a digital I/O line.
+
+    @command(returns=("identification",), reads="state")
     def get_identification(self) -> str:
-        """Return the identification string of the instrument."""
-        self.port.write("*IDN?")
-        return self.port.read()
+        """Return the identification string of the instrument connected to the port."""
+        return str(self.port.query("*IDN?"))
 
+    @command(returns=("tsp_link_state",), reads="state")
     def get_tsp_link_state(self) -> str:
         """Return the state of the TSP-Link network, 'online' or 'offline'."""
-        self.port.write("print(tsplink.state)")
-        return self.port.read().strip()
+        return str(self.port.query("print(tsplink.state)")).strip()
 
+    @command
     def reset(self) -> None:
         """Reset the channel to its default configuration."""
         self.port.write(f"{self.smu}.reset()")
 
+    @command
     def clear_error_queue(self) -> None:
         """Remove all entries from the error queue of the instrument."""
         self.port.write("errorqueue.clear()")
 
+    @command(returns=("error_count",), reads="state")
     def get_error_count(self) -> int:
         """Return the number of entries in the error queue of the instrument."""
-        self.port.write("print(errorqueue.count)")
-        return int(float(self.port.read()))
+        return int(float(self.port.query("print(errorqueue.count)")))
 
+    @command(returns=("error_code", "error_message"), reads="state")
     def get_next_error(self) -> tuple[int, str]:
         """Read the oldest entry of the error queue and return its error code and message."""
-        self.port.write("print(errorqueue.next())")
         # The answer contains error code, message, severity and node number, separated by tabs
-        code, _, rest = self.port.read().strip().partition("\t")
+        code, _, rest = str(self.port.query("print(errorqueue.next())")).strip().partition("\t")
         return int(float(code)), rest.split("\t")[0]
 
+    @command
     def set_autozero_once(self) -> None:
         """Perform a single autozero and reuse its reference values for the following measurements."""
         self.port.write(f"{self.smu}.measure.autozero = {self.smu}.AUTOZERO_ONCE")
 
-    def set_source_function(self, function: str) -> None:
+    @command
+    def set_source_function(self, source_function: Quantity) -> None:
         """Set the source function to DC voltage or DC current."""
-        output = "OUTPUT_DCVOLTS" if function.startswith("Voltage") else "OUTPUT_DCAMPS"
+        output = "OUTPUT_DCVOLTS" if source_function == "Voltage" else "OUTPUT_DCAMPS"
         self.port.write(f"{self.smu}.source.func = {self.smu}.{output}")
 
-    def set_display_measure_function(self, function: str) -> None:
+    @command
+    def set_display_measure_function(self, display_measure_function: Quantity) -> None:
         """Set the quantity that is shown on the display of the instrument."""
-        measure = "MEASURE_DCVOLTS" if function.startswith("Voltage") else "MEASURE_DCAMPS"
+        measure = "MEASURE_DCVOLTS" if display_measure_function == "Voltage" else "MEASURE_DCAMPS"
         self.port.write(f"{self.node_prefix}display.{self.smu_ab}.measure.func = {self.node_prefix}display.{measure}")
 
-    def set_current_limit(self, limit: float) -> None:
+    @command
+    def set_current_limit(self, current_limit: Amperes) -> None:
         """Set the current compliance in A that is used in voltage source mode."""
-        self.port.write(f"{self.smu}.source.limiti = {limit}")
+        self.port.write(f"{self.smu}.source.limiti = {current_limit}")
 
-    def set_voltage_limit(self, limit: float) -> None:
+    @command
+    def set_voltage_limit(self, voltage_limit: Volts) -> None:
         """Set the voltage compliance in V that is used in current source mode."""
-        self.port.write(f"{self.smu}.source.limitv = {limit}")
+        self.port.write(f"{self.smu}.source.limitv = {voltage_limit}")
 
-    def set_source_autorange_voltage(self, state: bool) -> None:
+    @command
+    def set_source_autorange_voltage(self, source_autorange_voltage: bool) -> None:
         """Switch the auto range of the voltage source on or off."""
-        self.port.write(f"{self.smu}.source.autorangev = {self.smu}.{self.get_autorange_state(state)}")
+        self.port.write(f"{self.smu}.source.autorangev = {self.autorange_constant(source_autorange_voltage)}")
 
-    def set_source_autorange_current(self, state: bool) -> None:
+    @command
+    def set_source_autorange_current(self, source_autorange_current: bool) -> None:
         """Switch the auto range of the current source on or off."""
-        self.port.write(f"{self.smu}.source.autorangei = {self.smu}.{self.get_autorange_state(state)}")
+        self.port.write(f"{self.smu}.source.autorangei = {self.autorange_constant(source_autorange_current)}")
 
-    def set_measure_autorange_voltage(self, state: bool) -> None:
+    @command
+    def set_measure_autorange_voltage(self, measure_autorange_voltage: bool) -> None:
         """Switch the auto range of the voltage measurement on or off."""
-        self.port.write(f"{self.smu}.measure.autorangev = {self.smu}.{self.get_autorange_state(state)}")
+        self.port.write(f"{self.smu}.measure.autorangev = {self.autorange_constant(measure_autorange_voltage)}")
 
-    def set_measure_autorange_current(self, state: bool) -> None:
+    @command
+    def set_measure_autorange_current(self, measure_autorange_current: bool) -> None:
         """Switch the auto range of the current measurement on or off."""
-        self.port.write(f"{self.smu}.measure.autorangei = {self.smu}.{self.get_autorange_state(state)}")
+        self.port.write(f"{self.smu}.measure.autorangei = {self.autorange_constant(measure_autorange_current)}")
 
-    @staticmethod
-    def get_autorange_state(state: bool) -> str:
-        """Return the name of the TSP constant that belongs to the given auto range state."""
-        return "AUTORANGE_ON" if state else "AUTORANGE_OFF"
-
-    def set_measure_lowrange_current(self, lowrange: float) -> None:
+    @command
+    def set_measure_lowrange_current(self, measure_lowrange_current: Amperes) -> None:
         """Set the lowest current range in A that the auto range of the measurement may use."""
-        self.port.write(f"{self.smu}.measure.lowrangei = {lowrange:1.3e}")
+        self.port.write(f"{self.smu}.measure.lowrangei = {measure_lowrange_current:1.3e}")
 
-    def set_measure_range_current(self, current_range: float) -> None:
+    @command
+    def set_measure_range_current(self, measure_range_current: Amperes) -> None:
         """Set the fixed current measurement range in A."""
-        self.port.write(f"{self.smu}.measure.rangei = {current_range:1.3e}")
+        self.port.write(f"{self.smu}.measure.rangei = {measure_range_current:1.3e}")
 
-    def set_remote_sense(self, state: bool) -> None:
+    @command
+    def set_measure_range_voltage(self, measure_range_voltage: Volts) -> None:
+        """Set the fixed voltage measurement range in V."""
+        self.port.write(f"{self.smu}.measure.rangev = {measure_range_voltage}")
+
+    @command
+    def set_source_range_voltage(self, source_range_voltage: Volts) -> None:
+        """Set the fixed voltage source range in V."""
+        self.port.write(f"{self.smu}.source.rangev = {source_range_voltage}")
+
+    @command
+    def set_source_range_current(self, source_range_current: Amperes) -> None:
+        """Set the fixed current source range in A."""
+        self.port.write(f"{self.smu}.source.rangei = {source_range_current}")
+
+    @command
+    def set_remote_sense(self, remote_sense: bool) -> None:
         """Switch between 4-wire (remote) and 2-wire (local) sensing."""
-        sense = "SENSE_REMOTE" if state else "SENSE_LOCAL"
+        sense = "SENSE_REMOTE" if remote_sense else "SENSE_LOCAL"
         self.port.write(f"{self.smu}.sense = {self.smu}.{sense}")
 
-    def set_filter_count(self, count: int) -> None:
+    @command
+    def set_filter_count(self, filter_count: Annotated[int, Range(1, 100)]) -> None:
         """Set the number of readings that are averaged by the filter."""
-        self.port.write(f"{self.smu}.measure.filter.count = {count:d}")
+        self.port.write(f"{self.smu}.measure.filter.count = {filter_count:d}")
 
-    def set_filter_enabled(self, state: bool) -> None:
+    @command
+    def set_filter_enabled(self, filter_enabled: bool) -> None:
         """Switch the averaging filter on or off."""
-        filter_state = "FILTER_ON" if state else "FILTER_OFF"
+        filter_state = "FILTER_ON" if filter_enabled else "FILTER_OFF"
         self.port.write(f"{self.smu}.measure.filter.enable = {self.smu}.{filter_state}")
 
+    @command
     def set_filter_repeat_average(self) -> None:
         """Use the repeating average as filter type."""
         self.port.write(f"{self.smu}.measure.filter.type = {self.smu}.FILTER_REPEAT_AVG")
 
+    @command
     def set_nplc(self, nplc: float) -> None:
-        """Set the integration time of the measurement in power line cycles."""
+        """Set the integration time of the measurement in power line cycles.
+
+        Values below the minimum of the instrument are set to the minimum by the instrument.
+        """
         self.port.write(f"{self.smu}.measure.nplc = {nplc}")
 
-    def set_output(self, state: bool) -> None:
+    @command
+    def set_output(self, output: bool) -> None:
         """Switch the output of the channel on or off."""
-        self.port.write(f"{self.smu}.source.output = {int(state)}")
+        self.port.write(f"{self.smu}.source.output = {int(output)}")
 
-    def set_source_level_voltage(self, value: float) -> None:
+    @command
+    def set_source_level_voltage(self, voltage: Volts) -> None:
         """Set the output voltage in V."""
-        self.port.write(f"{self.smu}.source.levelv = {value}")
+        self.port.write(f"{self.smu}.source.levelv = {voltage}")
 
-    def set_source_level_current(self, value: float) -> None:
+    @command
+    def set_source_level_current(self, current: Amperes) -> None:
         """Set the output current in A."""
-        self.port.write(f"{self.smu}.source.leveli = {value}")
+        self.port.write(f"{self.smu}.source.leveli = {current}")
 
-    def request_measurement(self) -> None:
-        """Request a combined current and voltage measurement."""
-        self.port.write(f"print({self.smu}.measure.iv())")
+    @command(returns=("voltage", "current"))
+    def get_voltage_and_current(self) -> tuple[Volts, Amperes]:
+        """Measure voltage in V and current in A."""
+        current, voltage = self.parse_measurement(str(self.port.query(f"print({self.smu}.measure.iv())")))
+        return voltage, current
 
-    def read_measurement(self) -> tuple[float, float]:
-        """Read the current in A and the voltage in V of the requested measurement."""
-        current, voltage = (float(value) for value in self.port.read().split())
-        return current, voltage
-
-    def set_measure_delay(self, delay: float | None) -> None:
+    @command
+    def set_measure_delay(self, measure_delay: Seconds | None) -> None:
         """Set the settling time in s before each measurement, None for the automatic delay."""
-        value = f"{self.smu}.DELAY_AUTO" if delay is None else f"{delay}"
-        self.port.write(f"{self.smu}.measure.delay = {value}")
+        delay = f"{self.smu}.DELAY_AUTO" if measure_delay is None else f"{measure_delay}"
+        self.port.write(f"{self.smu}.measure.delay = {delay}")
 
+    @command(kind="run")
     def create_list_table(self, table: str) -> None:
         """Create an empty table on the instrument that takes the sweep values."""
         self.port.write(f"{table} = {{}}")
 
-    def append_list_values(self, table: str, values: list[float]) -> None:
+    @command(kind="run")
+    def append_list_values(self, table: str, list_values: list[float]) -> None:
         """Append sweep values to a table on the instrument."""
-        numbers = ", ".join(f"{value:.9g}" for value in values)
+        numbers = ", ".join(f"{value:.9g}" for value in list_values)
         self.port.write(f"for _, v in ipairs({{{numbers}}}) do table.insert({table}, v) end")
 
-    def set_trigger_source_list_voltage(self, table: str) -> None:
+    @command
+    def set_trigger_source_list_voltage(self, voltage_list_table: str) -> None:
         """Use the voltages in V of a table on the instrument as source values of the sweep."""
-        self.port.write(f"{self.smu}.trigger.source.listv({table})")
+        self.port.write(f"{self.smu}.trigger.source.listv({voltage_list_table})")
 
-    def set_trigger_source_list_current(self, table: str) -> None:
+    @command
+    def set_trigger_source_list_current(self, current_list_table: str) -> None:
         """Use the currents in A of a table on the instrument as source values of the sweep."""
-        self.port.write(f"{self.smu}.trigger.source.listi({table})")
+        self.port.write(f"{self.smu}.trigger.source.listi({current_list_table})")
 
+    @command
     def set_trigger_source_action(self, source_action: bool) -> None:
         """Switch the source action of the trigger model on or off."""
-        self.port.write(f"{self.smu}.trigger.source.action = {self.smu}.{self.get_enable_state(source_action)}")
+        self.port.write(f"{self.smu}.trigger.source.action = {self.action_constant(source_action)}")
 
+    @command
     def set_trigger_measure_iv(self) -> None:
         """Measure current into reading buffer 1 and voltage into reading buffer 2 at each step of the sweep."""
         self.port.write(f"{self.smu}.trigger.measure.iv({self.smu}.nvbuffer1, {self.smu}.nvbuffer2)")
 
+    @command
     def set_trigger_measure_action(self, measure_action: bool) -> None:
         """Switch the measure action of the trigger model on or off."""
-        self.port.write(f"{self.smu}.trigger.measure.action = {self.smu}.{self.get_enable_state(measure_action)}")
+        self.port.write(f"{self.smu}.trigger.measure.action = {self.action_constant(measure_action)}")
 
-    @staticmethod
-    def get_enable_state(state: bool) -> str:
-        """Return the name of the TSP constant that enables or disables an action of the trigger model."""
-        return "ENABLE" if state else "DISABLE"
-
+    @command
     def set_trigger_endpulse_hold(self) -> None:
         """Keep the source level until the next step of the sweep, i.e. no pulsed sweep."""
         self.port.write(f"{self.smu}.trigger.endpulse.action = {self.smu}.SOURCE_HOLD")
 
+    @command
     def set_trigger_endsweep_idle(self) -> None:
         """Return the source to its idle level at the end of the sweep."""
         self.port.write(f"{self.smu}.trigger.endsweep.action = {self.smu}.SOURCE_IDLE")
 
-    def set_trigger_count(self, count: int) -> None:
+    @command
+    def set_trigger_count(self, trigger_count: int) -> None:
         """Set the number of steps of the sweep."""
-        self.port.write(f"{self.smu}.trigger.count = {count:d}")
+        self.port.write(f"{self.smu}.trigger.count = {trigger_count:d}")
 
-    def set_trigger_arm_count(self, count: int) -> None:
+    @command
+    def set_trigger_arm_count(self, arm_count: int) -> None:
         """Set how often the sweep is repeated after it was started."""
-        self.port.write(f"{self.smu}.trigger.arm.count = {count:d}")
+        self.port.write(f"{self.smu}.trigger.arm.count = {arm_count:d}")
 
-    def set_trigger_source_stimulus(self, event: str) -> None:
+    @command
+    def set_trigger_source_stimulus(self, source_stimulus: str) -> None:
         """Set the event that starts each source step, '0' to step without waiting."""
-        self.port.write(f"{self.smu}.trigger.source.stimulus = {event}")
+        self.port.write(f"{self.smu}.trigger.source.stimulus = {source_stimulus}")
 
-    def reset_timer(self, timer: int) -> None:
+    @command
+    def reset_timer(self, timer: Timer) -> None:
         """Reset count, delay, pass-through and stimulus of a trigger timer."""
         self.port.write(f"trigger.timer[{timer:d}].reset()")
 
-    def set_timer_delay(self, timer: int, delay: float) -> None:
+    @command
+    def set_timer_delay(self, timer: Timer, timer_delay: Seconds) -> None:
         """Set the period in s of a trigger timer."""
-        self.port.write(f"trigger.timer[{timer:d}].delay = {delay}")
+        self.port.write(f"trigger.timer[{timer:d}].delay = {timer_delay}")
 
-    def set_timer_count(self, timer: int, count: int) -> None:
+    @command
+    def set_timer_count(self, timer: Timer, timer_count: int) -> None:
         """Set the number of events a trigger timer creates after it was started."""
-        self.port.write(f"trigger.timer[{timer:d}].count = {count:d}")
+        self.port.write(f"trigger.timer[{timer:d}].count = {timer_count:d}")
 
-    def set_timer_passthrough(self, timer: int, passthrough: bool) -> None:
+    @command
+    def set_timer_passthrough(self, timer: Timer, timer_passthrough: bool) -> None:
         """Let a trigger timer create an event already when it is started."""
-        self.port.write(f"trigger.timer[{timer:d}].passthrough = {str(passthrough).lower()}")
+        self.port.write(f"trigger.timer[{timer:d}].passthrough = {str(timer_passthrough).lower()}")
 
-    def set_timer_stimulus(self, timer: int, event: str) -> None:
+    @command
+    def set_timer_stimulus(self, timer: Timer, timer_stimulus: str) -> None:
         """Set the event that starts a trigger timer."""
-        self.port.write(f"trigger.timer[{timer:d}].stimulus = {event}")
+        self.port.write(f"trigger.timer[{timer:d}].stimulus = {timer_stimulus}")
 
-    def reset_digio_trigger(self, line: int) -> None:
+    @command
+    def reset_digio_trigger(self, line: DigioLine) -> None:
         """Reset the trigger settings of a digital I/O line, which also switches off its output trigger."""
         self.port.write(f"digio.trigger[{line:d}].reset()")
 
-    def set_digio_trigger_mode(self, line: int, trigger_mode: str) -> None:
+    @command
+    def set_digio_trigger_mode(self, line: DigioLine, digio_trigger_mode: str) -> None:
         """Set the trigger mode of a digital I/O line, e.g. 'TRIG_FALLING' for a low pulse as output trigger."""
-        self.port.write(f"digio.trigger[{line:d}].mode = digio.{trigger_mode}")
+        self.port.write(f"digio.trigger[{line:d}].mode = digio.{digio_trigger_mode}")
 
-    def set_digio_trigger_pulsewidth(self, line: int, width: float) -> None:
+    @command
+    def set_digio_trigger_pulsewidth(self, line: DigioLine, digio_pulse_width: Seconds) -> None:
         """Set the length in s of the output trigger pulse of a digital I/O line."""
-        self.port.write(f"digio.trigger[{line:d}].pulsewidth = {width}")
+        self.port.write(f"digio.trigger[{line:d}].pulsewidth = {digio_pulse_width}")
 
-    def set_digio_trigger_stimulus(self, line: int, event: str) -> None:
+    @command
+    def set_digio_trigger_stimulus(self, line: DigioLine, digio_stimulus: str) -> None:
         """Set the event that asserts the output trigger of a digital I/O line."""
-        self.port.write(f"digio.trigger[{line:d}].stimulus = {event}")
+        self.port.write(f"digio.trigger[{line:d}].stimulus = {digio_stimulus}")
 
-    def clear_buffer(self, buffer: str) -> None:
-        """Remove all readings from a reading buffer of the channel, e.g. 'nvbuffer1'."""
+    @command
+    def clear_buffer(self, buffer: Buffer) -> None:
+        """Remove all readings from a reading buffer of the channel."""
         self.port.write(f"{self.smu}.{buffer}.clear()")
 
-    def set_buffer_append_mode(self, buffer: str, append_mode: bool) -> None:
+    @command
+    def clear_buffer_cache(self, buffer: Buffer) -> None:
+        """Remove stale readings from the cache of a reading buffer of the channel."""
+        self.port.write(f"{self.smu}.{buffer}.clearcache()")
+
+    @command
+    def set_buffer_append_mode(self, buffer: Buffer, append_mode: bool) -> None:
         """Define whether new readings are appended to a reading buffer or replace its readings."""
         self.port.write(f"{self.smu}.{buffer}.appendmode = {int(append_mode)}")
 
-    def set_buffer_collect_timestamps(self, buffer: str, collect_timestamps: bool) -> None:
+    @command
+    def set_buffer_collect_timestamps(self, buffer: Buffer, collect_timestamps: bool) -> None:
         """Define whether a reading buffer stores a timestamp with each reading; the buffer must be empty."""
         self.port.write(f"{self.smu}.{buffer}.collecttimestamps = {int(collect_timestamps)}")
 
-    def get_buffer_count(self, buffer: str) -> int:
-        """Return the number of readings in a reading buffer of the channel."""
-        self.port.write(f"print({self.smu}.{buffer}.n)")
-        return int(float(self.port.read()))
+    @command
+    def set_buffer_collect_source_values(self, buffer: Buffer, collect_source_values: bool) -> None:
+        """Define whether a reading buffer stores the source value with each reading."""
+        self.port.write(f"{self.smu}.{buffer}.collectsourcevalues = {int(collect_source_values)}")
 
+    @command(returns=("buffer_count",), reads="state")
+    def get_buffer_count(self, buffer: Buffer) -> int:
+        """Return the number of readings in a reading buffer of the channel."""
+        return int(float(self.port.query(f"print({self.smu}.{buffer}.n)")))
+
+    @command
     def initiate_trigger(self) -> None:
         """Start the sweep that was set up in the trigger model."""
         self.port.write(f"{self.smu}.trigger.initiate()")
 
+    @command
     def abort_sweep(self) -> None:
         """Stop a running sweep of the channel."""
         self.port.write(f"{self.smu}.abort()")
 
-    def read_list_buffers(self, points: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    @command(returns=("current", "voltage", "time"), reads="last")
+    def read_list_buffers(self, points: int) -> tuple[CurrentArray, VoltageArray, TimeArray]:
         """Read currents in A, voltages in V and times in s of the first points of the two reading buffers."""
-        self.port.write(
+        answer = self.port.query(
             f"printbuffer(1, {points:d}, {self.smu}.nvbuffer1.readings, {self.smu}.nvbuffer2.readings, "
             f"{self.smu}.nvbuffer1.timestamps)",
         )
         # The values of the three buffers are interleaved point by point
-        values = np.array([float(value) for value in self.port.read().replace("\n", "").split(",")])
+        values = np.array([float(value) for value in str(answer).replace("\n", "").split(",")])
         values = values.reshape(-1, 3)
         return values[:, 0], values[:, 1], values[:, 2]
