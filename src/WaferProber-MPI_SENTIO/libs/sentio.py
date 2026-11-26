@@ -28,6 +28,15 @@
 import socket
 import time
 
+
+class SentioError(Exception):
+    """An error answer of SENTIO, with its error code in `code`."""
+
+    def __init__(self, code: int, message: str) -> None:
+        """Keep the error code beside the message."""
+        super().__init__(message)
+        self.code = code
+
 class MPISentioProber:
     """
     This library does not handle asynchronous commands.
@@ -87,6 +96,12 @@ class MPISentioProber:
             101: "PositionerServoOnOffFail",
             120: "OverTravelOverLimit",
             121: "MissingTopographyTable",
+            # SiPh error codes according to SENTIO Remote Commands_UG_REV3.0 AST-RC-001, 12-2021
+            300: "SiPhMoveHoverFail",
+            301: "SiPhMoveSeparationFail",
+            302: "SiPhGradientSearchFail",
+            303: "SiPhFastAlignFail",
+            304: "SiPhPowerMeasurementFail",
         }
 
         # status code defined here, but not used
@@ -152,10 +167,10 @@ class MPISentioProber:
         if errc == 0:
             return response
         elif errc in self.error_codes:
-            raise Exception("MPI Sentio error %d (%s): %s" %
-                            (errc, self.error_codes[errc], response))
+            raise SentioError(errc, "MPI Sentio error %d (%s): %s" %
+                              (errc, self.error_codes[errc], response))
         else:
-            raise Exception("Received answer with undefined error code: %s" % answer)
+            raise SentioError(errc, "Received answer with undefined error code: %s" % answer)
 
     # Command methods start from here.
 
