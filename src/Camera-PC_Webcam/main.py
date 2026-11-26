@@ -4,19 +4,19 @@
 # find those in the corresponding folders or contact the maintainer.
 #
 # MIT License
-# 
-# Copyright (c) 2018 Axel Fischer (sweep-me.net)
-# 
+#
+# Copyright (c) 2021-2026 SweepMe! GmbH (sweep-me.net)
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -25,144 +25,145 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# SweepMe! driver
+# * Module: Camera
+# * Instrument: PC Webcam
 
-# SweepMe! device class
-# Type: Camera
-# Device: Webcam
+"""SweepMe! driver that takes pictures with a webcam through OpenCV."""
 
-"""
-<h2>Webcam logger</h2>
-<br>
-Check the parameter 'Time stamp' to have a time label in each picture.<br>
-<br>
-Available ports are indices starting from 0. Just test to which index your webcam belongs. If you have multiple webcams, they will have different indices.<br>
-You can use multiple webcams. Simply put another Logger into the sequencer.<br>
-<br>
-At the moment, this Device Class does not work with the Module "Make Folder" yet, i.e. all pictures are saved to the main temp folder.
-"""
+from __future__ import annotations
 
-from EmptyDeviceClass import EmptyDevice
-import time
-import sys
-import numpy as np
-import os
+from pathlib import Path
+from typing import Any
 
 import cv2
-
+import numpy as np
 from PIL import Image
-from PIL import ImageFont
-from PIL import ImageDraw
+from pysweepme import EmptyDevice
+from pysweepme.commands import command
+
+FILE_FORMATS: dict[str, str] = {"jpg": "jpg", "png": "png"}
+MAX_CAMERA_INDEX = 10  # find_ports stops at the first index that cannot be opened, at the latest here
+
 
 class Device(EmptyDevice):
+    """Driver for a webcam or another camera that OpenCV can open by its index."""
 
-    def __init__(self):
-    
-        EmptyDevice.__init__(self)
-        
+    def __init__(self) -> None:
+        """Define the returned variables."""
+        super().__init__()
+
         self.shortname = "Webcam"
-        
-        self.folder = os.path.dirname(__file__)
-        
-        self.variables = ["image path"]   
+
+        self.variables = ["image path"]
         self.units = [""]
         self.plottype = [False]
         self.savetype = [False]
-        
-         
-    def set_GUIparameter(self):
-    
-        GUIparameter = {
-                        "SweepMode": ["None"],
-                        "FileFormat": ["jpg", "png"],
-                        }
-        
-        return GUIparameter
-        
-    def get_GUIparameter(self, parameter = {}):
-                
-        self.fileformat = parameter["FileFormat"]        
-        
-        if parameter["Port"] != "":     
-            self.cam_index = int(parameter["Port"])
-        else:
-            self.cam_index = 0
-                      
-    def find_Ports(self):
-    
-        cameras = []
-        self.webcam = cv2.VideoCapture()
-        i = -1
-        while True:
-            i+=1
-            self.webcam.open(i)
-            if self.webcam.isOpened():
-                cameras.append(str(i))
-                
-            else:
-                break
 
+        self.gui_parameters: dict[str, Any] = {}
+        self.port_string: str = ""
+        self.file_format: str = "jpg"
+        self.cam_index: int = 0
+        self.webcam: cv2.VideoCapture | None = None
+        self.progress: int = 0
+        self.progress_digits: int = 3
+        self.image_path: str = ""
+
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+        """Return the GUI fields with their defaults."""
+        return {
+            "SweepMode": ["None"],
+            "FileFormat": list(FILE_FORMATS),
+        }
+
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Store the selections."""
+        self.gui_parameters = parameters
+        self.port_string = str(parameters.get("Port", "")).strip()
+
+    # check_driver: ignore DC004 - a hook of the Camera module
+    def find_ports(self) -> list[str]:
+        """Return the indices of the cameras that can be opened, counting from 0."""
+        cameras = []
+        webcam = cv2.VideoCapture()
+        try:
+            for index in range(MAX_CAMERA_INDEX):
+                webcam.open(index)
+                if not webcam.isOpened():
+                    break
+                cameras.append(str(index))
+                webcam.release()
+        finally:
+            webcam.release()
         return cameras
-        
-    def connect(self):    
+
+    def connect(self) -> None:
+        """Open the camera with the index given as port, 0 if the port is empty."""
+        if not self.port_string:
+            self.cam_index = 0
+        elif self.port_string.isdigit():
+            self.cam_index = int(self.port_string)
+        else:
+            msg = f"Port '{self.port_string}' is not a camera index such as 0 or 1."
+            raise ValueError(msg)
+
         self.webcam = cv2.VideoCapture()
         self.webcam.open(self.cam_index)
+        if not self.webcam.isOpened():
+            self.webcam.release()
+            self.webcam = None
+            msg = f"The camera with index {self.cam_index} cannot be opened. Is it connected and not used elsewhere?"
+            raise ConnectionError(msg)
 
-    def disconnect(self):
-        self.webcam.release()
-        
-    def initialize(self):
+    def disconnect(self) -> None:
+        """Release the camera."""
+        if self.webcam is not None:
+            self.webcam.release()
+            self.webcam = None
+
+    def initialize(self) -> None:
+        """Take a first picture, as the first frames of many webcams are dark or not yet focused."""
         self.progress = 0
         self.progress_digits = 3
-        
-        if self.fileformat == "jpg":
-            pic_path = self.tempfolder + os.sep + "temp_Webcam0_before_start.jpg"
-            self.makePicture(pic_path) 
-            
-        elif self.fileformat == "png":
-            pic_path = self.tempfolder+ os.sep + "temp_Webcam0_before_start.png"
-            self.makePicture(pic_path) 
-        
-        
-    def measure(self):          
+        self._check_file_format()
+        pic_path = Path(self.tempfolder) / f"temp_Webcam{self.cam_index}_before_start.{self.file_format}"
+        self.take_picture(str(pic_path))
+
+    def configure(self) -> None:
+        """Check the file format."""
+        self._check_file_format()
+
+    def measure(self) -> None:
+        """Take a picture and save it in the temporary folder of the run."""
         self.progress += 1
-        
-        if self.fileformat == "jpg":
-            self.webcam_string = self.tempfolder + os.sep + "temp_Webcam" + str(self.cam_index) + "_%0"+str(self.progress_digits)+"d.jpg"
-            self.jpg_path = self.webcam_string % (self.progress)
-            self.makePicture(self.jpg_path) 
+        file_name = f"temp_Webcam{self.cam_index}_{self.progress:0{self.progress_digits}d}.{self.file_format}"
+        self.image_path = str(Path(self.tempfolder) / file_name)
+        self.take_picture(self.image_path)
 
-        elif self.fileformat == "png":
-            self.webcam_string = self.tempfolder+ os.sep + "temp_Webcam" + str(self.cam_index) + "_%0"+str(self.progress_digits)+"d.png"
-            self.png_path = self.webcam_string % (self.progress)
-            self.makePicture(self.png_path) 
+    def call(self) -> list[str]:
+        """Return the path of the picture."""
+        return [self.image_path]
 
-    def call(self):
-    
-        values = []
-        
-        if self.fileformat == "jpg":
-            values.append(self.jpg_path)
-            
-        elif self.fileformat == "png":
-            values.append(self.png_path)
-            
-        return values
- 
+    # --- communication commands ---------------------------------------------
 
- 
-    #### DC specific function ####
-       
-    def makePicture(self, pic_path):
-    
-        capture =  self.webcam.read()
-        
-        if capture[0]:   
-            self.picture = capture[1]
-            i = np.array([2, 1, 0])
-            self.im = Image.fromarray(self.picture[:,:,i])
-            
-            self.im.save(pic_path)
-               
-        else:
-            print("No image captured from webcam with Index %i" % self.cam_index)
-    
+    @command(kind="run")
+    def take_picture(self, path: str) -> None:
+        """Take a picture and save it at path; the file format follows the extension, e.g. .jpg or .png."""
+        if self.webcam is None:
+            msg = "The camera is not open, call connect first."
+            raise RuntimeError(msg)
+        success, frame = self.webcam.read()
+        if not success:
+            msg = f"No image captured from the camera with index {self.cam_index}."
+            raise RuntimeError(msg)
+        Image.fromarray(frame[:, :, np.array([2, 1, 0])]).save(path)  # OpenCV delivers BGR, PIL expects RGB
+
+    # --- helpers --------------------------------------------------------------
+
+    def _check_file_format(self) -> None:
+        """Convert and check the file format."""
+        file_format = self.gui_parameters.get("FileFormat", "jpg")
+        if file_format not in FILE_FORMATS:
+            msg = f"FileFormat must be one of {', '.join(FILE_FORMATS)}, not '{file_format}'."
+            raise ValueError(msg)
+        self.file_format = FILE_FORMATS[file_format]

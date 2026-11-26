@@ -25,14 +25,17 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+
 # SweepMe! driver
 # * Module: SMU
 # * Instrument: Simulation Diode
 
+"""SweepMe! driver of a simulated SMU that measures a diode with space-charge-limited current."""
+
 from __future__ import annotations
 
 import random
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import numpy as np
 from pysweepme.commands import Range, Unit, command
@@ -41,16 +44,27 @@ from pysweepme.EmptyDeviceClass import EmptyDevice
 MAX_VOLTAGE = 20.0
 """Largest voltage magnitude in V the simulated SMU can force."""
 
+MAX_COMPLIANCE = 1.0
+"""Largest current compliance in A of the simulated SMU."""
+
+MAX_AVERAGE = 100
+"""Largest number of current readings averaged for one measurement."""
+
 Volts = Annotated[float, Unit("V")]
 Amperes = Annotated[float, Unit("A")]
 Speed = Literal["Fast", "Medium", "Slow", "No Noise"]
 
+# Speed -> divisor of the voltage noise; "No Noise" has no entry, it measures without noise
+SPEED_NOISE_DIVISORS: dict[str, float] = {"Fast": 1.0, "Medium": 3.0, "Slow": 10.0}
+SPEEDS: list[str] = [*SPEED_NOISE_DIVISORS, "No Noise"]
+
 
 class Device(EmptyDevice):
     """Driver for a simulated SMU that measures a diode. Can be used to test the SMU module."""
+
     def __init__(self) -> None:
         """Initialize the device class and the instrument parameters."""
-        EmptyDevice.__init__(self)
+        super().__init__()
 
         self.shortname = "Test Diode"
 
@@ -61,13 +75,8 @@ class Device(EmptyDevice):
 
         self.idlevalue = 0.0
 
-        self.speedvalues = {
-            "Fast": 1.0,
-            "Medium": 3.0,
-            "Slow": 10.0,
-        }
-
         # Defaults, so that the communication commands work before the GUI parameters have been received.
+        self.gui_parameters: dict[str, Any] = {}
         self.source: str = "Voltage in V"
         self.protection: float = 1e-3
         self.speed: str = "Fast"
@@ -75,51 +84,54 @@ class Device(EmptyDevice):
         self.value: float = 0.0
         self.v: float = 0.0
         self.i: float = 0.0
+        self._voltage_setpoint: float = 0.0
+        self._output: bool = False
 
-    def set_GUIparameter(self) -> dict:  # noqa: N802
-        """Returns a dictionary with keys and values to generate GUI elements in the SweepMe! GUI."""
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+        """Return the GUI parameters with their default values."""
         return {
             "SweepMode": ["Voltage in V"],
             "Compliance": 1e-3,
             "Average": 1,
-            "Speed": ["Fast", "Medium", "Slow", "No Noise"],
+            "Speed": SPEEDS,
         }
 
-    def get_GUIparameter(self, parameter: dict) -> None:  # noqa: N802
-        """Receive the values of the GUI parameters that were set by the user in the SweepMe! GUI."""
-        self.source = parameter.get("SweepMode", self.source)
-        self.protection = parameter.get("Compliance", self.protection)
-        self.speed = parameter.get("Speed", self.speed)
-        self.average = parameter.get("Average", self.average)
-
-    def initialize(self) -> None:
-        """Initialize the device. This function is called only once at the start of the measurement."""
-        max_compliance = 1.0
-        if float(self.protection) > max_compliance:
-            self.stop_Measurement(f"Compliance {self.protection} is higher than the maximum compliance of {max_compliance}.")
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Store the values of the GUI parameters; configure() converts and checks them."""
+        self.gui_parameters = parameters
+        self.source = parameters.get("SweepMode", "Voltage in V")
+        self.speed = parameters.get("Speed", "Fast")
 
     def configure(self) -> None:
         """Convert and check the GUI values; it runs at every start of the branch and after a reconfigure."""
-        self.protection = float(self.protection)
-        self.average = int(self.average)
-        if not 1 <= self.average <= 100:
-            msg = f"Average {self.average} must be between 1 and 100."
+        if self.speed not in SPEEDS:
+            msg = f"Speed '{self.speed}' is not supported. Choose one of {SPEEDS}."
+            raise ValueError(msg)
+
+        self.protection = float(self.gui_parameters.get("Compliance", 1e-3))
+        if not 0 < self.protection <= MAX_COMPLIANCE:
+            msg = (
+                f"Compliance {self.protection} A must be greater than 0 A and at most the maximum compliance of "
+                f"{MAX_COMPLIANCE} A."
+            )
+            raise ValueError(msg)
+
+        self.average = int(self.gui_parameters.get("Average", 1))
+        if not 1 <= self.average <= MAX_AVERAGE:
+            msg = f"Average {self.average} must be between 1 and {MAX_AVERAGE}."
             raise ValueError(msg)
 
     def call(self) -> list[float]:
         """Return the measurement results. Must return as many values as defined in self.variables."""
-        if self.source.startswith("Voltage"):
+        if self.source == "Voltage in V":
             measured_currents = [self.simulate_series_current(self.value) for _ in range(self.average)]
 
-            self.v = self.simulate_voltage(self.value)
-            self.i = np.mean(measured_currents)
-
-        elif self.source.startswith("Current"):
-            pass
+            self.v = self.simulate_voltage(float(self.value))
+            self.i = float(np.mean(measured_currents))
 
         return [float(self.v), float(self.i)]
 
-    """Simulated Diode"""
+    # --- Simulated diode ---
 
     def simulate_series_current(self, applied_voltage: float) -> float:
         """Simulate the current of the diode in series with a space-charge-limited layer, as measured by the SMU.
@@ -146,9 +158,9 @@ class Device(EmptyDevice):
     def simulate_current(self, applied_voltage: float) -> float:
         """Simulate the current of the bare diode junction (without the series layer), with linear leakage and noise."""
         if applied_voltage == 0:
-            return 0
+            return 0.0
 
-        noise = 0 if self.speed == "No Noise" else (random.random() - 0.5) / 1e10
+        noise = 0 if self.speed == "No Noise" else (random.random() - 0.5) / 1e10  # noqa: S311
         current = 1e-15 * (np.exp(applied_voltage / 1.4 / 0.025) - 1) + applied_voltage / 1e9 + noise
 
         if current > self.protection:
@@ -156,26 +168,24 @@ class Device(EmptyDevice):
         elif current < -self.protection:
             current = -self.protection
 
-        return current
+        return float(current)
 
     def simulate_voltage(self, applied_voltage: float) -> float:
         """Simulate the measured voltage including some noise depending on the measurement speed."""
-        if self.speed not in self.speedvalues:
+        if self.speed not in SPEED_NOISE_DIVISORS:
             return applied_voltage
-        return applied_voltage + (random.random() - 0.5) * 1e-2 / self.speedvalues[self.speed]
+        return applied_voltage + (random.random() - 0.5) * 1e-2 / SPEED_NOISE_DIVISORS[self.speed]  # noqa: S311
 
-    """Communication commands, used e.g. by the SweepMe! Instrument Control.
+    # --- Communication commands, used e.g. by the SweepMe! Instrument Control ---
+    #
+    # The simulated SMU forces a voltage on a simulated diode and measures voltage and current. The commands do not
+    # need 'initialize' or 'configure' and therefore also work when the instrument was only connected. As on a real
+    # SMU, the output is off after connecting: switch it on with 'set_output' to measure the diode, otherwise 0 V is
+    # forced.
 
-    The simulated SMU forces a voltage on a simulated diode and measures voltage and current. The commands do not need
-    'initialize' or 'configure' and therefore also work when the instrument was only connected. As on a real SMU, the
-    output is off after connecting: switch it on with 'set_output' to measure the diode, otherwise 0 V is forced.
-    """
-
-    _voltage_setpoint: float = 0.0
-    _output: bool = False
-
+    # check_driver: ignore DC012 - the bound 0 A is excluded, which Range cannot express
     @command
-    def set_compliance(self, compliance: Annotated[Amperes, Range(0.0, 1.0)]) -> None:
+    def set_compliance(self, compliance: Annotated[Amperes, Range(0.0, MAX_COMPLIANCE)]) -> None:
         """Set the current compliance in A. It must be greater than 0 A and at most 1 A."""
         if compliance <= 0:
             msg = f"Compliance {compliance} A must be greater than 0 A."
@@ -198,7 +208,7 @@ class Device(EmptyDevice):
         return self.speed  # type: ignore[return-value]  # set from the GUI or set_speed, both one of Speed
 
     @command
-    def set_average(self, average: Annotated[int, Range(1, 100)]) -> None:
+    def set_average(self, average: Annotated[int, Range(1, MAX_AVERAGE)]) -> None:
         """Set the number of current readings that are averaged for one measurement."""
         self.average = average
 

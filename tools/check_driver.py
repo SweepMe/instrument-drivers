@@ -33,11 +33,25 @@ driver guide of this repository (DRIVER_GUIDE.md, sections 7 and 10):
     DC019  a pair of semantic functions (connect/disconnect, ...) split by another method
     DC020  a setter's value parameter named generically (value, state, mode, ...) instead of after its quantity
 
-Only the .py files directly in a driver folder are read (main.py and the helper modules beside it, not libraries).
+What a modernization pass removes (DRIVER_GUIDE.md sections 4, 8, 10.1, 11.1 and 14):
 
-A finding that is deliberate is accepted with a comment saying why. For a finding about a method it stands on a
-decorator or the def line, or in the comment block directly above them - not inside the body; for a finding about
-the file (DC015, DC017, DC019) on the finding's line or the line above:
+    DC021  the legacy GUI API set_GUIparameter / get_GUIparameter instead of update_ / apply_gui_parameters
+    DC022  parameters["Key"] indexed in a GUI method instead of parameters.get("Key", default)
+    DC023  a deprecated call: find_Ports, stop_Measurement, stop_measurement, self.stopMeasurement, message_Box,
+           write_Log, message_Info, get_Folder, is_run_aborted
+    DC024  a bare `from EmptyDeviceClass import`, `from ErrorMessage import` or FolderManager import (use pysweepme)
+    DC025  the folder key "SETTINGS" or "ROAMINGSETTINGS" in a folder lookup (now "SEQUENCES", "ROAMINGSEQUENCES")
+    DC026  license.txt missing, or its copyright lines differ from those of the main.py header
+    DC027  the latest copyright year is below the current year
+    DC028  a .py file starting with a UTF-8 byte order mark
+
+Only the .py files directly in a driver folder are read (main.py and the helper modules beside it, not libraries),
+and license.txt beside main.py.
+
+A finding that is deliberate is accepted with a comment saying why. For a finding about a method (also DC021 to
+DC025 inside one) it stands on a decorator or the def line, or in the comment block directly above them - not inside
+the body; for a finding about the file (DC015, DC017, DC019, DC026 to DC028, and DC021 to DC025 outside a method) on
+the finding's line or the line above:
 
     # check_driver: ignore DC004 - a helper of the semantic functions, not a command
 """
@@ -46,6 +60,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import datetime as dt
 import json
 import re
 import sys
@@ -84,8 +99,36 @@ ALIAS_MARKERS = ("Unit", "Label", "Selector")
 #: A comment accepting a finding where it is deliberate: "# check_driver: ignore DC004, DC010 - why".
 IGNORE = re.compile(r"#\s*check_driver:\s*ignore\s+((?:DC\d{3}[,\s]*)+)", re.IGNORECASE)
 PORT_METHODS = ("write", "query", "read", "write_raw", "read_raw")
+#: The legacy GUI API (DC021) and the methods that receive the GUI parameters (DC022).
+LEGACY_GUI = ("set_GUIparameter", "get_GUIparameter")
+GUI_READERS = ("get_GUIparameter", "update_gui_parameters", "apply_gui_parameters")
+#: Deprecated EmptyDevice names (DC023), called, assigned or overridden, and what replaces them.
+DEPRECATED = {
+    "find_Ports": "use find_ports (find_Ports is no longer called since SweepMe! 1.5.8)",
+    "stop_Measurement": "raise an exception with a message for the user (section 8.1)",
+    "stop_measurement": "raise an exception with a message for the user (section 8.1)",
+    "stopMeasurement": "raise an exception with a message for the user (section 8.1)",
+    "message_Box": "use message_box",
+    "write_Log": "use message_log",
+    "message_Info": "use message_info",
+    "get_Folder": "use get_folder",
+    "is_run_aborted": "use is_run_stopped",
+}
+#: Modules imported bare from SweepMe!'s path instead of from pysweepme (DC024), and what replaces them.
+LEGACY_MODULES = {
+    "EmptyDeviceClass": "from pysweepme import EmptyDevice",
+    "ErrorMessage": "from pysweepme import debug, error",
+    "FolderManager": "self.get_folder(key); libraries/ is on the path without addFolderToPATH",
+}
+#: Folder keys that no longer exist (DC025), and the calls that look a folder up by its key: EmptyDevice.get_folder
+#: (get_Folder before), FolderManager.get_path.
+OLD_FOLDER_KEYS = {"SETTINGS": "SEQUENCES", "ROAMINGSETTINGS": "ROAMINGSEQUENCES"}
+FOLDER_LOOKUPS = ("get_folder", "get_Folder", "get_path")
+COPYRIGHT = re.compile(r"^\s*#?\s*(copyright\b.*?)\s*$", re.IGNORECASE)
+YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
+BOM = b"\xef\xbb\xbf"
 #: What is most likely wrong; every other code is a hint.
-WARNINGS = {"DC000", "DC001", "DC002", "DC005", "DC006", "DC007", "DC011"}
+WARNINGS = {"DC000", "DC001", "DC002", "DC005", "DC006", "DC007", "DC011", "DC022"}
 
 
 @dataclass
@@ -144,6 +187,8 @@ class Driver:
     selector_aliases: set[str] = field(default_factory=set)  # aliases with a Selector(...) inside
     description_attributes: list[tuple[str, int]] = field(default_factory=list)
     unreadable: list[tuple[str, int, str]] = field(default_factory=list)
+    paths: dict[str, Path] = field(default_factory=dict)  # every .py file read, by its reported name
+    trees: dict[str, ast.Module] = field(default_factory=dict)  # the syntax trees of the files that parse
 
     @property
     def declared(self) -> bool:
@@ -279,18 +324,25 @@ def _class_commands(method: Method, commands: list[Method]) -> set[str]:
     return {c.name for c in commands if c.cls in method.inherits}
 
 
+def _file_name(path: Path, folder: Path) -> str:
+    """How a finding names a file of the driver: from the folder above the driver folders, e.g. src/X/main.py."""
+    return str(path.relative_to(folder.parent.parent)) if folder.parent.parent in path.parents else str(path)
+
+
 def read_driver(folder: Path) -> Driver:
     """Collect the classes' methods and the module-level aliases of a driver folder."""
     driver = Driver(folder)
     trees = []
     for path in sorted(folder.glob("*.py")):
-        file = str(path.relative_to(folder.parent.parent)) if folder.parent.parent in path.parents else str(path)
+        file = _file_name(path, folder)
+        driver.paths[file] = path
         try:
             tree = _parse(path)
         except (SyntaxError, UnicodeDecodeError, OSError) as exc:  # a file that cannot be read is DC000 too
             driver.unreadable.append((file, getattr(exc, "lineno", 0) or 0, str(exc)))
             continue
         trees.append(tree)
+        driver.trees[file] = tree
         _read_module(tree, file, path, driver)
     # an alias built on an alias that has a choice, a range or a selector has it too
     for tree in trees:
@@ -355,7 +407,10 @@ def check_driver(folder: Path) -> list[Finding]:
     for file, line in driver.description_attributes:
         report.add("DC017", None, line,
                    "a `description` class attribute - write the documentation into doc/description.md", file)
-    kept = (f for f, m in zip(report.findings, report.owners, strict=True) if not _ignored(f, m, driver))
+    _legacy_api(driver, report)
+    _license(driver, report)
+    _byte_order_marks(driver, report)
+    kept =(f for f, m in zip(report.findings, report.owners, strict=True) if not _ignored(f, m, driver))
     return sorted(kept, key=lambda f: (f.file, f.line, f.code))
 
 
@@ -377,7 +432,7 @@ def _ignored(finding: Finding, method: Method | None, driver: Driver) -> bool:
         path = method.path
     else:
         first, last = finding.line - 1, finding.line
-        path = next((m.path for m in driver.methods.values() if m.file == finding.file), None)
+        path = driver.paths.get(finding.file)
     if path is None:
         return False
     lines = _lines(path)
@@ -398,7 +453,7 @@ def _lines(path: Path) -> list[str]:
     """The lines of a file, read once."""
     if path not in _LINES:
         try:
-            _LINES[path] = path.read_text(encoding="utf-8-sig").splitlines()
+            _LINES[path] = path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
         except OSError:
             _LINES[path] = []
     return _LINES[path]
@@ -683,6 +738,135 @@ def _split_pairs(driver: Driver, report: Report) -> None:
                            f"{closer} does not directly follow {opener} - keep the pair together", file)
 
 
+# --- what a modernization pass removes ---------------------------------------------------------------------------
+
+def _owner(driver: Driver, file: str, line: int) -> Method | None:
+    """The method a line of a file belongs to (its ignore comment accepts the finding), or None outside methods."""
+    owners = [m for m in driver.methods.values()
+              if m.file == file and _first_line(m.node) <= line <= (m.node.end_lineno or m.node.lineno)]
+    return max(owners, key=lambda m: _first_line(m.node), default=None)
+
+
+def _legacy_api(driver: Driver, report: Report) -> None:
+    """DC021 to DC025: the legacy GUI API, indexed GUI parameters, deprecated calls, imports and folder keys."""
+    for file, tree in driver.trees.items():
+        for node in ast.walk(tree):
+            if found := _legacy_finding(node):
+                report.add(found[0], _owner(driver, file, node.lineno), node.lineno, found[1], file)
+    for method in driver.methods.values():
+        if method.name in GUI_READERS:
+            _indexed_parameters(method, report)
+
+
+def _legacy_finding(node: ast.AST) -> tuple[str, str] | None:
+    """The code and message of DC021, DC023, DC024 or DC025 for one node of a syntax tree, or None."""
+    if isinstance(node, ast.FunctionDef) and node.name in LEGACY_GUI:
+        return "DC021", (f"the legacy GUI API {node.name} - use update_gui_parameters and apply_gui_parameters "
+                         f"(DRIVER_GUIDE.md section 4), keeping every GUI key")
+    if isinstance(node, ast.FunctionDef) and node.name in DEPRECATED:
+        return "DC023", f"overrides the deprecated {node.name} - {DEPRECATED[node.name]}"
+    if isinstance(node, ast.Attribute) and node.attr in DEPRECATED:
+        return "DC023", f"the deprecated {node.attr} - {DEPRECATED[node.attr]}"
+    if isinstance(node, (ast.Import, ast.ImportFrom)) and (module := _legacy_module(node)):
+        return "DC024", f"imports {module} from SweepMe!'s path - use {LEGACY_MODULES[module]}"
+    if isinstance(node, ast.Call) and (key := _old_folder_key(node)):
+        return "DC025", f'the folder key "{key}" no longer exists - use "{OLD_FOLDER_KEYS[key]}"'
+    return None
+
+
+def _legacy_module(node: ast.Import | ast.ImportFrom) -> str:
+    """The legacy module a bare import names: `from EmptyDeviceClass import ...`, `import FolderManager as FoMa`."""
+    if isinstance(node, ast.ImportFrom):
+        return node.module if node.level == 0 and node.module in LEGACY_MODULES else ""
+    return next((alias.name for alias in node.names if alias.name in LEGACY_MODULES), "")
+
+
+def _old_folder_key(node: ast.Call) -> str:
+    """A folder key that no longer exists, passed to a folder lookup: get_folder("SETTINGS"), FoMa.get_path(...)."""
+    if _call_name(node) not in FOLDER_LOOKUPS:
+        return ""
+    for argument in node.args:
+        if isinstance(argument, ast.Constant) and argument.value in OLD_FOLDER_KEYS:
+            return str(argument.value)
+    return ""
+
+
+def _call_name(node: ast.Call) -> str:
+    """The name a call is made by: 'get_folder' for self.get_folder(...) and get_folder(...)."""
+    if isinstance(node.func, ast.Attribute):
+        return node.func.attr
+    return node.func.id if isinstance(node.func, ast.Name) else ""
+
+
+def _indexed_parameters(method: Method, report: Report) -> None:
+    """DC022: parameters["Key"] in a method that receives the GUI parameters, which may come incomplete."""
+    received = [p.arg for p in method.parameters]
+    if not received:
+        return
+    name = received[0]
+    indexed = [sub for sub in ast.walk(method.node) if isinstance(sub, ast.Subscript) and isinstance(sub.ctx, ast.Load)
+               and isinstance(sub.value, ast.Name) and sub.value.id == name]
+    if indexed:
+        report.add("DC022", method, indexed[0].lineno,
+                   f"{name}[...] indexed {len(indexed)} time(s) - read every key with {name}.get(key, default): "
+                   f"the dict may come without the key (section 4.3)")
+
+
+def _current_year() -> int:
+    """The year the copyright ranges are extended to."""
+    return dt.datetime.now(tz=dt.UTC).year
+
+
+def _copyright_lines(lines: list[str], *, comments: bool) -> list[tuple[int, str]]:
+    """The copyright lines of a file with their line numbers, whitespace collapsed; in code only comment lines."""
+    found = []
+    for number, line in enumerate(lines, 1):
+        if comments and not line.lstrip().startswith("#"):
+            continue
+        match = COPYRIGHT.match(line)
+        if match:
+            found.append((number, " ".join(match.group(1).split())))
+    return found
+
+
+def _license(driver: Driver, report: Report) -> None:
+    """DC026, DC027: license.txt beside main.py with the copyright lines of the header, the year range up to date."""
+    main = driver.folder / "main.py"
+    file = _file_name(main, driver.folder)
+    header = _copyright_lines(_lines(main), comments=True)
+    line = header[0][0] if header else 1
+    license_file = next((p for p in driver.folder.iterdir() if p.name.lower() == "license.txt"), None)
+    if license_file is None:
+        report.add("DC026", None, line, "no license.txt beside main.py - add the license (MIT whenever possible) with "
+                                        "the copyright line of the header (section 14)", file)
+        licensed: list[tuple[int, str]] = []
+    else:
+        licensed = _copyright_lines(_lines(license_file), comments=False)
+        ours, theirs = [text for _, text in header], [text for _, text in licensed]
+        if not ours:
+            report.add("DC026", None, line, "no copyright line in the header of main.py - add the one of license.txt",
+                       file)
+        elif ours != theirs:
+            report.add("DC026", None, line, f"the copyright lines differ: main.py has {ours}, license.txt has "
+                                            f"{theirs} - both carry the same lines", file)
+    years = [int(year) for _, text in header + licensed for year in YEAR.findall(text)]
+    current = _current_year()
+    if years and max(years) < current:
+        report.add("DC027", None, line, f"the latest copyright year is {max(years)} - extend the range to {current} "
+                                        f"in main.py and license.txt (e.g. {min(years)}-{current})", file)
+
+
+def _byte_order_marks(driver: Driver, report: Report) -> None:
+    """DC028: a .py file that starts with a UTF-8 byte order mark."""
+    for file, path in driver.paths.items():
+        try:
+            head = path.read_bytes()[:len(BOM)]
+        except OSError:
+            continue
+        if head == BOM:
+            report.add("DC028", None, 1, "starts with a UTF-8 byte order mark - save it as UTF-8 without BOM", file)
+
+
 # --- command line ------------------------------------------------------------------------------------------------
 
 def driver_folders(paths: list[str]) -> tuple[list[Path], list[Path]]:
@@ -709,11 +893,32 @@ def _report_names(folders: list[Path]) -> list[str]:
     return [name if names.count(name) == 1 else str(folder) for name, folder in zip(names, folders, strict=True)]
 
 
+def _escape_data(text: str) -> str:
+    """The message of a workflow command, escaped as the Actions runner decodes it: % first, then CR and LF."""
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _escape_property(text: str) -> str:
+    """A property value of a workflow command (file=, title=): as the message, and also : and , escaped."""
+    return _escape_data(text).replace(":", "%3A").replace(",", "%2C")
+
+
+def _annotation(finding: Finding) -> str:
+    """A finding as a GitHub Actions workflow command: a warning stays a warning, a hint becomes a notice."""
+    kind = "warning" if finding.level == "warning" else "notice"
+    method = f"{finding.method}: " if finding.method else ""
+    file = _escape_property(finding.file.replace("\\", "/"))
+    return (f"::{kind} file={file},line={max(finding.line, 1)},title={_escape_property(finding.code)}::"
+            f"{_escape_data(method + finding.message)}\n")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Check the drivers named on the command line and write the findings to stdout."""
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("paths", nargs="+", help="driver folders, or a folder holding driver folders (e.g. src)")
     parser.add_argument("--json", action="store_true", help="write the findings as JSON, for an agent")
+    parser.add_argument("--github", action="store_true",
+                        help="write the findings as GitHub Actions annotations, shown in a pull request's diff")
     parser.add_argument("--only", default="", help="comma-separated codes to report, e.g. DC005,DC010")
     parser.add_argument("--warnings", action="store_true", help="report warnings only, no hints")
     args = parser.parse_args(argv)
@@ -731,6 +936,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         json.dump({name: [asdict(f) for f in findings] for name, findings in report.items()}, sys.stdout, indent=1)
         sys.stdout.write("\n")
+        return 0
+    if args.github:
+        for findings in report.values():
+            for f in findings:
+                sys.stdout.write(_annotation(f))
         return 0
     for name, findings in report.items():
         if findings:

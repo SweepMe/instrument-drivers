@@ -3,7 +3,9 @@
 This driver sources voltage or current and measures both quantities with source measure units of the
 Keithley 2600 series that use the TSP command set. One driver instance controls one channel of the
 instrument. Both channels can be used at the same time by adding two instances that share the same
-port. A pulse mode based on the `ConfigPulse` factory scripts of the instrument is available.
+port. A pulse mode based on the `ConfigPulse` factory scripts of the instrument is available, and a
+list sweep in which the instrument steps through a list of source values by itself and can send an
+output trigger at each step.
 
 ---
 
@@ -77,8 +79,9 @@ port. A pulse mode based on the `ConfigPulse` factory scripts of the instrument 
   - `Fixed <value>`: auto ranging is switched off and `<value>` is used as fixed range.
 
   Ignored in pulse mode, where the ranges are derived from **Compliance**.
-- **Average**: Number of readings that are averaged. Values above 1 switch on the repeating average
-  filter of the instrument. In pulse mode this is the number of pulses per measurement point instead.
+- **Average**: Number of readings that are averaged, 1 to 100. Values above 1 switch on the repeating
+  average filter of the instrument. In pulse mode this is the number of pulses per measurement point
+  instead, a whole number of at least 1 without the upper limit; above 100 the filter stays off.
 - **Compliance**: The limit of the quantity that is not sourced, entered in the SI unit of that
   quantity: a current in A if a voltage is sourced, a voltage in V if a current is sourced. In pulse
   mode the value is additionally used as source range and as measurement range.
@@ -95,6 +98,38 @@ The following fields are only used if **CheckPulse** is checked:
   200 µs are replaced by 200 ms, not by 200 µs.
 - **PulseOffLevel**: Source level between the pulses, in V or A depending on **SweepMode**.
 
+The following fields are only used if `List sweep` is selected as **Sweep value** (see *List sweep*):
+
+- **Type**: `Sweep` calculates the source values from start value, end value and step width or number
+  of points. `Custom` uses the **Custom values**.
+- **Start value**, **End value**: First and last source value, in V or A depending on **SweepMode**.
+- **Step width** / **Points (lin.)** / **Points (log.)**: With `Step width` the sweep goes from the
+  start value in steps of this width and stops at the last value that does not go beyond the end value.
+  `Points (lin.)` and `Points (log.)` distribute the given number of points linearly or logarithmically
+  between start and end value, including both if there are at least two points; a single point is the
+  start value. A logarithmic sweep needs start and end value of the same sign, both not 0. All values
+  must be finite numbers.
+- **dual sweep**: Adds the way back from the end value to the start value; the end value is used once.
+- **Custom values**: Source values separated by commas, semicolons or line breaks.
+- **Hold time in s**: Time between the starts of two steps, set by a trigger timer of the instrument.
+  Empty or 0 steps through the list as fast as possible. The hold time must be longer than the
+  measurement of one point, see *List sweep*, and at most 100,000 s.
+- **Delay time in s**: Settling time between setting the source value and the measurement
+  (`smuX.measure.delay`). Empty uses the automatic, range dependent delay of the instrument.
+- **Trigger out line**: Digital I/O line (1 to 14) that sends an output trigger at each step, or `None`.
+  Each line can serve one channel only: if two channels on the same port select the same line, the run
+  stops with an error message. Use a different line for each channel.
+- **Trigger out event**: `Source complete` sends the trigger when the new source value is set,
+  `Measure complete` when the measurement of the step is done.
+- **Trigger out polarity**: `Low pulse` (`digio.TRIG_FALLING`) or `High pulse` (`digio.TRIG_RISINGM`).
+- **Trigger out pulse width in s**: Length of the output trigger pulse, 10 µs by default. It may last at
+  most half the time between two steps: the hold time, or without a hold time the delay time plus the
+  integration time. A pulse that is still active at the next trigger event makes the instrument skip
+  that trigger, so the run stops with an error message instead. The other half is a margin for steps
+  that take less time than the one before: with **Range** `Auto` or `Limited` and an empty **Delay
+  time**, auto ranging and the automatic delay change the time of each step, so the trigger events do
+  not follow exactly at the hold time. For evenly spaced triggers use a `Fixed` range and a delay time.
+
 ---
 
 ### Measurement Output:
@@ -106,6 +141,11 @@ The following fields are only used if **CheckPulse** is checked:
 
 In pulse mode both values are the average over the readings of the pulse buffer `nvbuffer1`, whose
 length is given by **Average**.
+
+In a list sweep, **Voltage** and **Current** are lists with one value per step, and a third output is
+added:
+
+- **Time**: Time in s of each measurement, relative to the first measurement of the sweep.
 
 ---
 
@@ -122,6 +162,56 @@ length is given by **Average**.
   channel B encloses the pulse of channel A. Channel A reads the buffers of both channels and hands
   the values of channel B over to the second instance.
 - In dual pulse mode both channels use the **Average** value of the instance that acts as master.
+
+---
+
+### List sweep:
+
+- In a list sweep, the instrument runs the whole sweep by itself. SweepMe! sends the source values
+  once per use of the module and starts the sweep once per measurement point. The instrument then sets
+  each source value, waits for the delay time, measures current and voltage, and moves on to the next
+  value when the trigger timer expires. All values are read back when the sweep is complete.
+- Select `List sweep` as **Sweep value** in the SMU module. The option appears because the driver
+  supports the list sweep fields. The SweepEditor and the other sweep value sources are not used.
+- The output trigger is a TTL pulse on the selected pin of the DIGITAL I/O connector. It can trigger
+  other instruments at each step. The models 2604B, 2614B, and 2634B have no digital I/O trigger lines,
+  the run then stops with an error message if a trigger out line is selected.
+- Each channel uses its own trigger timer (timer 1 for channel A, timer 2 for channel B). Timer and
+  digital I/O line are reset at the end of the run.
+- At the end of the sweep the source returns to its idle level, which is 0 after the reset at the
+  start of the run.
+- The hold time must be longer than the time to measure one point: delay time plus integration time
+  times **Average**, plus the time of auto ranging. The driver checks delay time plus integration time
+  at a line frequency of 50 Hz. If a step still takes longer than the hold time, the instrument misses
+  a timer event and the sweep stops before the last point. The driver then aborts the sweep and stops
+  the run with an error message. A fixed **Range** and a fixed delay time avoid this.
+- List sweep cannot be combined with the pulse mode or with a remote **TSP-Link node**.
+- If both channels run a list sweep, the two sweeps run one after the other, not synchronized.
+- The reading buffer caches are cleared before the readings of a sweep are read, so that a sweep never
+  returns stale values of the previous one.
+- A list sweep has at most 60,000 points, the way back of a dual sweep included, as a reading buffer
+  stores over 60,000 readings with timestamps. A larger sweep stops the run before anything is sent.
+- The hold time is only checked against the measurement time if the sweep has more than one point.
+- The source values are sent as a table named `sweepme_list` to the instrument, in chunks of 50
+  values.
+
+---
+
+### Communication commands:
+
+The driver offers its instrument commands for scripts and Instrument Control. They act on the channel of the driver
+instance, as selected with **Channel** and **TSP-Link node**; the timer, digital I/O and buffer commands take the
+timer number, the line or the buffer name as argument. Among them: `get_identification`, `set_output`,
+`set_source_level_voltage`, `set_source_level_current`, `set_current_limit`, `set_voltage_limit`, the range,
+NPLC, sensing and filter setters, `get_voltage_and_current`, the error queue commands, and the commands of the list
+sweep: `create_list_table`, `append_list_values`, `set_trigger_source_list_voltage` / `..._current`, the trigger
+model and timer setters, `set_digio_trigger_*`, `initiate_trigger`, `get_buffer_count`, `abort_sweep` and
+`read_list_buffers`. The pulse factory scripts (`ConfigPulse...`, `InitiatePulseTest...`) are sent by the pulse
+mode only and are not offered as commands.
+
+The parameters of these commands are named after their quantity, e.g. `set_source_level_voltage(voltage)`,
+`set_output(output)` or `set_current_limit(current_limit)`. Earlier versions used names such as `value`, `state`
+or `limit`: scripts that pass those names as keywords must use the new names, positional calls are unchanged.
 
 ---
 
