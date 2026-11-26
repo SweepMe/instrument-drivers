@@ -167,6 +167,9 @@ class Device(EmptyDevice):
         self.last_applied_value: float | None = None
         """KXCI only: the set value of the last DV/DI, to re-send it in 'start' when SweepMe! skips 'apply'."""
 
+        self.kxci_current_range_index: int = 0
+        """KXCI only: index of the fixed current range, used for RI and as the DI source range. 0 means auto."""
+
         # Pulse Mode Parameters
         self.pulse_master = False
         self.pulse_mode: bool = False
@@ -566,6 +569,7 @@ class Device(EmptyDevice):
                 self.set_speed_mode(self.speed)
 
             # Current Range - the KXCI implementation has not been tested yet
+            self.kxci_current_range_index = 0
             current_range_float = self.current_ranges[self.current_range]
             if "limited" in self.current_range.lower():
                 self.set_current_range_limited(self.card_name[-1], current_range_float)
@@ -575,7 +579,8 @@ class Device(EmptyDevice):
                 self.set_current_range_limited(self.card_name[-1], 0)
 
             else:
-                self.set_current_range(self.card_name[-1], current_range_float, self.protection)
+                self.kxci_current_range_index = self.get_kxci_current_range_index(self.current_range)
+                self.set_current_range(self.card_name[-1], self.kxci_current_range_index, self.protection)
 
     def configure_lptlib(self) -> None:
         """Configure the device using lptlib commands."""
@@ -691,10 +696,11 @@ class Device(EmptyDevice):
                 self.lpt.forcei(self.card_id, self.value)
 
         elif self.command_set == "US":
-            # These ranges are the source ranges, not the compliance or measurement ranges. Currently, only auto range
-            # is supported for the US command set.
+            # These ranges are the source ranges, not the compliance or measurement ranges. The voltage is always
+            # sourced with auto range. A current source uses the fixed current range, because with auto range it drops
+            # to its lowest range at 0 A and the next step reads mid-transient while it ranges up again.
             voltage_source_range = 0  # auto
-            current_source_range = 0  # auto
+            current_source_range = self.kxci_current_range_index  # 0 = auto, unless a fixed range is selected
 
             if self.source == "Voltage in V":
                 self.set_voltage(self.card_name[-1], voltage_source_range, self.value, float(self.protection))
@@ -985,29 +991,37 @@ class Device(EmptyDevice):
             self.port.write(f"RS {int(resolution)}")
         return self.read_tcpip_port()
 
-    def set_current_range(self, channel: str, current_range: float, compliance: float) -> str:
+    @staticmethod
+    def get_kxci_current_range_index(current_range: str) -> int:
+        """Return the KXCI index of a fixed current range such as 'Fixed 100 µA', or 0 (auto) if KXCI has none.
+
+        The index is looked up by the range name, because the range values are computed floats: 100 * 10 ** -6 is
+        9.999999999999999e-05 and never equals the 1e-4 of a float-keyed table.
+        """
+        current_range_index = {
+            "100 mA": 9,
+            "10 mA": 8,
+            "1 mA": 7,
+            "100 µA": 6,
+            "10 µA": 5,
+            "1 µA": 4,
+            "100 nA": 3,
+        }
+        range_name = current_range.removeprefix("Fixed").strip()
+        if range_name in current_range_index:
+            return current_range_index[range_name]
+
+        debug(f"Warning: Current range {current_range} not supported via KXCI. Using autorange instead.")
+        return 0
+
+    def set_current_range(self, channel: str, current_range_index: int, compliance: float) -> str:
         """Set the current range of the device. Requires to set the compliance as well.
 
         When the SMU channel is used as a voltage source, the compliance is overwritten when setting the set value.
         In US mode, the current range must be set as an index instead of the actual value.
         """
-        current_range_index = {
-            0.1: 9,  # 100 mA
-            0.01: 8,  # 10 mA
-            0.001: 7,  # 1 mA
-            0.0001: 6,  # 100 uA
-            0.00001: 5,  # 10 uA
-            0.000001: 4,  # 1 uA
-            0.0000001: 3,  # 100 nA
-        }
-        if current_range in current_range_index:
-            current_range = current_range_index[current_range]
-        else:
-            debug(f"Warning: Current range {current_range} A not supported. Using autorange instead.")
-            current_range = 0
-
         if self.command_set == "US":
-            self.port.write(f"RI {channel}, {current_range}, {compliance}")
+            self.port.write(f"RI {channel}, {current_range_index}, {compliance}")
         return self.read_tcpip_port()
 
     def set_current_range_limited(self, channel: str, current: float) -> str:
