@@ -42,6 +42,15 @@ import importlib
 
 importlib.reload(sentio)
 
+# The SiPh positioners lifted to separation height before the chuck moves to the next die.
+SIPH_POSITIONERS = ("West", "East")
+
+# Error codes (SENTIO Remote Commands REV2.1 and REV3.0) that say a station does not know a siph command or
+# positioner: 3 CommandHandlerNotFound, 4 InvalidCommand, 6 InvalidParameter, 13 NotSupported.
+# SENTIO has no command that tells whether the SiPh option is installed, so the first move finds it out.
+# A SiPh failure such as 301 SiPhMoveSeparationFail is not among them: the fiber may still be down.
+SIPH_NOT_AVAILABLE_CODES = (3, 4, 6, 13)
+
 
 class Device(EmptyDevice):
     description = """
@@ -75,10 +84,15 @@ class Device(EmptyDevice):
             "TCPIP_EOLwrite": "\n",
         }
 
+        self.siph_mode = "Auto"
+        # per SiPh positioner: None = not tried yet, True = moved, False = not available at this station
+        self.siph_available = {}
+
     def set_GUIparameter(self):
         gui_parameter = {
             "Light at contact": ["As is", "On", "Off"],
             "Light at separation": ["As is", "On", "Off"],
+            "SiPh positioners": ["Auto", "Off"],
             "": None,
             "End position": ['None', 'Home', 'Center']
         }
@@ -89,6 +103,8 @@ class Device(EmptyDevice):
         self.port_string = parameter["Port"]
         self.is_light_contact = parameter["Light at contact"]
         self.is_light_separation = parameter["Light at separation"]
+        # sequences saved before this field existed keep the former behavior
+        self.siph_mode = parameter.get("SiPh positioners", "Auto")
         self.end_position = parameter["End position"]
 
         if not (self.port_string.startswith("TCPIP") or self.port_string.startswith("GPIB")):
@@ -185,6 +201,9 @@ class Device(EmptyDevice):
 
     def configure(self):
 
+        # a station can be changed between runs, so the SiPh positioners are found again in each run
+        self.siph_available = dict.fromkeys(SIPH_POSITIONERS)
+
         self.prober.move_chuck_separation()
 
         if self.is_light_contact == "On":
@@ -214,9 +233,8 @@ class Device(EmptyDevice):
             self.subsite_index = None
         else:
             self.subsite_index = int(self.sweepvalues["Subsite"])
-        
-        self.prober.siph_move_separation("West")
-        self.prober.siph_move_separation("East")
+
+        self._move_siph_separation()
         self.prober.move_chuck_separation()
 
         # moving to new die and subsite
@@ -231,3 +249,33 @@ class Device(EmptyDevice):
             subsite_index = self.subsite_index
 
         return [self.die_index, self.die_x, self.die_y, subsite_index]
+
+    def _move_siph_separation(self) -> None:
+        """Lift the SiPh positioners to separation height, if the station has them.
+
+        Stations without the Silicon Photonics option do not know the siph commands. Whether a positioner is
+        available is found out by its first move in a run: an answer saying that the command or positioner does
+        not exist marks it as not available, and it is skipped from then on. Any other error, or any error after a
+        positioner has moved once, is raised, as the chuck must not move while a fiber might still be down.
+        """
+        if self.siph_mode == "Off":
+            return
+
+        for positioner in SIPH_POSITIONERS:
+            available = self.siph_available.get(positioner)
+            if available is False:
+                continue
+            try:
+                self.prober.siph_move_separation(positioner)
+            except sentio.SentioError as error:
+                if available is None and error.code in SIPH_NOT_AVAILABLE_CODES:
+                    self.siph_available[positioner] = False
+                    debug(f"MPI SENTIO: no SiPh positioner '{positioner}' at this station, "
+                          f"its moves are skipped ({error})")
+                    continue
+                if available is None:
+                    msg = (f"{error} - the first move of SiPh positioner '{positioner}' failed. If this station has "
+                           f"no SiPh positioners, set 'SiPh positioners' to 'Off'.")
+                    raise sentio.SentioError(error.code, msg) from error
+                raise
+            self.siph_available[positioner] = True
