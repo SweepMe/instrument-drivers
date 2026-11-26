@@ -32,8 +32,10 @@
 from __future__ import annotations
 
 import contextlib
+import re
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from pysweepme import FolderManager
@@ -55,29 +57,29 @@ from ProxyClass import Proxy
 # Debug a warning when a KXCI reading reports that the SMU channel is in compliance (status letter "C")
 WARN_ON_COMPLIANCE = True
 
+# KXCI list sweeps (system mode, commands VL/IL): limits from the KXCI manual
+KXCI_MAX_LIST_POINTS = 4096
+KXCI_MAX_SWEEP_DELAY = 6.553  # s, command DT
+KXCI_MAX_LIST_FUNCTIONS = 6  # number of names the LI command accepts
+KXCI_LIST_POLL_INTERVAL = 0.2  # s between two checks whether the list sweep finished
+KXCI_OVERFLOW_VALUE = 1e37  # readings above, like 99.09999E+36, mark an overflow or a value not measured
+
+
+def format_kxci_number(value: float) -> str:
+    """Format a number for a KXCI command, which accepts at most 12 characters per value."""
+    return f"{float(value):.6g}"
+
+
+def parse_kxci_number(reading: str) -> float:
+    """Convert a KXCI reading like 'N+1.2345E-03' (status letter, then the value) to a float; overflow becomes NaN."""
+    value = float(reading.strip().lstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZ").replace(" ", ""))
+    if abs(value) > KXCI_OVERFLOW_VALUE:
+        return float("nan")
+    return value
+
 
 class Device(EmptyDevice):
     """Keithley 4200-SCS driver."""
-
-    description = """
-        <h3>Keithley 4200-SCS</h3>
-
-        <h4>Setup</h4>
-        This driver can be used in three different ways:
-        <ul>
-        <li>Using the KXCI software running on the device and a GPIB connection.</li>
-        <li>Using the LPTlib server application running on the device and a TCP/IP connection.</li>
-        <li>Running SweepMe! directly on the device.</li>
-        </ul>
-        <p>Please note that for the KXCI mode, some features like Pulse Mode, List Mode, and fast acquisition are not
-        supported yet.</p>
-
-        <h4>Parameters</h4>
-        <ul>
-        <li>Current range: Limited: Sets the lowest current range of the SMU to be used when measuring with auto range
-        to save time. Current range denotes the measurement range. The source range is set to 'auto' by default.</li>
-        </ul>
-        """
 
     def __init__(self) -> None:
         """Initialize device parameters."""
@@ -316,9 +318,10 @@ class Device(EmptyDevice):
             # then, "SweepValue" is not defined during set_GUIparameter
             sweep_value = None
 
-        if sweep_value == "List sweep":
-            self.list_master = True
-            self.list_receiver = False
+        # Reset the flags, so that a channel switched back from 'List sweep' is no longer the list master
+        self.list_master = sweep_value == "List sweep"
+        self.list_receiver = False
+        if self.list_master:
             self.handle_list_sweep_parameter(parameters)
 
         # The list keys must be updated with the channel name
@@ -428,10 +431,6 @@ class Device(EmptyDevice):
             if self.pulse_mode:
                 msg = "Pulse mode is not supported with US command set via GPIB. Use control via 'LPTlib' instead."
                 raise Exception(msg)
-
-            if self.list_master:
-                msg = "List sweep is not supported with US command set via GPIB. Use control via 'LPTlib' instead."
-                raise Exception(msg)
         else:
             self.command_set = "LPTlib"  # "US" user mode, "LPTlib", # check manual p. 677/1510
             self.connect_to_lptlib_server()
@@ -442,6 +441,7 @@ class Device(EmptyDevice):
         self.check_test_parameter()
 
         if self.identifier not in self.device_communication:
+            installed_smus: list[str] = []
             if self.command_set == "LPTlib":
                 if self.pulse_mode:
                     self.lpt.dev_abort()  # stops executed pulses
@@ -450,7 +450,7 @@ class Device(EmptyDevice):
                 # calls devclr, clrcon (only for switching matrix), clrtrg, clrscn, kibdefint
 
             elif self.command_set == "US":
-                self.get_options()  # TODO use
+                installed_smus = self.get_installed_smu_channels()
 
                 self.clear_buffer()
                 self.set_to_4200()
@@ -460,9 +460,13 @@ class Device(EmptyDevice):
 
             self.device_communication[self.identifier] = {}  # dictionary that can be filled with further information
 
-        # If this channel should run the list sweep, register it as 'List master'
-        # Checking if the list receiver should be used will be done in 'configure' after all channels are initialized
-        if self.list_master:
+            if self.command_set == "US":
+                # A KXCI list sweep switches off every installed SMU that does not take part in it
+                self.device_communication[self.identifier]["Installed SMUs"] = installed_smus
+
+        # If this channel should run the list sweep, register it as 'List master'. Via KXCI, this is done per branch in
+        # 'configure' instead. Checking if the list receiver should be used will be done in 'trigger_ready'.
+        if self.list_master and self.command_set == "LPTlib":
             if "List master" in self.device_communication[self.identifier]:
                 msg = "Please use only one channel for list sweep."
                 raise Exception(msg)
@@ -547,40 +551,76 @@ class Device(EmptyDevice):
             self.configure_lptlib()
 
         elif self.command_set == "US":
-            self.setvalue_is_fresh = False
-            self.last_applied_value = None
+            self.configure_kxci()
 
-            # Integration/Speed
-            if self.speed == "Very fast":
-                msg = (
-                    "Speed of 'Very Fast' is not supported for US command set via GPIB/TCPIP. "
-                    "Use control via 'LPTlib' or custom speed instead."
-                )
-                raise ValueError(msg)
+    def configure_kxci(self) -> None:
+        """Configure the device using KXCI commands (user mode, US)."""
+        self.setvalue_is_fresh = False
+        self.last_applied_value = None
 
-            if self.speed == "Custom":
-                self.set_speed_mode(
-                    self.speed,
-                    float(self.delay_factor),
-                    float(self.filter_factor),
-                    float(self.ad_aperture_time),
-                )
-            else:
-                self.set_speed_mode(self.speed)
+        # Integration/Speed
+        if self.speed == "Very fast":
+            msg = (
+                "Speed of 'Very Fast' is not supported for US command set via GPIB/TCPIP. "
+                "Use control via 'LPTlib' or custom speed instead."
+            )
+            raise ValueError(msg)
 
-            # Current Range - the KXCI implementation has not been tested yet
-            self.kxci_current_range_index = 0
-            current_range_float = self.current_ranges[self.current_range]
-            if "limited" in self.current_range.lower():
-                self.set_current_range_limited(self.card_name[-1], current_range_float)
+        if self.speed == "Custom":
+            self.set_speed_mode(
+                self.speed,
+                float(self.delay_factor),
+                float(self.filter_factor),
+                float(self.ad_aperture_time),
+            )
+        else:
+            self.set_speed_mode(self.speed)
 
-            elif "auto" in self.current_range.lower():
-                # Use the lowest current range for auto-ranging
-                self.set_current_range_limited(self.card_name[-1], 0)
+        # Current Range - the KXCI implementation has not been tested yet
+        self.kxci_current_range_index = 0
+        current_range_float = self.current_ranges[self.current_range]
+        if "limited" in self.current_range.lower():
+            self.set_current_range_limited(self.card_name[-1], current_range_float)
 
-            else:
-                self.kxci_current_range_index = self.get_kxci_current_range_index(self.current_range)
-                self.set_current_range(self.card_name[-1], self.kxci_current_range_index, self.protection)
+        elif "auto" in self.current_range.lower():
+            # Use the lowest current range for auto-ranging
+            self.set_current_range_limited(self.card_name[-1], 0)
+
+        else:
+            self.kxci_current_range_index = self.get_kxci_current_range_index(self.current_range)
+            self.set_current_range(self.card_name[-1], self.kxci_current_range_index, self.protection)
+
+        # A list sweep in a previous branch left KXCI in system mode, where DV/DI/TV/TI are not valid
+        self.set_command_mode("US")
+        self.list_receiver = False
+
+        if self.list_master:
+            self.configure_kxci_list_sweep()
+
+    def configure_kxci_list_sweep(self) -> None:
+        """Check the list sweep parameters for KXCI and register this channel as list master for this branch.
+
+        The other channels of the instrument find out in 'start' whether they take part in the list sweep as receivers.
+        The master is registered per branch, so that the channels of another branch run in user mode again.
+        """
+        if self.list_delay_list:
+            msg = (
+                "A list of delay times is not supported via KXCI, which uses one delay time for all points. "
+                "Enter a single value or use control via 'LPTlib'."
+            )
+            raise ValueError(msg)
+
+        if not 0.0 <= self.list_delay_single <= KXCI_MAX_SWEEP_DELAY:
+            msg = f"The list sweep delay time must be between 0 and {KXCI_MAX_SWEEP_DELAY} s via KXCI."
+            raise ValueError(msg)
+
+        communication = self.device_communication[self.identifier]
+        if "List master" in communication:
+            msg = "Please use only one channel for list sweep."
+            raise Exception(msg)
+
+        communication["List master"] = self.channel
+        communication["List receivers"] = {}
 
     def configure_lptlib(self) -> None:
         """Configure the device using lptlib commands."""
@@ -644,8 +684,9 @@ class Device(EmptyDevice):
     def start(self) -> None:
         """Preparation before applying a new value."""
         if self.list_master:
-            # Clear the result arrays
-            self.lpt.clrscn()
+            if self.command_set == "LPTlib":
+                # Clear the result arrays
+                self.lpt.clrscn()
 
             # Update list length in case variable lists are used (e.g. by using ParameterSyntax of SweepMe)
             list_length = len(self.list_sweep_values)
@@ -653,17 +694,32 @@ class Device(EmptyDevice):
                 msg = "List for List Sweep is empty."
                 raise ValueError(msg)
 
+            if self.command_set == "US" and list_length > KXCI_MAX_LIST_POINTS:
+                msg = f"A list sweep via KXCI can have at most {KXCI_MAX_LIST_POINTS} points, not {list_length}."
+                raise ValueError(msg)
+
             self.device_communication[self.identifier]["List length"] = list_length
 
-        elif (
-            self.command_set == "US"
-            and not self.pulse_mode
-            and not self.setvalue_is_fresh
-            and float(self.value) == self.last_applied_value
-        ):
-            # SweepMe! calls 'apply' only if the set value changed. For a repeated value, re-send DV/DI here, before
-            # the hold time, so the reading in 'call' needs no DV/DI right before it and the hold time stays effective.
-            self.apply()
+        elif self.command_set == "US" and not self.pulse_mode:
+            communication = self.device_communication[self.identifier]
+            self.list_receiver = "List master" in communication
+
+            if self.list_receiver:
+                # Another channel runs a list sweep in this branch: this channel takes part as a constant source,
+                # which the list master defines in 'measure'. It is registered at every point, because SweepMe! calls
+                # 'apply' only if the set value changed.
+                communication["List receivers"][self.card_name[-1]] = {
+                    "source": self.source,
+                    "value": float(self.value),
+                    "compliance": float(self.protection),
+                    "source_range": self.get_kxci_fixed_source_range(),
+                }
+
+            elif not self.setvalue_is_fresh and float(self.value) == self.last_applied_value:
+                # SweepMe! calls 'apply' only if the set value changed. For a repeated value, re-send DV/DI here,
+                # before the hold time, so the reading in 'call' needs no DV/DI right before it and the hold time stays
+                # effective.
+                self.apply()
 
     def unconfigure(self) -> None:
         """Unconfigure the device. This function is called when the procedure leaves a branch of the sequencer."""
@@ -671,7 +727,12 @@ class Device(EmptyDevice):
             del self.device_communication[self.identifier]["Pulse master"]
 
         if self.list_master:
-            self.lpt.reset_measurement_cache()
+            if self.command_set == "LPTlib":
+                self.lpt.reset_measurement_cache()
+            else:
+                communication = self.device_communication.get(self.identifier, {})
+                for key in ("List master", "List receivers", "List length", "List names"):
+                    communication.pop(key, None)
 
     def poweroff(self) -> None:
         """Turn off the device."""
@@ -680,11 +741,17 @@ class Device(EmptyDevice):
         elif self.command_set == "LPTlib":
             self.lpt.forcev(self.card_id, 0.0)
         elif self.command_set == "US":
+            # After a list sweep, KXCI is in system mode, where the user mode command DV is not valid
+            self.set_command_mode("US")
             self.switch_off(self.card_name[-1])
 
     def apply(self) -> None:
         """'apply' is used to set the new setvalue that is always available as 'self.value'."""
         if self.pulse_mode:
+            return
+
+        if self.command_set == "US" and (self.list_master or self.list_receiver):
+            # Via KXCI, the list master defines the sources of all channels and runs the whole sweep in 'measure'
             return
 
         self.value = float(self.value)
@@ -729,7 +796,10 @@ class Device(EmptyDevice):
             # needed otherwise no voltage is applied
             self.lpt.pulse_output(self.card_id, self.pulse_channel, out_state=1)
 
-        # Register result arrays for list mode
+        # Register result arrays for list mode. Via KXCI, the list master reads the results in 'call' instead.
+        if self.command_set != "LPTlib":
+            return
+
         if self.list_master:
             self.configure_list_sweep(len(self.list_sweep_values))
         elif "List master" in self.device_communication[self.identifier]:
@@ -758,7 +828,10 @@ class Device(EmptyDevice):
             # TODO: only the master driver instance needs to execute
             self.lpt.pulse_exec(mode=self.param.PULSE_MODE_SIMPLE)  # Alternatively self.param.PULSE_MODE_ADVANCED
 
-        if self.list_master:
+        if self.list_master and self.command_set == "US":
+            self.run_kxci_list_sweep()
+
+        elif self.list_master:
             # Set the array of individual delay time
             if self.list_delay_list:
                 if len(self.list_delay_list) != len(self.list_sweep_values):
@@ -777,7 +850,10 @@ class Device(EmptyDevice):
                 self.lpt.asweepi(self.card_id, self.list_sweep_values, self.list_delay_single)
 
     def request_result(self) -> None:
-        """Wait for pulse measurements to finish."""
+        """Wait for pulse measurements or a KXCI list sweep to finish."""
+        if self.list_master and self.command_set == "US":
+            self.wait_for_kxci_list_sweep()
+
         if self.pulse_mode and self.pulse_master:
             timeout = 30.0
             while not self.is_run_stopped():
@@ -811,6 +887,9 @@ class Device(EmptyDevice):
 
     def call(self) -> list:
         """'call' is a mandatory function that must be used to return as many values as defined in self.variables."""
+        if (self.list_master or self.list_receiver) and self.command_set == "US":
+            return self.read_kxci_list_sweep()
+
         if self.list_master or self.list_receiver:
             # Read out the registered lists of measured values
             voltage = self.lpt.read_measurement(self.list_measurement_keys["voltage"])
@@ -862,6 +941,128 @@ class Device(EmptyDevice):
             """
 
         return [self.measured_voltage, self.measured_current]
+
+    """ here, the KXCI list sweep is assembled from the wrapped commands """
+
+    def run_kxci_list_sweep(self) -> None:
+        """Define the list sweep and all other channels of the instrument in KXCI system mode and start it.
+
+        The list master sweeps (VL/IL); every channel that registered as receiver in 'start' becomes a constant source
+        (VC/IC); every other installed SMU is switched off, because in system mode all SMUs take part in a test.
+        """
+        communication = self.device_communication[self.identifier]
+        receivers: dict[str, dict[str, Any]] = communication.get("List receivers", {})
+        master = self.card_name[-1]
+
+        channels: dict[str, dict[str, Any]] = {
+            master: {
+                "source": self.source,
+                "compliance": float(self.protection),
+                "source_range": self.get_kxci_fixed_source_range(),
+            },
+            **receivers,
+        }
+
+        # Channel definition page: source mode 1 = voltage, 2 = current; source function 1 = VAR1, 3 = constant
+        self.set_kxci_page("DE")
+        for channel, setup in channels.items():
+            source_mode = 1 if setup["source"] == "Voltage in V" else 2
+            source_function = 1 if channel == master else 3
+            self.define_kxci_channel(channel, f"V{channel}", f"I{channel}", source_mode, source_function)
+
+        for channel in communication.get("Installed SMUs", []):
+            if channel not in channels:
+                self.switch_off_kxci_channel(channel)
+
+        for channel, setup in channels.items():
+            self.set_kxci_source_range(channel, setup["source_range"])
+
+        # Source setup page
+        self.set_kxci_page("SS")
+        self.set_kxci_list_sweep(master, self.source, float(self.protection), self.list_sweep_values)
+        for channel, setup in receivers.items():
+            self.set_kxci_constant_source(channel, setup["source"], setup["value"], setup["compliance"])
+        self.set_kxci_sweep_delay(self.list_delay_single)
+        self.set_kxci_sweep_hold_time(0.0)  # SweepMe!'s hold time already ran before 'measure'
+
+        # Measurement setup page: list display mode and the measured functions. LI accepts at most 6 names, so the
+        # measured quantities come first; a sourced quantity that does not fit is returned as its set value.
+        measured_names = []
+        sourced_names = []
+        for channel, setup in channels.items():
+            if setup["source"] == "Voltage in V":
+                measured_names.append(f"I{channel}")
+                sourced_names.append(f"V{channel}")
+            else:
+                measured_names.append(f"V{channel}")
+                sourced_names.append(f"I{channel}")
+        list_names = (measured_names + sourced_names)[:KXCI_MAX_LIST_FUNCTIONS]
+        communication["List names"] = list_names
+
+        self.set_kxci_page("SM")
+        self.set_kxci_display_mode(2)
+        self.set_kxci_list_functions(list_names)
+
+        # Measurement control page
+        self.set_kxci_page("MD")
+        self.start_kxci_test()
+
+    def wait_for_kxci_list_sweep(self) -> None:
+        """Wait until the last point of the list sweep has a timestamp, as KXCI offers no service request via TCPIP."""
+        list_length = len(self.list_sweep_values)
+        timestamp_name = self.get_kxci_measured_name() + "T"
+
+        # Generous upper limit: delay plus up to 1 s for integration and ranging per point
+        timeout = 30.0 + list_length * (self.list_delay_single + 1.0)
+        start_time = time.time()
+
+        while not self.is_run_stopped():
+            if self.get_kxci_realtime_reading(timestamp_name, list_length) != 0.0:
+                return
+
+            if time.time() - start_time > timeout:
+                self.abort_kxci_test()
+                msg = f"The KXCI list sweep of {list_length} points did not finish within {timeout:.0f} s."
+                raise TimeoutError(msg)
+
+            time.sleep(KXCI_LIST_POLL_INTERVAL)
+
+        self.abort_kxci_test()
+
+    def read_kxci_list_sweep(self) -> list[list[float]]:
+        """Return the lists of voltage and current (and the timestamps for the master) of a KXCI list sweep."""
+        communication = self.device_communication[self.identifier]
+        list_names = communication.get("List names", [])
+        list_length = communication.get("List length", len(self.list_sweep_values))
+        channel = self.card_name[-1]
+
+        if self.list_master:
+            set_values = list(self.list_sweep_values)
+        else:
+            set_values = [communication["List receivers"][channel]["value"]] * list_length
+
+        voltage_name = f"V{channel}"
+        current_name = f"I{channel}"
+        voltage = self.get_kxci_readings(voltage_name) if voltage_name in list_names else set_values
+        current = self.get_kxci_readings(current_name) if current_name in list_names else set_values
+
+        if not self.list_master:
+            return [voltage, current]
+
+        time_stamps = self.get_kxci_readings(self.get_kxci_measured_name() + "T")
+        time_stamps_zeroed = [stamp - time_stamps[0] for stamp in time_stamps] if time_stamps else []
+        return [voltage, current, time_stamps, time_stamps_zeroed]
+
+    def get_kxci_measured_name(self) -> str:
+        """Return the KXCI name of the quantity this channel measures: the current of a voltage source and v.v."""
+        channel = self.card_name[-1]
+        return f"I{channel}" if self.source == "Voltage in V" else f"V{channel}"
+
+    def get_kxci_fixed_source_range(self) -> float:
+        """Return the fixed source range in A for a current source with a 'Fixed' range, else 0 (auto range)."""
+        if self.source == "Current in A" and self.current_range.startswith("Fixed"):
+            return float(self.current_ranges[self.current_range])
+        return 0.0
 
     """ here, convenience functions start """
 
@@ -1163,6 +1364,99 @@ class Device(EmptyDevice):
             if current > overflow_value:
                 current = float("nan")
         return current
+
+    def get_installed_smu_channels(self) -> list[str]:
+        """Return the channel numbers of the installed SMUs from *OPT?, e.g. ['1', '2'] for 'SMU1,HPSMUPA2,CVU1'."""
+        options = self.get_options()
+        channels = []
+        for slot in options.split(","):
+            match = re.fullmatch(r"(?:HP)?SMU(?:PA)?(\d)", slot.strip())
+            if match:
+                channels.append(match.group(1))
+        return channels
+
+    def set_kxci_page(self, page: str) -> None:
+        """Select a page of the KXCI system mode: DE (channels), SS (sources), SM (measurement), MD (control)."""
+        self.port.write(page)
+        self.read_tcpip_port()
+
+    def define_kxci_channel(
+        self,
+        channel: str,
+        voltage_name: str,
+        current_name: str,
+        source_mode: int,
+        source_function: int,
+    ) -> None:
+        """Define a SMU channel on the DE page (CH).
+
+        Source mode: 1 voltage, 2 current, 3 common. Source function: 1 VAR1, 2 VAR2, 3 constant, 4 VAR1'.
+        """
+        self.port.write(f"CH{channel},'{voltage_name}','{current_name}',{source_mode},{source_function}")
+        self.read_tcpip_port()
+
+    def switch_off_kxci_channel(self, channel: str) -> None:
+        """Remove a SMU channel from the test on the DE page (CH without parameters)."""
+        self.port.write(f"CH{channel}")
+        self.read_tcpip_port()
+
+    def set_kxci_source_range(self, channel: str, source_range: float) -> None:
+        """Set a fixed source range in A on any system mode page (SR); 0 is auto range."""
+        self.port.write(f"SR {channel}, {format_kxci_number(source_range)}")
+        self.read_tcpip_port()
+
+    def set_kxci_list_sweep(self, channel: str, source: str, compliance: float, values: list[float]) -> None:
+        """Set up the list sweep of the master channel on the SS page (VL or IL, master mode 1)."""
+        command = "VL" if source == "Voltage in V" else "IL"
+        list_values = ",".join(format_kxci_number(value) for value in values)
+        self.port.write(f"{command}{channel},1,{format_kxci_number(compliance)},{list_values}")
+        self.read_tcpip_port()
+
+    def set_kxci_constant_source(self, channel: str, source: str, value: float, compliance: float) -> None:
+        """Set a channel to a constant voltage or current on the SS page (VC or IC)."""
+        command = "VC" if source == "Voltage in V" else "IC"
+        self.port.write(f"{command}{channel},{format_kxci_number(value)},{format_kxci_number(compliance)}")
+        self.read_tcpip_port()
+
+    def set_kxci_sweep_delay(self, delay: float) -> None:
+        """Set the delay in s between setting a sweep step and measuring it on the SS page (DT)."""
+        self.port.write(f"DT {format_kxci_number(delay)}")
+        self.read_tcpip_port()
+
+    def set_kxci_sweep_hold_time(self, hold_time: float) -> None:
+        """Set the hold time in s before the first sweep step on the SS page (HT)."""
+        self.port.write(f"HT {format_kxci_number(hold_time)}")
+        self.read_tcpip_port()
+
+    def set_kxci_display_mode(self, display_mode: int) -> None:
+        """Select the display mode on the SM page (DM): 1 graphics, 2 list."""
+        self.port.write(f"DM{display_mode}")
+        self.read_tcpip_port()
+
+    def set_kxci_list_functions(self, names: list[str]) -> None:
+        """Select the voltages and currents (by their CH names) that are measured in list display mode (LI)."""
+        self.port.write("LI " + ",".join(f"'{name}'" for name in names))
+        self.read_tcpip_port()
+
+    def start_kxci_test(self) -> None:
+        """Run a single trigger test into the cleared buffer on the MD page (ME1)."""
+        self.port.write("ME1")
+        self.read_tcpip_port()
+
+    def abort_kxci_test(self) -> None:
+        """Abort a running test (ME4)."""
+        self.port.write("ME4")
+        self.read_tcpip_port()
+
+    def get_kxci_realtime_reading(self, name: str, index: int) -> float:
+        """Return reading 'index' (from 1) of the named function while a test runs (RD); 0 if not measured yet."""
+        answer = self.port.query(f"RD '{name}', {int(index)}")
+        return parse_kxci_number(answer)
+
+    def get_kxci_readings(self, name: str) -> list[float]:
+        """Return all readings of the named function after a test (DO). Append 'T' to the name for the timestamps."""
+        answer = self.port.query(f"DO '{name}'")
+        return [parse_kxci_number(reading) for reading in answer.split(",") if reading.strip()]
 
     def set_pulse_impedance(self, channel: str, impedance: str) -> str:
         """Set the pulse impedance of the device."""
