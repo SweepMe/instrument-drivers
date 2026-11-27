@@ -31,10 +31,13 @@ step = (end_voltage - start_voltage) / (points - 1) if points > 1 else 0.0
 voltages = [start_voltage + i * step for i in range(points)]
 
 # Configure the channel
-smu.set_current_limit(0.02)   # 20 mA compliance, in amperes (SweepMe! convention)
+smu.set_current_limit(0.02)  # 20 mA compliance, in amperes (SweepMe! convention)
 smu.set_oversample_rate(25)
 
-smu.enable_output()
+# Enable the output at 0 V - the DAC keeps the last voltage it was set to,
+# which would otherwise appear at the terminals the moment the output is enabled
+smu.set_voltage(0.0)
+smu.set_output(True)
 try:
     print(f"\n{'Voltage (V)':>12}  {'Current (A)':>14}")
     print("-" * 28)
@@ -42,4 +45,4 @@ try:
         measured_v, measured_i = smu.set_voltage_and_measure(v)
         print(f"{measured_v:12.6f}  {measured_i:14.9f}")
 finally:
-    smu.disable_output()
+    smu.set_output(False)

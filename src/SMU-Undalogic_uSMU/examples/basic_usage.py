@@ -25,10 +25,14 @@ print(f"Connected to: {identity}")
 smu.set_current_limit(0.02)  # 20 mA, in amperes (SweepMe! convention)
 smu.set_oversample_rate(25)
 
-# Enable output and apply a voltage
-smu.enable_output()
+# Enable the output at 0 V - the DAC keeps the last voltage it was set to,
+# which would otherwise appear at the terminals the moment the output is enabled
+smu.set_voltage(0.0)
+smu.set_output(True)
+
+# Apply a voltage and measure
 voltage, current = smu.set_voltage_and_measure(1.0)
 print(f"V = {voltage:.6f} V, I = {current:.9f} A")
 
 # Disable output
-smu.disable_output()
+smu.set_output(False)

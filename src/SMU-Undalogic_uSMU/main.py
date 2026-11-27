@@ -30,11 +30,18 @@
 # * Module: SMU
 # * Instrument: Undalogic uSMU
 
+"""Driver for the Undalogic uSMU, a single-channel USB source measure unit."""
+
 from __future__ import annotations
 
 import time
+from typing import Annotated, Any
 
+from pysweepme.commands import Range, Unit, command
 from pysweepme.EmptyDeviceClass import EmptyDevice
+
+Volts = Annotated[float, Unit("V")]
+Amperes = Annotated[float, Unit("A")]
 
 
 class Device(EmptyDevice):
@@ -42,8 +49,12 @@ class Device(EmptyDevice):
 
     The uSMU is a compact USB-connected SMU for force-voltage / measure-current
     operation. It supports software-driven I-V sweeps via the standard SweepMe!
-    SweepEditor, adjustable oversampling, current-limiting, and manual current
-    range locking.
+    SweepEditor, adjustable oversampling and a current limit.
+
+    The device is single channel: every command addresses CH1, so the channel is
+    not an argument. Its firmware has no query commands for the values that are
+    set, so the driver declares setters without read-backs; the only reader of
+    the source is set_voltage_and_measure, which measures what the output does.
     """
 
     # Command processing delay (seconds) inserted after every write. The uSMU
@@ -52,30 +63,40 @@ class Device(EmptyDevice):
     DEFAULT_COMMAND_DELAY_S = 0.05
 
     def __init__(self) -> None:
+        """Set the return values, the port and the driver's own state."""
         super().__init__()
 
-        self.shortname = "uSMU"
+        self.shortname: str = "uSMU"
 
-        self.variables = ["Voltage", "Current"]
-        self.units = ["V", "A"]
-        self.plottype = [True, True]
-        self.savetype = [True, True]
+        self.variables: list[str] = ["Voltage", "Current"]
+        self.units: list[str] = ["V", "A"]
+        self.plottype: list[bool] = [True, True]
+        self.savetype: list[bool] = [True, True]
 
-        self.port_manager = True
-        self.port_types = ["COM"]
-        self.port_properties = {
-            "timeout": 1,
+        self.port_manager: bool = True
+        self.port_types: list[str] = ["COM"]
+        # The read timeout has to cover the slowest measurement the driver allows.
+        # A measurement takes about 17.6 ms per averaged sample (measured 2026-11-28:
+        # 0.41 s at an oversampling rate of 25, 0.86 s at 50, 1.76 s at 100, 3.56 s at
+        # 200), so the declared maximum of 255 needs about 4.5 s. The 1 s of the
+        # reference library was therefore too short above an oversampling rate of about
+        # 55, and had little margin even at the default of 25: the read returned an
+        # empty string while the answer was still on its way, the next command was
+        # written into it, and the device stopped answering until it was unplugged.
+        self.port_properties: dict[str, Any] = {
+            "timeout": 8,
             "baudrate": 9600,
             "EOL": "\n",
         }
 
-        # State
-        self.source: str = "Voltage in V"
-        self.compliance: float = 0.02  # 20 mA default compliance (in amperes)
-        self.oversampling: int = 25
-        self.port_string: str = ""
+        # Raw GUI selection, converted in configure() into the attributes below.
+        self.gui_parameters: dict[str, Any] = {}
 
-        # Staged sweep value written in apply(), consumed in measure()
+        self.source: str = "Voltage in V"
+        self.compliance: float = 0.02  # 20 mA default compliance, in amperes
+        self.oversampling: int = 25
+
+        # Staged sweep value, written in apply() and consumed in measure().
         self._pending_voltage: float = 0.0
 
         # Measurement buffer
@@ -86,108 +107,50 @@ class Device(EmptyDevice):
 
     # --- GUI interaction -------------------------------------------------------
 
-    def set_GUIparameter(self) -> dict:
-        """Define available GUI parameters for the SMU module.
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        """Return the GUI fields of the SMU module.
 
-        The uSMU only supports voltage sourcing, so "SweepMode" is restricted
-        to a single entry. Current compliance is expressed in amperes (the
-        SweepMe! convention) and converted to milliamps when sent to the
-        device.
+        The uSMU can only source voltage, so SweepMode offers a single entry. The
+        compliance is entered in amperes, the SweepMe! convention for SMU drivers.
         """
         return {
             "SweepMode": ["Voltage in V"],
-            "Compliance": self.compliance,
-            "Average": self.oversampling,
+            "Compliance": parameters.get("Compliance", 0.02),
+            "Average": parameters.get("Average", 25),
         }
 
-    def get_GUIparameter(self, parameter: dict = {}) -> None:
-        """Read and store user-selected GUI parameters."""
-        self.source = str(parameter.get("SweepMode", "Voltage in V"))
-        self.compliance = float(parameter.get("Compliance", 0.02))
-        self.oversampling = int(float(parameter.get("Average", 25)))
-
-        self.port_string = str(parameter.get("Port", ""))
-
-    # --- Communication layer ---------------------------------------------------
-
-    def _sanitize(self, text: str) -> str:
-        """Strip null bytes and surrounding whitespace from a response.
-
-        The uSMU firmware occasionally emits stray null bytes at the start of
-        a response line; the reference library strips them before parsing.
-        """
-        if text is None:
-            return ""
-        return text.replace("\x00", "").strip()
-
-    def _write(self, command: str) -> None:
-        """Send a command without reading a response.
-
-        Sleeps for ``command_delay_s`` after writing to give the device time
-        to process before the next command arrives.
-        """
-        self.port.write(command)
-        if self.command_delay_s > 0:
-            time.sleep(self.command_delay_s)
-
-    def _query(self, command: str) -> str:
-        """Send a command and read back a single response line."""
-        self._write(command)
-        return self._sanitize(self.port.read())
-
-    def _parse_measurement(self, response: str) -> tuple[float, float]:
-        """Parse a ``voltage,current`` response into a numeric tuple.
-
-        Shared by :meth:`measure` and :meth:`set_voltage_and_measure` so the
-        response format only has to be maintained in one place.
-        """
-        parts = response.split(",")
-        if len(parts) != 2:
-            msg = (
-                f"Unexpected measurement response format: {response!r}. "
-                f"Expected 'voltage,current'."
-            )
-            raise Exception(msg)
-
-        try:
-            return float(parts[0]), float(parts[1])
-        except ValueError as exc:
-            msg = f"Could not parse measurement response {response!r}: {exc}"
-            raise Exception(msg) from exc
-
-    def _validate_oversampling(self, value: int) -> None:
-        """Raise if ``value`` is outside the firmware-accepted OSR range."""
-        if not 1 <= value <= 255:
-            msg = "Oversampling (Average) must be between 1 and 255."
-            raise Exception(msg)
-
-    # --- Connection management -------------------------------------------------
-
-    def connect(self) -> None:
-        """Open the connection and verify the device identity.
-
-        The uSMU firmware may report itself as either "uSMU" or "nanoSMU"
-        depending on build variant, so both are accepted.
-        """
-        identity = self.get_identification()
-        identity_upper = identity.upper()
-        if "USMU" not in identity_upper and "NANOSMU" not in identity_upper:
-            msg = f"Unexpected device identity: {identity!r}"
-            raise Exception(msg)
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Keep the user's selection; it is converted in configure()."""
+        self.gui_parameters = parameters
 
     # --- Standard semantic functions -------------------------------------------
 
-    def initialize(self) -> None:
-        """Configure the uSMU for the selected operating mode."""
+    def connect(self) -> None:
+        """Verify the device identity on the open port.
+
+        The uSMU firmware reports itself as either "uSMU" or "nanoSMU" depending
+        on the build variant, so both are accepted.
+        """
+        identity = self.get_identification()
+        if "USMU" not in identity.upper() and "NANOSMU" not in identity.upper():
+            msg = (
+                f"The instrument on this port answered {identity!r}, which is not an "
+                f"Undalogic uSMU. Please check the selected port."
+            )
+            raise ValueError(msg)
+
+    def configure(self) -> None:
+        """Convert the GUI selection and set the instrument up for the run."""
+        parameters = self.gui_parameters
+
+        self.source = str(parameters.get("SweepMode", "Voltage in V"))
+        self.compliance = float(parameters.get("Compliance", 0.02))
+        self.oversampling = int(float(parameters.get("Average", 25)))
+
+        # Out-of-range entries are refused by the declared ranges of the commands,
+        # with a message naming the bound.
         self.set_oversample_rate(self.oversampling)
         self.set_current_limit(self.compliance)
-
-    def deinitialize(self) -> None:
-        """Return the uSMU to a safe state.
-
-        SweepMe! calls ``poweroff()`` before ``deinitialize()``, so the output
-        is already disabled here. No additional teardown is needed.
-        """
 
     def poweron(self) -> None:
         """Enable the output at a defined 0 V level.
@@ -200,125 +163,135 @@ class Device(EmptyDevice):
         the same state regardless of what ran before.
         """
         self.set_voltage(0.0)
-        self.enable_output()
+        self.set_output(True)
 
     def poweroff(self) -> None:
-        """Disable the output (high impedance)."""
-        self.disable_output()
+        """Disable the output, which leaves it high-impedance."""
+        self.set_output(False)
 
     def apply(self) -> None:
         """Stage the requested sweep value.
 
-        The uSMU's atomic ``CH1:MEA:VOL`` command both sets the voltage and
-        returns the measurement, so the actual transfer happens in
-        ``measure()``. We simply cache the value here.
+        The atomic CH1:MEA:VOL command both applies the voltage and returns the
+        measurement, so the transfer happens in measure().
         """
         self._pending_voltage = float(self.value)
 
     def measure(self) -> None:
-        """Apply the staged voltage and record the measured V and I."""
-        voltage, current = self.set_voltage_and_measure(self._pending_voltage)
-        self._measured_voltage = voltage
-        self._measured_current = current
+        """Apply the staged voltage and keep the measured voltage and current."""
+        self._measured_voltage, self._measured_current = self.set_voltage_and_measure(
+            self._pending_voltage,
+        )
 
-    def call(self) -> list:
-        """Return the most recent (voltage, current) measurement."""
+    def call(self) -> list[float]:
+        """Return the most recent measurement, one value per variable."""
         return [self._measured_voltage, self._measured_current]
 
-    # --- Convenience wrapper functions -----------------------------------------
+    # --- Communication commands ------------------------------------------------
 
+    @command(returns=("identification",), reads="state")
     def get_identification(self) -> str:
-        """Query the device identification string.
-
-        Returns:
-            Device identification string from the ``*IDN?`` query.
-        """
+        """Return the identification string of the device."""
         return self._query("*IDN?")
 
-    def enable_output(self) -> None:
-        """Enable the uSMU output (CH1:ENA)."""
-        self._write("CH1:ENA")
+    @command
+    def set_output(self, output: bool) -> None:
+        """Switch the output on or off."""
+        self._write("CH1:ENA" if output else "CH1:DIS")
 
-    def disable_output(self) -> None:
-        """Disable the uSMU output (CH1:DIS)."""
-        self._write("CH1:DIS")
-
-    def set_voltage(self, voltage: float) -> None:
-        """Set the output voltage without triggering a measurement.
-
-        Args:
-            voltage: Voltage value in volts.
-        """
+    @command
+    def set_voltage(self, voltage: Volts) -> None:
+        """Set the output voltage without measuring."""
         self._write(f"CH1:VOL {voltage}")
 
-    def set_voltage_and_measure(self, voltage: float) -> tuple[float, float]:
-        """Set the voltage and atomically read back measured V and I.
-
-        Args:
-            voltage: Voltage value in volts.
-
-        Returns:
-            Tuple of (measured voltage in V, measured current in A).
-        """
+    # check_driver: ignore DC005 - CH1:MEA:VOL sets and measures in one atomic round-trip; a reader by design
+    @command(returns=("voltage", "current"))
+    def set_voltage_and_measure(self, voltage: Volts) -> tuple[Volts, Amperes]:
+        """Set the output voltage and return the measured voltage and current."""
         response = self._query(f"CH1:MEA:VOL {voltage}")
         return self._parse_measurement(response)
 
-    def set_current_limit(self, current_A: float) -> None:
-        """Set the source/sink current limit in amperes.
+    @command
+    def set_current_limit(self, current_limit: Amperes) -> None:
+        """Set the current limit of the source.
 
-        The uSMU firmware's ``CH1:CUR`` command expects milliamps, but the
-        SweepMe! convention across SMU drivers is to express currents in
-        amperes, so the conversion is done here.
-
-        Args:
-            current_A: Current limit in amperes (e.g. 0.02 for 20 mA).
+        The value is given in amperes, the SweepMe! convention; the firmware's
+        CH1:CUR command expects milliamps, so it is converted here.
         """
-        self._write(f"CH1:CUR {current_A * 1000.0}")
+        self._write(f"CH1:CUR {current_limit * 1000.0}")
 
-    def set_oversample_rate(self, oversample: int) -> None:
-        """Set the measurement oversampling rate.
-
-        Args:
-            oversample: Number of samples averaged per measurement (1-255).
-        """
-        self._validate_oversampling(oversample)
+    @command
+    def set_oversample_rate(self, oversample: Annotated[int, Range(1, 255)]) -> None:
+        """Set how many samples the device averages per measurement."""
         self._write(f"CH1:OSR {oversample}")
 
-    def set_dac(self, value: int) -> None:
-        """Write directly to the 16-bit voltage DAC.
-
-        Intended for calibration and diagnostics; normal use should prefer
-        :meth:`set_voltage`.
-        """
-        self._write(f"DAC {value}")
-
-    def set_current_limit_dac(self, value: int) -> None:
-        """Write directly to the 12-bit current-limit DAC.
-
-        Intended for calibration and diagnostics; normal use should prefer
-        :meth:`set_current_limit`.
-        """
-        self._write(f"ILIM {value}")
-
+    @command(returns=("adc_value",))
     def read_adc(self, adc_channel: int) -> int:
-        """Perform a differential ADC conversion.
+        """Return a differential ADC conversion between adjacent channels.
 
-        Reads a differential conversion between adjacent ADC channels
-        (e.g. ``0`` = channels 0+1, ``2`` = channels 2+3).
-
-        Args:
-            adc_channel: ADC channel index.
-
-        Returns:
-            Signed 16-bit ADC value.
+        Channel 0 reads the difference of channels 0 and 1, channel 2 that of
+        channels 2 and 3.
         """
         response = self._query(f"ADC {adc_channel}")
         try:
             return int(response)
         except ValueError as exc:
-            msg = f"Unexpected ADC response: {response!r}"
-            raise Exception(msg) from exc
+            msg = f"The device answered {response!r} to an ADC conversion, which is not a number."
+            raise ValueError(msg) from exc
 
+    @command
+    def set_dac(self, voltage_dac_code: int) -> None:
+        """Write the 16-bit voltage DAC directly, for calibration and diagnostics.
+
+        Normal use sets the output with set_voltage.
+        """
+        self._write(f"DAC {voltage_dac_code}")
+
+    @command
+    def set_current_limit_dac(self, current_limit_dac_code: int) -> None:
+        """Write the 12-bit current-limit DAC directly, for calibration and diagnostics.
+
+        Normal use sets the limit with set_current_limit.
+        """
+        self._write(f"ILIM {current_limit_dac_code}")
+
+    @command(
+        warnings=("The device no longer behaves as a source until calibration mode is left.",),
+    )
     def enable_voltage_calibration_mode(self) -> None:
-        """Enable voltage calibration mode on the device."""
+        """Put the device into voltage calibration mode."""
         self._write("CH1:VCAL")
+
+    # --- Helper functions ------------------------------------------------------
+
+    def _write(self, command_string: str) -> None:
+        """Send a command and wait for the firmware's settling window."""
+        self.port.write(command_string)
+        if self.command_delay_s > 0:
+            time.sleep(self.command_delay_s)
+
+    def _query(self, command_string: str) -> str:
+        """Send a command and read back a single response line."""
+        self._write(command_string)
+        return self._sanitize(self.port.read())
+
+    @staticmethod
+    def _sanitize(text: str) -> str:
+        """Strip the stray null bytes the firmware sometimes prefixes, and whitespace."""
+        if text is None:
+            return ""
+        return text.replace("\x00", "").strip()
+
+    @staticmethod
+    def _parse_measurement(response: str) -> tuple[float, float]:
+        """Parse a 'voltage,current' answer into two numbers.
+
+        An answer without a comma leaves the current empty and one with more than one
+        comma leaves it unparseable, so both end in the same error as non-numbers do.
+        """
+        voltage_text, _, current_text = response.partition(",")
+        try:
+            return float(voltage_text), float(current_text)
+        except ValueError as exc:
+            msg = f"The device answered {response!r} to a measurement, which is not the expected 'voltage,current'."
+            raise ValueError(msg) from exc
